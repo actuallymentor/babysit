@@ -1,0 +1,38 @@
+{
+  "name": "babysit",
+  "version": "0.1.0",
+  "description": "A CLI supervisor for LLM coding agent CLIs",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "babysit": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "build": "bash scripts/build.sh",
+    "test": "bun test",
+    "lint": "eslint --fix src",
+    "prepare": "husky"
+  },
+  "keywords": [
+    "cli",
+    "llm",
+    "coding-agent",
+    "supervisor",
+    "docker",
+    "tmux"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "mentie": "^0.5.4",
+    "mri": "^1.2.0",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "airier": "^0.1.1",
+    "husky": "^9.1.7"
+  }
+}

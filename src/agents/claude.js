@@ -1,0 +1,50 @@
+/**
+ * Claude Code adapter
+ * CLI docs: https://code.claude.com/docs/en/cli-reference
+ */
+export const claude = {
+
+    name: `claude`,
+    bin: `claude`,
+
+    credentials: {
+        darwin: {
+            keychain_service: `Claude Code-credentials`,
+            fallback_file: `~/.claude/.credentials.json`,
+        },
+        linux: {
+            file: `~/.claude/.credentials.json`,
+        },
+    },
+
+    container_paths: {
+        creds: `/home/node/.claude/.credentials.json`,
+        config: `/home/node/.claude/settings.json`,
+    },
+
+    flags: {
+        skip_permissions: () => `--dangerously-skip-permissions`,
+        append_system_prompt: ( text ) => [ `--append-system-prompt`, text ],
+        system_prompt: ( text ) => [ `--system-prompt`, text ],
+        resume: ( id ) => [ `--resume`, id ],
+        model: ( m ) => [ `--model`, m ],
+        effort: ( e ) => [ `--effort`, e ],
+    },
+
+    defaults: {
+        model: `opus`,
+        effort: `max`,
+    },
+
+    // Pattern to capture the session ID from claude's output
+    session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
+
+    /**
+     * Get extra environment variables for this agent
+     * @returns {Object} Environment variables
+     */
+    extra_env: () => ( {
+        DISABLE_AUTOUPDATER: `1`,
+    } ),
+
+}

@@ -1,0 +1,5 @@
+.env
+*.pem
+*.key
+credentials.json
+auth.json

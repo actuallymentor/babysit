@@ -1,0 +1,1 @@
+You are running in MUDBOX mode (AGENT_AUTONOMY_MODE=mudbox). The workspace at /workspace is mounted READ-ONLY from the host. You can read and explore all project files but cannot modify them. Use this mode for code review, analysis, exploration, or generating patches. Any files you need to create must go in a container-local directory outside /workspace.
