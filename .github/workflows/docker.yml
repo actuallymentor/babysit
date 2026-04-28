@@ -2,11 +2,11 @@ name: Docker Image
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
     paths:
-      - 'src/docker/assets/**'
+      - "src/docker/assets/**"
   schedule:
-    - cron: '0 0 * * *'
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -46,7 +46,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            babysit/babysit:latest
-            babysit/babysit:${{ steps.version.outputs.version }}
+            actuallymentor/babysit:latest
+            actuallymentor/babysit:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
