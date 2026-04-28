@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Languages
     python3 python3-venv \
     # CLI essentials
-    curl wget jq tmux openssh-client \
+    sudo curl wget jq tmux openssh-client \
     openssl gnupg ca-certificates \
     rsync tar zip gzip xz-utils zstd patch \
     # Debugging
@@ -93,8 +93,12 @@ ENV GIT_COMMITTER_EMAIL="babysit@github.com"
 
 WORKDIR /workspace
 
-# Copy in-container reference docs
+# Copy in-container reference docs and scripts (switch to root for /usr/local/bin)
+USER root
 COPY AGENTS.md /home/node/AGENTS.md
+COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 
+USER node
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
