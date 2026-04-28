@@ -30,6 +30,12 @@ export const parse_args = ( argv ) => {
         no_update: args[`no-update`] || false,
     }
 
+    // Sandbox and mudbox describe contradictory mount strategies — fail fast
+    // rather than silently picking one in docker/run.js.
+    if( flags.sandbox && flags.mudbox ) {
+        throw new Error( `--sandbox and --mudbox are mutually exclusive` )
+    }
+
     // Determine what the user wants to do
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
@@ -37,8 +43,17 @@ export const parse_args = ( argv ) => {
     // babysit open <id>
     if( verb === `open` ) return { verb: `open`, agent: null, session_id: positionals[1], flags, passthrough: [] }
 
-    // babysit resume <id> [--yolo]
-    if( verb === `resume` ) return { verb: `resume`, agent: null, session_id: positionals[1], flags, passthrough: [] }
+    // babysit resume <id> [--yolo] [extra flags…]
+    if( verb === `resume` ) {
+        const session_id = positionals[1]
+        return {
+            verb: `resume`,
+            agent: null,
+            session_id,
+            flags,
+            passthrough: collect_passthrough( argv, null, session_id ),
+        }
+    }
 
     // babysit <agent> [resume <id>] [--flags]
     if( verb && is_agent( verb ) ) {
@@ -80,8 +95,8 @@ const collect_passthrough = ( argv, agent_name, session_id = null ) => {
 
     for( const arg of argv ) {
 
-        // Skip the agent name
-        if( arg === agent_name ) continue
+        // Skip the agent name (when there is one)
+        if( agent_name && arg === agent_name ) continue
 
         // Skip known verbs
         if( arg === `resume` ) continue

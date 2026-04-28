@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0 — 2026-04-28
+
+### 🐛 Fixed
+- Docker image namespace mismatch — `src/docker/update.js` was pointing at `babysit/babysit` but the publish workflow ships `actuallymentor/babysit`, so `docker pull` and `docker run` would both fail at runtime
+- `codex resume` now uses the interactive subcommand — previously routed through `codex exec resume`, which is non-interactive and can't be supervised through tmux
+- `build_docker_command` shell-quotes every value before joining — multi-line system prompts, env values containing spaces / `$` / quotes, and paths with spaces are no longer mangled by `sh -c`
+- `parse_args` rejects `--sandbox --mudbox` instead of silently picking one — the mount strategies are contradictory
+- `babysit resume <id>` keeps unknown passthrough flags — `--model sonnet` and friends were previously dropped on the agent-less form
+- `cmd_resume` errors out informatively when no stored session is found — used to silently fall back to claude
+
+### ✨ Added
+- System prompt is now injected for codex / gemini / opencode (previously only claude got one) — passed via `BABYSIT_SYSTEM_PROMPT` env, the entrypoint appends it to the agent-specific config file (`AGENTS.md` for codex/opencode, `GEMINI.md` for gemini)
+- Codex defaults: `--model gpt-5-codex` and `-c reasoning_effort=high`, per spec "always auto-selects the maximum effort and latest model"
+- `babysit list` and `babysit open` now run the dependency check and self-update pre-flight (with `--no-update` to opt out), per spec "On any babysit command"
+- `scripts/install.sh` now offers to install missing dependencies via the detected package manager (brew / apt-get / dnf / pacman) instead of just printing hints
+
+### ♻️ Changed
+- `base.md` system-prompt wording aligned with the spec ("Docker container", not "Babysit Docker container")
+- `src/tmux/session.js#create_session` no longer accepts an `env` parameter — the dead code path had its own (broken) quoting
+- Codex / gemini / opencode adapters now declare a `container_paths.system_prompt_file` so the docker run can target the right path
+
+### ✅ Tests
+- New `tests/docker.test.js` covers: docker image name, codex resume shape, system-prompt-file paths, and shell-quoting of values with spaces / quotes / `$`
+- Parse test covers sandbox+mudbox rejection and resume passthrough preservation
+
 ## 0.2.0 — 2026-04-28
 
 ### 🐛 Fixed

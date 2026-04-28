@@ -1,7 +1,8 @@
 import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 
-const DOCKER_IMAGE = `babysit/babysit`
+// Docker Hub repo published by .github/workflows/docker.yml
+const DOCKER_IMAGE = `actuallymentor/babysit`
 
 /**
  * Pull the latest babysit docker image

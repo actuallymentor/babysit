@@ -12,7 +12,7 @@ import { cmd_start } from './start.js'
  */
 export const cmd_resume = async ( cmd ) => {
 
-    const { session_id, flags } = cmd
+    const { session_id, flags, passthrough = [] } = cmd
 
     if( !session_id ) {
         log.error( `Usage: babysit resume <session_id>` )
@@ -46,21 +46,18 @@ export const cmd_resume = async ( cmd ) => {
             agent: session.agent,
             session_id: session.agent_session_id || session_id,
             flags: merged_flags,
-            passthrough: [],
+            passthrough,
         } )
         return
 
     }
 
-    // No stored session — try to resume by guessing the agent from the ID format
-    log.warn( `No stored session found for ${ session_id }, trying claude...` )
-    await cmd_start( {
-        verb: `resume`,
-        agent: `claude`,
-        session_id,
-        flags,
-        passthrough: [],
-    } )
+    // No stored session and no agent — we can't safely guess which CLI to launch.
+    // Point the user at the explicit form so the agent name is unambiguous.
+    log.error( `No stored session found for: ${ session_id }` )
+    log.error( `Use the explicit form: babysit <agent> resume ${ session_id }` )
+    log.error( `Run \`babysit list\` to see active sessions.` )
+    process.exit( 1 )
 
 }
 

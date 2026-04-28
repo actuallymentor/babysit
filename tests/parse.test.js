@@ -71,4 +71,24 @@ describe( `parse_args`, () => {
         expect( cmd.flags.version ).toBe( true )
     } )
 
+    it( `rejects sandbox + mudbox combination`, () => {
+        // The mount strategies are contradictory — better to fail fast
+        expect( () => parse_args( [ `claude`, `--sandbox`, `--mudbox` ] ) ).toThrow(
+            /mutually exclusive/
+        )
+    } )
+
+    it( `keeps passthrough flags on agent-less resume`, () => {
+
+        // Previously discarded passthrough so `babysit resume <id> --model sonnet`
+        // silently dropped --model sonnet
+        const cmd = parse_args( [ `resume`, `abc-123`, `--yolo`, `--model`, `sonnet` ] )
+        expect( cmd.verb ).toBe( `resume` )
+        expect( cmd.passthrough ).toContain( `--model` )
+        expect( cmd.passthrough ).toContain( `sonnet` )
+        expect( cmd.passthrough ).not.toContain( `abc-123` )
+        expect( cmd.passthrough ).not.toContain( `--yolo` )
+
+    } )
+
 } )

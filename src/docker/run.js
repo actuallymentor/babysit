@@ -8,6 +8,27 @@ import { AGENTS_DIR } from '../utils/paths.js'
 import { build_claude_settings_tmpfile, LOOP_DEADLINE_PATH } from '../statusline/render.js'
 
 /**
+ * Single-quote a value for safe inclusion in a `sh -c` command string.
+ * Strings made up of POSIX-portable filename chars are passed through unquoted
+ * so the rendered command stays readable in logs.
+ * @param {string} value - The value to escape
+ * @returns {string} Shell-safe representation
+ */
+const shell_quote = ( value ) => {
+
+    const str = String( value )
+
+    if( str === `` ) return `''`
+
+    // Alphanumerics + URL/path-safe punctuation — none of these are shell-special.
+    if( /^[a-zA-Z0-9_=:./@%+,-]+$/.test( str ) ) return str
+
+    // Wrap in single quotes; escape embedded single quotes by closing/reopening: 'foo'\''bar'
+    return `'${ str.replace( /'/g, `'\\''` ) }'`
+
+}
+
+/**
  * Build the full `docker run` command argv for launching a coding agent
  * @param {Object} options
  * @param {Object} options.agent - Agent adapter
@@ -95,6 +116,14 @@ export const build_docker_command = ( options ) => {
     const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`
     flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
 
+    // For agents that don't accept a system-prompt CLI flag, hand the prompt
+    // to the entrypoint via env vars so it can be written to the file the
+    // agent expects (e.g. AGENTS.md, GEMINI.md). Skipped for claude.
+    if( system_prompt && !agent.flags.append_system_prompt && agent.container_paths?.system_prompt_file ) {
+        flags.push( `-e`, `BABYSIT_SYSTEM_PROMPT=${ system_prompt }` )
+        flags.push( `-e`, `BABYSIT_SYSTEM_PROMPT_FILE=${ agent.container_paths.system_prompt_file }` )
+    }
+
     // Loop deadline — bind-mount so the in-container statusline can read host-written countdowns
     flags.push( `-v`, `${ LOOP_DEADLINE_PATH }:${ LOOP_DEADLINE_PATH }:ro` )
 
@@ -148,7 +177,10 @@ export const build_docker_command = ( options ) => {
     const agent_cmd = build_agent_command( agent, mode, system_prompt, agent_args )
     flags.push( ...agent_cmd )
 
-    return flags.join( ` ` )
+    // The result is consumed by `sh -c` (see tmux/session.js create_session),
+    // so each argument needs proper shell-quoting — system prompts contain
+    // spaces, env values can contain `$`, etc.
+    return flags.map( shell_quote ).join( ` ` )
 
 }
 

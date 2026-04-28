@@ -106,7 +106,7 @@ Supports `SS`, `MM:SS`, or `HH:MM:SS`. Overrides `idle_timeout_s` per rule.
 | `--mudbox` | read-only mount | Agent can read but not modify files |
 | `--loop` | *(additive)* | Override `on: idle` with `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" |
 
-Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop.
+Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. The exception is `--sandbox` and `--mudbox` together — they describe contradictory mount strategies, so babysit rejects the combination.
 
 ## Loop mode
 

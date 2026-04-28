@@ -27,27 +27,21 @@ export const make_session_name = ( pwd, agent_name ) => {
 }
 
 /**
- * Create a new detached tmux session with babysit defaults
+ * Create a new detached tmux session with babysit defaults.
+ * The `command` is passed verbatim to `sh -c`, so callers must shell-quote
+ * any embedded values (see docker/run.js#shell_quote).
  * @param {string} session_name - The session name
- * @param {string} command - The command to run inside the session
- * @param {Object} [env={}] - Extra environment variables
+ * @param {string} command - Pre-quoted shell command to run inside the session
  * @returns {Promise<void>}
  */
-export const create_session = async ( session_name, command, env = {} ) => {
-
-    // Build the environment string for the shell command
-    const env_prefix = Object.entries( env )
-        .map( ( [ k, v ] ) => `${ k }=${ JSON.stringify( v ) }` )
-        .join( ` ` )
-
-    const full_command = env_prefix ? `env ${ env_prefix } ${ command }` : command
+export const create_session = async ( session_name, command ) => {
 
     await run( `tmux`, [
         `-L`, TMUX_SOCKET,
         `new-session`, `-d`,
         `-s`, session_name,
         `-x`, `220`, `-y`, `50`,
-        `sh`, `-c`, full_command,
+        `sh`, `-c`, command,
     ] )
 
     // Configure session defaults

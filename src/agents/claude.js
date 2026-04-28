@@ -20,6 +20,9 @@ export const claude = {
     container_paths: {
         creds: `/home/node/.claude/.credentials.json`,
         config: `/home/node/.claude/settings.json`,
+        // Claude takes the system prompt as a CLI flag, so this hint is unused —
+        // included for shape consistency with the other adapters.
+        system_prompt_file: null,
     },
 
     flags: {

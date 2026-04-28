@@ -11,10 +11,17 @@ import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume } from './cli/resume.js'
+import { check_dependencies } from './deps/check.js'
+import { run_self_update } from './deps/selfupdate.js'
 
 // Read version from package.json
 const __dirname = dirname( fileURLToPath( import.meta.url ) )
 const pkg = JSON.parse( readFileSync( join( __dirname, `..`, `package.json` ), `utf-8` ) )
+
+// Subcommands that need pre-flight (dep check + self-update). The spec says
+// "On any babysit command", but `help` and `--version` are pure metadata reads
+// where pulling images would be surprising — exclude them.
+const PREFLIGHT_VERBS = new Set( [ `start`, `resume`, `list`, `open` ] )
 
 /**
  * Main entry point
@@ -33,6 +40,17 @@ const main = async () => {
     if( cmd.flags.help || cmd.verb === `help` ) {
         show_help()
         process.exit( 0 )
+    }
+
+    // Pre-flight: dep check + self-update for every real subcommand.
+    // cmd_start re-runs self-update internally, but the duplicate is cheap
+    // (Promise.allSettled with timeouts) and ensures `list` / `open` are covered.
+    if( PREFLIGHT_VERBS.has( cmd.verb ) ) {
+        if( !check_dependencies() ) {
+            log.error( `Missing dependencies. Install them and try again.` )
+            process.exit( 1 )
+        }
+        if( !cmd.flags.no_update ) await run_self_update()
     }
 
     // Dispatch to subcommand

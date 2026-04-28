@@ -18,13 +18,20 @@ export const gemini = {
 
     container_paths: {
         creds: null,
+        // Container-local path so it's writable in mudbox / sandbox too.
+        // Gemini reads ~/.gemini/GEMINI.md as global context in addition to any
+        // GEMINI.md in the workspace.
+        system_prompt_file: `/home/node/.gemini/GEMINI.md`,
     },
 
     flags: {
         skip_permissions: () => `--yolo`,
+        // Gemini doesn't expose a CLI flag for system prompts — it reads
+        // GEMINI.md from the workspace. Handled via entrypoint + env var.
         append_system_prompt: null,
         resume: ( id ) => [ `--resume`, id ],
         model: ( m ) => [ `--model`, m ],
+        // Gemini has no effort/reasoning knob.
         effort: null,
     },
 

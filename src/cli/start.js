@@ -4,8 +4,6 @@ import { homedir } from 'os'
 
 import { log } from '../utils/log.js'
 import { ensure_dirs } from '../utils/paths.js'
-import { check_dependencies } from '../deps/check.js'
-import { run_self_update } from '../deps/selfupdate.js'
 import { get_agent } from '../agents/index.js'
 import { get_patterns } from '../patterns/index.js'
 import { load_config } from '../babysit/yaml.js'
@@ -33,19 +31,7 @@ export const cmd_start = async ( cmd ) => {
         process.exit( 1 )
     }
 
-    // Check system dependencies
-    if( !check_dependencies() ) {
-        log.error( `Missing dependencies. Install them and try again.` )
-        process.exit( 1 )
-    }
-
     ensure_dirs()
-
-    // Pre-flight updates (unless --no-update)
-    if( !flags.no_update ) {
-        log.info( `Running pre-flight updates...` )
-        await run_self_update()
-    }
 
     // Load babysit.yaml (creates default if missing)
     const workspace = process.cwd()
