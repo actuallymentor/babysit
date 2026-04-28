@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     vim nano \
     && rm -rf /var/lib/apt/lists/*
 
-# Modern CLI tools via binary download
+# Modern CLI tools via binary download (run as root)
 RUN set -eux; \
     ARCH="$(dpkg --print-architecture)"; \
     # ripgrep
@@ -49,40 +49,46 @@ RUN set -eux; \
     curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_${YQ_ARCH}" -o /usr/local/bin/yq \
     && chmod +x /usr/local/bin/yq
 
-# Python uv (fast pip replacement)
+# Python uv (fast pip replacement) — install system-wide
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv \
     && mv /root/.local/bin/uvx /usr/local/bin/uvx 2>/dev/null || true
 
-# Non-root user with passwordless sudo
-RUN mkdir -p /home/node/.npm-global && chown -R node:node /home/node \
+# Non-root user with passwordless sudo and required directories
+RUN mkdir -p \
+        /home/node/.npm-global \
+        /home/node/.claude/projects \
+        /home/node/.claude/plans \
+        /home/node/.claude/todos \
+        /home/node/.agents \
+        /workspace \
+    && chown -R node:node /home/node /workspace \
     && echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node \
     && chmod 0440 /etc/sudoers.d/node
 
+# Copy in-container reference docs and scripts (still as root)
+COPY AGENTS.md /home/node/AGENTS.md
+COPY statusline.sh /usr/local/bin/statusline.sh
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh \
+    && chown node:node /home/node/AGENTS.md
+
+# Codex (OpenAI) — install globally via npm as root
+RUN npm install -g @openai/codex 2>/dev/null || true
+
+# Gemini CLI — install globally via npm as root
+RUN npm install -g @google/gemini-cli 2>/dev/null || true
+
+# Switch to non-root user for user-scoped agent installs
+USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV PATH="/home/node/.npm-global/bin:$PATH"
 
-USER node
-
-# Workspace and claude directories
-RUN mkdir -p /workspace \
-    /home/node/.claude/projects \
-    /home/node/.claude/plans \
-    /home/node/.claude/todos \
-    /home/node/.agents
-
-# Install coding agent CLIs
-# Claude Code
+# Claude Code — installs into /home/node
 RUN curl -fsSL https://claude.ai/install.sh | bash || true
 ENV DISABLE_AUTOUPDATER=1
 
-# Codex (OpenAI)
-RUN npm install -g @openai/codex 2>/dev/null || true
-
-# Gemini CLI
-RUN npm install -g @google/gemini-cli 2>/dev/null || true
-
-# OpenCode
+# OpenCode — installs into /home/node
 RUN curl -fsSL https://opencode.ai/install 2>/dev/null | bash || true
 
 # Git identity defaults (overridden by env passthrough from host)
@@ -93,12 +99,4 @@ ENV GIT_COMMITTER_EMAIL="babysit@github.com"
 
 WORKDIR /workspace
 
-# Copy in-container reference docs and scripts (switch to root for /usr/local/bin)
-USER root
-COPY AGENTS.md /home/node/AGENTS.md
-COPY statusline.sh /usr/local/bin/statusline.sh
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
-
-USER node
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
