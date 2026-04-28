@@ -91,4 +91,15 @@ describe( `parse_args`, () => {
 
     } )
 
+    it( `recognises --no-update`, () => {
+        const cmd = parse_args( [ `claude`, `--no-update` ] )
+        expect( cmd.flags.no_update ).toBe( true )
+        expect( cmd.passthrough ).not.toContain( `--no-update` )
+    } )
+
+    it( `defaults no_update to false when --no-update is absent`, () => {
+        const cmd = parse_args( [ `claude` ] )
+        expect( cmd.flags.no_update ).toBe( false )
+    } )
+
 } )

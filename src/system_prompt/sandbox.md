@@ -1,1 +1,0 @@
-You are running in SANDBOX mode (AGENT_AUTONOMY_MODE=sandbox). There is no workspace mounted — the /workspace directory is empty and container-local. All host files are mounted read-only. You cannot modify anything on the host. Use this session for general questions, research, brainstorming, or tasks that don't need access to a project.

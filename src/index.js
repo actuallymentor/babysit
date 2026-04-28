@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
-import { readFileSync } from 'fs'
-import { join, dirname } from 'path'
-import { fileURLToPath } from 'url'
+// JSON import attribute embeds at build time; runtime fs reads resolve to /$bunfs in compiled binaries
+import pkg from '../package.json' with { type: 'json' }
 
 import { log } from './utils/log.js'
 import { parse_args } from './cli/parse.js'
@@ -13,10 +12,6 @@ import { cmd_open } from './cli/open.js'
 import { cmd_resume } from './cli/resume.js'
 import { check_dependencies } from './deps/check.js'
 import { run_self_update } from './deps/selfupdate.js'
-
-// Read version from package.json
-const __dirname = dirname( fileURLToPath( import.meta.url ) )
-const pkg = JSON.parse( readFileSync( join( __dirname, `..`, `package.json` ), `utf-8` ) )
 
 // Subcommands that need pre-flight (dep check + self-update). The spec says
 // "On any babysit command", but `help` and `--version` are pure metadata reads

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.1 — 2026-04-28
+
+### 🐛 Fixed
+- `--no-update` was silently ignored — mri normalises `--no-X` to `{X:false}` rather than `{'no-X':true}`, so `args['no-update']` always missed. Self-update ran on every command, including when the user explicitly opted out
+- Compiled binary crashed on startup with `ENOENT: /$bunfs/package.json` — version was read at runtime via `readFileSync(__dirname/../package.json)`, but bun-compiled binaries resolve `__dirname` to `/$bunfs`. Switched to JSON import attribute so the file embeds at build time
+- Compiled binary crashed when building the system prompt — `src/modes/prompt.js` read `system_prompt/*.md` via the same `__dirname`+`readFileSync` pattern. Converted the fragments to JS-exported string constants in `src/system_prompt/index.js` so they bundle into the binary
+
+### 🔥 Removed
+- `get_statusline_path` — unused export with the same `__dirname`/`readFileSync` issue. The container's statusline.sh path is hard-coded into the Claude settings tmpfile, so the function had no callers
+- `src/system_prompt/{base,yolo,sandbox,mudbox}.md` — content moved into `src/system_prompt/index.js`
+
+### ✅ Tests
+- New `tests/prompt.test.js` covers each mode flag → fragment combination
+- New `parse.test.js` cases lock in `--no-update` recognition
+
 ## 0.3.0 — 2026-04-28
 
 ### 🐛 Fixed

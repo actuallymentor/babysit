@@ -13,8 +13,10 @@ export const parse_args = ( argv ) => {
 
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
+    // mri normalises `--no-update` to `{ update: false }` (it treats `--no-X` as the
+    // negation of `--X`), so we list `update` in booleans and detect the negation form.
     const args = mri( argv, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `no-update` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `update` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -27,7 +29,8 @@ export const parse_args = ( argv ) => {
         sandbox: args.sandbox || false,
         mudbox: args.mudbox || false,
         loop: args.loop || false,
-        no_update: args[`no-update`] || false,
+        // `--no-update` shows up as args.update === false; absent means undefined
+        no_update: args.update === false,
     }
 
     // Sandbox and mudbox describe contradictory mount strategies — fail fast

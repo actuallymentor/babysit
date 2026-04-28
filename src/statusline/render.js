@@ -1,10 +1,7 @@
 import { writeFileSync, existsSync, readFileSync } from 'fs'
-import { join, dirname } from 'path'
+import { join } from 'path'
 import { tmpdir } from 'os'
-import { fileURLToPath } from 'url'
 import { log } from '../utils/log.js'
-
-const __dirname = dirname( fileURLToPath( import.meta.url ) )
 
 // Shared host path the statusline reads — also bind-mounted into the container.
 // One file per babysit cli process is sufficient because each cli supervises one container.
@@ -22,16 +19,6 @@ export const write_loop_deadline = ( deadline ) => {
     } catch ( e ) {
         log.debug( `Failed to write loop deadline: ${ e.message }` )
     }
-
-}
-
-/**
- * Get the path to the embedded statusline.sh script
- * @returns {string}
- */
-export const get_statusline_path = () => {
-
-    return join( __dirname, `..`, `docker`, `assets`, `statusline.sh` )
 
 }
 
