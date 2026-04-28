@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
+import { parse_timeout } from './timeout.js'
 
 const DEFAULT_YAML = `# babysit.yaml
 
@@ -91,7 +92,7 @@ const parse_rule = ( raw_rule ) => {
     return {
         on: parse_on( on_value ),
         do: do_value,
-        timeout_s: timeout ?  await_import_timeout( timeout )  : null,
+        timeout_s: timeout ? parse_timeout( timeout ) : null,
         last_fired_at: 0,
     }
 
@@ -119,22 +120,6 @@ const parse_on = ( value ) => {
 
     // Literal string (quoted or unquoted)
     return { type: `literal`, value: str.replace( /^["']|["']$/g, `` ) }
-
-}
-
-// Inline timeout parser to avoid circular imports at parse time
-const await_import_timeout = ( value ) => {
-
-    if( typeof value === `number` ) return value
-
-    const str = String( value ).trim()
-    const parts = str.split( `:` )
-
-    if( parts.length === 1 ) return parseInt( parts[0], 10 )
-    if( parts.length === 2 ) return  parseInt( parts[0], 10 ) * 60  + parseInt( parts[1], 10 )
-    if( parts.length === 3 ) return  parseInt( parts[0], 10 ) * 3600  +  parseInt( parts[1], 10 ) * 60  + parseInt( parts[2], 10 )
-
-    return 300
 
 }
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.0 — 2026-04-28
+
+### 🐛 Fixed
+- `babysit resume <id>` is now wired to the resume dispatcher (was crashing with "Unknown agent: null")
+- `send_shift_tab` now sends the tmux key name `BTab` instead of the unrecognised literal `\x1b[Z`
+- `babysit <agent> resume <id>` no longer duplicates the session id between the agent's resume flag and passthrough
+- `codex` resume honours the supplied session id (previously always used `--last`)
+- `parse_args` no longer halts on the first unknown flag (mri's `unknown` callback returns the callback's value, not the parsed object)
+- `send_text` uses tmux `send-keys -l` so `$`, `!`, and backticks pass through as literal text
+- `cmd_resume` flag merge — explicit user flags now win over stored modifiers, so `babysit resume <id> --yolo` actually adds yolo
+
+### ✨ Added
+- Statusline path is now end-to-end wired: `BABYSIT_MODIFIERS` env, idle countdown file (`/tmp/babysit-loop-deadline`), and a Claude `settings.json` tmpfile that merges host settings with the babysit override (no host mutation)
+- `IdleTracker.get_deadline( timeout_s )` publishes the next idle deadline so the statusline can render a countdown
+- Self-update pre-flight now also pulls the babysit repo when installed via `git clone`
+
+### ♻️ Changed
+- `babysit/yaml.js` now imports `parse_timeout` from `babysit/timeout.js` instead of carrying a near-duplicate inline parser
+
+### ✅ Tests
+- New tests for `parse_args` (covers session-id de-duplication and unknown-flag passthrough)
+- New tests for `build_claude_settings_tmpfile` and `write_loop_deadline`
+- New tests for `IdleTracker.get_deadline`
+
 ## 0.1.0 — 2026-04-28
 
 ### ✨ Initial release

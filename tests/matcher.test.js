@@ -64,6 +64,17 @@ describe( `IdleTracker`, () => {
         expect( tracker.last_hash ).toBeNull()
     } )
 
+    it( `returns null deadline when not started`, () => {
+        const tracker = new IdleTracker()
+        expect( tracker.get_deadline( 30 ) ).toBeNull()
+    } )
+
+    it( `computes deadline from unchanged_since + timeout`, () => {
+        const tracker = new IdleTracker()
+        tracker.unchanged_since = 1_700_000_000_000 // ms
+        expect( tracker.get_deadline( 60 ) ).toBe( 1_700_000_000 + 60 )
+    } )
+
 } )
 
 describe( `matches_patterns`, () => {

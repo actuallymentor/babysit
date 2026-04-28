@@ -11,10 +11,11 @@ const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `n
  */
 export const parse_args = ( argv ) => {
 
+    // Note: mri's `unknown` callback halts parsing and returns the callback's value
+    // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( argv, {
         boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `no-update` ],
         alias: { h: `help`, v: `version` },
-        unknown: () => true,
     } )
 
     const positionals = args._
@@ -52,8 +53,10 @@ export const parse_args = ( argv ) => {
             session_id = positionals[2]
         }
 
-        // Collect passthrough args (unknown flags for the agent CLI)
-        const passthrough = collect_passthrough( argv, agent )
+        // Collect passthrough args (unknown flags for the agent CLI).
+        // Drop the session id when present so the agent adapter is the only place
+        // that injects the resume flag — otherwise the id appears twice.
+        const passthrough = collect_passthrough( argv, agent, session_id )
 
         return { verb: sub_verb, agent, session_id, flags, passthrough }
 
@@ -68,23 +71,23 @@ export const parse_args = ( argv ) => {
  * Collect arguments that are not babysit flags — these pass through to the agent CLI
  * @param {string[]} argv - Raw argv
  * @param {string} agent_name - The agent name (to skip)
+ * @param {string|null} [session_id] - Resume session id to drop from passthrough
  * @returns {string[]}
  */
-const collect_passthrough = ( argv, agent_name ) => {
+const collect_passthrough = ( argv, agent_name, session_id = null ) => {
 
     const passthrough = []
-    let skip_next = false
 
     for( const arg of argv ) {
-        if( skip_next ) {
-            skip_next = false; continue 
-        }
 
         // Skip the agent name
         if( arg === agent_name ) continue
 
         // Skip known verbs
         if( arg === `resume` ) continue
+
+        // Skip the resume session id (the agent adapter injects it via flags.resume)
+        if( session_id && arg === session_id ) continue
 
         // Skip known babysit flags
         const clean = arg.replace( /^-+/, `` )

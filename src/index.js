@@ -10,6 +10,7 @@ import { show_help } from './cli/help.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_open } from './cli/open.js'
+import { cmd_resume } from './cli/resume.js'
 
 // Read version from package.json
 const __dirname = dirname( fileURLToPath( import.meta.url ) )
@@ -38,8 +39,14 @@ const main = async () => {
     switch ( cmd.verb ) {
 
     case `start`:
-    case `resume`:
         await cmd_start( cmd )
+        break
+
+    case `resume`:
+        // `babysit <agent> resume <id>` arrives with agent set — go to cmd_start
+        // `babysit resume <id>` arrives with agent: null — needs cmd_resume to look up the stored session
+        if( cmd.agent ) await cmd_start( cmd )
+        else await cmd_resume( cmd )
         break
 
     case `list`:

@@ -79,6 +79,17 @@ export class IdleTracker {
         this.unchanged_since = null
     }
 
+    /**
+     * Compute the unix-epoch deadline (seconds) at which the next idle
+     * window of `timeout_s` will elapse, based on when the output last changed.
+     * @param {number} timeout_s - Idle threshold in seconds
+     * @returns {number|null} Epoch seconds, or null if the tracker hasn't seen output yet
+     */
+    get_deadline( timeout_s ) {
+        if( !this.unchanged_since ) return null
+        return Math.floor(  this.unchanged_since / 1_000  ) + timeout_s
+    }
+
 }
 
 /**

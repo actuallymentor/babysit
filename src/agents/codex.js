@@ -25,7 +25,7 @@ export const codex = {
     flags: {
         skip_permissions: () => `--full-auto`,
         append_system_prompt: null,
-        resume: ( id ) => [ `exec`, `resume`, `--last` ],
+        resume: ( id ) => id ? [ `exec`, `resume`, id ] : [ `exec`, `resume`, `--last` ],
         model: null,
         effort: null,
     },

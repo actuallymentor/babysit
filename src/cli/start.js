@@ -16,6 +16,7 @@ import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name } from '../tmux/session.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { save_session, update_session, generate_session_id } from '../sessions/store.js'
+import { write_loop_deadline } from '../statusline/render.js'
 
 /**
  * Start a new babysit session
@@ -57,6 +58,14 @@ export const cmd_start = async ( cmd ) => {
         mudbox: flags.mudbox,
     }
 
+    // Compute the modifier list for the statusline + session metadata
+    const modifiers = Object.entries( mode ).filter( ( [ , v ] ) => v ).map( ( [ k ] ) => k )
+    if( flags.loop ) modifiers.push( `loop` )
+
+    // Initialize the loop deadline file before docker mounts it.
+    // "idle" tells the statusline there's no active countdown yet.
+    write_loop_deadline( `idle` )
+
     // Apply loop override if --loop flag is set
     if( flags.loop ) apply_loop( rules, workspace )
 
@@ -82,7 +91,7 @@ export const cmd_start = async ( cmd ) => {
     // Build the docker command
     const docker_command = build_docker_command( {
         agent, workspace, mode, system_prompt,
-        agent_args, creds_mounts, config, extra_env,
+        agent_args, creds_mounts, config, extra_env, modifiers,
     } )
 
     // Create tmux session
@@ -91,8 +100,6 @@ export const cmd_start = async ( cmd ) => {
 
     // Generate and save session metadata
     const babysit_id = generate_session_id()
-    const modifiers = Object.entries( mode ).filter( ( [ , v ] ) => v ).map( ( [ k ] ) => k )
-    if( flags.loop ) modifiers.push( `loop` )
 
     const session_data = {
         babysit_id,

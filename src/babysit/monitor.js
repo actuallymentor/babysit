@@ -5,6 +5,7 @@ import { has_session } from '../tmux/session.js'
 import { IdleTracker, strip_ansi, evaluate_rule } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
+import { write_loop_deadline } from '../statusline/render.js'
 
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
@@ -29,6 +30,11 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
 
     const idle_tracker = new IdleTracker()
     let session_id_captured = false
+    let last_written_deadline = null
+
+    // Find the idle rule once — used to publish the countdown for the statusline
+    const idle_rule = rules.find( r => r.on.type === `idle` )
+    const idle_timeout_s = idle_rule?.timeout_s || config.idle_timeout_s
 
     log.info( `Monitoring session: ${ session_name }` )
     log.debug( `${ rules.length } rules loaded, polling every ${ POLL_INTERVAL_MS }ms` )
@@ -39,6 +45,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
         const alive = await has_session( session_name )
         if( !alive ) {
             log.info( `Session ended: ${ session_name }` )
+            write_loop_deadline( `idle` )
             if( on_exit ) on_exit()
             break
         }
@@ -58,6 +65,15 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
 
         // Track idle state
         const idle_seconds = idle_tracker.update( clean_output )
+
+        // Publish the idle countdown deadline for the statusline (only when it changes)
+        if( idle_rule ) {
+            const deadline = idle_tracker.get_deadline( idle_timeout_s )
+            if( deadline !== null && deadline !== last_written_deadline ) {
+                write_loop_deadline( deadline )
+                last_written_deadline = deadline
+            }
+        }
 
         // Try to capture session ID from agent output (one-time)
         if( !session_id_captured && agent?.session_id_pattern ) {

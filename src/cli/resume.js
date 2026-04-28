@@ -31,14 +31,21 @@ export const cmd_resume = async ( cmd ) => {
             return
         }
 
-        // Session is dead — restart with resume flag
+        // Session is dead — restart with resume flag.
+        // Start from the stored modifiers, then layer on any explicit user flags
+        // so the user can add --loop or --yolo when resuming an older session.
         log.info( `Resuming ${ session.agent } session: ${ session_id }` )
+
+        const explicit_user_flags = Object.fromEntries(
+            Object.entries( flags ).filter( ( [ , value ] ) => value )
+        )
+        const merged_flags = { ...rebuild_flags( session.modifiers ), ...explicit_user_flags }
 
         await cmd_start( {
             verb: `resume`,
             agent: session.agent,
             session_id: session.agent_session_id || session_id,
-            flags: { ...flags, ...rebuild_flags( session.modifiers ) },
+            flags: merged_flags,
             passthrough: [],
         } )
         return

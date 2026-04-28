@@ -5,6 +5,7 @@ import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
 import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
+import { build_claude_settings_tmpfile, LOOP_DEADLINE_PATH } from '../statusline/render.js'
 
 /**
  * Build the full `docker run` command argv for launching a coding agent
@@ -17,11 +18,12 @@ import { AGENTS_DIR } from '../utils/paths.js'
  * @param {Object} options.creds_mounts - Credential mount specs from credentials module
  * @param {Object} options.config - babysit.yaml config section
  * @param {Object} [options.extra_env={}] - Extra environment variables
+ * @param {string[]} [options.modifiers=[]] - Active mode modifiers (yolo, mudbox, sandbox, loop) for the statusline
  * @returns {string} The full docker run command string
  */
 export const build_docker_command = ( options ) => {
 
-    const { agent, workspace, mode, system_prompt, agent_args, creds_mounts, config, extra_env = {} } = options
+    const { agent, workspace, mode, system_prompt, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
     const home = homedir()
     const flags = []
 
@@ -89,6 +91,13 @@ export const build_docker_command = ( options ) => {
     else if( mode.sandbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=sandbox` )
     else if( mode.mudbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=mudbox` )
 
+    // Modifiers shown in the statusline (defaults to "babysit" if no flags)
+    const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`
+    flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
+
+    // Loop deadline — bind-mount so the in-container statusline can read host-written countdowns
+    flags.push( `-v`, `${ LOOP_DEADLINE_PATH }:${ LOOP_DEADLINE_PATH }:ro` )
+
     // Extra environment variables from agent adapter
     for( const [ key, value ] of Object.entries( extra_env ) ) {
         flags.push( `-e`, `${ key }=${ value }` )
@@ -110,10 +119,12 @@ export const build_docker_command = ( options ) => {
             }
         }
 
-        // Claude settings
-        const settings_path = join( home, `.claude`, `settings.json` )
-        if( existsSync( settings_path ) ) {
-            flags.push( `-v`, `${ settings_path }:/home/node/.claude/settings.json` )
+        // Claude settings — merge host's settings with the babysit statusline override.
+        // We mount a tmpfile (not the host file) so we never mutate the user's settings.json.
+        const host_settings_path = join( home, `.claude`, `settings.json` )
+        const settings_tmpfile = build_claude_settings_tmpfile( host_settings_path )
+        if( settings_tmpfile ) {
+            flags.push( `-v`, `${ settings_tmpfile }:/home/node/.claude/settings.json` )
         }
 
         // Claude CLAUDE.md
