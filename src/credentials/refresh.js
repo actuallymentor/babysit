@@ -58,6 +58,12 @@ export const start_credential_sync = ( read_source, tmpfile_path ) => {
 
     const interval = setInterval( tick, REFRESH_INTERVAL_MS )
 
+    // Don't let the refresh loop hold the event loop open. The supervised tmux
+    // session is what should keep babysit alive; if that exits or the user
+    // interrupts us, the cli should be free to terminate without waiting for
+    // the next tick.
+    interval.unref?.()
+
     return {
         stop: () => {
             running = false

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.2 — 2026-04-29
+
+### 🐛 Fixed
+- Codex was launched at the wrong reasoning effort in yolo runs — `-c reasoning_effort=high` is silently ignored by codex (the real config key is `model_reasoning_effort`). Switched to `-c model_reasoning_effort="high"`.
+- Codex skip-permissions was `--full-auto`, which only skips approvals — its workspace-write sandbox stayed active and blocked edits inside our own docker sandbox. Switched to `--dangerously-bypass-approvals-and-sandbox` so `babysit codex --yolo` actually has full autonomy.
+- Default codex model `gpt-5-codex` was not a real model id. Updated to `gpt-5.5` (the latest GA frontier model as of April 2026; users on API-key auth without ChatGPT sign-in can override with `--model gpt-5.4`).
+- Default gemini model was the now-superseded `gemini-2.5-pro`. Switched to the rolling `gemini-pro-latest` alias so the spec's "always auto-selects ... latest model" rule keeps holding.
+- Container `PATH` didn't include `~/.local/bin` or `~/.opencode/bin`, the install paths used by claude's and opencode's install scripts — `claude`/`opencode` would have resolved to "command not found" at runtime.
+- Credential refresh interval kept the event loop alive — if the user interrupted the cli before the tmux session ended, the process would hang on the unfired `setInterval`. Now `unref()`'d.
+
+### 🔥 Removed
+- Orphaned mode helpers `src/modes/{yolo,sandbox,mudbox}.js`. They mutated a `context` object that no caller ever passes — the actual mode application is inlined in `docker/run.js` and `modes/prompt.js`.
+
+### ✅ Tests
+- `tests/docker.test.js` updated for the corrected codex defaults (effort key, skip-permissions flag, model id) and now asserts `model_reasoning_effort="high"` survives shell-quoting into a single arg.
+
 ## 0.3.1 — 2026-04-28
 
 ### 🐛 Fixed

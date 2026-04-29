@@ -36,7 +36,10 @@ export const gemini = {
     },
 
     defaults: {
-        model: `gemini-2.5-pro`,
+        // `gemini-pro-latest` is Google's official alias for the most capable Gemini
+        // available — it currently resolves to gemini-3.1-pro and rolls forward
+        // automatically when newer Pro models ship.
+        model: `gemini-pro-latest`,
     },
 
     session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,

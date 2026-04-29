@@ -42,13 +42,22 @@ describe( `codex adapter`, () => {
         expect( args ).not.toContain( `exec` )
     } )
 
-    it( `injects reasoning effort via -c override`, () => {
-        expect( codex.flags.effort( `high` ) ).toEqual( [ `-c`, `reasoning_effort=high` ] )
+    it( `injects reasoning effort via -c model_reasoning_effort override`, () => {
+        // The bare `reasoning_effort` key is silently ignored by codex; the real
+        // config knob is `model_reasoning_effort`. Quote the value so it survives
+        // YAML/TOML parsing inside codex's -c handler.
+        expect( codex.flags.effort( `high` ) ).toEqual( [ `-c`, `model_reasoning_effort="high"` ] )
     } )
 
-    it( `defaults to gpt-5-codex at high effort`, () => {
-        expect( codex.defaults.model ).toBe( `gpt-5-codex` )
+    it( `defaults to the latest GA model at high effort`, () => {
+        expect( codex.defaults.model ).toBe( `gpt-5.5` )
         expect( codex.defaults.effort ).toBe( `high` )
+    } )
+
+    it( `skip_permissions bypasses both approvals and the internal sandbox`, () => {
+        // We already wrap codex in our own docker sandbox; --full-auto would leave
+        // codex's internal sandbox active and block edits inside babysit --yolo.
+        expect( codex.flags.skip_permissions() ).toBe( `--dangerously-bypass-approvals-and-sandbox` )
     } )
 
 } )
@@ -141,8 +150,10 @@ describe( `build_docker_command`, () => {
         const cmd = build_docker_command( make_options( { agent: codex } ) )
 
         // Spec: "always auto-selects the maximum effort and latest model"
-        expect( cmd ).toContain( `--model gpt-5-codex` )
-        expect( cmd ).toContain( `-c reasoning_effort=high` )
+        expect( cmd ).toContain( `--model gpt-5.5` )
+        // model_reasoning_effort is the real codex config key (not reasoning_effort).
+        // The full-quoted form is shell_quote'd into a single arg by build_docker_command.
+        expect( cmd ).toContain( `'model_reasoning_effort="high"'` )
 
     } )
 

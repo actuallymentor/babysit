@@ -27,7 +27,12 @@ export const codex = {
     },
 
     flags: {
-        skip_permissions: () => `--full-auto`,
+        // Codex's --yolo (alias for --dangerously-bypass-approvals-and-sandbox) skips
+        // both approvals AND its built-in sandbox. We already wrap codex in our own
+        // docker sandbox, so the internal one is redundant — and --full-auto would
+        // leave the workspace-write sandbox active, blocking real edits in babysit
+        // --yolo mode. Use the most permissive flag.
+        skip_permissions: () => `--dangerously-bypass-approvals-and-sandbox`,
         // Codex has no --append-system-prompt flag — system prompt is injected
         // via the BABYSIT_SYSTEM_PROMPT env var and the entrypoint writes it
         // to ~/.codex/instructions.md before launching the agent.
@@ -36,12 +41,15 @@ export const codex = {
         // (`codex exec resume`) wouldn't be supervisable through tmux.
         resume: ( id ) => [ `resume`, id ],
         model: ( m ) => [ `--model`, m ],
-        // Codex reasoning effort is exposed via the `-c` config override.
-        effort: ( e ) => [ `-c`, `reasoning_effort=${ e }` ],
+        // Codex reasoning effort lives behind the `model_reasoning_effort` config key
+        // (the docs example "reasoning_effort" alone is silently ignored). Pass via -c.
+        effort: ( e ) => [ `-c`, `model_reasoning_effort="${ e }"` ],
     },
 
     defaults: {
-        model: `gpt-5-codex`,
+        // Latest GA frontier model for coding (April 2026). Falls back to gpt-5.4 for
+        // API-key auth without ChatGPT sign-in — users override with --model gpt-5.4.
+        model: `gpt-5.5`,
         effort: `high`,
     },
 

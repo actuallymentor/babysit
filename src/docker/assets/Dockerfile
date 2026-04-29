@@ -82,7 +82,10 @@ RUN npm install -g @google/gemini-cli 2>/dev/null || true
 # Switch to non-root user for user-scoped agent installs
 USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
-ENV PATH="/home/node/.npm-global/bin:$PATH"
+# Claude's `install.sh` symlinks to ~/.local/bin/claude and OpenCode's `install`
+# script likewise drops a binary in ~/.local/bin (or ~/.opencode/bin). All three
+# need to be on PATH or the agent commands resolve to "command not found" at runtime.
+ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:/home/node/.opencode/bin:$PATH"
 
 # Claude Code — installs into /home/node
 RUN curl -fsSL https://claude.ai/install.sh | bash || true
