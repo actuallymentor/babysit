@@ -18,12 +18,25 @@ export const codex = {
         },
     },
 
+    // Pin the codex home dir inside the container so we control exactly where
+    // global instructions are read from — and so a stray CODEX_HOME from the
+    // host doesn't accidentally redirect codex to a path we never mount.
+    // Default container value is the same as codex's own ($HOME/.codex), but
+    // declaring it explicitly lets `build_docker_command` set CODEX_HOME=...
+    // for the agent and derive `system_prompt_file` from the same source.
+    home: {
+        env_var: `CODEX_HOME`,
+        dir: `/home/node/.codex`,
+    },
+
     container_paths: {
         creds: null,
-        // Container-local instructions path — writable in every mode (sandbox empties
-        // /workspace; mudbox makes it read-only). Codex picks this up as global
-        // context in addition to any AGENTS.md the user keeps in their workspace.
-        system_prompt_file: `/home/node/.codex/instructions.md`,
+        // Codex global instructions live at `${CODEX_HOME}/AGENTS.md`
+        // (or AGENTS.override.md, but plain AGENTS.md is the canonical name).
+        // The older `instructions.md` form is no longer honored — using it
+        // here previously meant babysit's system prompt was silently ignored.
+        // Path is container-local so it stays writable in mudbox / sandbox too.
+        system_prompt_file: `/home/node/.codex/AGENTS.md`,
     },
 
     flags: {

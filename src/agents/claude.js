@@ -17,6 +17,16 @@ export const claude = {
         },
     },
 
+    // CLAUDE_CONFIG_DIR controls where claude reads its config / credentials /
+    // sessions from. We already mount our host-derived state under
+    // /home/node/.claude inside the container, so pin the env var to that
+    // path — this also prevents a stray host CLAUDE_CONFIG_DIR from leaking
+    // through and redirecting claude to an unmounted location.
+    home: {
+        env_var: `CLAUDE_CONFIG_DIR`,
+        dir: `/home/node/.claude`,
+    },
+
     container_paths: {
         creds: `/home/node/.claude/.credentials.json`,
         config: `/home/node/.claude/settings.json`,

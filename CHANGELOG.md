@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.3 — 2026-04-29
+
+### 🐛 Fixed
+- Codex was reading nothing from babysit's system prompt — the prompt was being written to `${CODEX_HOME}/instructions.md`, a legacy filename current codex no longer honors. The real global-scope path is `${CODEX_HOME}/AGENTS.md` (or `AGENTS.override.md`), so the babysit-generated prompt has been silently dropped on every codex session since v0.3.0. Switched to the correct filename.
+
+### ✨ Added
+- Each agent adapter now declares an `home: { env_var, dir }` block — `CODEX_HOME` for codex, `GEMINI_CLI_HOME` for gemini, `CLAUDE_CONFIG_DIR` for claude, `OPENCODE_CONFIG_DIR` for opencode. `build_docker_command` bakes the env var into the docker run, so babysit has a single source of truth for where the agent reads global instructions / credentials / sessions from. This also stops a stray host-side value from leaking through and redirecting the agent to a path the container never mounts.
+
+### ✅ Tests
+- New `tests/docker.test.js` cases assert that each adapter's home env var is set in the rendered docker command and that the `system_prompt_file` lives under the declared `home.dir`. The codex case explicitly rejects `instructions.md` to lock in the bug fix.
+
 ## 0.3.2 — 2026-04-29
 
 ### 🐛 Fixed

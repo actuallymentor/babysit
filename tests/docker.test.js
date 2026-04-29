@@ -68,8 +68,13 @@ describe( `system-prompt-file hint`, () => {
     // and ephemeral in sandbox mode, so writing the system prompt there silently
     // fails for those modes.
 
-    it( `codex uses ~/.codex/instructions.md (writable in every mode)`, () => {
-        expect( codex.container_paths.system_prompt_file ).toBe( `/home/node/.codex/instructions.md` )
+    it( `codex uses ~/.codex/AGENTS.md (NOT instructions.md — that file is no longer read)`, () => {
+        // Per current OpenAI Codex docs, the global scope reads
+        // AGENTS.override.md then AGENTS.md from CODEX_HOME. The legacy
+        // instructions.md path is silently ignored — writing there meant
+        // babysit's system prompt never reached the model.
+        expect( codex.container_paths.system_prompt_file ).toBe( `/home/node/.codex/AGENTS.md` )
+        expect( codex.container_paths.system_prompt_file ).not.toMatch( /instructions\.md$/ )
         expect( codex.container_paths.system_prompt_file ).not.toMatch( /^\/workspace/ )
     } )
 
@@ -81,6 +86,44 @@ describe( `system-prompt-file hint`, () => {
     it( `opencode uses ~/.config/opencode/AGENTS.md`, () => {
         expect( opencode.container_paths.system_prompt_file ).toBe( `/home/node/.config/opencode/AGENTS.md` )
         expect( opencode.container_paths.system_prompt_file ).not.toMatch( /^\/workspace/ )
+    } )
+
+} )
+
+describe( `agent home env vars`, () => {
+
+    // Each adapter declares an `home` block so build_docker_command can pin
+    // the agent's home/config dir to a known container path — preventing a
+    // host-leaked value from redirecting the agent to an unmounted location
+    // and giving babysit a single source of truth for where global
+    // instructions live.
+
+    it( `codex declares CODEX_HOME pointing at the container codex dir`, () => {
+        expect( codex.home.env_var ).toBe( `CODEX_HOME` )
+        expect( codex.home.dir ).toBe( `/home/node/.codex` )
+    } )
+
+    it( `gemini declares GEMINI_CLI_HOME (parent dir — gemini creates .gemini inside)`, () => {
+        expect( gemini.home.env_var ).toBe( `GEMINI_CLI_HOME` )
+        expect( gemini.home.dir ).toBe( `/home/node` )
+    } )
+
+    it( `opencode declares OPENCODE_CONFIG_DIR pointing at the config dir directly`, () => {
+        expect( opencode.home.env_var ).toBe( `OPENCODE_CONFIG_DIR` )
+        expect( opencode.home.dir ).toBe( `/home/node/.config/opencode` )
+    } )
+
+    it( `claude declares CLAUDE_CONFIG_DIR pointing at /home/node/.claude`, () => {
+        expect( claude.home.env_var ).toBe( `CLAUDE_CONFIG_DIR` )
+        expect( claude.home.dir ).toBe( `/home/node/.claude` )
+    } )
+
+    it( `system_prompt_file lives under the declared home dir for codex/opencode`, () => {
+        // Sanity: writing the system prompt to a path outside the home dir
+        // would be silently ignored once we set the env var, since the agent
+        // would be looking at home_dir + filename instead.
+        expect( codex.container_paths.system_prompt_file.startsWith( codex.home.dir + `/` ) ).toBe( true )
+        expect( opencode.container_paths.system_prompt_file.startsWith( opencode.home.dir + `/` ) ).toBe( true )
     } )
 
 } )
@@ -142,6 +185,25 @@ describe( `build_docker_command`, () => {
         } ) )
 
         expect( cmd ).not.toContain( `BABYSIT_SYSTEM_PROMPT_FILE` )
+
+    } )
+
+    it( `pins each agent's home dir via its own env var`, () => {
+
+        // CODEX_HOME / GEMINI_CLI_HOME / OPENCODE_CONFIG_DIR / CLAUDE_CONFIG_DIR
+        // are baked into the docker run so the agent reads global
+        // instructions from a path babysit controls.
+        expect( build_docker_command( make_options( { agent: codex } ) ) )
+            .toContain( `CODEX_HOME=/home/node/.codex` )
+
+        expect( build_docker_command( make_options( { agent: gemini } ) ) )
+            .toContain( `GEMINI_CLI_HOME=/home/node` )
+
+        expect( build_docker_command( make_options( { agent: opencode } ) ) )
+            .toContain( `OPENCODE_CONFIG_DIR=/home/node/.config/opencode` )
+
+        expect( build_docker_command( make_options( { agent: claude } ) ) )
+            .toContain( `CLAUDE_CONFIG_DIR=/home/node/.claude` )
 
     } )
 

@@ -16,11 +16,20 @@ export const opencode = {
         },
     },
 
+    // OPENCODE_CONFIG_DIR points at the config dir directly (it does NOT
+    // append `.opencode` or similar). Pin to the same XDG-style location
+    // opencode would pick up by default, so the global AGENTS.md and any
+    // user-supplied agents/commands/modes/plugins all resolve from the
+    // same root.
+    home: {
+        env_var: `OPENCODE_CONFIG_DIR`,
+        dir: `/home/node/.config/opencode`,
+    },
+
     container_paths: {
         creds: `/home/node/.local/share/opencode/auth.json`,
-        // Container-local config path — writable in every mode (mudbox makes
-        // /workspace read-only). OpenCode reads its global AGENTS.md from
-        // ~/.config/opencode/.
+        // ${OPENCODE_CONFIG_DIR}/AGENTS.md — container-local so it remains
+        // writable in mudbox / sandbox modes too.
         system_prompt_file: `/home/node/.config/opencode/AGENTS.md`,
     },
 

@@ -16,11 +16,19 @@ export const gemini = {
         },
     },
 
+    // GEMINI_CLI_HOME points at the *parent* directory; gemini creates a
+    // `.gemini/` folder inside it. Pin it to /home/node so the global
+    // GEMINI.md lives at /home/node/.gemini/GEMINI.md inside the container.
+    home: {
+        env_var: `GEMINI_CLI_HOME`,
+        dir: `/home/node`,
+    },
+
     container_paths: {
         creds: null,
-        // Container-local path so it's writable in mudbox / sandbox too.
-        // Gemini reads ~/.gemini/GEMINI.md as global context in addition to any
-        // GEMINI.md in the workspace.
+        // ${GEMINI_CLI_HOME}/.gemini/GEMINI.md — container-local so it stays
+        // writable in mudbox / sandbox too. Gemini reads this as global
+        // context in addition to any GEMINI.md the user keeps in /workspace.
         system_prompt_file: `/home/node/.gemini/GEMINI.md`,
     },
 

@@ -116,6 +116,16 @@ export const build_docker_command = ( options ) => {
     const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`
     flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
 
+    // Pin the agent's home/config directory inside the container. Each agent
+    // exposes its own env var (CODEX_HOME, GEMINI_CLI_HOME, CLAUDE_CONFIG_DIR,
+    // OPENCODE_CONFIG_DIR). Setting it explicitly gives babysit a single
+    // source of truth for where the agent reads global instructions and
+    // credentials from — and stops a stray host-side value from redirecting
+    // the agent to a path we never mount.
+    if( agent.home?.env_var && agent.home?.dir ) {
+        flags.push( `-e`, `${ agent.home.env_var }=${ agent.home.dir }` )
+    }
+
     // For agents that don't accept a system-prompt CLI flag, hand the prompt
     // to the entrypoint via env vars so it can be written to the file the
     // agent expects (e.g. AGENTS.md, GEMINI.md). Skipped for claude.
