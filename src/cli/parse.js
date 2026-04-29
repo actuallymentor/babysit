@@ -43,6 +43,12 @@ export const parse_args = ( argv ) => {
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
 
+    // babysit __monitor <id> — internal verb spawned by cmd_start so the
+    // monitor outlives the foreground process. Not surfaced in --help.
+    if( verb === `__monitor` ) {
+        return { verb: `__monitor`, agent: null, session_id: positionals[1], flags, passthrough: [] }
+    }
+
     // babysit open <id>
     if( verb === `open` ) return { verb: `open`, agent: null, session_id: positionals[1], flags, passthrough: [] }
 

@@ -37,8 +37,8 @@ babysit open <session_id>
 ## How it works
 
 1. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, your credentials passed through, and your workspace mounted at `/workspace`
-2. **Tmux session** — the container runs inside a detached tmux session so you can disconnect and reconnect freely
-3. **Monitor loop** — babysit watches the tmux output and takes actions based on your `babysit.yaml` rules
+2. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open <id>`
+3. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 4. **Credential sync** — host credentials are refreshed in the background so long-running sessions don't lose auth
 
 ## `babysit.yaml`

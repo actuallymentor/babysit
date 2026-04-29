@@ -10,12 +10,16 @@ import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume } from './cli/resume.js'
+import { cmd_monitor } from './cli/monitor.js'
 import { check_dependencies } from './deps/check.js'
 import { run_self_update } from './deps/selfupdate.js'
 
 // Subcommands that need pre-flight (dep check + self-update). The spec says
 // "On any babysit command", but `help` and `--version` are pure metadata reads
-// where pulling images would be surprising — exclude them.
+// where pulling images would be surprising — exclude them. `__monitor` is the
+// background daemon spawned by `cmd_start`; the foreground already ran the
+// pre-flight, and re-running it here would double-pull the image on every
+// session start.
 const PREFLIGHT_VERBS = new Set( [ `start`, `resume`, `list`, `open` ] )
 
 /**
@@ -68,6 +72,10 @@ const main = async () => {
 
     case `open`:
         await cmd_open( cmd )
+        break
+
+    case `__monitor`:
+        await cmd_monitor( cmd )
         break
 
     default:

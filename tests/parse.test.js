@@ -102,4 +102,13 @@ describe( `parse_args`, () => {
         expect( cmd.flags.no_update ).toBe( false )
     } )
 
+    it( `recognises the internal __monitor verb`, () => {
+        // __monitor is the daemon spawned by cmd_start so the supervision loop
+        // outlives the foreground process. Not in --help, but the dispatcher
+        // must still route to it.
+        const cmd = parse_args( [ `__monitor`, `abc-123` ] )
+        expect( cmd.verb ).toBe( `__monitor` )
+        expect( cmd.session_id ).toBe( `abc-123` )
+    } )
+
 } )

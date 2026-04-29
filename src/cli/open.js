@@ -1,7 +1,5 @@
-import { execSync } from 'child_process'
 import { log } from '../utils/log.js'
-import { has_session, list_sessions } from '../tmux/session.js'
-import { TMUX_SOCKET } from '../utils/paths.js'
+import { has_session, list_sessions, attach_session } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
 
 /**
@@ -52,12 +50,15 @@ export const cmd_open = async ( cmd ) => {
 }
 
 /**
- * Exec into a tmux session (replaces current process)
+ * Attach to a tmux session. Delegates to the shared `attach_session` helper
+ * which JSON.stringifies the session name for shell safety — directly
+ * interpolating it would let metacharacters in unusual session names
+ * break out of the tmux argument.
  * @param {string} session_name - Tmux session name
  */
 const attach = ( session_name ) => {
 
     log.info( `Attaching to session: ${ session_name }` )
-    execSync( `tmux -L ${ TMUX_SOCKET } attach -t "${ session_name }"`, { stdio: `inherit` } )
+    attach_session( session_name )
 
 }

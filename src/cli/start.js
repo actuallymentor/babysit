@@ -1,19 +1,15 @@
-import { readFileSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
+import { spawn, execSync } from 'child_process'
 
 import { log } from '../utils/log.js'
-import { ensure_dirs } from '../utils/paths.js'
+import { ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
-import { get_patterns } from '../patterns/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { setup_credentials } from '../credentials/index.js'
 import { build_docker_command } from '../docker/run.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { apply_loop } from '../modes/loop.js'
-import { create_session, make_session_name } from '../tmux/session.js'
-import { start_monitor } from '../babysit/monitor.js'
-import { save_session, update_session, generate_session_id } from '../sessions/store.js'
+import { create_session, make_session_name, has_session } from '../tmux/session.js'
+import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 
 /**
@@ -52,13 +48,18 @@ export const cmd_start = async ( cmd ) => {
     // "idle" tells the statusline there's no active countdown yet.
     write_loop_deadline( `idle` )
 
-    // Apply loop override if --loop flag is set
+    // Apply loop override if --loop flag is set. The detached monitor will
+    // re-apply this when it boots, but doing it here too is harmless and
+    // keeps the rules object internally consistent during the foreground.
     if( flags.loop ) apply_loop( rules, workspace )
 
     // Build system prompt
     const system_prompt = build_system_prompt( mode )
 
-    // Set up credentials
+    // Set up credentials. The foreground owns the initial capture + docker
+    // mount; the detached monitor will set up its own sync interval, so we
+    // stop the foreground's sync as soon as the monitor is spawned to avoid
+    // racing on the tmpfile.
     const { mounts: creds_mounts, sync: creds_sync } = await setup_credentials( agent )
 
     // Get agent-specific extra env
@@ -80,11 +81,13 @@ export const cmd_start = async ( cmd ) => {
         agent_args, creds_mounts, config, extra_env, modifiers,
     } )
 
-    // Create tmux session
+    // Create tmux session (detached — we'll attach the foreground in a moment)
     const session_name = make_session_name( workspace, agent.name )
     await create_session( session_name, docker_command )
 
-    // Generate and save session metadata
+    // Generate and save session metadata before spawning the monitor — the
+    // monitor reads this file to reconstruct config, agent, and tmux session
+    // name, so it must exist before the spawn.
     const babysit_id = generate_session_id()
 
     const session_data = {
@@ -95,47 +98,77 @@ export const cmd_start = async ( cmd ) => {
         pwd: workspace,
         modifiers,
         creds_tmpfile: creds_mounts.find( m => m.type === `volume` )?.source || null,
-        creds_sync_pid: null,
         started_at: new Date().toISOString(),
     }
     save_session( session_data )
 
     log.info( `Session started: ${ agent.name } (${ babysit_id })` )
-    log.info( `Tmux session: ${ session_name }` )
-    log.info( `Attach with: tmux -L babysit attach -t ${ session_name }` )
 
-    // Get agent patterns for monitoring
-    const agent_patterns = get_patterns( agent.name )
+    // Spawn the supervision loop as a detached background process. It re-loads
+    // config + agent state from session metadata and runs `start_monitor`
+    // independently, so it survives the foreground process exiting (which
+    // happens as soon as the user detaches from tmux below).
+    spawn_monitor_daemon( babysit_id )
 
-    // Start the monitor loop (runs until session exits)
-    await start_monitor( {
-        session_name,
-        config,
-        rules,
-        agent_patterns,
-        agent,
-        on_session_id: ( id ) => {
-            update_session( babysit_id, { agent_session_id: id } )
-        },
-        on_exit: () => {
+    // Hand the foreground's credential sync over to the detached monitor.
+    // Both sync intervals would race on the same tmpfile if we left this one
+    // running; the monitor's sync started inside the daemon a moment ago.
+    if( creds_sync ) creds_sync.stop()
 
-            // Stop credential sync daemon
-            if( creds_sync ) creds_sync.stop()
+    // Hand the user's terminal over to tmux. Blocks until they detach
+    // (Ctrl+B d) or the agent exits and the session terminates.
+    log.info( `Attaching to tmux session: ${ session_name }` )
+    try {
+        execSync(
+            `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`,
+            { stdio: `inherit` }
+        )
+    } catch ( e ) {
+        // tmux exits non-zero on certain detach scenarios — that's normal
+        log.debug( `tmux attach exited: ${ e.message }` )
+    }
 
-            // Load the final session data to get the captured agent_session_id
-            const final_data = { ...session_data }
-            try {
-                const stored = readFileSync(
-                    join( homedir(), `.babysit`, `sessions`, `${ babysit_id }.json` ),
-                    `utf-8`
-                )
-                Object.assign( final_data, JSON.parse( stored ) )
-            } catch { /* ignore */ }
+    // Tell the user how to come back to or resume this session
+    if( await has_session( session_name ) ) {
+        console.log( `\nDetached. Re-attach with \`babysit open ${ babysit_id }\`` )
+    } else {
+        // Session ended. The detached monitor would have updated the
+        // metadata with the agent's own session id by now, so prefer that
+        // (it's the id the agent's CLI accepts for `--resume`).
+        const final = load_session( babysit_id ) || session_data
+        const resume_id = final.agent_session_id || babysit_id
+        console.log( `\nSession ended. Resume with \`babysit ${ agent.name } resume ${ resume_id }\`` )
+    }
 
-            const resume_id = final_data.agent_session_id || babysit_id
-            console.log( `\nTo resume this session, run \`babysit ${ agent.name } resume ${ resume_id }\`` )
+}
 
-        },
+/**
+ * Spawn `babysit __monitor <id>` as a detached background process.
+ * Works for both `node src/index.js` and bun-compiled binaries by detecting
+ * which one is running and re-spawning accordingly.
+ * @param {string} babysit_id - The session id to monitor
+ */
+const spawn_monitor_daemon = ( babysit_id ) => {
+
+    // Bun-compiled binaries set process.argv[1] to a synthetic /$bunfs path;
+    // a real node script puts the .js file there. process.execPath points at
+    // the binary or `node` respectively in both cases — re-spawning it with
+    // the right args runs the same babysit code path.
+    const argv1 = process.argv[1] || ``
+    const is_compiled = argv1.startsWith( `/$bunfs` ) || argv1 === ``
+
+    const cmd = process.execPath
+    const args = is_compiled
+        ? [ `__monitor`, babysit_id ]
+        : [ argv1, `__monitor`, babysit_id ]
+
+    const child = spawn( cmd, args, {
+        detached: true,
+        stdio: `ignore`,
+        env: { ...process.env },
     } )
+
+    child.unref()
+    log.debug( `Monitor daemon spawned (pid ${ child.pid })` )
 
 }

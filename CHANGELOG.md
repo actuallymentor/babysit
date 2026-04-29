@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 — 2026-04-29
+
+### ✨ Added
+- **Auto-attach to tmux on session start.** `babysit <agent>` now drops the user straight into the supervised tmux session instead of leaving them at the babysit cli prompt with the monitor running in the foreground. The supervision loop is forked into a detached `babysit __monitor <id>` daemon that outlives the foreground, so detaching with Ctrl+B d exits the cli but keeps the agent + supervisor running. Re-attach later with `babysit open <id>`. This is what the spec ("the user can detach and re-attach to the session as needed") implied — the previous flow forced the user into a second terminal to actually see the agent.
+- The detached monitor sets up its own credential sync loop, so OAuth tokens keep refreshing after the user detaches. The foreground sync is stopped on hand-off to avoid both processes racing on the same tmpfile.
+
+### 🐛 Fixed
+- **`babysit resume <id>` ignored the original session's working directory.** `cmd_resume` delegated to `cmd_start` without `chdir`-ing first, so resuming from a different cwd would load whatever `babysit.yaml` happened to be next to the user (or write a fresh default), and `./IDLE.md` / `./LOOP.md` would resolve relative to the wrong place. Now restores `session.pwd` before re-launching, with a warning if the directory has been deleted in the meantime.
+- **`config.commands` actions blocked the supervisor while running.** The action executor used `execSync`, which freezes Node's event loop — a slow `notify_command` (curl, network) would suspend pane capture and rule evaluation for the whole duration. Switched to async `spawn` so the monitor keeps ticking.
+- **`cmd_open` interpolated session names directly into a shell string.** Names with shell metacharacters (rare but possible if a workspace path is unusual) could break out of the tmux argument. Now delegates to the existing `attach_session` helper, which JSON.stringifies the name for shell safety.
+
+### 🔥 Removed
+- `creds_sync_pid` field from session metadata. Never populated — credential sync runs as a `setInterval` inside the babysit process, not as a child PID — so the field was dead weight that mostly served to mislead anyone reading the JSON.
+
+### ✅ Tests
+- New `parse.test.js` case locks in the internal `__monitor` verb so future refactors can't silently drop it from the dispatcher.
+- New `tests/resume.test.js` covers the chdir behaviour: cmd_resume must restore `session.pwd` before delegating, and must skip the chdir (with a warning) when the original directory has been deleted.
+
 ## 0.4.0 — 2026-04-29
 
 ### 🐛 Fixed

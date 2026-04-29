@@ -1,4 +1,4 @@
-import { execSync } from 'child_process'
+import { spawn } from 'child_process'
 import { wait } from 'mentie'
 
 import { log } from '../utils/log.js'
@@ -35,11 +35,14 @@ export const execute_action = async ( session_name, action, config ) => {
         return
     }
 
-    // Named command from config.commands
+    // Named command from config.commands. Run via async spawn so a slow
+    // command (curl notification, network call, etc.) doesn't freeze the
+    // monitor loop — execSync would block the Node event loop, halting
+    // pane capture and rule evaluation for the duration of the command.
     if( config.commands?.[ action_str ] ) {
         log.info( `Action: running command '${ action_str }'` )
         try {
-            execSync( config.commands[ action_str ], { stdio: `inherit`, shell: true } )
+            await run_shell_command( config.commands[ action_str ] )
         } catch ( e ) {
             log.error( `Command '${ action_str }' failed: ${ e.message }` )
         }
@@ -66,6 +69,25 @@ export const execute_action = async ( session_name, action, config ) => {
     await send_text( session_name, action_str )
 
 }
+
+/**
+ * Run a shell command non-blocking. Resolves on success, rejects on non-zero exit.
+ * Uses spawn over execSync to keep the Node event loop free for the monitor.
+ * @param {string} command - Shell command string
+ * @returns {Promise<void>}
+ */
+const run_shell_command = ( command ) => new Promise( ( resolve, reject ) => {
+
+    const child = spawn( command, { stdio: `inherit`, shell: true } )
+
+    child.on( `close`, code => {
+        if( code === 0 ) resolve()
+        else reject( new Error( `exit ${ code }` ) )
+    } )
+
+    child.on( `error`, reject )
+
+} )
 
 /**
  * Load and execute a markdown file as segmented instructions

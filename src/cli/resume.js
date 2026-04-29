@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { load_session } from '../sessions/store.js'
 import { has_session } from '../tmux/session.js'
@@ -40,6 +41,17 @@ export const cmd_resume = async ( cmd ) => {
             Object.entries( flags ).filter( ( [ , value ] ) => value )
         )
         const merged_flags = { ...rebuild_flags( session.modifiers ), ...explicit_user_flags }
+
+        // chdir to the session's original working directory so cmd_start picks up
+        // the right babysit.yaml and resolves cwd-relative paths (./IDLE.md,
+        // ./LOOP.md) the same way the original session did. Otherwise running
+        // `babysit resume <id>` from /home loads the wrong config.
+        if( session.pwd && existsSync( session.pwd ) ) {
+            log.debug( `Restoring cwd: ${ session.pwd }` )
+            process.chdir( session.pwd )
+        } else if( session.pwd ) {
+            log.warn( `Original session pwd no longer exists: ${ session.pwd }` )
+        }
 
         await cmd_start( {
             verb: `resume`,
