@@ -54,12 +54,19 @@ RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv \
     && mv /root/.local/bin/uvx /usr/local/bin/uvx 2>/dev/null || true
 
-# Non-root user with passwordless sudo and required directories
+# Non-root user with passwordless sudo and required directories.
+# Pre-create every dir we plan to bind-mount into so docker's auto-mkdir
+# doesn't leave them root-owned (which would block credential refreshes
+# and prompt-file writes done by the `node` user).
 RUN mkdir -p \
         /home/node/.npm-global \
         /home/node/.claude/projects \
         /home/node/.claude/plans \
         /home/node/.claude/todos \
+        /home/node/.codex \
+        /home/node/.gemini \
+        /home/node/.config/opencode \
+        /home/node/.local/share/opencode \
         /home/node/.agents \
         /workspace \
     && chown -R node:node /home/node /workspace \

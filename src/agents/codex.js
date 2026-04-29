@@ -8,11 +8,17 @@ export const codex = {
     bin: `codex`,
 
     credentials: {
+        // Codex caches OAuth credentials at `${CODEX_HOME}/auth.json` (the
+        // ChatGPT-login flow writes tokens here). API-key users can also set
+        // CODEX_API_KEY / OPENAI_API_KEY — try the file first because it is
+        // what `codex auth login` populates by default.
         darwin: {
+            file: `~/.codex/auth.json`,
             env_key: `CODEX_API_KEY`,
             fallback_env: `OPENAI_API_KEY`,
         },
         linux: {
+            file: `~/.codex/auth.json`,
             env_key: `CODEX_API_KEY`,
             fallback_env: `OPENAI_API_KEY`,
         },
@@ -30,7 +36,9 @@ export const codex = {
     },
 
     container_paths: {
-        creds: null,
+        // Mirror `${CODEX_HOME}/auth.json` from host into container so OAuth
+        // sessions started with `codex auth login` flow through.
+        creds: `/home/node/.codex/auth.json`,
         // Codex global instructions live at `${CODEX_HOME}/AGENTS.md`
         // (or AGENTS.override.md, but plain AGENTS.md is the canonical name).
         // The older `instructions.md` form is no longer honored — using it

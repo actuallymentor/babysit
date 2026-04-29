@@ -19,8 +19,8 @@ Last verified against vendor docs: April 2026.
 - **Resume**: `codex resume <id>` for interactive (what we use), `codex exec resume <id>` for non-interactive
 - **Model**: `--model gpt-5.5` (as of April 2026; `gpt-5.4` is the API-key fallback if 5.5 isn't accessible)
 - **Effort**: `-c model_reasoning_effort="high"` (NOT bare `reasoning_effort` — that key is silently ignored). Values: `minimal`, `low`, `medium`, `high`, `xhigh` (xhigh requires 5.1-codex-max / 5.2-codex)
-- **Creds**: `CODEX_API_KEY` or `OPENAI_API_KEY` env var
-- **Home env**: `CODEX_HOME` — default `~/.codex`, controls where global AGENTS.md / config / sessions live
+- **Creds**: `~/.codex/auth.json` for ChatGPT-OAuth login (default flow). `CODEX_API_KEY` / `OPENAI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively on top so users can override.
+- **Home env**: `CODEX_HOME` — default `~/.codex`, controls where global AGENTS.md / config / sessions / auth.json live
 
 ## Gemini CLI
 - **Binary**: `gemini`
@@ -29,7 +29,7 @@ Last verified against vendor docs: April 2026.
 - **Resume**: `gemini --resume latest` or `--resume <uuid>` or `--resume <session_index>`
 - **Model**: `--model gemini-pro-latest` (alias resolves to gemini-3.1-pro as of March 2026; rolls forward automatically)
 - **Effort**: no equivalent
-- **Creds**: `GEMINI_API_KEY` env var or OAuth
+- **Creds**: `~/.gemini/oauth_creds.json` for the Google-OAuth login flow. `GEMINI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively.
 - **Home env**: `GEMINI_CLI_HOME` — default `$HOME`. Gemini creates a `.gemini/` folder *inside* this dir, so set it to the parent (we use `/home/node`). Not to be confused with `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` / `GEMINI_CLI_SYSTEM_SETTINGS_PATH`, which point at single files.
 
 ## OpenCode
@@ -38,7 +38,7 @@ Last verified against vendor docs: April 2026.
 - **System prompt**: `AGENTS.md` (project-local). Babysit writes `${OPENCODE_CONFIG_DIR}/AGENTS.md` via entrypoint.
 - **Resume**: `opencode --session <id>` (or `-c` for continue)
 - **Model**: `--model provider/model` — depends on user's auth.json provider, no sensible default to inject
-- **Creds**: `~/.local/share/opencode/auth.json`
+- **Creds**: `~/.local/share/opencode/auth.json` on every platform (opencode does NOT use the macOS Keychain — beware adapters that only check Keychain on darwin, they will silently drop opencode creds).
 - **Install location**: `~/.local/bin/opencode` (curl install) or `~/.opencode/bin/opencode` (alternate). Container Dockerfile puts both on PATH.
 - **Home env**: `OPENCODE_CONFIG_DIR` — points at the config dir directly (no `.opencode` suffix). Default is `~/.config/opencode`. Known bug upstream: when set, the global AGENTS.md inside it can be ignored if `~/.config/opencode/AGENTS.md` also exists (issues #7003, #11534) — we sidestep this by pinning OPENCODE_CONFIG_DIR to that same path inside the container.
 

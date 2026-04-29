@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 — 2026-04-29
+
+### 🐛 Fixed
+- **Three credential adapters silently dropped working host logins.** Each surfaced as "babysit launches the agent unauthenticated even though I logged in on the host" — easy to mistake for a network issue.
+  - `opencode` on macOS: the darwin layer only handled `keychain_service` + `fallback_file`, so an adapter that declared just `file:` (which is exactly opencode's setup — opencode doesn't use Keychain) was silently skipped. Added a standalone `file:` branch so file-only credentials work on darwin.
+  - `codex` OAuth: only `CODEX_API_KEY` / `OPENAI_API_KEY` env vars were forwarded. Anyone who'd run `codex auth login` (which writes `~/.codex/auth.json`) had no creds in the container. Added the file path to the codex adapter and a container target at `/home/node/.codex/auth.json`.
+  - `gemini` OAuth: same pattern — only `GEMINI_API_KEY` was passed. Added `~/.gemini/oauth_creds.json` so OAuth-authed users now flow through.
+- **Pre-flight token rotation now actually runs.** The sir-claudius lesson was documented in `.notes/GOTCHAS.md` but the code went detect → capture without the rotation step, which meant a near-expiry token would ride the container for 5 min until the sync daemon noticed. Both darwin and linux now invoke `<agent> --version` on the host between detect and capture so the agent's own refresh logic fires before we copy the file.
+- **Claude crashed on first session-state write in `--sandbox`.** `~/.claude/{projects,plans,todos}` were bind-mounted read-only when sandbox was set; claude tried to write session JSON on startup and aborted. Now those mounts are skipped entirely in sandbox mode so claude writes ephemerally inside the container.
+- **`bun.lock` (Bun 1.2+ text format) wasn't detected as a Node project signal.** Only the legacy `bun.lockb` binary form triggered `node_modules` volume isolation, so newer projects were getting host bind-mounts and the cross-platform binary mismatch the volume isolation was supposed to prevent.
+
+### ✨ Added
+- Container image now pre-creates `/home/node/.codex`, `/home/node/.gemini`, `/home/node/.config/opencode`, and `/home/node/.local/share/opencode` with `node:node` ownership. Without these, docker auto-creates the parent dirs as root when the credential file mounts land, blocking the `node` user from writing refreshed tokens or prompt files.
+- `mount_credential_file` helper in `credentials/darwin.js` shares the tmpfile + sync setup between the keychain-fallback path and the standalone-file path.
+
+### ✅ Tests
+- New `agents.test.js` cases cover credential coverage per agent: codex/gemini OAuth file declared, opencode declares its file on darwin (no Keychain), each adapter declares an absolute container target for `creds`.
+- New `docker.test.js` cases assert sandbox skips the writable claude dirs, and `detect_dependency_volumes` recognises `bun.lock`.
+
 ## 0.3.3 — 2026-04-29
 
 ### 🐛 Fixed

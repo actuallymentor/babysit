@@ -219,4 +219,45 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `does not bind-mount claude's writable session dirs in sandbox mode`, () => {
+
+        // RO-mounting projects/plans/todos in sandbox would crash claude on its
+        // first session-state write — sandbox should let claude write
+        // ephemerally inside the container instead.
+        const cmd = build_docker_command( make_options( {
+            agent: claude,
+            mode: { sandbox: true },
+            modifiers: [ `sandbox` ],
+        } ) )
+
+        expect( cmd ).not.toContain( `/home/node/.claude/projects` )
+        expect( cmd ).not.toContain( `/home/node/.claude/plans` )
+        expect( cmd ).not.toContain( `/home/node/.claude/todos` )
+
+    } )
+
+} )
+
+describe( `dependency-volume detection`, () => {
+
+    // Importing inside the test keeps the module lookup explicit
+    it( `detects bun.lock (Bun 1.2+ text format) as a Node project`, async () => {
+
+        const { detect_dependency_volumes } = await import( `../src/docker/volumes.js` )
+        const { mkdtempSync, writeFileSync, rmSync } = await import( `fs` )
+        const { join: pjoin } = await import( `path` )
+        const { tmpdir: ostmp } = await import( `os` )
+
+        const dir = mkdtempSync( pjoin( ostmp(), `babysit-buntest-` ) )
+        try {
+            writeFileSync( pjoin( dir, `bun.lock` ), `# bun lockfile` )
+            const volumes = detect_dependency_volumes( dir )
+            const node_volume = volumes.find( v => v.container_path === `/workspace/node_modules` )
+            expect( node_volume ).toBeDefined()
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
 } )

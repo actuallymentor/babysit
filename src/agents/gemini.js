@@ -8,10 +8,16 @@ export const gemini = {
     bin: `gemini`,
 
     credentials: {
+        // Gemini's `auth login` flow caches OAuth tokens at
+        // `~/.gemini/oauth_creds.json`. API-key users get GEMINI_API_KEY via
+        // env. Try the file first since it's what the OAuth flow writes by
+        // default; the env path stays available as a fallback / override.
         darwin: {
+            file: `~/.gemini/oauth_creds.json`,
             env_key: `GEMINI_API_KEY`,
         },
         linux: {
+            file: `~/.gemini/oauth_creds.json`,
             env_key: `GEMINI_API_KEY`,
         },
     },
@@ -25,7 +31,9 @@ export const gemini = {
     },
 
     container_paths: {
-        creds: null,
+        // Bind-mount oauth_creds.json into the container so OAuth sessions
+        // started on the host flow through. Path matches gemini's own default.
+        creds: `/home/node/.gemini/oauth_creds.json`,
         // ${GEMINI_CLI_HOME}/.gemini/GEMINI.md — container-local so it stays
         // writable in mudbox / sandbox too. Gemini reads this as global
         // context in addition to any GEMINI.md the user keeps in /workspace.

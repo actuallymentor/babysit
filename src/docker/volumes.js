@@ -3,8 +3,9 @@ import { join } from 'path'
 import { createHash } from 'crypto'
 import { log } from '../utils/log.js'
 
-// Signals that indicate a Node.js project
-const NODE_SIGNALS = [ `package.json`, `node_modules`, `.nvmrc`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lockb` ]
+// Signals that indicate a Node.js project. `bun.lock` (text) is the format used
+// by Bun 1.2+; `bun.lockb` is the legacy binary form. Detect both.
+const NODE_SIGNALS = [ `package.json`, `node_modules`, `.nvmrc`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb` ]
 
 // Signals that indicate a Python project
 const PYTHON_SIGNALS = [ `requirements.txt`, `pyproject.toml`, `Pipfile`, `setup.py`, `.venv`, `venv` ]

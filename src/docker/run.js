@@ -145,17 +145,24 @@ export const build_docker_command = ( options ) => {
     // Claude-specific mounts
     if( agent.name === `claude` ) {
 
-        const claude_dirs = [
-            [ `${ home }/.claude/projects`, `/home/node/.claude/projects` ],
-            [ `${ home }/.claude/plans`, `/home/node/.claude/plans` ],
-            [ `${ home }/.claude/todos`, `/home/node/.claude/todos` ],
-        ]
+        // projects/plans/todos hold session state claude WRITES to. RO-mounting
+        // them in sandbox would crash claude on first write — and the host
+        // shouldn't be touched in sandbox mode anyway. Skip these mounts in
+        // sandbox so claude writes ephemerally inside the container.
+        if( !mode.sandbox ) {
 
-        for( const [ host, container ] of claude_dirs ) {
-            if( existsSync( host ) ) {
-                const mount_mode = mode.sandbox ? `ro` : `rw`
-                flags.push( `-v`, `${ host }:${ container }:${ mount_mode }` )
+            const claude_dirs = [
+                [ `${ home }/.claude/projects`, `/home/node/.claude/projects` ],
+                [ `${ home }/.claude/plans`, `/home/node/.claude/plans` ],
+                [ `${ home }/.claude/todos`, `/home/node/.claude/todos` ],
+            ]
+
+            for( const [ host_path, container_path ] of claude_dirs ) {
+                if( existsSync( host_path ) ) {
+                    flags.push( `-v`, `${ host_path }:${ container_path }` )
+                }
             }
+
         }
 
         // Claude settings — merge host's settings with the babysit statusline override.
@@ -166,13 +173,13 @@ export const build_docker_command = ( options ) => {
             flags.push( `-v`, `${ settings_tmpfile }:/home/node/.claude/settings.json` )
         }
 
-        // Claude CLAUDE.md
+        // Claude CLAUDE.md (read-only metadata, safe to mount in any mode)
         const claude_md = join( home, `.claude`, `CLAUDE.md` )
         if( existsSync( claude_md ) ) {
             flags.push( `-v`, `${ claude_md }:/home/node/.claude/CLAUDE.md:ro` )
         }
 
-        // Claude skills
+        // Claude skills (read-only)
         const skills_dir = join( home, `.claude`, `skills` )
         if( existsSync( skills_dir ) ) {
             flags.push( `-v`, `${ skills_dir }:/home/node/.claude/skills:ro` )
