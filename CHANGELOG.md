@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1 — 2026-04-29
+
+### 🐛 Fixed
+- **Rules with `timeout:` never fired while the agent was busy.** The monitor was gating non-idle rules (literal/regex/plan/choice) on whole-pane `idle_seconds`, which meant a `- on: /error/i\n  timeout: 05:00` rule would only ever fire if the *entire* pane went silent for 5 minutes — exactly the case the user already gets from `on: idle`. The spec is "the match is the latest seen output for longer than the timeout" — i.e. time the *match* has persisted, regardless of unrelated output churn. Now tracks `first_matched_at` per rule and gates on that, so a busy agent that's been showing an error for 5 minutes does trip the notify rule. Idle rules are unchanged because their timing is already correct via `IdleTracker`.
+- **Resume-hint wording now matches the spec literally** — `"To resume this session, run \`babysit resume <session_id>\`"` instead of the previous `"Session ended. Resume with \`babysit <agent> resume <id>\`"`. Both forms work, but the spec calls out the bare-resume form (which looks the agent up from session metadata) as the canonical one.
+
+### ✨ Added
+- **Container parity with sir-claudius's apt set.** Spec calls for "the dependencies that sir-claudius has in the image as well"; we were missing `less`, `shellcheck`, `sqlite3`, `tree`, `unzip`, `gh` (GitHub CLI), and `scc` (LOC counter). Added all seven and refreshed `AGENTS.md` so the container reference doc surfaces them.
+- `should_fire_rule` is now exported from `src/babysit/monitor.js`. Splitting the gate logic out of the monitor loop made it unit-testable; the new `tests/monitor.test.js` (12 cases) exercises each rule type and the per-rule timer behaviour.
+
 ## 0.5.0 — 2026-04-29
 
 ### ✨ Added

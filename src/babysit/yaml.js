@@ -93,6 +93,14 @@ const parse_rule = ( raw_rule ) => {
         on: parse_on( on_value ),
         do: do_value,
         timeout_s: timeout ? parse_timeout( timeout ) : null,
+
+        // Set when the monitor sees a rule's match condition flip from false to true.
+        // Cleared whenever the match goes false again, so the per-rule "has been
+        // visible for X seconds" check re-arms cleanly across flap cycles.
+        first_matched_at: null,
+
+        // Last-fire timestamp for the per-rule debounce that suppresses
+        // double-fires from TUI redraw flicker.
         last_fired_at: 0,
     }
 

@@ -3,7 +3,10 @@
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim
 
-# System dependencies — matches sir-claudius + extras for multi-agent support
+# System dependencies — matches the sir-claudius image (per spec) plus extras
+# for multi-agent support. Tools added on top of sir-claudius are bun-style
+# build chain bits + extra editors; everything else mirrors sir-claudius so
+# agents transitioning between the two see the same toolset.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Build tools
     gcc g++ make build-essential \
@@ -14,13 +17,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # CLI essentials
     sudo curl wget jq tmux openssh-client \
     openssl gnupg ca-certificates \
-    rsync tar zip gzip xz-utils zstd patch \
+    rsync tar zip unzip gzip xz-utils zstd patch \
     # Debugging
     htop strace lsof procps \
     # Network
     netcat-openbsd dnsutils iproute2 iputils-ping \
-    # Editors
-    vim nano \
+    # Editors / pagers
+    vim nano less \
+    # Agent-friendly extras (sir-claudius parity)
+    shellcheck sqlite3 tree \
+    && rm -rf /var/lib/apt/lists/*
+
+# GitHub CLI — agents working in repos need `gh` for PR/issue/auth flows.
+# Installed via the official packages repo so we get arch-correct builds.
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Modern CLI tools via binary download (run as root)
@@ -47,7 +62,11 @@ RUN set -eux; \
     YQ_VERSION="4.44.6"; \
     if [ "$ARCH" = "amd64" ]; then YQ_ARCH="amd64"; else YQ_ARCH="arm64"; fi; \
     curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_${YQ_ARCH}" -o /usr/local/bin/yq \
-    && chmod +x /usr/local/bin/yq
+    && chmod +x /usr/local/bin/yq; \
+    # scc — fast LOC counter (sir-claudius parity, frequently used by agents to size codebases)
+    if [ "$ARCH" = "amd64" ]; then SCC_ARCH="x86_64"; else SCC_ARCH="arm64"; fi; \
+    curl -fsSL "https://github.com/boyter/scc/releases/latest/download/scc_Linux_${SCC_ARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin scc
 
 # Python uv (fast pip replacement) — install system-wide
 RUN curl -fsSL https://astral.sh/uv/install.sh | sh \

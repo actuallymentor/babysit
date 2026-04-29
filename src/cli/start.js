@@ -128,16 +128,20 @@ export const cmd_start = async ( cmd ) => {
         log.debug( `tmux attach exited: ${ e.message }` )
     }
 
-    // Tell the user how to come back to or resume this session
+    // Tell the user how to come back to or resume this session.
+    // Wording for the dead-session case mirrors the spec literally:
+    //   "To resume this session, run `babysit resume <session_id>`"
+    // The bare `babysit resume <id>` form looks the agent up from session
+    // metadata, so we don't need to pre-pend the agent name.
     if( await has_session( session_name ) ) {
         console.log( `\nDetached. Re-attach with \`babysit open ${ babysit_id }\`` )
     } else {
-        // Session ended. The detached monitor would have updated the
-        // metadata with the agent's own session id by now, so prefer that
-        // (it's the id the agent's CLI accepts for `--resume`).
+        // Prefer the agent's own session id when the daemon captured it —
+        // that's what the agent's CLI accepts for its native --resume flag,
+        // and load_session knows how to resolve either form back to the record.
         const final = load_session( babysit_id ) || session_data
         const resume_id = final.agent_session_id || babysit_id
-        console.log( `\nSession ended. Resume with \`babysit ${ agent.name } resume ${ resume_id }\`` )
+        console.log( `\nTo resume this session, run \`babysit resume ${ resume_id }\`` )
     }
 
 }

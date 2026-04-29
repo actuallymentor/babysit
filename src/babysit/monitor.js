@@ -11,7 +11,54 @@ import { write_loop_deadline } from '../statusline/render.js'
 const POLL_INTERVAL_MS = 1_000
 
 // Debounce between consecutive fires of the same rule (sir-claudius lesson: redraw flicker)
-const DEBOUNCE_MS = 3_000
+export const DEBOUNCE_MS = 3_000
+
+/**
+ * Decide whether a rule should fire on this tick. Mutates `rule.first_matched_at`
+ * to track when the match condition first became true; the monitor calls this
+ * once per rule per tick, in order, and fires the first one to return true.
+ *
+ * Splitting this out of the monitor loop lets us unit-test the gate logic
+ * (debounce + first-match timing) without standing up a tmux session.
+ *
+ * @param {Object} rule - Parsed rule with on/timeout_s/last_fired_at/first_matched_at
+ * @param {Object} context - { output, idle_seconds, agent_patterns, config }
+ * @param {number} now - `Date.now()` for this tick
+ * @returns {boolean} True if the action should fire this tick
+ */
+export const should_fire_rule = ( rule, context, now ) => {
+
+    // Per-rule debounce — suppresses TUI redraw flicker from re-firing the same rule
+    if( now - rule.last_fired_at < DEBOUNCE_MS ) return false
+
+    const matches = evaluate_rule( rule, context )
+
+    // Match went false → re-arm the visibility timer so a flapping pattern
+    // doesn't get credit for past matches it isn't currently in.
+    if( !matches ) {
+        rule.first_matched_at = null
+        return false
+    }
+
+    // For idle rules, evaluate_rule already gates on idle_seconds — no extra
+    // visibility check needed. For all other rule types, the spec says the
+    // match must be the latest seen output FOR LONGER THAN THE TIMEOUT, which
+    // means timing the persistence of the match itself, not whole-pane idle.
+    if( rule.on.type !== `idle` && rule.timeout_s ) {
+
+        if( !rule.first_matched_at ) {
+            rule.first_matched_at = now
+            return false
+        }
+
+        const elapsed_s = ( now - rule.first_matched_at ) / 1_000
+        if( elapsed_s < rule.timeout_s ) return false
+
+    }
+
+    return true
+
+}
 
 /**
  * Start the babysit monitoring loop
@@ -91,33 +138,23 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
 
         for( const rule of rules ) {
 
-            // Skip if debounce period hasn't elapsed
-            if( now - rule.last_fired_at < DEBOUNCE_MS ) continue
+            if( !should_fire_rule( rule, context, now ) ) continue
 
-            // Check timeout override — for non-idle rules, require the output to be "stable"
-            // meaning the match has been visible for at least timeout_s seconds
-            if( rule.on.type !== `idle` && rule.timeout_s ) {
-                if( idle_seconds < rule.timeout_s ) continue
+            log.info( `Rule matched: on=${ rule.on.type }${ rule.on.value ? ` (${ rule.on.value })` : `` }` )
+            rule.last_fired_at = now
+            rule.first_matched_at = null  // re-arm for the next cycle
+
+            try {
+                await execute_action( session_name, rule.do, config )
+            } catch ( e ) {
+                log.error( `Action failed: ${ e.message }` )
             }
 
-            if( evaluate_rule( rule, context ) ) {
+            // Reset idle tracker after firing an action (we just sent input)
+            idle_tracker.reset()
 
-                log.info( `Rule matched: on=${ rule.on.type }${ rule.on.value ? ` (${ rule.on.value })` : `` }` )
-                rule.last_fired_at = now
-
-                try {
-                    await execute_action( session_name, rule.do, config )
-                } catch ( e ) {
-                    log.error( `Action failed: ${ e.message }` )
-                }
-
-                // Reset idle tracker after firing an action (we just sent input)
-                idle_tracker.reset()
-
-                // First match wins — stop evaluating further rules
-                break
-
-            }
+            // First match wins — stop evaluating further rules
+            break
 
         }
 

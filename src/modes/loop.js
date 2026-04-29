@@ -38,6 +38,7 @@ export const apply_loop = ( rules, workspace = process.cwd() ) => {
         on: { type: `idle` },
         do: loop_action,
         timeout_s: null,
+        first_matched_at: null,
         last_fired_at: 0,
     }
 
