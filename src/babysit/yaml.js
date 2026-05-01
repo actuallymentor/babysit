@@ -74,7 +74,8 @@ export const load_config = ( dir = process.cwd() ) => {
     const config = { ...DEFAULT_CONFIG, ... parsed.config || {}  }
 
     // Parse the rules array
-    const rules = ( parsed.babysit || [] ).map( parse_rule )
+    const raw_rules = Array.isArray( parsed.babysit ) ? parsed.babysit : []
+    const rules = raw_rules.map( parse_rule )
 
     return { config, rules }
 

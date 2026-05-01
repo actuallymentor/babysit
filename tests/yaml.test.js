@@ -69,6 +69,17 @@ babysit:
         expect( rules.length ).toBe( 1 )
     } )
 
+    it( `treats a non-array babysit section as no rules`, () => {
+        writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
+config: {}
+babysit:
+    on: idle
+    do: "keep going"
+` )
+        const { rules } = load_config( tmpdir_path )
+        expect( rules ).toEqual( [] )
+    } )
+
     it( `parses literal string on: values`, () => {
         writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
 config: {}
