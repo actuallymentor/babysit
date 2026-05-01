@@ -43,9 +43,13 @@ export const opencode = {
         effort: null,
     },
 
-    // OpenCode runs whatever model the user has authenticated with — no default
-    // override here so the user's own provider/model selection wins.
-    defaults: {},
+    // gpt-5.5-pro (opencode's built-in default) is rejected by
+    // ChatGPT-account auth — see GOTCHAS.md #36. openai/gpt-5.5 works
+    // for both OAuth and API-key paths; non-openai providers override
+    // via `babysit opencode --model anthropic/claude-opus-4-7`.
+    defaults: {
+        model: `openai/gpt-5.5`,
+    },
 
     session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
 

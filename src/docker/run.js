@@ -1,11 +1,10 @@
-import { homedir } from 'os'
-import { join } from 'path'
 import { existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
 import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
-import { build_claude_settings_tmpfile, LOOP_DEADLINE_PATH } from '../statusline/render.js'
+import { LOOP_DEADLINE_PATH } from '../statusline/render.js'
+import { get_extra_mounts } from '../agents/setup.js'
 
 /**
  * Single-quote a value for safe inclusion in a `sh -c` command string.
@@ -45,7 +44,6 @@ const shell_quote = ( value ) => {
 export const build_docker_command = ( options ) => {
 
     const { agent, workspace, mode, system_prompt, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
-    const home = homedir()
     const flags = []
 
     // Base docker run flags
@@ -142,49 +140,22 @@ export const build_docker_command = ( options ) => {
         flags.push( `-e`, `${ key }=${ value }` )
     }
 
-    // Claude-specific mounts
-    if( agent.name === `claude` ) {
+    // Per-agent extra config mounts. Each agent's setup.js builder returns
+    // a list of `{ host, container, ro? }` tmpfile mounts that bypass
+    // first-run dialogs (claude .claude.json, codex config.toml, gemini
+    // settings.json + trustedFolders, etc). See src/agents/setup.js.
+    for( const m of get_extra_mounts( agent.name )() ) {
+        const target = m.ro ? `${ m.container }:ro` : m.container
+        flags.push( `-v`, `${ m.host }:${ target }` )
+    }
 
-        // projects/plans/todos hold session state claude WRITES to. RO-mounting
-        // them in sandbox would crash claude on first write — and the host
-        // shouldn't be touched in sandbox mode anyway. Skip these mounts in
-        // sandbox so claude writes ephemerally inside the container.
-        if( !mode.sandbox ) {
-
-            const claude_dirs = [
-                [ `${ home }/.claude/projects`, `/home/node/.claude/projects` ],
-                [ `${ home }/.claude/plans`, `/home/node/.claude/plans` ],
-                [ `${ home }/.claude/todos`, `/home/node/.claude/todos` ],
-            ]
-
-            for( const [ host_path, container_path ] of claude_dirs ) {
-                if( existsSync( host_path ) ) {
-                    flags.push( `-v`, `${ host_path }:${ container_path }` )
-                }
-            }
-
-        }
-
-        // Claude settings — merge host's settings with the babysit statusline override.
-        // We mount a tmpfile (not the host file) so we never mutate the user's settings.json.
-        const host_settings_path = join( home, `.claude`, `settings.json` )
-        const settings_tmpfile = build_claude_settings_tmpfile( host_settings_path )
-        if( settings_tmpfile ) {
-            flags.push( `-v`, `${ settings_tmpfile }:/home/node/.claude/settings.json` )
-        }
-
-        // Claude CLAUDE.md (read-only metadata, safe to mount in any mode)
-        const claude_md = join( home, `.claude`, `CLAUDE.md` )
-        if( existsSync( claude_md ) ) {
-            flags.push( `-v`, `${ claude_md }:/home/node/.claude/CLAUDE.md:ro` )
-        }
-
-        // Claude skills (read-only)
-        const skills_dir = join( home, `.claude`, `skills` )
-        if( existsSync( skills_dir ) ) {
-            flags.push( `-v`, `${ skills_dir }:/home/node/.claude/skills:ro` )
-        }
-
+    // Claude session state — named volumes, not bind mounts. See GOTCHAS.md #31
+    // for why (perm bleed, sudo chown leaking to host). Sandbox skips so the
+    // session is fully ephemeral.
+    if( agent.name === `claude` && !mode.sandbox ) {
+        flags.push( `-v`, `babysit-claude-projects:/home/node/.claude/projects` )
+        flags.push( `-v`, `babysit-claude-plans:/home/node/.claude/plans` )
+        flags.push( `-v`, `babysit-claude-todos:/home/node/.claude/todos` )
     }
 
     // Docker image
@@ -238,6 +209,14 @@ const build_agent_command = ( agent, mode, system_prompt, agent_args ) => {
         const flag = agent.flags.effort( agent.defaults.effort )
         if( Array.isArray( flag ) ) parts.push( ...flag )
         else parts.push( flag )
+    }
+
+    // Per-agent extra CLI args — typically headless / trust-skip flags that
+    // can't be set declaratively via state files (e.g. gemini's --skip-trust).
+    // Pushed before passthrough so user overrides win on conflicting flags.
+    if( agent.extra_args ) {
+        const extra = agent.extra_args( mode )
+        if( Array.isArray( extra ) && extra.length ) parts.push( ...extra )
     }
 
     // Passthrough args (unknown flags go to the agent CLI)

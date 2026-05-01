@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.6.0 — 2026-05-01
+
+### 🐛 Fixed
+- **Claude rendered a blank pane forever in supervised sessions.** Tmpfiles babysit bind-mounted into the container were created with `writeFileSync(path, content, { mode: 0o666 })` — but Node masks the mode arg by the host umask, so the file landed at 0o644 / 0o664 and the container's `node` user (uid 1000, neither owner nor group) lost write access. Claude updates `.claude.json` in place during init; the silent EACCES left the TUI hanging mid-render. Fix: explicit `chmodSync(path, 0o666)` after every `writeFileSync` for bind-mounted tmpfiles, hoisted into `src/utils/tmpfile.js` (`copy_host_file_to_tmpfile`, `build_tmpfile`, `rewrite_tmpfile`). All five callers (`credentials/{linux,darwin,refresh}.js`, `agents/setup.js`) now route through it.
+- **Claude pops the theme picker + workspace-trust dialog on every fresh container.** `.claude.json` was never mounted, so claude treated each session as a brand-new install. Neither has a CLI flag override (`--dangerously-skip-permissions` only affects tool approvals). Babysit now copies the host's `~/.claude.json` to a tmpfile, injects `hasCompletedOnboarding: true` and `projects[/workspace].hasTrustDialogAccepted: true`, and bind-mounts it.
+- **Codex pops "Do you trust the contents of this directory?" + "Try new model" intros on every fresh container.** Trust state lives in `~/.codex/config.toml` per-directory; model nags live in `[tui.model_availability_nux]`. Babysit now copies + injects `[projects."/workspace"] trust_level = "trusted"` and pre-marks every model in `CODEX_KNOWN_MODELS_FOR_NUX` as seen.
+- **Codex `installation_id` mount triggered "Failed to create session: Operation not permitted"** on `/home/node/.codex/sessions`. Discovered empirically; cause unclear. Babysit explicitly does NOT mount installation_id; regression test in `tests/setup.test.js` locks this in.
+- **Gemini ignored its OAuth tokens and dropped into the auth-method picker.** `~/.gemini/oauth_creds.json` alone isn't enough — gemini reads `auth.selectedType` from `settings.json`. Babysit now mounts `settings.json`, `google_accounts.json`, `installation_id`, `state.json`, plus a synthesized `trustedFolders.json` with `/workspace: TRUST_FOLDER`.
+- **Forced `gemini-pro-latest` 404'd for free-tier users.** Pro routing was restricted to paid plans (Code Assist for Individuals returns "Model not found"). Removed the babysit default for gemini's model — gemini's own agent router picks based on the user's plan.
+- **Opencode's default `gpt-5.5-pro` is rejected by ChatGPT-account auth** with "model not supported when using Codex with a ChatGPT account", which stalled the session on the first message. Babysit's opencode default is now `openai/gpt-5.5`, which works for both OAuth and API-key paths. Anthropic / Google users override via `--model`.
+- **Claude `~/.claude/{projects,plans,todos}` bind mounts had silent host perm bleed.** When claude tried to write, EACCES; when claude worked around it with `sudo chown -R node:node`, the chown propagated back to the host bind mount and silently changed ownership of the user's host dirs. Switched to named docker volumes (`babysit-claude-{projects,plans,todos}`) — claude has full write access, host dirs aren't touched, `babysit resume` still works because the volume persists across container restarts.
+
+### ✨ Added
+- **`extra_args(mode)` field on the agent adapter shape** — per-agent CLI args that aren't covered by `--yolo` / `--append-system-prompt` / `--model` / `--effort`. Used by `gemini` to pass `--skip-trust` under `--yolo` (where the user has explicitly opted into "trust this run, no questions"). Outside yolo, the `trustedFolders.json` mount is the source of truth and the flag is omitted.
+- **`src/agents/setup.js`** — per-agent `*_extra_mounts` builders (`claude_extra_mounts`, `codex_extra_mounts`, `gemini_extra_mounts`, `opencode_extra_mounts`) consolidated into one file. `docker/run.js` now dispatches via `get_extra_mounts(agent.name)()` and the giant claude block in run.js is gone.
+
+### ♻️ Refactored
+- Pulled `build_claude_settings_tmpfile` and the new `build_claude_json_tmpfile` out of `src/statusline/render.js` (which was the wrong home — they're agent-config builders, not statusline concerns) and into `src/agents/setup.js`. `statusline/render.js` is now just `write_loop_deadline` + `LOOP_DEADLINE_PATH`.
+- Replaced the if-chain dispatcher in `setup.js#get_extra_mounts` with a registry map.
+- `inject_codex_first_run_bypass` is now a separately-testable helper that's idempotent and works on empty input (so a fresh-install user with no `~/.codex/config.toml` still gets `/workspace` trust + nux suppression).
+
+### 📚 Patterns
+- Rewrote all four `src/patterns/<agent>.js` based on real captures from triggering plan mode in each agent. Claude's structured numbered prompt (`Yes, and use auto mode` / `manually approve edits` / `refine with Ultraplan`) and codex's `Implement this plan?` dialog are now matched literally; gemini and opencode have no structured plan UI and rely on free-form `Would you like me to proceed?` patterns. `tests/patterns.test.js` exercises each agent against real fixture strings (and asserts a normal chat reply does NOT match plan patterns) so a vendor UI change surfaces as a test failure rather than a silent supervisor regression.
+
+### ✅ Tests
+- `tests/setup.test.js` (new) covers `build_claude_settings_tmpfile`, `build_claude_json_tmpfile`, the `*_extra_mounts` builders, the codex `installation_id`-exclusion regression, and asserts each tmpfile lands at chmod 666.
+- `tests/agents.test.js` extended with model-defaults coverage (opencode `openai/gpt-5.5`, gemini empty, claude/codex unchanged) and `gemini.extra_args` mode-gating.
+- 151 tests across 13 files (was 125).
+
 ## 0.5.1 — 2026-04-29
 
 ### 🐛 Fixed

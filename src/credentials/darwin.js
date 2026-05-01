@@ -1,8 +1,7 @@
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { readFileSync } from 'fs'
 import { run_sync } from '../utils/exec.js'
 import { log } from '../utils/log.js'
+import { build_tmpfile, copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
 import { start_credential_sync } from './refresh.js'
 
 /**
@@ -41,8 +40,13 @@ export const setup_darwin_credentials = async ( agent ) => {
 
             if( creds_json ) {
 
-                const tmpfile = join( tmpdir(), `babysit-creds-${ agent.name }-${ Date.now() }` )
-                writeFileSync( tmpfile, creds_json, { mode: 0o666 } )
+                // Materialise the keychain blob into a chmod-666 tmpfile so
+                // the container's `node` user can both read AND write it.
+                const tmpfile = build_tmpfile( `creds-${ agent.name }`, `auth`, creds_json )
+                if( !tmpfile ) {
+                    log.warn( `Failed to materialise ${ agent.name } keychain creds to tmpfile` )
+                    return { mounts, sync }
+                }
 
                 mounts.push( {
                     type: `volume`,
@@ -110,11 +114,11 @@ export const setup_darwin_credentials = async ( agent ) => {
 const mount_credential_file = ( agent, file_pattern ) => {
 
     const expanded = file_pattern.replace( `~`, process.env.HOME )
-    if( !existsSync( expanded ) ) return null
 
-    const tmpfile = join( tmpdir(), `babysit-creds-${ agent.name }-${ Date.now() }` )
-    const content = readFileSync( expanded, `utf-8` )
-    writeFileSync( tmpfile, content, { mode: 0o666 } )
+    // copy_host_file_to_tmpfile returns null when the source is missing;
+    // no need to existsSync first.
+    const tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
+    if( !tmpfile ) return null
 
     const read_source = async () => {
         try {

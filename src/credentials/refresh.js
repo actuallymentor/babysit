@@ -1,6 +1,8 @@
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync } from 'fs'
 import { createHash } from 'crypto'
+
 import { log } from '../utils/log.js'
+import { rewrite_tmpfile } from '../utils/tmpfile.js'
 
 const quick_hash = ( str ) => createHash( `sha256` ).update( str ).digest( `hex` )
 
@@ -44,8 +46,8 @@ export const start_credential_sync = ( read_source, tmpfile_path ) => {
             const fresh_hash = quick_hash( fresh )
 
             if( fresh_hash !== last_hash ) {
-                // Write in-place — never mv (Docker inode tracking)
-                writeFileSync( tmpfile_path, fresh, { mode: 0o666 } )
+                // Write in-place — never mv (Docker inode tracking).
+                rewrite_tmpfile( tmpfile_path, fresh )
                 last_hash = fresh_hash
                 log.debug( `Credentials refreshed at ${ tmpfile_path }` )
             }

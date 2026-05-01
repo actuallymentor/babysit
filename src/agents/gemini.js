@@ -51,12 +51,16 @@ export const gemini = {
         effort: null,
     },
 
-    defaults: {
-        // `gemini-pro-latest` is Google's official alias for the most capable Gemini
-        // available — it currently resolves to gemini-3.1-pro and rolls forward
-        // automatically when newer Pro models ship.
-        model: `gemini-pro-latest`,
-    },
+    // Outside yolo, trustedFolders.json is the source of truth — don't
+    // override it with --skip-trust.
+    extra_args: ( mode ) => mode?.yolo ? [ `--skip-trust` ] : [],
+
+    // Don't force a model. Gemini's internal "agent router" picks the best
+    // available model for the user's plan; forcing `gemini-pro-latest` here
+    // breaks for users on Code Assist for Individuals (the free tier),
+    // because Pro routing was restricted to paid plans. Letting the user's
+    // own plan select the model is more portable than guessing.
+    defaults: {},
 
     session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
 
