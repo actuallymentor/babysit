@@ -12,6 +12,7 @@ import {
     opencode_extra_mounts,
     get_extra_mounts,
     CODEX_KNOWN_MODELS_FOR_NUX,
+    ONBOARDING_VERSION_SENTINEL,
 } from '../src/agents/setup.js'
 
 // build_claude_settings_tmpfile and build_claude_json_tmpfile are unit-tested
@@ -112,6 +113,23 @@ describe( `build_claude_json_tmpfile`, () => {
 
         expect( parsed.projects[ `/workspace` ].hasTrustDialogAccepted ).toBe( true )
         expect( parsed.hasCompletedOnboarding ).toBe( true )
+
+    } )
+
+    it( `pins lastOnboardingVersion to a sentinel newer than any real release`, () => {
+
+        // Without this, when the container's claude is newer than the host's
+        // recorded onboarding version, claude reruns the version-delta
+        // onboarding flow (theme picker etc.) on every fresh container.
+        // See GOTCHAS.md #30.
+        const host_path = join( dir, `.claude.json` )
+        writeFileSync( host_path, JSON.stringify( { lastOnboardingVersion: `2.1.123` } ) )
+
+        const tmpfile = build_claude_json_tmpfile( host_path )
+        const parsed = JSON.parse( readFileSync( tmpfile, `utf-8` ) )
+
+        expect( parsed.lastOnboardingVersion ).toBe( ONBOARDING_VERSION_SENTINEL )
+        expect( parsed.lastOnboardingVersion ).not.toBe( `2.1.123` )
 
     } )
 

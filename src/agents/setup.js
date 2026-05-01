@@ -72,15 +72,28 @@ export const build_claude_settings_tmpfile = ( host_settings_path ) => {
 
 }
 
+// Sentinel `lastOnboardingVersion` we write into the container's .claude.json.
+// Picked high enough to outpace any plausible future claude release so the
+// version-delta onboarding (theme picker etc.) never triggers — see the
+// onboarding-bypass comment block in `build_claude_json_tmpfile` below.
+export const ONBOARDING_VERSION_SENTINEL = `9999.0.0`
+
 /**
  * Build the .claude.json claude reads inside the container.
  *
- * Two surgical edits to the host file:
+ * Three surgical edits to the host file:
  * 1. Pre-mark `/workspace` as a trusted project so claude doesn't pop the
  *    "Quick safety check" dialog. The dialog has no CLI flag override.
  * 2. Set `hasCompletedOnboarding: true` so claude skips the theme picker
  *    on first launch even when oauthAccount is populated (which happens
  *    on a fresh container because `numStartups` resets to 1).
+ * 3. Pin `lastOnboardingVersion` to a sentinel higher than any plausible
+ *    future claude release. Without this, when the container's claude is
+ *    newer than the host's recorded version (the Dockerfile pulls latest
+ *    on every image build), claude treats it as "new version since last
+ *    onboarding" and reruns the version-delta onboarding flow — which
+ *    shows the theme picker again. `hasCompletedOnboarding: true` alone
+ *    no longer suppresses this in claude ≥ 2.1.x.
  *
  * Exported for direct testing — the round-trip happens via `claude_extra_mounts`.
  * @param {string} host_claude_json_path - Path to host .claude.json (may not exist)
@@ -91,7 +104,7 @@ export const build_claude_json_tmpfile = ( host_claude_json_path ) => {
     let parsed = {}
     if( existsSync( host_claude_json_path ) ) {
         try {
-            parsed = JSON.parse( readFileSync( host_claude_json_path, `utf-8` ) ) 
+            parsed = JSON.parse( readFileSync( host_claude_json_path, `utf-8` ) )
         } catch { /* malformed → start fresh */ }
     }
 
@@ -112,6 +125,7 @@ export const build_claude_json_tmpfile = ( host_claude_json_path ) => {
     }
 
     parsed.hasCompletedOnboarding = true
+    parsed.lastOnboardingVersion = ONBOARDING_VERSION_SENTINEL
 
     return build_tmpfile( `claude`, `.claude.json`, JSON.stringify( parsed, null, 2 ) )
 

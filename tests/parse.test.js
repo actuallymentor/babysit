@@ -8,6 +8,12 @@ describe( `parse_args`, () => {
         expect( cmd.verb ).toBe( `list` )
     } )
 
+    it( `recognises babysit update`, () => {
+        const cmd = parse_args( [ `update` ] )
+        expect( cmd.verb ).toBe( `update` )
+        expect( cmd.agent ).toBeNull()
+    } )
+
     it( `recognises babysit open <id>`, () => {
         const cmd = parse_args( [ `open`, `abc-123` ] )
         expect( cmd.verb ).toBe( `open` )
