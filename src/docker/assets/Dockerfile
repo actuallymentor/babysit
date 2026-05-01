@@ -14,8 +14,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git git-lfs \
     # Languages
     python3 python3-venv \
-    # CLI essentials
-    sudo curl wget jq tmux openssh-client \
+    # CLI essentials. `gosu` is used by the entrypoint to drop privileges
+    # back to `node` after a uid remap (see entrypoint.sh).
+    sudo gosu curl wget jq tmux openssh-client \
     openssl gnupg ca-certificates \
     rsync tar zip unzip gzip xz-utils zstd patch \
     # Codex sandboxing — codex prefers a system bubblewrap on PATH and falls
@@ -95,12 +96,14 @@ RUN mkdir -p \
     && echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node \
     && chmod 0440 /etc/sudoers.d/node
 
-# Copy in-container reference docs and scripts (still as root)
-COPY AGENTS.md /home/node/AGENTS.md
+# Copy in-container scripts (still as root). Reference docs about the
+# container environment (sudo, /workspace, tools) used to live in
+# /home/node/AGENTS.md, but that's now communicated to agents directly via
+# babysit's system-prompt fragment + per-CLI first-message — nothing in the
+# image needs to point to a baked file anymore.
 COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh \
-    && chown node:node /home/node/AGENTS.md
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 
 # Codex (OpenAI) — install globally via npm as root
 RUN npm install -g @openai/codex 2>/dev/null || true
@@ -128,6 +131,11 @@ ENV GIT_AUTHOR_NAME="Babysitter"
 ENV GIT_COMMITTER_NAME="Babysitter"
 ENV GIT_AUTHOR_EMAIL="babysit@github.com"
 ENV GIT_COMMITTER_EMAIL="babysit@github.com"
+
+# Switch back to root so the entrypoint can remap `node` to the host user's
+# uid/gid before dropping privileges via gosu. The image is shared (uid 1000
+# baked in); the actual runtime uid is set per-container in entrypoint.sh.
+USER root
 
 WORKDIR /workspace
 

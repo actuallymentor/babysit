@@ -34,17 +34,24 @@ export const gemini = {
         // Bind-mount oauth_creds.json into the container so OAuth sessions
         // started on the host flow through. Path matches gemini's own default.
         creds: `/home/node/.gemini/oauth_creds.json`,
-        // ${GEMINI_CLI_HOME}/.gemini/GEMINI.md — container-local so it stays
-        // writable in mudbox / sandbox too. Gemini reads this as global
-        // context in addition to any GEMINI.md the user keeps in /workspace.
-        system_prompt_file: `/home/node/.gemini/GEMINI.md`,
+        // ${GEMINI_CLI_HOME}/.gemini/GEMINI.md — gemini's global instructions
+        // path. Babysit bind-mounts host `~/.agents/AGENTS.md` here so gemini
+        // picks up the user's cross-agent globals via its own GEMINI.md
+        // discovery. Babysit's base prompt is delivered separately as a
+        // first-message FYI.
+        user_globals_file: `/home/node/.gemini/GEMINI.md`,
     },
 
     flags: {
         skip_permissions: () => `--yolo`,
-        // Gemini doesn't expose a CLI flag for system prompts — it reads
-        // GEMINI.md from the workspace. Handled via entrypoint + env var.
+        // Gemini doesn't expose a CLI flag for system prompts. Babysit
+        // delivers its base prompt as a first-message FYI; the user's
+        // globals reach gemini through the bind-mounted GEMINI.md.
         append_system_prompt: null,
+        // -i / --prompt-interactive: "Execute the provided prompt and continue
+        // in interactive mode" (per --help). The bare positional `[query..]`
+        // also seeds the prompt but `-i` is unambiguous.
+        first_message: ( text ) => [ `-i`, text ],
         resume: ( id ) => [ `--resume`, id ],
         model: ( m ) => [ `--model`, m ],
         // Gemini has no effort/reasoning knob.

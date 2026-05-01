@@ -74,8 +74,7 @@ babysit/
 │   │   └── assets/
 │   │       ├── Dockerfile       # container image (embedded)
 │   │       ├── entrypoint.sh    # container entrypoint (embedded)
-│   │       ├── statusline.sh    # claude-only statusline (embedded)
-│   │       └── AGENTS.md        # in-container reference (embedded)
+│   │       └── statusline.sh    # claude-only statusline (embedded)
 │   ├── credentials/
 │   │   ├── index.js             # detect platform → load adapter
 │   │   ├── darwin.js            # Keychain (security cli) + sync daemon
@@ -232,8 +231,7 @@ Single image: `babysit/babysit:<version>`. Built from `src/docker/assets/Dockerf
 - `ENV PATH=/home/node/.npm-global/bin:$PATH`
 - `ENV GIT_AUTHOR_NAME=Babysitter`, `GIT_COMMITTER_NAME=Babysitter` (per spec; user override via host env passthrough)
 - `WORKDIR /workspace`
-- Embedded `AGENTS.md` (the in-container tool reference) at `/home/node/AGENTS.md`
-- Entrypoint thin: drop creds-permissions fix, `chown` `/workspace/node_modules` if isolated, then `exec` agent
+- Entrypoint thin: drop creds-permissions fix, `chown` `/workspace/node_modules` if isolated, symlink `~/.agents/skills` into `~/.claude/skills` if present, then `exec` agent
 
 ### Mode flags → docker invocation
 

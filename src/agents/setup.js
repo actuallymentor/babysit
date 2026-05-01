@@ -6,6 +6,13 @@ import { copy_host_file_to_tmpfile, build_tmpfile } from '../utils/tmpfile.js'
 
 const home = homedir()
 
+// Cross-agent shared dir on the host. ~/.agents/AGENTS.md (user globals) and
+// ~/.agents/skills/ (cross-agent skills) take precedence over per-agent
+// equivalents like ~/.claude/CLAUDE.md and ~/.claude/skills/, since the
+// shared paths reach all four agents while the claude-specific ones only
+// reach claude.
+const AGENTS_DIR = join( home, `.agents` )
+
 /**
  * Claude extra mounts: settings.json (with the babysit statusline
  * override), .claude.json (with /workspace pre-trusted and onboarding
@@ -32,14 +39,25 @@ export const claude_extra_mounts = () => {
     }
 
     // Read-only metadata. Safe to mount in any mode — claude only reads them.
-    const claude_md = join( home, `.claude`, `CLAUDE.md` )
-    if( existsSync( claude_md ) ) {
-        mounts.push( { host: claude_md, container: `/home/node/.claude/CLAUDE.md`, ro: true } )
+    // ~/.agents/AGENTS.md (cross-agent globals) wins over ~/.claude/CLAUDE.md
+    // when both exist on the host: run.js mounts the shared file at the same
+    // container target, so adding the per-agent file here would collide.
+    // Same logic for skills/ — ~/.agents/skills/ is the cross-agent
+    // convention; the entrypoint symlinks it into place when present.
+    const shared_agents_md = join( AGENTS_DIR, `AGENTS.md` )
+    if( !existsSync( shared_agents_md ) ) {
+        const claude_md = join( home, `.claude`, `CLAUDE.md` )
+        if( existsSync( claude_md ) ) {
+            mounts.push( { host: claude_md, container: `/home/node/.claude/CLAUDE.md`, ro: true } )
+        }
     }
 
-    const skills_dir = join( home, `.claude`, `skills` )
-    if( existsSync( skills_dir ) ) {
-        mounts.push( { host: skills_dir, container: `/home/node/.claude/skills`, ro: true } )
+    const shared_skills = join( AGENTS_DIR, `skills` )
+    if( !existsSync( shared_skills ) ) {
+        const skills_dir = join( home, `.claude`, `skills` )
+        if( existsSync( skills_dir ) ) {
+            mounts.push( { host: skills_dir, container: `/home/node/.claude/skills`, ro: true } )
+        }
     }
 
     return mounts

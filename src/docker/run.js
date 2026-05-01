@@ -1,4 +1,5 @@
 import { existsSync, statSync } from 'fs'
+import { join } from 'path'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
 import { detect_dependency_volumes } from './volumes.js'
@@ -75,7 +76,7 @@ export const build_docker_command = ( options ) => {
         try {
             const { gid } = statSync( AGENTS_DIR )
             flags.push( `--group-add`, String( gid ) )
-        } catch( e ) {
+        } catch ( e ) {
             log.debug( `Could not stat ${ AGENTS_DIR } for group-add: ${ e.message }` )
         }
     }
@@ -137,12 +138,15 @@ export const build_docker_command = ( options ) => {
         flags.push( `-e`, `${ agent.home.env_var }=${ agent.home.dir }` )
     }
 
-    // For agents that don't accept a system-prompt CLI flag, hand the prompt
-    // to the entrypoint via env vars so it can be written to the file the
-    // agent expects (e.g. AGENTS.md, GEMINI.md). Skipped for claude.
-    if( system_prompt && !agent.flags.append_system_prompt && agent.container_paths?.system_prompt_file ) {
-        flags.push( `-e`, `BABYSIT_SYSTEM_PROMPT=${ system_prompt }` )
-        flags.push( `-e`, `BABYSIT_SYSTEM_PROMPT_FILE=${ agent.container_paths.system_prompt_file }` )
+    // Bind-mount the user's cross-agent globals into each agent's native
+    // discovery path (read-only). The agent loads it through its own
+    // AGENTS.md / GEMINI.md / CLAUDE.md mechanism — no babysit-specific
+    // configuration needed inside the container. Conditional on the host
+    // file existing so a missing ~/.agents/AGENTS.md leaves the agent in
+    // its vanilla state.
+    const user_agents_md = join( AGENTS_DIR, `AGENTS.md` )
+    if( existsSync( user_agents_md ) && agent.container_paths?.user_globals_file ) {
+        flags.push( `-v`, `${ user_agents_md }:${ agent.container_paths.user_globals_file }:ro` )
     }
 
     // Loop deadline — bind-mount so the in-container statusline can read host-written countdowns
@@ -234,6 +238,18 @@ const build_agent_command = ( agent, mode, system_prompt, agent_args ) => {
 
     // Passthrough args (unknown flags go to the agent CLI)
     if( agent_args.length ) parts.push( ...agent_args )
+
+    // For agents without --append-system-prompt, seed the babysit base as
+    // a first-message FYI via each CLI's initial-prompt mechanism (codex
+    // positional, gemini -i, opencode --prompt). Keeps babysit's environment
+    // context out of the AGENTS.md file slot, which is reserved for the
+    // bind-mounted ~/.agents/AGENTS.md (user globals). Pushed last so
+    // positional args land at the end of the command.
+    if( system_prompt && !agent.flags.append_system_prompt && agent.flags.first_message ) {
+        const flag = agent.flags.first_message( system_prompt )
+        if( Array.isArray( flag ) ) parts.push( ...flag )
+        else parts.push( flag )
+    }
 
     return parts
 
