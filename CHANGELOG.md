@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — 2026-05-01
+
+### ✨ Added
+- **`babysit update` now also refreshes the compiled binary.** Step 1 picks the right path automatically: `git pull --ff-only` for source checkouts, or for compiled installs (the `scripts/install.sh` path) it hits the GitHub Releases API, picks the `babysit-${os}-${arch}` asset matching the current platform, downloads it via curl, and `mv`s it over `process.execPath` (with a `sudo mv` fallback for root-owned install dirs like `/usr/local/bin`). Skips the download when the latest tag matches the running version. Tests in `tests/update.test.js` lock in the platform-tag mapping and the compiled-binary detection.
+
 ## 0.6.1 — 2026-05-01
 
 ### 🐛 Fixed
