@@ -93,6 +93,21 @@ export class IdleTracker {
 }
 
 /**
+ * RegExp instances with the global/sticky flags are stateful: test() advances
+ * lastIndex, which can make the same output alternate true/false across ticks.
+ * Reset before each test so user-provided /.../g rules remain deterministic.
+ * @param {RegExp} pattern
+ * @param {string} output
+ * @returns {boolean}
+ */
+const test_pattern = ( pattern, output ) => {
+
+    pattern.lastIndex = 0
+    return pattern.test( output )
+
+}
+
+/**
  * Check if cleaned output matches any patterns in a list
  * @param {string} output - Cleaned pane output (last N lines)
  * @param {RegExp[]} patterns - Array of regex patterns to test
@@ -100,7 +115,7 @@ export class IdleTracker {
  */
 export const matches_patterns = ( output, patterns ) => {
 
-    return patterns.some( pattern => pattern.test( output ) )
+    return patterns.some( pattern => test_pattern( pattern, output ) )
 
 }
 
@@ -135,7 +150,7 @@ export const evaluate_rule = ( rule, context ) => {
         )
 
     case `regex`:
-        return on.value.test( last_n_lines( output, config.lines_for_regex_match ) )
+        return test_pattern( on.value, last_n_lines( output, config.lines_for_regex_match ) )
 
     case `literal`: {
         const search_area = last_n_lines( output, config.lines_for_literal_match )

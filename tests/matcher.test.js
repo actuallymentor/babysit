@@ -85,6 +85,12 @@ describe( `matches_patterns`, () => {
         expect( matches_patterns( `nothing here`, patterns ) ).toBe( false )
     } )
 
+    it( `does not let global regex state leak across ticks`, () => {
+        const patterns = [ /error/g ]
+        expect( matches_patterns( `error`, patterns ) ).toBe( true )
+        expect( matches_patterns( `error`, patterns ) ).toBe( true )
+    } )
+
 } )
 
 describe( `evaluate_rule`, () => {
@@ -107,6 +113,12 @@ describe( `evaluate_rule`, () => {
         const rule = { on: { type: `regex`, value: /error/i } }
         expect( evaluate_rule( rule, { output: `ERROR: something broke`, idle_seconds: 0, config } ) ).toBe( true )
         expect( evaluate_rule( rule, { output: `all good`, idle_seconds: 0, config } ) ).toBe( false )
+    } )
+
+    it( `matches global regex rules consistently`, () => {
+        const rule = { on: { type: `regex`, value: /error/g } }
+        expect( evaluate_rule( rule, { output: `error`, idle_seconds: 0, config } ) ).toBe( true )
+        expect( evaluate_rule( rule, { output: `error`, idle_seconds: 0, config } ) ).toBe( true )
     } )
 
     it( `matches plan patterns`, () => {
