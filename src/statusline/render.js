@@ -1,10 +1,13 @@
-import { writeFileSync } from 'fs'
+import { mkdirSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 
 import { log } from '../utils/log.js'
+import { BABYSIT_DIR } from '../utils/paths.js'
 
-// Shared host path the statusline reads — also bind-mounted into the container.
-// One file per babysit cli process is sufficient because each cli supervises one container.
-export const LOOP_DEADLINE_PATH = `/tmp/babysit-loop-deadline`
+// Host-side state file written by the monitor. It is bind-mounted into the
+// container at LOOP_DEADLINE_CONTAINER_PATH, which statusline.sh reads.
+export const LOOP_DEADLINE_PATH = join( BABYSIT_DIR, `loop-deadline` )
+export const LOOP_DEADLINE_CONTAINER_PATH = `/tmp/babysit-loop-deadline`
 
 /**
  * Write the loop deadline file so the statusline can show a countdown.
@@ -14,9 +17,12 @@ export const LOOP_DEADLINE_PATH = `/tmp/babysit-loop-deadline`
 export const write_loop_deadline = ( deadline ) => {
 
     try {
+        mkdirSync( dirname( LOOP_DEADLINE_PATH ), { recursive: true } )
         writeFileSync( LOOP_DEADLINE_PATH, String( deadline ) )
+        return true
     } catch ( e ) {
         log.debug( `Failed to write loop deadline: ${ e.message }` )
+        return false
     }
 
 }

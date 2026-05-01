@@ -4,7 +4,7 @@ import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
 import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
-import { LOOP_DEADLINE_PATH } from '../statusline/render.js'
+import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/render.js'
 import { get_extra_mounts } from '../agents/setup.js'
 
 /**
@@ -150,7 +150,7 @@ export const build_docker_command = ( options ) => {
     }
 
     // Loop deadline — bind-mount so the in-container statusline can read host-written countdowns
-    flags.push( `-v`, `${ LOOP_DEADLINE_PATH }:${ LOOP_DEADLINE_PATH }:ro` )
+    flags.push( `-v`, `${ LOOP_DEADLINE_PATH }:${ LOOP_DEADLINE_CONTAINER_PATH }:ro` )
 
     // Extra environment variables from agent adapter
     for( const [ key, value ] of Object.entries( extra_env ) ) {
