@@ -134,7 +134,9 @@ export const cmd_start = async ( cmd ) => {
     // The bare `babysit resume <id>` form looks the agent up from session
     // metadata, so we don't need to pre-pend the agent name.
     if( await has_session( session_name ) ) {
-        console.log( `\nDetached. Re-attach with \`babysit open ${ babysit_id }\`` )
+        // Print the re-attach command unquoted on its own line so a
+        // triple-click selects it cleanly for copy/paste.
+        console.log( `\nDetached. Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
     } else {
         // Prefer the agent's own session id when the daemon captured it —
         // that's what the agent's CLI accepts for its native --resume flag,
