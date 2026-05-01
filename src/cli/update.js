@@ -1,6 +1,6 @@
-import { existsSync, chmodSync, accessSync, constants as fs_constants } from 'fs'
+import { existsSync, chmodSync, mkdirSync, accessSync, constants as fs_constants } from 'fs'
 import { dirname, join } from 'path'
-import { tmpdir, platform, arch } from 'os'
+import { tmpdir, platform, arch, homedir } from 'os'
 import { fileURLToPath } from 'url'
 import { promise_timeout } from 'mentie'
 
@@ -19,6 +19,11 @@ const DOCKER_PULL_TIMEOUT_MS = 120_000
 // GitHub release source for compiled binaries (matches scripts/install.sh).
 const GITHUB_REPO = `actuallymentor/babysit`
 const RELEASES_LATEST_API = `https://api.github.com/repos/${ GITHUB_REPO }/releases/latest`
+
+// User-local install dir — chosen so `babysit update` never needs sudo.
+// Must stay in sync with scripts/install.sh's INSTALL_DIR.
+const USER_INSTALL_DIR = join( homedir(), `.local`, `bin` )
+const USER_INSTALL_PATH = join( USER_INSTALL_DIR, `babysit` )
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) )
 const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
@@ -98,11 +103,21 @@ const update_babysit_source = async () => {
 
 const update_babysit_binary = async () => {
 
-    const target = process.execPath
+    // Pick the install target. If the running binary lives somewhere
+    // user-writable (the common case after install.sh moved to ~/.local/bin),
+    // overwrite in place. Otherwise — typically a legacy /usr/local/bin
+    // install from before the user-local switch — write the new binary to
+    // ~/.local/bin/babysit instead and leave the old one alone. This keeps
+    // `babysit update` strictly sudo-free; the user can manually `sudo rm`
+    // the legacy copy at their leisure.
+    const running = process.execPath
+    const in_place = is_writable( running )
+    const target = in_place ? running : USER_INSTALL_PATH
     const platform_tag = binary_platform_tag()
 
     console.log( `[1/3] babysit binary` )
-    console.log( `      ${ target }` )
+    console.log( `      running: ${ running }` )
+    if( !in_place ) console.log( `      target:  ${ target } (running binary lives in a non-user-writable dir)` )
     console.log( `      platform: ${ platform_tag }` )
 
     if( !platform_tag ) {
@@ -121,7 +136,11 @@ const update_babysit_binary = async () => {
     const latest_version = ( release.tag_name || `` ).replace( /^v/, `` )
     console.log( `      latest release: v${ latest_version || `?` } (current: v${ pkg.version })` )
 
-    if( latest_version && latest_version === pkg.version ) {
+    // Skip the download only when we're updating in place AND already on the
+    // latest version. When migrating away from a legacy install dir we still
+    // want to write the user-local copy even if versions match, so subsequent
+    // updates don't re-trigger the migration message.
+    if( in_place && latest_version && latest_version === pkg.version ) {
         console.log( `      → skipped (already on latest)\n` )
         return
     }
@@ -141,24 +160,46 @@ const update_babysit_binary = async () => {
         return
     }
 
-    // Try a plain `mv` first — works when the user owns the install dir
-    // (e.g. ~/.local/bin). Fall back to `sudo mv` for /usr/local/bin and
-    // similar root-owned locations. We don't pre-emptively `sudo`; if the
-    // user can write the target directly, no password prompt is needed.
     try {
-        if( is_writable( target ) ) {
-            await run( `mv`, [ tmpfile, target ] )
-            console.log( `      ✓ replaced ${ target } with v${ latest_version }\n` )
-        } else {
-            console.log( `      target is not user-writable — escalating with sudo` )
-            await run( `sudo`, [ `mv`, tmpfile, target ], { stdio: `inherit` } )
-            console.log( `      ✓ replaced ${ target } with v${ latest_version }\n` )
-        }
+        // mkdirSync is a no-op when the dir already exists, and creates the
+        // ~/.local/bin parent for users on a fresh account. recursive: true
+        // matches the install.sh `mkdir -p`.
+        mkdirSync( dirname( target ), { recursive: true } )
+        await run( `mv`, [ tmpfile, target ] )
+        console.log( `      ✓ installed v${ latest_version } to ${ target }\n` )
     } catch ( e ) {
         console.log( `      ✗ install failed: ${ e.message }` )
         console.log( `      (downloaded binary left at ${ tmpfile })\n` )
+        return
     }
 
+    if( !in_place ) print_migration_notice( running, target )
+    if( !is_on_path( USER_INSTALL_DIR ) ) print_path_warning()
+
+}
+
+/**
+ * Print the one-time heads-up shown when we couldn't write the running
+ * binary's location and instead wrote a fresh copy to ~/.local/bin.
+ * Tells the user how to remove the legacy file manually (the only sudo
+ * use in the whole flow, and it's optional).
+ */
+const print_migration_notice = ( old_path, new_path ) => {
+    console.log( `      The previous binary at ${ old_path } was NOT modified.` )
+    console.log( `      To remove the legacy copy (one-time, requires sudo):` )
+    console.log( `` )
+    console.log( `          sudo rm ${ old_path }` )
+    console.log( `` )
+    console.log( `      Make sure ${ dirname( new_path ) } comes before ${ dirname( old_path ) } on PATH,` )
+    console.log( `      otherwise the legacy binary will keep shadowing the new one.\n` )
+}
+
+const print_path_warning = () => {
+    console.log( `      ⚠  ${ USER_INSTALL_DIR } is not on your PATH — the new binary won't be discoverable.` )
+    console.log( `      Add this line to your shell rc (~/.bashrc, ~/.zshrc, etc.):` )
+    console.log( `` )
+    console.log( `          export PATH="$HOME/.local/bin:$PATH"` )
+    console.log( `\n` )
 }
 
 /**
@@ -274,7 +315,7 @@ const download_to_file = ( url, dest ) =>
  * Writability check for the install target — both the file (so we can
  * overwrite it) and its containing directory (so we can `mv` over it,
  * which on POSIX is unlink + create). Defaults to false on error so the
- * sudo branch fires — wrong-direction conservatism.
+ * migration branch fires — wrong-direction conservatism.
  */
 const is_writable = ( path ) => {
     try {
@@ -284,4 +325,13 @@ const is_writable = ( path ) => {
     } catch {
         return false
     }
+}
+
+/**
+ * Plain string check — does the given directory appear in $PATH? Used to
+ * warn when a fresh `~/.local/bin` install wouldn't be discoverable.
+ */
+export const is_on_path = ( dir ) => {
+    const sep = platform() === `win32` ? `;` : `:`
+    return ( process.env.PATH || `` ).split( sep ).includes( dir )
 }

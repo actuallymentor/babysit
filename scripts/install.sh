@@ -5,7 +5,11 @@ set -euo pipefail
 # Usage: curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts/install.sh | bash
 
 REPO="actuallymentor/babysit"
-INSTALL_DIR="/usr/local/bin"
+# User-local install dir — chosen so neither install nor `babysit update`
+# ever needs sudo. ~/.local/bin is the XDG convention and is on PATH by
+# default for most modern shell configs (bash via /etc/bash.bashrc on
+# Debian/Ubuntu, zsh via /etc/zshrc on macOS Sequoia+, fish via fish_user_paths).
+INSTALL_DIR="${HOME}/.local/bin"
 
 echo "Installing babysit..."
 echo ""
@@ -152,16 +156,43 @@ TMPFILE=$(mktemp)
 curl -fsSL "$DOWNLOAD_URL" -o "$TMPFILE"
 chmod +x "$TMPFILE"
 
-# Move to install directory (may need sudo)
-if [ -w "$INSTALL_DIR" ]; then
-    mv "$TMPFILE" "${INSTALL_DIR}/babysit"
-else
-    echo "Installing to ${INSTALL_DIR} (requires sudo)..."
-    sudo mv "$TMPFILE" "${INSTALL_DIR}/babysit"
-fi
+# Move to install directory. INSTALL_DIR is user-owned (~/.local/bin) so
+# this never needs sudo. We `mkdir -p` defensively in case it's a fresh
+# user account where ~/.local/bin doesn't exist yet.
+mkdir -p "$INSTALL_DIR"
+mv "$TMPFILE" "${INSTALL_DIR}/babysit"
 
 echo ""
 echo "✓ babysit installed to ${INSTALL_DIR}/babysit"
+
+# PATH check — if ~/.local/bin isn't already discoverable, the user will
+# get "command not found" until they fix their shell init. Warn loudly
+# rather than silently succeeding.
+case ":$PATH:" in
+    *":${INSTALL_DIR}:"*)
+        ;;
+    *)
+        echo ""
+        echo "⚠  ${INSTALL_DIR} is not on your PATH."
+        echo "   Add this line to your shell rc (~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish):"
+        echo ""
+        echo "       export PATH=\"\$HOME/.local/bin:\$PATH\""
+        echo ""
+        echo "   Then restart your shell (or run: source ~/.bashrc)."
+        ;;
+esac
+
+# Heads-up if a previous /usr/local/bin/babysit exists — the newly-installed
+# user-local binary may be shadowed depending on PATH order, and either way
+# leaving an outdated copy around is confusing.
+if [ -f "/usr/local/bin/babysit" ]; then
+    echo ""
+    echo "⚠  Old install detected at /usr/local/bin/babysit."
+    echo "   Remove it so future updates don't shadow this one:"
+    echo ""
+    echo "       sudo rm /usr/local/bin/babysit"
+fi
+
 echo ""
 echo "Get started:"
 echo "  babysit claude --yolo"
