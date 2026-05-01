@@ -103,6 +103,13 @@ describe( `parse_args`, () => {
         expect( cmd.passthrough ).not.toContain( `--no-update` )
     } )
 
+    it( `does not pass babysit flags through when provided with equals syntax`, () => {
+        const cmd = parse_args( [ `claude`, `--yolo=true`, `--model`, `sonnet` ] )
+        expect( cmd.flags.yolo ).toBe( true )
+        expect( cmd.passthrough ).not.toContain( `--yolo=true` )
+        expect( cmd.passthrough ).toContain( `--model` )
+    } )
+
     it( `defaults no_update to false when --no-update is absent`, () => {
         const cmd = parse_args( [ `claude` ] )
         expect( cmd.flags.no_update ).toBe( false )

@@ -2,7 +2,7 @@ import mri from 'mri'
 import { is_agent } from '../agents/index.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `no-update` ]
+const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `update`, `no-update` ]
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -117,7 +117,7 @@ const collect_passthrough = ( argv, agent_name, session_id = null ) => {
         if( session_id && arg === session_id ) continue
 
         // Skip known babysit flags
-        const clean = arg.replace( /^-+/, `` )
+        const [ clean ] = arg.replace( /^-+/, `` ).split( `=` )
         if( KNOWN_FLAGS.includes( clean ) ) continue
 
         // Skip -h and -v aliases
