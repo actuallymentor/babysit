@@ -1,7 +1,10 @@
-import { existsSync } from 'fs'
+import { existsSync, chmodSync, accessSync, constants as fs_constants } from 'fs'
 import { dirname, join } from 'path'
+import { tmpdir, platform, arch } from 'os'
 import { fileURLToPath } from 'url'
 import { promise_timeout } from 'mentie'
+
+import pkg from '../../package.json' with { type: 'json' }
 
 import { run } from '../utils/exec.js'
 import { AGENTS_DIR } from '../utils/paths.js'
@@ -10,17 +13,25 @@ import { get_image_name } from '../docker/update.js'
 // Same budget per step as the pre-flight self-update — keeps a hung remote
 // from holding the user hostage. See src/deps/selfupdate.js.
 const STEP_TIMEOUT_MS = 15_000
+const BINARY_DOWNLOAD_TIMEOUT_MS = 120_000
 const DOCKER_PULL_TIMEOUT_MS = 120_000
+
+// GitHub release source for compiled binaries (matches scripts/install.sh).
+const GITHUB_REPO = `actuallymentor/babysit`
+const RELEASES_LATEST_API = `https://api.github.com/repos/${ GITHUB_REPO }/releases/latest`
 
 const __dirname = dirname( fileURLToPath( import.meta.url ) )
 const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
 
 /**
- * `babysit update` — runs the same three updates as the silent pre-flight
- * (babysit repo git pull, ~/.agents git pull, docker image pull), but
- * narrates each step so the user can see what's happening, what was skipped,
- * and what failed. Steps run sequentially (not in parallel like the
- * pre-flight) so the output reads top-to-bottom.
+ * `babysit update` — runs the same updates as the silent pre-flight (self,
+ * ~/.agents, docker image), but narrates each step so the user can see
+ * what's happening, what was skipped, and what failed. Steps run sequentially
+ * (not in parallel like the pre-flight) so the output reads top-to-bottom.
+ *
+ * Step 1 self-updates two ways: a `git pull` for source checkouts, or a
+ * GitHub-release binary download for compiled installs (the standard path
+ * for users who installed via scripts/install.sh).
  *
  * Step result icons match common CLI conventions: ✓ done, → skipped, ✗ failed.
  *
@@ -30,7 +41,7 @@ export const cmd_update = async () => {
 
     console.log( `\nbabysit update — refreshing local install\n` )
 
-    await update_babysit_repo()
+    await update_self()
     await update_agents_repo()
     await update_docker_image()
 
@@ -39,20 +50,39 @@ export const cmd_update = async () => {
 }
 
 /**
- * Step 1 — `git pull` the babysit checkout itself.
- * Skipped when running from a compiled binary (no .git in repo root).
+ * Step 1 — update babysit itself. Two modes, picked automatically:
+ *   - source checkout (.git in repo root)  → `git pull --ff-only`
+ *   - compiled binary (bun-compiled)       → download latest GitHub release
+ *
+ * Both modes report what they did with the same `[1/3] babysit ...` header
+ * so the output shape is consistent regardless of how babysit was installed.
  */
-const update_babysit_repo = async () => {
+const update_self = async () => {
 
-    const has_git = existsSync( join( BABYSIT_REPO_ROOT, `.git` ) )
+    if( existsSync( join( BABYSIT_REPO_ROOT, `.git` ) ) ) {
+        await update_babysit_source()
+        return
+    }
+
+    if( is_compiled_binary() ) {
+        await update_babysit_binary()
+        return
+    }
+
+    // Neither a checkout nor a recognisable compiled binary — most likely a
+    // node-installed copy run via `node src/index.js` from a non-git dir, or
+    // an unusual install layout. We can't safely auto-update either, so
+    // surface the situation rather than silently skipping.
+    console.log( `[1/3] babysit` )
+    console.log( `      ${ process.execPath }` )
+    console.log( `      → skipped (not a git checkout and not a compiled binary — install method unknown)\n` )
+
+}
+
+const update_babysit_source = async () => {
 
     console.log( `[1/3] babysit source` )
     console.log( `      ${ BABYSIT_REPO_ROOT }` )
-
-    if( !has_git ) {
-        console.log( `      → skipped (not a git checkout — likely a compiled binary install)\n` )
-        return
-    }
 
     try {
         await promise_timeout(
@@ -62,6 +92,71 @@ const update_babysit_repo = async () => {
         console.log( `      ✓ git pull --ff-only succeeded\n` )
     } catch ( e ) {
         console.log( `      ✗ git pull failed: ${ e.message }\n` )
+    }
+
+}
+
+const update_babysit_binary = async () => {
+
+    const target = process.execPath
+    const platform_tag = binary_platform_tag()
+
+    console.log( `[1/3] babysit binary` )
+    console.log( `      ${ target }` )
+    console.log( `      platform: ${ platform_tag }` )
+
+    if( !platform_tag ) {
+        console.log( `      → skipped (no published binary for ${ platform() }/${ arch() })\n` )
+        return
+    }
+
+    let release
+    try {
+        release = await promise_timeout( fetch_latest_release(), STEP_TIMEOUT_MS )
+    } catch ( e ) {
+        console.log( `      ✗ fetching release metadata failed: ${ e.message }\n` )
+        return
+    }
+
+    const latest_version = ( release.tag_name || `` ).replace( /^v/, `` )
+    console.log( `      latest release: v${ latest_version || `?` } (current: v${ pkg.version })` )
+
+    if( latest_version && latest_version === pkg.version ) {
+        console.log( `      → skipped (already on latest)\n` )
+        return
+    }
+
+    const asset = ( release.assets || [] ).find( a => a.name === `babysit-${ platform_tag }` )
+    if( !asset ) {
+        console.log( `      ✗ no binary named babysit-${ platform_tag } in release v${ latest_version }\n` )
+        return
+    }
+
+    const tmpfile = join( tmpdir(), `babysit-update-${ Date.now() }` )
+    try {
+        await download_to_file( asset.browser_download_url, tmpfile )
+        chmodSync( tmpfile, 0o755 )
+    } catch ( e ) {
+        console.log( `      ✗ download failed: ${ e.message }\n` )
+        return
+    }
+
+    // Try a plain `mv` first — works when the user owns the install dir
+    // (e.g. ~/.local/bin). Fall back to `sudo mv` for /usr/local/bin and
+    // similar root-owned locations. We don't pre-emptively `sudo`; if the
+    // user can write the target directly, no password prompt is needed.
+    try {
+        if( is_writable( target ) ) {
+            await run( `mv`, [ tmpfile, target ] )
+            console.log( `      ✓ replaced ${ target } with v${ latest_version }\n` )
+        } else {
+            console.log( `      target is not user-writable — escalating with sudo` )
+            await run( `sudo`, [ `mv`, tmpfile, target ], { stdio: `inherit` } )
+            console.log( `      ✓ replaced ${ target } with v${ latest_version }\n` )
+        }
+    } catch ( e ) {
+        console.log( `      ✗ install failed: ${ e.message }` )
+        console.log( `      (downloaded binary left at ${ tmpfile })\n` )
     }
 
 }
@@ -115,4 +210,78 @@ const update_docker_image = async () => {
         console.log( `      ✗ docker pull failed: ${ e.message }\n` )
     }
 
+}
+
+// --- helpers ---------------------------------------------------------------
+
+/**
+ * Detect whether the current process is the bun-compiled babysit binary.
+ * Same heuristic as src/cli/start.js#spawn_monitor_daemon: bun sets
+ * argv[1] to a synthetic `/$bunfs/...` path; node sets it to the .js entry.
+ * @returns {boolean}
+ */
+export const is_compiled_binary = () => {
+    const argv1 = process.argv[1] || ``
+    return argv1.startsWith( `/$bunfs` ) || argv1 === ``
+}
+
+/**
+ * Map the running platform/arch onto the release-asset suffix used by
+ * scripts/install.sh and the .github/workflows release pipeline. Returns
+ * null for unsupported combinations so the caller can skip cleanly.
+ * @returns {string|null}
+ */
+export const binary_platform_tag = () => {
+
+    const os_map = { darwin: `darwin`, linux: `linux` }
+    const arch_map = { x64: `x64`, arm64: `arm64` }
+
+    const os = os_map[ platform() ]
+    const cpu = arch_map[ arch() ]
+    if( !os || !cpu ) return null
+    return `${ os }-${ cpu }`
+
+}
+
+/** @returns {Promise<{ tag_name: string, assets: { name: string, browser_download_url: string }[] }>} */
+const fetch_latest_release = async () => {
+
+    const response = await fetch( RELEASES_LATEST_API, {
+        headers: {
+            accept: `application/vnd.github+json`,
+            'user-agent': `babysit-updater`,
+        },
+    } )
+
+    if( !response.ok ) {
+        throw new Error( `GitHub API returned ${ response.status } ${ response.statusText }` )
+    }
+
+    return await response.json()
+
+}
+
+/**
+ * Stream a URL into a file via curl. We shell out instead of piping the
+ * fetch body through Node so a network stall hits curl's own connect/read
+ * timeouts (and so progress goes through the kernel rather than the JS
+ * heap for ~50 MB binaries).
+ */
+const download_to_file = ( url, dest ) =>
+    run( `curl`, [ `-fsSL`, `-o`, dest, url ], {}, BINARY_DOWNLOAD_TIMEOUT_MS )
+
+/**
+ * Writability check for the install target — both the file (so we can
+ * overwrite it) and its containing directory (so we can `mv` over it,
+ * which on POSIX is unlink + create). Defaults to false on error so the
+ * sudo branch fires — wrong-direction conservatism.
+ */
+const is_writable = ( path ) => {
+    try {
+        accessSync( path, fs_constants.W_OK )
+        accessSync( dirname( path ), fs_constants.W_OK )
+        return true
+    } catch {
+        return false
+    }
 }
