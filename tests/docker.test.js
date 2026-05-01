@@ -62,30 +62,37 @@ describe( `codex adapter`, () => {
 
 } )
 
-describe( `system-prompt-file hint`, () => {
+describe( `user-globals bind-mount target`, () => {
 
-    // Targets must be container-local — /workspace is read-only in mudbox mode
-    // and ephemeral in sandbox mode, so writing the system prompt there silently
-    // fails for those modes.
+    // Each non-claude agent declares the container path where the host's
+    // ~/.agents/AGENTS.md gets bind-mounted (read-only) so the agent picks
+    // it up via its own native discovery — codex's CODEX_HOME/AGENTS.md,
+    // gemini's GEMINI.md, opencode's AGENTS.md, claude's CLAUDE.md.
+    // Targets must be container-local — /workspace is read-only in mudbox
+    // and ephemeral in sandbox, so the bind would silently fail there.
 
     it( `codex uses ~/.codex/AGENTS.md (NOT instructions.md — that file is no longer read)`, () => {
         // Per current OpenAI Codex docs, the global scope reads
         // AGENTS.override.md then AGENTS.md from CODEX_HOME. The legacy
-        // instructions.md path is silently ignored — writing there meant
-        // babysit's system prompt never reached the model.
-        expect( codex.container_paths.system_prompt_file ).toBe( `/home/node/.codex/AGENTS.md` )
-        expect( codex.container_paths.system_prompt_file ).not.toMatch( /instructions\.md$/ )
-        expect( codex.container_paths.system_prompt_file ).not.toMatch( /^\/workspace/ )
+        // instructions.md path is silently ignored.
+        expect( codex.container_paths.user_globals_file ).toBe( `/home/node/.codex/AGENTS.md` )
+        expect( codex.container_paths.user_globals_file ).not.toMatch( /instructions\.md$/ )
+        expect( codex.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
     } )
 
     it( `gemini uses ~/.gemini/GEMINI.md`, () => {
-        expect( gemini.container_paths.system_prompt_file ).toBe( `/home/node/.gemini/GEMINI.md` )
-        expect( gemini.container_paths.system_prompt_file ).not.toMatch( /^\/workspace/ )
+        expect( gemini.container_paths.user_globals_file ).toBe( `/home/node/.gemini/GEMINI.md` )
+        expect( gemini.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
     } )
 
     it( `opencode uses ~/.config/opencode/AGENTS.md`, () => {
-        expect( opencode.container_paths.system_prompt_file ).toBe( `/home/node/.config/opencode/AGENTS.md` )
-        expect( opencode.container_paths.system_prompt_file ).not.toMatch( /^\/workspace/ )
+        expect( opencode.container_paths.user_globals_file ).toBe( `/home/node/.config/opencode/AGENTS.md` )
+        expect( opencode.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
+    } )
+
+    it( `claude uses ~/.claude/CLAUDE.md`, () => {
+        expect( claude.container_paths.user_globals_file ).toBe( `/home/node/.claude/CLAUDE.md` )
+        expect( claude.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
     } )
 
 } )
@@ -118,12 +125,12 @@ describe( `agent home env vars`, () => {
         expect( claude.home.dir ).toBe( `/home/node/.claude` )
     } )
 
-    it( `system_prompt_file lives under the declared home dir for codex/opencode`, () => {
-        // Sanity: writing the system prompt to a path outside the home dir
-        // would be silently ignored once we set the env var, since the agent
-        // would be looking at home_dir + filename instead.
-        expect( codex.container_paths.system_prompt_file.startsWith( codex.home.dir + `/` ) ).toBe( true )
-        expect( opencode.container_paths.system_prompt_file.startsWith( opencode.home.dir + `/` ) ).toBe( true )
+    it( `user_globals_file lives under the declared home dir for codex/opencode`, () => {
+        // Sanity: bind-mounting the user globals to a path outside the home
+        // dir would land outside the agent's native discovery scope and the
+        // file would never get loaded.
+        expect( codex.container_paths.user_globals_file.startsWith( codex.home.dir + `/` ) ).toBe( true )
+        expect( opencode.container_paths.user_globals_file.startsWith( opencode.home.dir + `/` ) ).toBe( true )
     } )
 
 } )
@@ -154,37 +161,82 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `does not expand $-variables in env values`, () => {
+    it( `does not expand $-variables in the seeded first-message prompt`, () => {
 
-        // System prompt with $ should be passed literally, not expanded by sh
+        // Babysit base prompt with $ should be passed literally, not
+        // expanded by the shell that materialises the docker command.
         const cmd = build_docker_command( make_options( {
             agent: codex,
             system_prompt: `Use $HOME wisely`,
         } ) )
 
-        expect( cmd ).toContain( `'BABYSIT_SYSTEM_PROMPT=Use $HOME wisely'` )
+        // codex takes the prompt as the trailing positional arg — single-quoted
+        // by shell_quote because of the embedded space and $.
+        expect( cmd ).toContain( `'Use $HOME wisely'` )
+        expect( cmd ).not.toContain( `BABYSIT_SYSTEM_PROMPT` )
 
     } )
 
-    it( `injects BABYSIT_SYSTEM_PROMPT_FILE for non-claude agents`, () => {
+    it( `seeds the babysit base as a first-message FYI for codex (positional)`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: codex,
+            system_prompt: `hello world`,
+        } ) )
+
+        // codex CLI: `codex [OPTIONS] [PROMPT]` — prompt as final positional.
+        // Quoted because of the embedded space.
+        expect( cmd ).toMatch( /codex .* 'hello world'$/ )
+
+    } )
+
+    it( `seeds the babysit base as a first-message FYI for gemini (-i flag)`, () => {
 
         const cmd = build_docker_command( make_options( {
             agent: gemini,
-            system_prompt: `hello`,
+            system_prompt: `hello world`,
         } ) )
 
-        expect( cmd ).toContain( `BABYSIT_SYSTEM_PROMPT_FILE=/home/node/.gemini/GEMINI.md` )
+        // gemini -i / --prompt-interactive: "Execute the provided prompt and
+        // continue in interactive mode".
+        expect( cmd ).toContain( `-i 'hello world'` )
 
     } )
 
-    it( `omits BABYSIT_SYSTEM_PROMPT_FILE for claude (uses CLI flag instead)`, () => {
+    it( `seeds the babysit base as a first-message FYI for opencode (--prompt)`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: opencode,
+            system_prompt: `hello world`,
+        } ) )
+
+        expect( cmd ).toContain( `--prompt 'hello world'` )
+
+    } )
+
+    it( `does not seed a first-message FYI for claude (uses --append-system-prompt instead)`, () => {
 
         const cmd = build_docker_command( make_options( {
             agent: claude,
             system_prompt: `hello`,
         } ) )
 
-        expect( cmd ).not.toContain( `BABYSIT_SYSTEM_PROMPT_FILE` )
+        // Claude has the proper CLI flag — no need to burn a user-message slot
+        expect( cmd ).toContain( `--append-system-prompt hello` )
+        expect( cmd ).not.toContain( `--prompt hello` )
+        expect( cmd ).not.toContain( ` -i hello` )
+
+    } )
+
+    it( `does not set BABYSIT_SYSTEM_PROMPT* env vars (file-write mechanism removed)`, () => {
+
+        for ( const a of [ claude, codex, gemini, opencode ] ) {
+            const cmd = build_docker_command( make_options( {
+                agent: a,
+                system_prompt: `hello`,
+            } ) )
+            expect( cmd ).not.toContain( `BABYSIT_SYSTEM_PROMPT` )
+        }
 
     } )
 

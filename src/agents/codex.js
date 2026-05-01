@@ -29,7 +29,7 @@ export const codex = {
     // host doesn't accidentally redirect codex to a path we never mount.
     // Default container value is the same as codex's own ($HOME/.codex), but
     // declaring it explicitly lets `build_docker_command` set CODEX_HOME=...
-    // for the agent and derive `system_prompt_file` from the same source.
+    // for the agent and derive `user_globals_file` from the same source.
     home: {
         env_var: `CODEX_HOME`,
         dir: `/home/node/.codex`,
@@ -39,12 +39,12 @@ export const codex = {
         // Mirror `${CODEX_HOME}/auth.json` from host into container so OAuth
         // sessions started with `codex auth login` flow through.
         creds: `/home/node/.codex/auth.json`,
-        // Codex global instructions live at `${CODEX_HOME}/AGENTS.md`
-        // (or AGENTS.override.md, but plain AGENTS.md is the canonical name).
-        // The older `instructions.md` form is no longer honored — using it
-        // here previously meant babysit's system prompt was silently ignored.
-        // Path is container-local so it stays writable in mudbox / sandbox too.
-        system_prompt_file: `/home/node/.codex/AGENTS.md`,
+        // Codex's global instructions path: `${CODEX_HOME}/AGENTS.md`.
+        // Babysit bind-mounts host `~/.agents/AGENTS.md` here read-only so
+        // codex picks up the user's cross-agent globals via its own discovery.
+        // The babysit base prompt is delivered separately as a first-message
+        // FYI (codex has no --append-system-prompt flag).
+        user_globals_file: `/home/node/.codex/AGENTS.md`,
     },
 
     flags: {
@@ -54,10 +54,13 @@ export const codex = {
         // leave the workspace-write sandbox active, blocking real edits in babysit
         // --yolo mode. Use the most permissive flag.
         skip_permissions: () => `--dangerously-bypass-approvals-and-sandbox`,
-        // Codex has no --append-system-prompt flag — system prompt is injected
-        // via the BABYSIT_SYSTEM_PROMPT env var and the entrypoint writes it
-        // to ~/.codex/instructions.md before launching the agent.
+        // Codex has no --append-system-prompt flag. Babysit delivers its base
+        // prompt as a first-message FYI via codex's positional PROMPT arg;
+        // the user's globals reach codex through the bind-mounted AGENTS.md.
         append_system_prompt: null,
+        // Initial-prompt seeding — codex CLI: `codex [PROMPT]`, "Optional user
+        // prompt to start the session" (per --help). Stays interactive.
+        first_message: ( text ) => [ text ],
         // Interactive resume — `codex resume <id>`. The non-interactive form
         // (`codex exec resume`) wouldn't be supervisable through tmux.
         resume: ( id ) => [ `resume`, id ],

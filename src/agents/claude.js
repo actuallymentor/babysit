@@ -30,9 +30,11 @@ export const claude = {
     container_paths: {
         creds: `/home/node/.claude/.credentials.json`,
         config: `/home/node/.claude/settings.json`,
-        // Claude takes the system prompt as a CLI flag, so this hint is unused —
-        // included for shape consistency with the other adapters.
-        system_prompt_file: null,
+        // Claude reads ~/.claude/CLAUDE.md as global context. Babysit
+        // bind-mounts host `~/.agents/AGENTS.md` here so claude picks up
+        // the user's cross-agent globals via its own discovery. Babysit's
+        // base prompt is delivered separately via --append-system-prompt.
+        user_globals_file: `/home/node/.claude/CLAUDE.md`,
     },
 
     flags: {
