@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.3 — 2026-05-01
+
+### 🐛 Fixed
+- **Codex emitted `codex_apps` MCP token_expired warning on every container startup.** The `apps` feature (default-on per `codex features list`) spawns the codex_apps MCP, which demands a fresh OAuth access token from OpenAI's hosted-connectors endpoint at startup. Babysit's pre-flight refresh (`<agent> --version`) does NOT actually rotate the codex token — confirmed empirically that none of `codex --version`, `codex login status`, `codex mcp list` modify `auth.json`. So any container started >1h after the host's last interactive codex run reliably hit `MCP client for codex_apps failed to start: token_expired`. Babysit now writes `[features]\napps = false` into the mounted `config.toml` (equivalent to `codex --disable apps`), suppressing the connector entirely. The connectors are useless inside a sandboxed coding-agent container anyway; users who need them can re-enable per-session with `babysit codex -- -c features.apps=true`. See GOTCHAS.md #37.
+- **Codex warned `Codex could not find bubblewrap on PATH` on every container startup.** The `node:24-slim` base image doesn't ship bubblewrap, so codex fell back to its vendored copy with a noisy heads-up. Added `bubblewrap` to the Dockerfile apt-get list. See GOTCHAS.md #38.
+
 ## 0.6.2 — 2026-05-01
 
 ### ✨ Added

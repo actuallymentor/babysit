@@ -224,6 +224,23 @@ describe( `codex_extra_mounts`, () => {
 
     } )
 
+    it( `disables the codex_apps MCP via [features] apps = false`, () => {
+
+        // The codex_apps MCP demands a fresh OAuth access token at startup
+        // and emits a noisy "token_expired" warning on every fresh container
+        // (codex exposes no CLI command to force a token refresh, so the
+        // pre-flight cannot guarantee the host token is current). The
+        // connectors are also useless inside a sandboxed coding-agent
+        // container. Disabled here via the documented features flag.
+        const mounts = codex_extra_mounts()
+        const config_mount = mounts.find( m => m.container === `/home/node/.codex/config.toml` )
+        expect( config_mount ).toBeTruthy()
+
+        const content = readFileSync( config_mount.host, `utf-8` )
+        expect( content ).toMatch( /\[features\][\s\S]*apps\s*=\s*false/ )
+
+    } )
+
 } )
 
 describe( `gemini_extra_mounts`, () => {

@@ -171,8 +171,21 @@ export const codex_extra_mounts = () => {
 
 /**
  * Inject the "trust /workspace" + "model nux seen" entries into a codex
- * config.toml. Idempotent: re-running on output of itself produces the
- * same string. Works on an empty input (fresh-install case).
+ * config.toml, plus disable the `apps` feature flag (which spawns the
+ * codex_apps MCP). Idempotent: re-running on output of itself produces
+ * the same string. Works on an empty input (fresh-install case).
+ *
+ * Why `apps = false`: codex_apps connects to OpenAI's hosted Drive/Slides/
+ * etc connectors via an MCP transport that demands a fresh OAuth access
+ * token at every codex startup. Babysit pre-flight refreshes the codex CLI
+ * token but cannot force a refresh of the access token used by codex_apps
+ * (codex exposes no CLI command for it), so containers spawned more than
+ * an hour after the user's last host-side codex run reliably emit a noisy
+ * "MCP client for codex_apps failed to start: token_expired" warning. The
+ * connectors are also useless in a sandboxed coding-agent context — the
+ * babysit container has no Google Drive workflow — so we disable the
+ * feature outright via `[features] apps = false` (equivalent to passing
+ * `--disable apps` to codex). Run `codex features list` to see all flags.
  */
 const inject_codex_first_run_bypass = ( raw ) => {
 
@@ -192,6 +205,18 @@ const inject_codex_first_run_bypass = ( raw ) => {
             out = out.replace( /\[tui\.model_availability_nux\]\n/, `[tui.model_availability_nux]\n${ lines }\n` )
         } else {
             out += `\n\n[tui.model_availability_nux]\n${ lines }\n`
+        }
+    }
+
+    // Disable the `apps` feature (codex_apps MCP). Idempotent: only inject
+    // if the key isn't already present in any [features] section.
+    const has_apps_key = /^\s*apps\s*=/m.test( out )
+    if( !has_apps_key ) {
+        const has_features_section = /\[features\]/.test( out )
+        if( has_features_section ) {
+            out = out.replace( /\[features\]\n/, `[features]\napps = false\n` )
+        } else {
+            out += `\n\n[features]\napps = false\n`
         }
     }
 
