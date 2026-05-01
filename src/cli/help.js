@@ -16,6 +16,7 @@ Usage:
   babysit list                         List active sessions
   babysit open <session_id>            Attach to an active session
   babysit resume <session_id> [flags]  Resume a previous session
+  babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
 Agents: ${ agents }
 

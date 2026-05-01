@@ -43,6 +43,9 @@ export const parse_args = ( argv ) => {
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
 
+    // babysit update — verbose self-update (git pulls + docker pull)
+    if( verb === `update` ) return { verb: `update`, agent: null, flags, passthrough: [] }
+
     // babysit __monitor <id> — internal verb spawned by cmd_start so the
     // monitor outlives the foreground process. Not surfaced in --help.
     if( verb === `__monitor` ) {

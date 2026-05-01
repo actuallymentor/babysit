@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — 2026-05-01
+
+### 🐛 Fixed
+- **Claude still popped the theme picker on fresh containers**, despite the v0.6.0 onboarding-bypass mounts. Claude ≥ 2.1.x added a `lastOnboardingVersion` gate: if the installed version is newer than the recorded one, claude reruns the version-delta onboarding (theme picker) even when `hasCompletedOnboarding: true`. Because the Dockerfile pulls the latest claude on every image build, the host's recorded version was almost always behind the container's. Babysit now also pins `lastOnboardingVersion` to a sentinel (`9999.0.0`, exported as `ONBOARDING_VERSION_SENTINEL`) high enough to outpace any plausible future release. New regression test in `tests/setup.test.js`.
+
+### ✨ Added
+- **`babysit update` — verbose self-update.** Runs the same three steps as the silent pre-flight (git pull on the babysit checkout, git pull on `~/.agents`, docker pull on the babysit image), but narrates each step (`[1/3] … ✓ succeeded`) with absolute paths and skip reasons so the user can see what's local-only, what's a compiled-binary install, and which step failed. Sequential rather than parallel so the output reads top-to-bottom. Excluded from the pre-flight wrapper to avoid double-pulling.
+
 ## 0.6.0 — 2026-05-01
 
 ### 🐛 Fixed

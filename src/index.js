@@ -11,6 +11,7 @@ import { cmd_list } from './cli/list.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume } from './cli/resume.js'
 import { cmd_monitor } from './cli/monitor.js'
+import { cmd_update } from './cli/update.js'
 import { check_dependencies } from './deps/check.js'
 import { run_self_update } from './deps/selfupdate.js'
 
@@ -19,7 +20,8 @@ import { run_self_update } from './deps/selfupdate.js'
 // where pulling images would be surprising — exclude them. `__monitor` is the
 // background daemon spawned by `cmd_start`; the foreground already ran the
 // pre-flight, and re-running it here would double-pull the image on every
-// session start.
+// session start. `update` is itself the verbose update — running the silent
+// pre-flight in front would make us pull twice.
 const PREFLIGHT_VERBS = new Set( [ `start`, `resume`, `list`, `open` ] )
 
 /**
@@ -72,6 +74,10 @@ const main = async () => {
 
     case `open`:
         await cmd_open( cmd )
+        break
+
+    case `update`:
+        await cmd_update()
         break
 
     case `__monitor`:
