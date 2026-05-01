@@ -105,3 +105,54 @@ describe( `credential coverage`, () => {
     } )
 
 } )
+
+describe( `model defaults`, () => {
+
+    // Wrong defaults silently break sessions for the most common auth path:
+    //   - opencode default `gpt-5.5-pro` is rejected by ChatGPT-account auth
+    //     ("model not supported when using Codex with a ChatGPT account") —
+    //     the ChatGPT subscription is the most common opencode auth path,
+    //     so the safer default is `openai/gpt-5.5` which works for both
+    //     OAuth and API-key flows.
+    //   - gemini's `gemini-pro-latest` 404s for users on Gemini Code Assist
+    //     for Individuals (the free tier — Pro routing was restricted to
+    //     paid plans). Empty defaults let gemini's internal agent router
+    //     pick whatever the user's plan supports.
+
+    it( `opencode pins openai/gpt-5.5 (works for both OAuth and API-key auth)`, () => {
+        expect( get_agent( `opencode` ).defaults.model ).toBe( `openai/gpt-5.5` )
+    } )
+
+    it( `gemini does NOT force a model (would break free-tier users)`, () => {
+        expect( get_agent( `gemini` ).defaults.model ).toBeUndefined()
+    } )
+
+    it( `claude and codex still force their max-effort models`, () => {
+        expect( get_agent( `claude` ).defaults.model ).toBe( `opus` )
+        expect( get_agent( `claude` ).defaults.effort ).toBe( `max` )
+        expect( get_agent( `codex` ).defaults.model ).toBe( `gpt-5.5` )
+        expect( get_agent( `codex` ).defaults.effort ).toBe( `high` )
+    } )
+
+} )
+
+describe( `gemini extra_args`, () => {
+
+    // gemini --skip-trust is a one-shot session override that bypasses the
+    // trustedFolders.json file. We only want it under --yolo, where the user
+    // has explicitly said "trust this run, no questions". Outside yolo,
+    // the trustedFolders.json mount is the source of truth — passing
+    // --skip-trust there would override an intentional non-trust setting.
+
+    const gemini = get_agent( `gemini` )
+
+    it( `passes --skip-trust under --yolo`, () => {
+        expect( gemini.extra_args( { yolo: true } ) ).toEqual( [ `--skip-trust` ] )
+    } )
+
+    it( `does not pass --skip-trust outside --yolo`, () => {
+        expect( gemini.extra_args( { yolo: false } ) ).toEqual( [] )
+        expect( gemini.extra_args( {} ) ).toEqual( [] )
+    } )
+
+} )

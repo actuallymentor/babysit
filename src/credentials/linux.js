@@ -1,8 +1,7 @@
-import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { tmpdir } from 'os'
-import { join } from 'path'
+import { readFileSync, existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { run_sync } from '../utils/exec.js'
+import { copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
 import { start_credential_sync } from './refresh.js'
 
 /**
@@ -30,9 +29,12 @@ export const setup_linux_credentials = async ( agent ) => {
             // would ride the container for 5 min before our sync daemon catches up.
             run_sync( `${ agent.bin } --version 2>/dev/null` )
 
-            const content = readFileSync( expanded, `utf-8` )
-            const tmpfile = join( tmpdir(), `babysit-creds-${ agent.name }-${ Date.now() }` )
-            writeFileSync( tmpfile, content, { mode: 0o666 } )
+            // Copy host file into a chmod-666 tmpfile so the container's
+            // `node` user can both read AND write it (agents like codex /
+            // gemini refresh tokens in place). See utils/tmpfile.js for why
+            // chmod is needed beyond writeFileSync's `mode` option.
+            const tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
+            if( !tmpfile ) return { mounts, sync }
 
             mounts.push( {
                 type: `volume`,
