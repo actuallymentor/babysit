@@ -18,6 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo curl wget jq tmux openssh-client \
     openssl gnupg ca-certificates \
     rsync tar zip unzip gzip xz-utils zstd patch \
+    # Codex sandboxing — codex prefers a system bubblewrap on PATH and falls
+    # back to a vendored copy with a startup warning if missing
+    bubblewrap \
     # Debugging
     htop strace lsof procps \
     # Network
