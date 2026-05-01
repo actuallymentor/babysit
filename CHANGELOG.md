@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 — 2026-05-01
+
+### ✨ Changed
+- **Install target moved from `/usr/local/bin` to `~/.local/bin`** so neither the installer nor `babysit update` ever needs sudo. `scripts/install.sh` now `mkdir -p`s the user-local bin, drops the binary there, warns if `~/.local/bin` isn't on PATH (with the exact line to add to a shell rc), and warns if a legacy `/usr/local/bin/babysit` is still around shadowing the new install. `babysit update` follows the same convention via a `USER_INSTALL_DIR` constant kept in sync with the installer. The previously-required `sudo mv` fallback in update.js is gone.
+- **Migration path for users with the old `/usr/local/bin` install**: `babysit update` detects when `process.execPath` lives in a non-user-writable dir, writes the fresh binary to `~/.local/bin/babysit` instead, and prints a one-time notice with the exact `sudo rm` command to clear the legacy copy. Babysit itself never escalates — the only sudo in the whole flow is the manual cleanup the user chooses to run. New tests in `tests/update.test.js` cover the `is_on_path` PATH-ordering check that gates the warning.
+
 ## 0.6.3 — 2026-05-01
 
 ### 🐛 Fixed

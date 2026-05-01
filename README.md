@@ -10,7 +10,7 @@ Spiritual successor to [sir-claudius](https://github.com/actuallymentor/sir-clau
 curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts/install.sh | bash
 ```
 
-The installer detects your OS and architecture, downloads the correct binary, and checks that `docker`, `tmux`, and `git` are installed.
+The installer detects your OS and architecture, downloads the correct binary to `~/.local/bin/babysit` (no sudo required), and checks that `docker`, `tmux`, and `git` are installed. If `~/.local/bin` isn't on your `$PATH` yet, the script tells you the line to add to your shell rc.
 
 ## Quick start
 
