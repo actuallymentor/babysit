@@ -33,7 +33,7 @@ This container is a sandboxed environment for LLM coding agents, built by [babys
 
 ## Filesystem
 - `/workspace` — bind-mounted from host (read-write, read-only, or empty depending on mode)
-- `~/.agents` — host agent configs (read-only)
+- `~/.agents` — host agent configs (read-write, bind-mounted)
 - `~/AGENTS.md` — this file
 
 ## Permissions
