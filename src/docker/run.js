@@ -1,4 +1,4 @@
-import { existsSync } from 'fs'
+import { existsSync, statSync } from 'fs'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
 import { detect_dependency_volumes } from './volumes.js'
@@ -62,9 +62,22 @@ export const build_docker_command = ( options ) => {
         flags.push( `-v`, `${ workspace }:/workspace` )
     }
 
-    // Always mount ~/.agents read-only (if it exists)
+    // Mount ~/.agents read-write so agents can persist memories, skills, and
+    // other state back to the host. The host directory is often owned by a uid
+    // that doesn't match the container's `node` user (1000), which would block
+    // reads through DAC. Sidestep that by adding the host directory's gid as a
+    // supplementary group on the container user — group perms on the bind mount
+    // then grant access, and SGID (when set on the host dir) keeps files the
+    // agent writes back inheriting the host group so the host user can still
+    // edit them. Per-file read-only is preserved via host file perms.
     if( existsSync( AGENTS_DIR ) ) {
-        flags.push( `-v`, `${ AGENTS_DIR }:/home/node/.agents:ro` )
+        flags.push( `-v`, `${ AGENTS_DIR }:/home/node/.agents` )
+        try {
+            const { gid } = statSync( AGENTS_DIR )
+            flags.push( `--group-add`, String( gid ) )
+        } catch( e ) {
+            log.debug( `Could not stat ${ AGENTS_DIR } for group-add: ${ e.message }` )
+        }
     }
 
     // Dependency volume isolation (unless disabled in config)

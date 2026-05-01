@@ -236,6 +236,28 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `mounts ~/.agents read-write with --group-add when present`, async () => {
+
+        // The host directory is often owned by a uid/gid that doesn't match
+        // the container's `node` user. RO mounting silently broke reads under
+        // restrictive group perms; RW + supplementary group means the agent
+        // can read AND persist memories/skills back, with files inheriting the
+        // host gid (via SGID on the dir) so they stay editable on the host.
+        const { existsSync, statSync } = await import( `fs` )
+        const { homedir } = await import( `os` )
+        const { join } = await import( `path` )
+
+        const real_agents = join( homedir(), `.agents` )
+        if( !existsSync( real_agents ) ) return // host has no ~/.agents — nothing to assert
+
+        const cmd = build_docker_command( make_options() )
+        expect( cmd ).toContain( `:/home/node/.agents ` ) // mount target without :ro
+        expect( cmd ).not.toContain( `/home/node/.agents:ro` )
+        const { gid } = statSync( real_agents )
+        expect( cmd ).toContain( `--group-add ${ gid }` )
+
+    } )
+
 } )
 
 describe( `dependency-volume detection`, () => {
