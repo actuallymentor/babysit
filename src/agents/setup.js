@@ -22,13 +22,17 @@ const AGENTS_DIR = join( home, `.agents` )
  * brand-new install and pops the theme picker + workspace-trust dialog —
  * neither has a CLI flag override, so the supervised session stalls.
  *
+ * @param {Object} [options]
+ * @param {boolean} [options.yolo=false] - Persist `skipDangerousModePermissionPrompt: true`
+ *   in the merged settings tmpfile so claude doesn't show the "Bypass Permissions
+ *   mode" warning at every `--dangerously-skip-permissions` launch.
  * @returns {{ host: string, container: string, ro?: boolean }[]}
  */
-export const claude_extra_mounts = () => {
+export const claude_extra_mounts = ( { yolo = false } = {} ) => {
 
     const mounts = []
 
-    const settings_tmpfile = build_claude_settings_tmpfile( join( home, `.claude`, `settings.json` ) )
+    const settings_tmpfile = build_claude_settings_tmpfile( join( home, `.claude`, `settings.json` ), { yolo } )
     if( settings_tmpfile ) {
         mounts.push( { host: settings_tmpfile, container: `/home/node/.claude/settings.json` } )
     }
@@ -69,15 +73,24 @@ export const claude_extra_mounts = () => {
  * Reads the host's settings.json (if any), merges in the babysit statusline
  * override, and writes the result to a chmod-666 tmpfile.
  * Exported for direct testing — the round-trip happens via `claude_extra_mounts`.
+ *
+ * In yolo mode we also persist `skipDangerousModePermissionPrompt: true` so
+ * claude doesn't show the "Bypass Permissions mode" warning dialog on every
+ * `--dangerously-skip-permissions` launch. The user already opted in via
+ * `--yolo`; the merged file lives only inside the container, so the host's
+ * settings.json is untouched.
+ *
  * @param {string} host_settings_path - Path to the host's settings.json (may not exist)
+ * @param {Object} [options]
+ * @param {boolean} [options.yolo=false] - When true, suppress the bypass-permissions warning
  * @returns {string|null} Tmpfile path that should be bind-mounted, or null on error
  */
-export const build_claude_settings_tmpfile = ( host_settings_path ) => {
+export const build_claude_settings_tmpfile = ( host_settings_path, { yolo = false } = {} ) => {
 
     let settings = {}
     if( existsSync( host_settings_path ) ) {
         try {
-            settings = JSON.parse( readFileSync( host_settings_path, `utf-8` ) ) 
+            settings = JSON.parse( readFileSync( host_settings_path, `utf-8` ) )
         } catch { /* malformed → start fresh */ }
     }
 
@@ -85,6 +98,11 @@ export const build_claude_settings_tmpfile = ( host_settings_path ) => {
         type: `command`,
         command: `bash /usr/local/bin/statusline.sh`,
     }
+
+    // Top-level key (NOT nested under `permissions`). Suppresses the
+    // "WARNING: Claude Code running in Bypass Permissions mode" dialog
+    // that otherwise fires on every `--dangerously-skip-permissions` launch.
+    if( yolo ) settings.skipDangerousModePermissionPrompt = true
 
     return build_tmpfile( `claude`, `settings.json`, JSON.stringify( settings, null, 2 ) )
 
@@ -302,8 +320,11 @@ const EXTRA_MOUNTS_BY_AGENT = {
 }
 
 /**
- * Look up the extra mounts builder for a given agent.
+ * Look up the extra mounts builder for a given agent. The returned function
+ * accepts an options object that adapters can use for mode-dependent behaviour
+ * (currently: claude reads `yolo` to suppress the bypass-permissions warning).
+ * Adapters that don't care about options ignore them.
  * @param {string} agent_name
- * @returns {() => { host: string, container: string, ro?: boolean }[]}
+ * @returns {(options?: { yolo?: boolean }) => { host: string, container: string, ro?: boolean }[]}
  */
 export const get_extra_mounts = ( agent_name ) => EXTRA_MOUNTS_BY_AGENT[ agent_name ] || NO_EXTRA_MOUNTS

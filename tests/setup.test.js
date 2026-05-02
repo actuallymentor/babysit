@@ -92,6 +92,24 @@ describe( `build_claude_settings_tmpfile`, () => {
 
     } )
 
+    it( `omits skipDangerousModePermissionPrompt when yolo is off`, () => {
+
+        const tmpfile = build_claude_settings_tmpfile( join( dir, `nonexistent.json` ) )
+        const settings = JSON.parse( readFileSync( tmpfile, `utf-8` ) )
+        expect( settings.skipDangerousModePermissionPrompt ).toBeUndefined()
+
+    } )
+
+    it( `sets skipDangerousModePermissionPrompt at top-level when yolo is on`, () => {
+
+        const tmpfile = build_claude_settings_tmpfile( join( dir, `nonexistent.json` ), { yolo: true } )
+        const settings = JSON.parse( readFileSync( tmpfile, `utf-8` ) )
+        // Must be top-level (not nested under "permissions") — claude only honours it there.
+        expect( settings.skipDangerousModePermissionPrompt ).toBe( true )
+        expect( settings.permissions?.skipDangerousModePermissionPrompt ).toBeUndefined()
+
+    } )
+
 } )
 
 describe( `build_claude_json_tmpfile`, () => {

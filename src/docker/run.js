@@ -161,7 +161,9 @@ export const build_docker_command = ( options ) => {
     // a list of `{ host, container, ro? }` tmpfile mounts that bypass
     // first-run dialogs (claude .claude.json, codex config.toml, gemini
     // settings.json + trustedFolders, etc). See src/agents/setup.js.
-    for( const m of get_extra_mounts( agent.name )() ) {
+    // `yolo` is forwarded so claude can suppress its bypass-permissions warning
+    // when the user has explicitly opted in via --yolo.
+    for( const m of get_extra_mounts( agent.name )( { yolo: mode.yolo } ) ) {
         const target = m.ro ? `${ m.container }:ro` : m.container
         flags.push( `-v`, `${ m.host }:${ target }` )
     }
