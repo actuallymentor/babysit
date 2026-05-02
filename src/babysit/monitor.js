@@ -93,7 +93,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
         if( !alive ) {
             log.info( `Session ended: ${ session_name }` )
             write_loop_deadline( `idle` )
-            if( on_exit ) on_exit()
+            if( on_exit ) await on_exit()
             break
         }
 
