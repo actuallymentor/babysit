@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — 2026-05-02
+
+### 🐛 Fixed
+- **`babysit claude --yolo` no longer shows the "Bypass Permissions mode" warning dialog at every launch.** Claude only suppresses the warning when `skipDangerousModePermissionPrompt: true` is persisted in user-scope `settings.json`; the `--dangerously-skip-permissions` CLI flag alone doesn't dismiss it. Babysit now injects that key into the merged settings tmpfile (`build_claude_settings_tmpfile` in `src/agents/setup.js`) when yolo is on, threaded through `claude_extra_mounts` and `get_extra_mounts`. The host's `~/.claude/settings.json` is still untouched — only the in-container view gets the override. Mac was the most visible case because most fresh hosts haven't accepted the dialog locally yet.
+- **`babysit codex` (and gemini/opencode) no longer fails with "refresh token was already used" inside the container.** Cause: credential sync was one-way (host → container). When the in-container agent rotated its OAuth refresh_token (one-time-use on OpenAI / Google), the new state landed in the bind-mounted tmpfile but never flowed back to the host's `~/.codex/auth.json` (or `oauth_creds.json`). Next babysit session copied the stale, server-invalidated token forward and the container's first refresh attempt blew up. Pre-flight `<agent> --version` was assumed to rotate tokens like it does for claude, but codex/gemini/opencode only refresh on real API calls — silent no-op. Sync is now bidirectional: `start_credential_sync` takes a `write_destination` callback; on every tick + on `stop()`, container-side updates get pushed back to the host source. Conflict policy: source wins (host re-auth beats container refresh). Keychain-backed claude on darwin keeps one-way sync. **Recovery for users hitting this now**: re-auth on the host (`codex auth login` / `gemini auth login` / `opencode auth login`); the bidirectional sync only prevents *future* invalidations.
+
+### 🔥 Removed
+- **Auto-update sweep on every command is gone.** Previously every `babysit start` / `resume` / `list` / `open` triggered a parallel `git pull` on the babysit repo, `git pull` on `~/.agents`, `docker pull`, and (in some local versions) a host-agent CLI upgrade pass. Convenient when it worked, surprising and slow when it didn't — flaky networks turned a 1s session start into a 15s timeout cascade, and stable installs got nothing from the daily churn. Updates are now explicit: run `babysit update` to refresh everything in one sweep. The dep check still runs on every command — that's cheap and catches a missing docker/tmux before we hit a confusing downstream error.
+- **`--no-update` flag.** Existed solely to skip the implicit auto-update; with the auto-update gone, the flag has no purpose. Anyone still passing it will see the token forwarded to the agent CLI as passthrough.
+
+### ✨ Added
+- **`babysit update` now also upgrades host-installed coding agent CLIs.** New Step 4 in the narrated sweep loops over `claude` / `codex` / `gemini` / `opencode`, skips agents not on PATH, and tries the registered strategies in order (`self_update` → `npm` → `brew`, gated by realpath detection so an npm-installed agent never accidentally triggers brew). Per-agent strategies declared on each adapter; runner lives at `src/deps/agent_update.js`. Step labels updated `[1/3]` → `[1/4]` etc.
+
 ## 0.7.0 — 2026-05-01
 
 ### ✨ Changed
