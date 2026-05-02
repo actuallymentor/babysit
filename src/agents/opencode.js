@@ -62,4 +62,10 @@ export const opencode = {
 
     extra_env: () => ( {} ),
 
+    update: {
+        self_update: { cmd: `opencode`, args: [ `upgrade` ] },
+        npm_package: `opencode-ai`,
+        brew_package: `opencode`,
+    },
+
 }

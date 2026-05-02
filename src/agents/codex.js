@@ -81,4 +81,10 @@ export const codex = {
 
     extra_env: () => ( {} ),
 
+    // Codex has no documented brew formula and no built-in self-update — the
+    // canonical upgrade path per OpenAI's docs is `npm install -g @openai/codex@latest`.
+    update: {
+        npm_package: `@openai/codex`,
+    },
+
 }

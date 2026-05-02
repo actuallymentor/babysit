@@ -13,16 +13,12 @@ import { cmd_resume } from './cli/resume.js'
 import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
 import { check_dependencies } from './deps/check.js'
-import { run_self_update } from './deps/selfupdate.js'
 
-// Subcommands that need pre-flight (dep check + self-update). The spec says
-// "On any babysit command", but `help` and `--version` are pure metadata reads
-// where pulling images would be surprising — exclude them. `__monitor` is the
-// background daemon spawned by `cmd_start`; the foreground already ran the
-// pre-flight, and re-running it here would double-pull the image on every
-// session start. `update` is itself the verbose update — running the silent
-// pre-flight in front would make us pull twice.
-const PREFLIGHT_VERBS = new Set( [ `start`, `resume`, `list`, `open` ] )
+// Subcommands that need a dep check before they run. `help` and `--version`
+// are pure metadata reads, `__monitor` is a background daemon that inherits
+// the foreground's already-checked environment, and `update` runs its own
+// dep check inside `cmd_update`.
+const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open` ] )
 
 /**
  * Main entry point
@@ -43,15 +39,15 @@ const main = async () => {
         process.exit( 0 )
     }
 
-    // Pre-flight: dep check + self-update for every real subcommand.
-    // cmd_start re-runs self-update internally, but the duplicate is cheap
-    // (Promise.allSettled with timeouts) and ensures `list` / `open` are covered.
-    if( PREFLIGHT_VERBS.has( cmd.verb ) ) {
+    // Pre-flight: dep check only. Self-update is no longer implicit — users
+    // run `babysit update` when they want to refresh the repo, docker image,
+    // and host agent CLIs. Auto-pulling on every command was surprising and
+    // slowed session start, especially on flaky networks.
+    if( DEP_CHECK_VERBS.has( cmd.verb ) ) {
         if( !check_dependencies() ) {
             log.error( `Missing dependencies. Install them and try again.` )
             process.exit( 1 )
         }
-        if( !cmd.flags.no_update ) await run_self_update()
     }
 
     // Dispatch to subcommand

@@ -25,7 +25,6 @@ Flags:
   --sandbox       Ephemeral container, no workspace mount
   --mudbox        Read-only workspace mount
   --loop          Override idle action with LOOP.md or "Keep going"
-  --no-update     Skip pre-flight updates (git pull, docker pull)
   -h, --help      Show this help
   -v, --version   Show version
 

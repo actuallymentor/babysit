@@ -62,4 +62,18 @@ export const claude = {
         DISABLE_AUTOUPDATER: `1`,
     } ),
 
+    // Per-agent update strategies for the host-installed CLI. Tried in order:
+    // built-in self-update → npm global install → brew. The runner detects the
+    // install method from the binary's resolved path before invoking the
+    // package-manager strategies, so an npm-installed agent never accidentally
+    // triggers brew (and vice versa).
+    update: {
+        self_update: { cmd: `claude`, args: [ `update` ] },
+        npm_package: `@anthropic-ai/claude-code`,
+        // claude on Homebrew is a cask, not a formula — `brew upgrade --cask`
+        // is the right invocation. `brew_cask: true` flips the args shape.
+        brew_package: `claude-code`,
+        brew_cask: true,
+    },
+
 }

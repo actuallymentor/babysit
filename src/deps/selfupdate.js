@@ -14,10 +14,14 @@ const __dirname = dirname( fileURLToPath( import.meta.url ) )
 const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
 
 /**
- * Run pre-flight self-update tasks in parallel:
+ * Run the self-update sweep in parallel:
  * - git pull on the babysit repo (if installed from source / git clone)
  * - git pull on ~/.agents (if it exists)
  * - docker pull latest container image
+ * - upgrade each host-installed coding agent CLI
+ *
+ * Invoked exclusively by `cmd_update` — there's no longer an implicit per-command
+ * pre-flight, so this sweep only runs when the user types `babysit update`.
  * @returns {Promise<void>}
  */
 export const run_self_update = async () => {
