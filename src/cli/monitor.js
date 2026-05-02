@@ -72,8 +72,11 @@ export const cmd_monitor = async ( cmd ) => {
         on_session_id: ( id ) => {
             update_session( session.babysit_id, { agent_session_id: id } )
         },
-        on_exit: () => {
-            if( creds_sync ) creds_sync.stop()
+        on_exit: async () => {
+            // Await so the sync's final flush completes before the process
+            // exits — otherwise a token refresh that happened in the last
+            // REFRESH_INTERVAL_MS window never makes it back to the host file.
+            if( creds_sync ) await creds_sync.stop()
         },
     } )
 

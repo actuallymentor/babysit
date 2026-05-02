@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { run_sync } from '../utils/exec.js'
 import { copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
@@ -49,7 +49,22 @@ export const setup_linux_credentials = async ( agent ) => {
                     return null
                 }
             }
-            sync = start_credential_sync( read_source, tmpfile )
+
+            // Bidirectional sync: when the in-container agent refreshes its
+            // OAuth token, the new state needs to flow back to the host file
+            // — otherwise the next babysit session reads the now-invalidated
+            // refresh_token and fails with "refresh token was already used".
+            // We don't pass a mode here so the host file's existing perms
+            // (typically 0o600) are preserved by writeFileSync.
+            const write_destination = async ( content ) => {
+                try {
+                    writeFileSync( expanded, content )
+                } catch ( e ) {
+                    log.debug( `Failed to write back to host creds at ${ expanded }: ${ e.message }` )
+                }
+            }
+
+            sync = start_credential_sync( read_source, tmpfile, write_destination )
 
             log.info( `Credentials loaded from file: ${ expanded }` )
 
