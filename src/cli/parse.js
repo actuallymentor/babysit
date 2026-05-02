@@ -2,7 +2,7 @@ import mri from 'mri'
 import { is_agent } from '../agents/index.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `update`, `no-update` ]
+const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop` ]
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -13,10 +13,8 @@ export const parse_args = ( argv ) => {
 
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
-    // mri normalises `--no-update` to `{ update: false }` (it treats `--no-X` as the
-    // negation of `--X`), so we list `update` in booleans and detect the negation form.
     const args = mri( argv, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `update` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -29,8 +27,6 @@ export const parse_args = ( argv ) => {
         sandbox: args.sandbox || false,
         mudbox: args.mudbox || false,
         loop: args.loop || false,
-        // `--no-update` shows up as args.update === false; absent means undefined
-        no_update: args.update === false,
     }
 
     // Sandbox and mudbox describe contradictory mount strategies — fail fast
@@ -43,7 +39,8 @@ export const parse_args = ( argv ) => {
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
 
-    // babysit update — verbose self-update (git pulls + docker pull)
+    // babysit update — the only update path: deps check + git pulls + docker
+    // pull + host agent CLI updates. Regular subcommands no longer auto-update.
     if( verb === `update` ) return { verb: `update`, agent: null, flags, passthrough: [] }
 
     // babysit __monitor <id> — internal verb spawned by cmd_start so the

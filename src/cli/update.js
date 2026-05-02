@@ -6,9 +6,11 @@ import { promise_timeout } from 'mentie'
 
 import pkg from '../../package.json' with { type: 'json' }
 
-import { run } from '../utils/exec.js'
+import { command_exists, run } from '../utils/exec.js'
 import { AGENTS_DIR } from '../utils/paths.js'
 import { get_image_name } from '../docker/update.js'
+import { SUPPORTED_AGENTS, get_agent } from '../agents/index.js'
+import { build_update_strategies } from '../deps/agent_update.js'
 
 // Same budget per step as the pre-flight self-update — keeps a hung remote
 // from holding the user hostage. See src/deps/selfupdate.js.
@@ -29,16 +31,21 @@ const __dirname = dirname( fileURLToPath( import.meta.url ) )
 const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
 
 /**
- * `babysit update` — runs the same updates as the silent pre-flight (self,
- * ~/.agents, docker image), but narrates each step so the user can see
- * what's happening, what was skipped, and what failed. Steps run sequentially
- * (not in parallel like the pre-flight) so the output reads top-to-bottom.
+ * `babysit update` — the only update path. Refreshes:
+ *   1. babysit itself (git pull for source checkouts, GitHub release download
+ *      for compiled installs — see scripts/install.sh)
+ *   2. ~/.agents (git pull, if it's a git repo)
+ *   3. the docker image (docker pull)
+ *   4. host-installed coding agent CLIs (claude / codex / gemini / opencode)
+ *      using each agent's declared strategy chain — see deps/agent_update.js
  *
- * Step 1 self-updates two ways: a `git pull` for source checkouts, or a
- * GitHub-release binary download for compiled installs (the standard path
- * for users who installed via scripts/install.sh).
+ * Steps run sequentially (not in parallel) so the output reads top-to-bottom,
+ * narrating each one so the user can see what happened, what was skipped, and
+ * what failed. Step result icons follow common CLI conventions: ✓ done,
+ * → skipped, ✗ failed.
  *
- * Step result icons match common CLI conventions: ✓ done, → skipped, ✗ failed.
+ * Regular subcommands (`babysit start` / `resume` / etc.) no longer auto-update
+ * on boot, so this verb is how users opt in.
  *
  * @returns {Promise<void>}
  */
@@ -49,6 +56,7 @@ export const cmd_update = async () => {
     await update_self()
     await update_agents_repo()
     await update_docker_image()
+    await update_host_agent_clis()
 
     console.log( `\nUpdate complete.\n` )
 
@@ -59,7 +67,7 @@ export const cmd_update = async () => {
  *   - source checkout (.git in repo root)  → `git pull --ff-only`
  *   - compiled binary (bun-compiled)       → download latest GitHub release
  *
- * Both modes report what they did with the same `[1/3] babysit ...` header
+ * Both modes report what they did with the same `[1/4] babysit ...` header
  * so the output shape is consistent regardless of how babysit was installed.
  */
 const update_self = async () => {
@@ -78,7 +86,7 @@ const update_self = async () => {
     // node-installed copy run via `node src/index.js` from a non-git dir, or
     // an unusual install layout. We can't safely auto-update either, so
     // surface the situation rather than silently skipping.
-    console.log( `[1/3] babysit` )
+    console.log( `[1/4] babysit` )
     console.log( `      ${ process.execPath }` )
     console.log( `      → skipped (not a git checkout and not a compiled binary — install method unknown)\n` )
 
@@ -86,7 +94,7 @@ const update_self = async () => {
 
 const update_babysit_source = async () => {
 
-    console.log( `[1/3] babysit source` )
+    console.log( `[1/4] babysit source` )
     console.log( `      ${ BABYSIT_REPO_ROOT }` )
 
     try {
@@ -115,7 +123,7 @@ const update_babysit_binary = async () => {
     const target = in_place ? running : USER_INSTALL_PATH
     const platform_tag = binary_platform_tag()
 
-    console.log( `[1/3] babysit binary` )
+    console.log( `[1/4] babysit binary` )
     console.log( `      running: ${ running }` )
     if( !in_place ) console.log( `      target:  ${ target } (running binary lives in a non-user-writable dir)` )
     console.log( `      platform: ${ platform_tag }` )
@@ -210,7 +218,7 @@ const update_agents_repo = async () => {
 
     const has_git = existsSync( join( AGENTS_DIR, `.git` ) )
 
-    console.log( `[2/3] ~/.agents (per-agent prompts and skills)` )
+    console.log( `[2/4] ~/.agents (per-agent prompts and skills)` )
     console.log( `      ${ AGENTS_DIR }` )
 
     if( !has_git ) {
@@ -238,7 +246,7 @@ const update_docker_image = async () => {
 
     const image = get_image_name()
 
-    console.log( `[3/3] docker image` )
+    console.log( `[3/4] docker image` )
     console.log( `      ${ image }` )
 
     try {
@@ -250,6 +258,70 @@ const update_docker_image = async () => {
     } catch ( e ) {
         console.log( `      ✗ docker pull failed: ${ e.message }\n` )
     }
+
+}
+
+// Per-agent host CLI upgrade is network-bound (npm registry, brew bottle
+// download, agent self-update endpoint). Generous ceiling — a stuck `claude
+// update` shouldn't gate the next agent.
+const AGENT_UPDATE_TIMEOUT_MS = 60_000
+
+/**
+ * Step 4 — upgrade each supported coding agent CLI on the host
+ * (claude / codex / gemini / opencode). Per-agent narration: skip cleanly
+ * when the binary isn't on PATH, otherwise try the registered strategies in
+ * order (self_update → npm → brew, gated by realpath detection so an
+ * npm-installed agent never accidentally triggers brew). The docker image
+ * carries its own pinned copies, so failures here are non-fatal.
+ */
+const update_host_agent_clis = async () => {
+
+    console.log( `[4/4] host coding agent CLIs` )
+
+    for( const name of SUPPORTED_AGENTS ) {
+
+        const agent = get_agent( name )
+
+        if( !command_exists( agent.bin ) ) {
+            console.log( `      ${ name }: → not installed on host, skipping` )
+            continue
+        }
+
+        const strategies = build_update_strategies( agent )
+        if( strategies.length === 0 ) {
+            console.log( `      ${ name }: → no update strategies registered, skipping` )
+            continue
+        }
+
+        let succeeded = false
+        let last_error = null
+
+        for( const strategy of strategies ) {
+
+            if( strategy.detect && !strategy.detect() ) continue
+
+            try {
+                await promise_timeout(
+                    run( strategy.cmd, strategy.args ),
+                    AGENT_UPDATE_TIMEOUT_MS
+                )
+                console.log( `      ${ name }: ✓ updated via ${ strategy.name }` )
+                succeeded = true
+                break
+            } catch ( e ) {
+                last_error = e
+            }
+
+        }
+
+        if( !succeeded ) {
+            const detail = last_error ? `: ${ last_error.message }` : ` (no matching strategy)`
+            console.log( `      ${ name }: ✗ all strategies failed${ detail }` )
+        }
+
+    }
+
+    console.log( `` )
 
 }
 

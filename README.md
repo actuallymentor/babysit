@@ -153,13 +153,12 @@ babysit claude --yolo --model sonnet --effort high
 
 ## Self-update
 
-On every command, babysit:
+Updates are explicit. Run `babysit update` to refresh everything in one sweep:
 
-1. `git pull` on its own repo (if installed via git)
+1. `git pull` on the babysit repo (or download the latest GitHub-release binary, for compiled installs)
 2. `git pull` on `~/.agents` (if it exists)
 3. `docker pull` the latest container image
-
-Skip with `--no-update`.
+4. Upgrades each host-installed agent CLI (`claude`, `codex`, `gemini`, `opencode`) using the agent's built-in self-update if available, otherwise the matching package manager (npm or brew, auto-detected from the binary's install path). Agents not on PATH are skipped.
 
 ## Building from source
 

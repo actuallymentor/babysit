@@ -73,4 +73,9 @@ export const gemini = {
 
     extra_env: () => ( {} ),
 
+    update: {
+        npm_package: `@google/gemini-cli`,
+        brew_package: `gemini-cli`,
+    },
+
 }
