@@ -151,6 +151,18 @@ Unrecognised flags are passed through to the coding agent CLI:
 babysit claude --yolo --model sonnet --effort high
 ```
 
+## Logging tmux output
+
+Pass `--log` to append everything the tmux pane renders to a logfile. The header `Babysit session start: YYYY-MM-DD HH:MM:SS` is prepended to each session's block, so several runs can share one file.
+
+```bash
+babysit claude --log                            # default path: .YYYY_MM_DD_HH_MM.babysit.log in cwd
+babysit claude --log=babysit.log                # custom path (relative to cwd)
+babysit claude --log ~/.logs/babysit.log        # absolute path; ~ expanded
+```
+
+The log is **append-only** — it is never truncated, so it's safe to point multiple sessions at the same file. tmux writes raw pane bytes including ANSI color/cursor sequences; for a plain-text view pipe through `sed -E 's/\x1B\[[0-9;?]*[a-zA-Z]//g'` or open with `less -R`.
+
 ## Self-update
 
 Updates are explicit. Run `babysit update` to refresh everything in one sweep:

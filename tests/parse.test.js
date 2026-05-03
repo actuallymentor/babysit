@@ -113,4 +113,61 @@ describe( `parse_args`, () => {
         expect( cmd.session_id ).toBe( `abc-123` )
     } )
 
+    describe( `--log flag`, () => {
+
+        it( `defaults to false when not passed`, () => {
+            const cmd = parse_args( [ `claude` ] )
+            expect( cmd.flags.log ).toBe( false )
+        } )
+
+        it( `bare --log resolves to empty string (the default-path sentinel)`, () => {
+            const cmd = parse_args( [ `claude`, `--log` ] )
+            expect( cmd.flags.log ).toBe( `` )
+        } )
+
+        it( `--log=PATH passes the path through verbatim`, () => {
+            const cmd = parse_args( [ `claude`, `--log=foo.log` ] )
+            expect( cmd.flags.log ).toBe( `foo.log` )
+        } )
+
+        it( `--log PATH consumes the next token as the value`, () => {
+            const cmd = parse_args( [ `claude`, `--log`, `foo.log` ] )
+            expect( cmd.flags.log ).toBe( `foo.log` )
+            // Critical: the value token must NOT leak into passthrough,
+            // otherwise the agent CLI sees `foo.log` as a positional arg.
+            expect( cmd.passthrough ).not.toContain( `foo.log` )
+        } )
+
+        it( `--log followed by another flag does NOT consume the next flag as value`, () => {
+            // This is the standalone-form-with-trailing-flag case. Without
+            // pre-processing, mri's `string` consumer would steal --yolo as the
+            // value; the normalisation step rewrites bare --log to --log= so
+            // mri leaves the next flag alone.
+            const cmd = parse_args( [ `claude`, `--log`, `--yolo` ] )
+            expect( cmd.flags.log ).toBe( `` )
+            expect( cmd.flags.yolo ).toBe( true )
+        } )
+
+        it( `--log and --yolo can appear in either order`, () => {
+            const a = parse_args( [ `claude`, `--yolo`, `--log=x.log` ] )
+            expect( a.flags.yolo ).toBe( true )
+            expect( a.flags.log ).toBe( `x.log` )
+
+            const b = parse_args( [ `claude`, `--log=x.log`, `--yolo` ] )
+            expect( b.flags.yolo ).toBe( true )
+            expect( b.flags.log ).toBe( `x.log` )
+        } )
+
+        it( `accepts an absolute path with --log=`, () => {
+            const cmd = parse_args( [ `claude`, `--log=/var/log/babysit.log` ] )
+            expect( cmd.flags.log ).toBe( `/var/log/babysit.log` )
+        } )
+
+        it( `accepts a tilde path with --log=`, () => {
+            const cmd = parse_args( [ `claude`, `--log=~/.logs/babysit.log` ] )
+            expect( cmd.flags.log ).toBe( `~/.logs/babysit.log` )
+        } )
+
+    } )
+
 } )

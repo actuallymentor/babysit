@@ -9,8 +9,10 @@ import { build_docker_command } from '../docker/run.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
+import { start_pipe_pane } from '../tmux/capture.js'
 import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
+import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 
 /**
  * Start a new babysit session
@@ -84,6 +86,25 @@ export const cmd_start = async ( cmd ) => {
     // Create tmux session (detached — we'll attach the foreground in a moment)
     const session_name = make_session_name( workspace, agent.name )
     await create_session( session_name, docker_command )
+
+    // Start tmux output logging if --log was passed. The header goes in BEFORE
+    // pipe-pane starts, so each session block opens with a clean
+    // "Babysit session start: ..." line. pipe-pane runs server-side and
+    // outlives the foreground cli, so the log keeps growing after detach.
+    if( flags.log !== false ) {
+
+        const log_path = resolve_log_path( flags.log, { cwd: workspace } )
+
+        if( append_session_header( log_path ) ) {
+            try {
+                await start_pipe_pane( session_name, log_path )
+                log.info( `Logging tmux output to ${ log_path }` )
+            } catch ( e ) {
+                log.warn( `Could not start pipe-pane logging: ${ e.message }` )
+            }
+        }
+
+    }
 
     // Generate and save session metadata before spawning the monitor — the
     // monitor reads this file to reconstruct config, agent, and tmux session
