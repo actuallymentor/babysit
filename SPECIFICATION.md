@@ -111,7 +111,7 @@ Check if the specification is fully implemented
 ## Feature list in no particular order
 
 - git user information is passed from the host to the container, defaults are set like in the sir-claudius Dockerfile, but the author is "Babysitter" for both author and committer name by default, also swap the repos of course
-- when a babysit session is exited, the babysit manager prints "To resume this session, run `babysit resume <session_id>`", this will require `babysit` to get the session id after starting, as it cannot easily grab it after the session was closed
+- when a babysit session is exited, the babysit manager prints `To resume this session, run:` followed by `babysit resume <session_id>` on its own line (no backticks, no quoting — so it's triple-click selectable). This will require `babysit` to get the session id after starting, as it cannot easily grab it after the session was closed
 - `babysit list` command to list active sessions with their session ids and the coding agent running in them
 - `babysit open <session_id>` command to open a tmux session attached to the given session id, note that `babysit resume` is used to resume exited sessions and uses the session id as the coding agent knows it, but `babysit open` is used to connect to active tmux sessions. 
 - On any babysit command, the cli checks that all dependencies are installed. Updates are explicit: `babysit update` runs git pull on the babysit repo, git pull on ~/.agents if it exists, pulls the latest docker image for the coding agent, and upgrades each host-installed coding agent CLI (skipping any that aren't on PATH)

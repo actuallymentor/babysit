@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.3 — 2026-05-03
+
+### ✨ Changed
+- **Dead-session resume hint is now triple-click selectable.** Old: ``To resume this session, run `babysit resume <id>` `` (single line, command wrapped in backticks). New: `To resume this session, run:` followed by the bare `babysit resume <id>` on its own unquoted line — same pattern the live-session `babysit open` hint already uses, so a triple-click selects the command cleanly for paste. SPECIFICATION.md and PLAN.md updated to match.
+
 ## 0.9.2 — 2026-05-03
 
 ### 🐛 Fixed
