@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.7 — 2026-05-03
+
+### 🐛 Fixed
+- **Docker image builds now fail when required CLI installs fail.** Agent and
+  uv installers no longer mask errors; the image uses shell `pipefail` and a
+  final `command -v` gate for expected tools.
+
 ## 0.9.6 — 2026-05-03
 
 ### 🐛 Fixed
