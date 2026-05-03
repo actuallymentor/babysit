@@ -65,11 +65,27 @@ describe( `credential coverage`, () => {
     const gemini = get_agent( `gemini` )
     const opencode = get_agent( `opencode` )
 
-    it( `codex declares the OAuth auth.json file in addition to env keys`, () => {
-        // codex auth login writes to ~/.codex/auth.json — without this declared,
-        // OAuth-authed users would get no creds passed through.
-        expect( codex.credentials.darwin.file ).toBe( `~/.codex/auth.json` )
-        expect( codex.credentials.linux.file ).toBe( `~/.codex/auth.json` )
+    it( `codex resolves the OAuth auth.json file from host CODEX_HOME`, () => {
+        // codex login writes to `${CODEX_HOME}/auth.json` when CODEX_HOME is
+        // set. Hardcoding ~/.codex/auth.json silently mounts stale creds for
+        // users who keep Codex state somewhere else.
+        const original_codex_home = process.env.CODEX_HOME
+
+        try {
+
+            delete process.env.CODEX_HOME
+            expect( codex.credentials.darwin.file() ).toBe( `~/.codex/auth.json` )
+            expect( codex.credentials.linux.file() ).toBe( `~/.codex/auth.json` )
+
+            process.env.CODEX_HOME = `/tmp/host-codex-home/`
+            expect( codex.credentials.darwin.file() ).toBe( `/tmp/host-codex-home/auth.json` )
+            expect( codex.credentials.linux.file() ).toBe( `/tmp/host-codex-home/auth.json` )
+
+        } finally {
+            if( original_codex_home === undefined ) delete process.env.CODEX_HOME
+            else process.env.CODEX_HOME = original_codex_home
+        }
+
         // env-key fallback for API-key users stays available
         expect( codex.credentials.darwin.env_key ).toBe( `CODEX_API_KEY` )
     } )

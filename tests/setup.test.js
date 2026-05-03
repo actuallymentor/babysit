@@ -259,6 +259,32 @@ describe( `codex_extra_mounts`, () => {
 
     } )
 
+    it( `reads host config.toml from CODEX_HOME when set`, () => {
+
+        const original_codex_home = process.env.CODEX_HOME
+        const dir = mkdtempSync( join( tmpdir(), `babysit-codex-home-` ) )
+
+        try {
+
+            process.env.CODEX_HOME = dir
+            writeFileSync( join( dir, `config.toml` ), `[projects."/custom-host"]\ntrust_level = "trusted"\n` )
+
+            const mounts = codex_extra_mounts()
+            const config_mount = mounts.find( m => m.container === `/home/node/.codex/config.toml` )
+            expect( config_mount ).toBeTruthy()
+
+            const content = readFileSync( config_mount.host, `utf-8` )
+            expect( content ).toContain( `[projects."/custom-host"]` )
+            expect( content ).toContain( `[projects."/workspace"]` )
+
+        } finally {
+            if( original_codex_home === undefined ) delete process.env.CODEX_HOME
+            else process.env.CODEX_HOME = original_codex_home
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
 } )
 
 describe( `gemini_extra_mounts`, () => {

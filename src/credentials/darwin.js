@@ -3,6 +3,7 @@ import { run_sync } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { build_tmpfile, copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
+import { resolve_credential_file } from './paths.js'
 
 /**
  * Extract credentials from macOS Keychain (or file fallback) for an agent
@@ -137,7 +138,7 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
 /**
  * Copy a credential file to a tmpfile and start the in-place sync daemon
  * @param {Object} agent - Agent adapter (for naming + container_paths)
- * @param {string} file_pattern - Path on host (may contain ~)
+ * @param {string|Function} file_pattern - Path on host (may contain ~) or a resolver
  * @param {string} [existing_tmpfile] - Re-use this tmpfile (monitor case) instead of
  *   creating a new one. When provided, no mount is returned (the foreground already
  *   wired up the docker mount) — only the sync.
@@ -146,7 +147,7 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
  */
 const mount_credential_file = ( agent, file_pattern, existing_tmpfile = null, sync_baseline = null ) => {
 
-    const expanded = file_pattern.replace( `~`, process.env.HOME )
+    const expanded = resolve_credential_file( file_pattern )
 
     // copy_host_file_to_tmpfile returns null when the source is missing;
     // no need to existsSync first.

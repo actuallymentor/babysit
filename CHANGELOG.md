@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.5 — 2026-05-03
+
+### 🐛 Fixed
+- **`babysit codex --yolo` now respects host `CODEX_HOME`.**
+  Codex auth/config capture reads `${CODEX_HOME}` when set instead of always
+  copying `~/.codex`, preventing stale auth mounts for users who keep Codex
+  state in another directory such as `~/.agents`.
+
 ## 0.9.4 — 2026-05-03
 
 ### 🐛 Fixed

@@ -3,6 +3,7 @@ import { log } from '../utils/log.js'
 import { run_sync } from '../utils/exec.js'
 import { copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
+import { resolve_credential_file } from './paths.js'
 
 /**
  * Set up credentials on Linux by copying credential files to tmpfiles
@@ -29,7 +30,7 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null,
     // File-based credentials (Claude, OpenCode, Codex OAuth, Gemini OAuth)
     if( cred_config.file ) {
 
-        const expanded = cred_config.file.replace( `~`, process.env.HOME )
+        const expanded = resolve_credential_file( cred_config.file )
 
         if( existing_tmpfile || existsSync( expanded ) ) {
 
