@@ -2,6 +2,21 @@
  * OpenAI Codex CLI adapter
  * CLI docs: https://developers.openai.com/codex/cli
  */
+
+/**
+ * Resolve the host Codex home. Users can set CODEX_HOME to move Codex's
+ * config/auth state; babysit must read host credentials from that location
+ * even though it pins the in-container CODEX_HOME separately.
+ * @returns {string} Host Codex home path, possibly with a leading ~
+ */
+export const get_host_codex_home = () => ( process.env.CODEX_HOME || `~/.codex` ).replace( /\/$/, `` )
+
+/**
+ * Resolve the host Codex auth file path.
+ * @returns {string} Host auth.json path, possibly with a leading ~
+ */
+export const get_host_codex_auth_file = () => `${ get_host_codex_home() }/auth.json`
+
 export const codex = {
 
     name: `codex`,
@@ -11,14 +26,16 @@ export const codex = {
         // Codex caches OAuth credentials at `${CODEX_HOME}/auth.json` (the
         // ChatGPT-login flow writes tokens here). API-key users can also set
         // CODEX_API_KEY / OPENAI_API_KEY — try the file first because it is
-        // what `codex auth login` populates by default.
+        // what `codex login` populates by default. The resolver intentionally
+        // reads the host's CODEX_HOME; the container CODEX_HOME is pinned
+        // separately below.
         darwin: {
-            file: `~/.codex/auth.json`,
+            file: get_host_codex_auth_file,
             env_key: `CODEX_API_KEY`,
             fallback_env: `OPENAI_API_KEY`,
         },
         linux: {
-            file: `~/.codex/auth.json`,
+            file: get_host_codex_auth_file,
             env_key: `CODEX_API_KEY`,
             fallback_env: `OPENAI_API_KEY`,
         },

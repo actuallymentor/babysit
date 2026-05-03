@@ -19,7 +19,7 @@ Last verified against vendor docs: April 2026.
 - **Resume**: `codex resume <id>` for interactive (what we use), `codex exec resume <id>` for non-interactive
 - **Model**: `--model gpt-5.5` (as of April 2026; `gpt-5.4` is the API-key fallback if 5.5 isn't accessible)
 - **Effort**: `-c model_reasoning_effort="high"` (NOT bare `reasoning_effort` — that key is silently ignored). Values: `minimal`, `low`, `medium`, `high`, `xhigh` (xhigh requires 5.1-codex-max / 5.2-codex)
-- **Creds**: `~/.codex/auth.json` for ChatGPT-OAuth login (default flow). `CODEX_API_KEY` / `OPENAI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively on top so users can override.
+- **Creds**: `${CODEX_HOME}/auth.json` for ChatGPT-OAuth login (default flow, `~/.codex/auth.json` only when `CODEX_HOME` is unset). `CODEX_API_KEY` / `OPENAI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively on top so users can override.
 - **Home env**: `CODEX_HOME` — default `~/.codex`, controls where global AGENTS.md / config / sessions / auth.json live
 
 ## Gemini CLI

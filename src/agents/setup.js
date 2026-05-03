@@ -3,6 +3,8 @@ import { homedir } from 'os'
 import { join } from 'path'
 
 import { copy_host_file_to_tmpfile, build_tmpfile } from '../utils/tmpfile.js'
+import { expand_home_path } from '../credentials/paths.js'
+import { get_host_codex_home } from './codex.js'
 
 const home = homedir()
 
@@ -189,7 +191,7 @@ export const CODEX_KNOWN_MODELS_FOR_NUX = [ `gpt-5`, `gpt-5.1`, `gpt-5.2`, `gpt-
  */
 export const codex_extra_mounts = () => {
 
-    const host_config = join( home, `.codex`, `config.toml` )
+    const host_config = join( expand_home_path( get_host_codex_home() ), `config.toml` )
     const raw = existsSync( host_config ) ? readFileSync( host_config, `utf-8` ) : ``
     const tmpfile = build_tmpfile( `codex`, `config.toml`, inject_codex_first_run_bypass( raw ) )
 
