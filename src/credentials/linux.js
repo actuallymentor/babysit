@@ -7,9 +7,15 @@ import { start_credential_sync } from './refresh.js'
 /**
  * Set up credentials on Linux by copying credential files to tmpfiles
  * @param {Object} agent - Agent adapter
+ * @param {Object} [options]
+ * @param {string} [options.existing_tmpfile] - Re-use this tmpfile instead of creating a new
+ *   one. Used by the monitor daemon, which must watch the SAME tmpfile the container is
+ *   already mounting (created by the foreground). Without this, the monitor's sync would
+ *   watch its own brand-new tmpfile and the container's OAuth refreshes would never make
+ *   it back to the host file. See GOTCHAS.md.
  * @returns {{ mounts: Array, sync: Object|null }} Credential mounts and sync controller
  */
-export const setup_linux_credentials = async ( agent ) => {
+export const setup_linux_credentials = async ( agent, { existing_tmpfile = null } = {} ) => {
 
     const cred_config = agent.credentials?.linux
     if( !cred_config ) return { mounts: [], sync: null }
@@ -22,25 +28,34 @@ export const setup_linux_credentials = async ( agent ) => {
 
         const expanded = cred_config.file.replace( `~`, process.env.HOME )
 
-        if( existsSync( expanded ) ) {
+        if( existing_tmpfile || existsSync( expanded ) ) {
 
-            // Pre-flight: invoke the agent CLI on the host so any near-expiry
-            // token is refreshed before we copy. Without this, a stale token
-            // would ride the container for 5 min before our sync daemon catches up.
-            run_sync( `${ agent.bin } --version 2>/dev/null` )
+            let tmpfile = existing_tmpfile
 
-            // Copy host file into a chmod-666 tmpfile so the container's
-            // `node` user can both read AND write it (agents like codex /
-            // gemini refresh tokens in place). See utils/tmpfile.js for why
-            // chmod is needed beyond writeFileSync's `mode` option.
-            const tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
-            if( !tmpfile ) return { mounts, sync }
+            if( !tmpfile ) {
 
-            mounts.push( {
-                type: `volume`,
-                source: tmpfile,
-                target: agent.container_paths.creds,
-            } )
+                // Pre-flight: invoke the agent CLI on the host so any near-expiry
+                // token is refreshed before we copy. Without this, a stale token
+                // would ride the container for 5 min before our sync daemon catches up.
+                // Skipped when re-using an existing tmpfile — the foreground
+                // already pre-flighted, and the container is already running on
+                // that capture.
+                run_sync( `${ agent.bin } --version 2>/dev/null` )
+
+                // Copy host file into a chmod-666 tmpfile so the container's
+                // `node` user can both read AND write it (agents like codex /
+                // gemini refresh tokens in place). See utils/tmpfile.js for why
+                // chmod is needed beyond writeFileSync's `mode` option.
+                tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
+                if( !tmpfile ) return { mounts, sync }
+
+                mounts.push( {
+                    type: `volume`,
+                    source: tmpfile,
+                    target: agent.container_paths.creds,
+                } )
+
+            }
 
             const read_source = async () => {
                 try {
