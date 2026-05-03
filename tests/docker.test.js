@@ -44,6 +44,27 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `fails the image build instead of masking install failures`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `SHELL ["/bin/bash", "-o", "pipefail", "-c"]` )
+        expect( dockerfile ).not.toContain( `|| true` )
+        expect( dockerfile ).not.toContain( `2>/dev/null` )
+
+    } )
+
+    it( `verifies expected container tools are on PATH`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `scc`, `uv`, `uvx`, `codex`, `gemini`, `claude`, `opencode` ] ) {
+            expect( dockerfile ).toContain( ` ${ cmd }` )
+        }
+        expect( dockerfile ).toContain( `command -v "$cmd"` )
+
+    } )
+
 } )
 
 describe( `codex adapter`, () => {

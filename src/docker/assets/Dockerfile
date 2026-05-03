@@ -3,6 +3,8 @@
 ARG NODE_VERSION=24
 FROM node:${NODE_VERSION}-slim
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # System dependencies — matches the sir-claudius image (per spec) plus extras
 # for multi-agent support. Tools added on top of sir-claudius are bun-style
 # build chain bits + extra editors; everything else mirrors sir-claudius so
@@ -71,9 +73,12 @@ RUN set -eux; \
     | tar xz -C /usr/local/bin scc
 
 # Python uv (fast pip replacement) — install system-wide
-RUN curl -fsSL https://astral.sh/uv/install.sh | sh \
-    && mv /root/.local/bin/uv /usr/local/bin/uv \
-    && mv /root/.local/bin/uvx /usr/local/bin/uvx 2>/dev/null || true
+RUN set -eux; \
+    curl -fsSL https://astral.sh/uv/install.sh -o /tmp/install-uv.sh; \
+    sh /tmp/install-uv.sh; \
+    install -m 0755 /root/.local/bin/uv /usr/local/bin/uv; \
+    install -m 0755 /root/.local/bin/uvx /usr/local/bin/uvx; \
+    rm /tmp/install-uv.sh
 
 # Non-root user with passwordless sudo and required directories.
 # Pre-create every dir we plan to bind-mount into so docker's auto-mkdir
@@ -103,11 +108,8 @@ COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 
-# Codex (OpenAI) — install globally via npm as root
-RUN npm install -g @openai/codex 2>/dev/null || true
-
-# Gemini CLI — install globally via npm as root
-RUN npm install -g @google/gemini-cli 2>/dev/null || true
+# Codex (OpenAI) + Gemini CLI — install globally via npm as root
+RUN npm install -g @openai/codex @google/gemini-cli
 
 # Switch to non-root user for user-scoped agent installs
 USER node
@@ -118,11 +120,11 @@ ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:/home/node/.opencode/bin:$PATH"
 
 # Claude Code — installs into /home/node
-RUN curl -fsSL https://claude.ai/install.sh | bash || true
+RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV DISABLE_AUTOUPDATER=1
 
 # OpenCode — installs into /home/node
-RUN curl -fsSL https://opencode.ai/install 2>/dev/null | bash || true
+RUN curl -fsSL https://opencode.ai/install | bash
 
 # Git identity defaults (overridden by env passthrough from host)
 ENV GIT_AUTHOR_NAME="Babysitter"
@@ -134,6 +136,16 @@ ENV GIT_COMMITTER_EMAIL="babysit@github.com"
 # uid/gid before dropping privileges via gosu. The image is shared (uid 1000
 # baked in); the actual runtime uid is set per-container in entrypoint.sh.
 USER root
+
+RUN set -eux; \
+    for cmd in \
+        git git-lfs python3 sudo gosu curl wget jq tmux ssh openssl gpg \
+        rsync tar zip unzip gzip xz zstd patch bwrap htop strace lsof ps \
+        nc dig ip ping vim nano less shellcheck sqlite3 tree rg gh fd bat \
+        fzf yq scc uv uvx codex gemini claude opencode \
+    ; do \
+        command -v "$cmd"; \
+    done
 
 WORKDIR /workspace
 
