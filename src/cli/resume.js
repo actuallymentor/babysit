@@ -6,6 +6,45 @@ import { cmd_open } from './open.js'
 import { cmd_start } from './start.js'
 
 /**
+ * Rebuild flags from stored session modifiers
+ * @param {string[]} modifiers - e.g. ['yolo', 'loop']
+ * @returns {Object} Flag object
+ */
+const rebuild_flags = ( modifiers = [] ) => ( {
+    yolo: modifiers.includes( `yolo` ),
+    sandbox: modifiers.includes( `sandbox` ),
+    mudbox: modifiers.includes( `mudbox` ),
+    loop: modifiers.includes( `loop` ),
+    log: false,
+} )
+
+const is_explicit_user_flag = ( [ key, value ] ) => {
+
+    if( key === `log` ) return value !== false
+
+    return Boolean( value )
+
+}
+
+/**
+ * Rebuild a dead session's mode flags and layer explicit resume-time flags on top.
+ * `--log` uses an empty string as a meaningful "default path" sentinel, so it
+ * cannot be filtered with the boolean mode flags.
+ * @param {string[]} [modifiers] - Stored session modifiers
+ * @param {Object} [flags] - Parsed resume-time flags
+ * @returns {Object} Flags for cmd_start
+ */
+export const merge_resume_flags = ( modifiers = [], flags = {} ) => {
+
+    const explicit_user_flags = Object.fromEntries(
+        Object.entries( flags ).filter( is_explicit_user_flag )
+    )
+
+    return { ...rebuild_flags( modifiers ), ...explicit_user_flags }
+
+}
+
+/**
  * Resume a previous babysit session
  * If the tmux session is still alive, attach to it.
  * If it's exited, start a new session with the agent's resume flag.
@@ -13,7 +52,7 @@ import { cmd_start } from './start.js'
  */
 export const cmd_resume = async ( cmd ) => {
 
-    const { session_id, flags, passthrough = [] } = cmd
+    const { session_id, flags = {}, passthrough = [] } = cmd
 
     if( !session_id ) {
         log.error( `Usage: babysit resume <session_id>` )
@@ -37,10 +76,7 @@ export const cmd_resume = async ( cmd ) => {
         // so the user can add --loop or --yolo when resuming an older session.
         log.info( `Resuming ${ session.agent } session: ${ session_id }` )
 
-        const explicit_user_flags = Object.fromEntries(
-            Object.entries( flags ).filter( ( [ , value ] ) => value )
-        )
-        const merged_flags = { ...rebuild_flags( session.modifiers ), ...explicit_user_flags }
+        const merged_flags = merge_resume_flags( session.modifiers, flags )
 
         // chdir to the session's original working directory so cmd_start picks up
         // the right babysit.yaml and resolves cwd-relative paths (./IDLE.md,
@@ -72,15 +108,3 @@ export const cmd_resume = async ( cmd ) => {
     process.exit( 1 )
 
 }
-
-/**
- * Rebuild flags from stored session modifiers
- * @param {string[]} modifiers - e.g. ['yolo', 'loop']
- * @returns {Object} Flag object
- */
-const rebuild_flags = ( modifiers = [] ) => ( {
-    yolo: modifiers.includes( `yolo` ),
-    sandbox: modifiers.includes( `sandbox` ),
-    mudbox: modifiers.includes( `mudbox` ),
-    loop: modifiers.includes( `loop` ),
-} )

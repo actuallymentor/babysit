@@ -3,6 +3,7 @@ import { execSync } from 'child_process'
 import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
+import { start_pipe_pane } from './capture.js'
 
 /**
  * Generate a tmux session name following the babysit convention
@@ -32,16 +33,27 @@ export const make_session_name = ( pwd, agent_name ) => {
  * any embedded values (see docker/run.js#shell_quote).
  * @param {string} session_name - The session name
  * @param {string} command - Pre-quoted shell command to run inside the session
- * @returns {Promise<void>}
+ * @param {Object} [options]
+ * @param {string|null} [options.log_path] - Optional host path for pipe-pane logging
+ * @returns {Promise<{pipe_started: boolean}>}
  */
-export const create_session = async ( session_name, command ) => {
+export const create_session = async ( session_name, command, { log_path = null } = {} ) => {
+
+    const boot_shell = [
+        `read _`,
+        `boot_command="$1"`,
+        `exec sh -c "$boot_command"`,
+    ].join( `; ` )
+    const session_command = log_path
+        ? [ `sh`, `-c`, boot_shell, `sh`, command ]
+        : [ `sh`, `-c`, command ]
 
     await run( `tmux`, [
         `-L`, TMUX_SOCKET,
         `new-session`, `-d`,
         `-s`, session_name,
         `-x`, `220`, `-y`, `50`,
-        `sh`, `-c`, command,
+        ...session_command,
     ] )
 
     // Configure session defaults
@@ -50,7 +62,27 @@ export const create_session = async ( session_name, command ) => {
         run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `mouse`, `on` ] ),
     ] )
 
+    let pipe_started = false
+
+    if( log_path ) {
+
+        try {
+            await start_pipe_pane( session_name, log_path )
+            pipe_started = true
+        } catch ( e ) {
+            log.warn( `Could not start pipe-pane logging: ${ e.message }` )
+        }
+
+        // Release the boot shell only after pipe-pane is active, otherwise fast
+        // startup output can escape the logfile. The real command is held as a
+        // shell argument so it is not echoed into the user's terminal/log.
+        await run( `tmux`, [ `-L`, TMUX_SOCKET, `send-keys`, `-t`, session_name, `Enter` ] )
+
+    }
+
     log.info( `Created tmux session: ${ session_name }` )
+
+    return { pipe_started }
 
 }
 

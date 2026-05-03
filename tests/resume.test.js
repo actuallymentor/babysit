@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
-import { cmd_resume } from '../src/cli/resume.js'
+import { cmd_resume, merge_resume_flags } from '../src/cli/resume.js'
 import { generate_session_id, save_session } from '../src/sessions/store.js'
 
 // Create a session record on disk that resume.js will look up. Returns the
@@ -114,6 +114,49 @@ describe( `cmd_resume cwd handling`, () => {
         expect( process.cwd() ).not.toBe( ghost_pwd )
 
         rmSync( safe_cwd, { recursive: true, force: true } )
+
+    } )
+
+} )
+
+describe( `merge_resume_flags`, () => {
+
+    it( `keeps logging disabled when resume did not pass --log`, () => {
+
+        const flags = merge_resume_flags(
+            [ `yolo` ],
+            { yolo: false, sandbox: false, mudbox: false, loop: false, log: false }
+        )
+
+        expect( flags ).toEqual( {
+            yolo: true,
+            sandbox: false,
+            mudbox: false,
+            loop: false,
+            log: false,
+        } )
+
+    } )
+
+    it( `preserves bare --log as the default-path sentinel`, () => {
+
+        const flags = merge_resume_flags(
+            [],
+            { yolo: false, sandbox: false, mudbox: false, loop: false, log: `` }
+        )
+
+        expect( flags.log ).toBe( `` )
+
+    } )
+
+    it( `preserves explicit --log paths`, () => {
+
+        const flags = merge_resume_flags(
+            [],
+            { yolo: false, sandbox: false, mudbox: false, loop: false, log: `runs/babysit.log` }
+        )
+
+        expect( flags.log ).toBe( `runs/babysit.log` )
 
     } )
 
