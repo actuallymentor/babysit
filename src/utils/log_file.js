@@ -40,7 +40,7 @@ export const default_log_name = ( now = new Date() ) => {
  */
 export const resolve_log_path = ( raw, { cwd = process.cwd(), now = new Date() } = {} ) => {
 
-    let path = ( typeof raw === `string` && raw.length > 0 ) ? raw : default_log_name( now )
+    let path =  typeof raw === `string` && raw.length > 0  ? raw : default_log_name( now )
 
     if( path === `~` ) path = homedir()
     else if( path.startsWith( `~/` ) ) path = join( homedir(), path.slice( 2 ) )

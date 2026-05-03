@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.2 — 2026-05-03
+
+### 🐛 Fixed
+- **`babysit codex` (and gemini/opencode) no longer fails with "refresh token was already used"** on first launch — for real this time. The 0.8.0 fix established `start_credential_sync` as bidirectional, but the monitor daemon was silently neutralising it: `cmd_monitor` called `setup_credentials(agent)` with no options, which made `copy_host_file_to_tmpfile` mint a brand-new tmpfile (the path bakes in `Date.now()`). The container kept writing OAuth refreshes to the foreground's tmpfile, while the monitor's sync watched its own — so nothing ever propagated back to the host's `~/.codex/auth.json`. Fix: `setup_credentials` now accepts `{ existing_tmpfile }`, and `cmd_monitor` passes `session.creds_tmpfile` so its sync watches the same file the container is mounting. Darwin's keychain check is preserved verbatim so the keychain-vs-fallback-file branch decision still routes correctly. Regression test in `tests/credentials_setup.test.js`. Users with already-invalidated host tokens still need a one-time re-auth (`codex auth login` etc.).
+
 ## 0.9.1 — 2026-05-03
 
 ### 🐛 Fixed

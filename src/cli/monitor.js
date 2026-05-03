@@ -59,7 +59,18 @@ export const cmd_monitor = async ( cmd ) => {
     // Set up our own credential sync. The foreground process owns the initial
     // capture and the docker mount, but its setInterval dies with it — without
     // this, tokens would stop refreshing the moment the user detaches.
-    const { sync: creds_sync } = await setup_credentials( agent )
+    //
+    // CRITICAL: pass `existing_tmpfile` so the monitor's sync watches the SAME
+    // tmpfile the container is already mounting. `copy_host_file_to_tmpfile`
+    // bakes Date.now() into the path, so a fresh setup_credentials call would
+    // mint a brand-new tmpfile that nobody writes to — and the container's
+    // OAuth refreshes (the whole reason for bidirectional sync) would never
+    // make it back to the host file. Symptom: "Your access token could not be
+    // refreshed because your refresh token was already used" on the NEXT
+    // babysit session, every time.
+    const { sync: creds_sync } = await setup_credentials( agent, {
+        existing_tmpfile: session.creds_tmpfile,
+    } )
 
     log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
 

@@ -7,9 +7,15 @@ import { start_credential_sync } from './refresh.js'
 /**
  * Extract credentials from macOS Keychain (or file fallback) for an agent
  * @param {Object} agent - Agent adapter
+ * @param {Object} [options]
+ * @param {string} [options.existing_tmpfile] - Re-use this tmpfile instead of creating a new
+ *   one. Used by the monitor daemon, which must watch the SAME tmpfile the container is
+ *   already mounting (created by the foreground). Without this, the monitor's sync would
+ *   watch its own brand-new tmpfile and the container's OAuth refreshes would never make
+ *   it back to the host file. See GOTCHAS.md.
  * @returns {{ mounts: Array, sync: Object|null }} Credential mounts and sync controller
  */
-export const setup_darwin_credentials = async ( agent ) => {
+export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null } = {} ) => {
 
     const cred_config = agent.credentials?.darwin
     if( !cred_config ) return { mounts: [], sync: null }
@@ -20,39 +26,55 @@ export const setup_darwin_credentials = async ( agent ) => {
     // Keychain-based credentials (e.g. Claude on macOS)
     if( cred_config.keychain_service ) {
 
-        // Phase 1: detect without reading secrets
+        // Phase 1: detect without reading secrets. Always run this — even
+        // when re-using an existing tmpfile (monitor path) — because we need
+        // to know whether the foreground took the keychain branch or the
+        // fallback_file branch, and the only signal is whether keychain has
+        // creds. Without this, a user on darwin whose keychain is empty but
+        // has a fallback auth.json would get a one-way keychain sync in the
+        // monitor instead of the bidirectional file sync the foreground set up.
         const exists = run_sync(
             `security find-generic-password -s "${ cred_config.keychain_service }" 2>/dev/null`
         )
 
         if( exists !== null ) {
 
-            // Pre-flight: invoke the agent CLI so any near-expiry token gets
-            // refreshed by the agent itself before we capture. Without this,
-            // a stale token would ride the container until our 5-minute sync
-            // daemon catches up.
-            run_sync( `${ agent.bin } --version 2>/dev/null` )
+            let tmpfile = existing_tmpfile
 
-            // Phase 2: capture after pre-flight rotation
-            const creds_json = run_sync(
-                `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
-            )
+            if( !tmpfile ) {
 
-            if( creds_json ) {
+                // Pre-flight: invoke the agent CLI so any near-expiry token gets
+                // refreshed by the agent itself before we capture. Without this,
+                // a stale token would ride the container until our 5-minute sync
+                // daemon catches up.
+                run_sync( `${ agent.bin } --version 2>/dev/null` )
 
-                // Materialise the keychain blob into a chmod-666 tmpfile so
-                // the container's `node` user can both read AND write it.
-                const tmpfile = build_tmpfile( `creds-${ agent.name }`, `auth`, creds_json )
-                if( !tmpfile ) {
-                    log.warn( `Failed to materialise ${ agent.name } keychain creds to tmpfile` )
-                    return { mounts, sync }
+                // Phase 2: capture after pre-flight rotation
+                const creds_json = run_sync(
+                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
+                )
+
+                if( creds_json ) {
+
+                    // Materialise the keychain blob into a chmod-666 tmpfile so
+                    // the container's `node` user can both read AND write it.
+                    tmpfile = build_tmpfile( `creds-${ agent.name }`, `auth`, creds_json )
+                    if( !tmpfile ) {
+                        log.warn( `Failed to materialise ${ agent.name } keychain creds to tmpfile` )
+                        return { mounts, sync }
+                    }
+
+                    mounts.push( {
+                        type: `volume`,
+                        source: tmpfile,
+                        target: agent.container_paths.creds,
+                    } )
+
                 }
 
-                mounts.push( {
-                    type: `volume`,
-                    source: tmpfile,
-                    target: agent.container_paths.creds,
-                } )
+            }
+
+            if( tmpfile ) {
 
                 const read_source = async () => run_sync(
                     `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
@@ -66,11 +88,12 @@ export const setup_darwin_credentials = async ( agent ) => {
         }
 
         // Keychain miss → fallback to a file path if the agent declared one
-        if( !mounts.length && cred_config.fallback_file ) {
-            const file_mount = mount_credential_file( agent, cred_config.fallback_file )
+        if( !mounts.length && !sync && cred_config.fallback_file ) {
+            const file_mount = mount_credential_file( agent, cred_config.fallback_file, existing_tmpfile )
             if( file_mount ) {
-                mounts.push( file_mount.mount )
-                sync = file_mount.sync
+                const { mount, sync: file_sync } = file_mount
+                if( mount ) mounts.push( mount )
+                sync = file_sync
             }
         }
 
@@ -79,11 +102,12 @@ export const setup_darwin_credentials = async ( agent ) => {
     // Standalone file-based credentials (e.g. opencode auth.json on darwin —
     // opencode does NOT use Keychain, it stores tokens in
     // ~/.local/share/opencode/auth.json on every platform).
-    if( !mounts.length && cred_config.file ) {
-        const file_mount = mount_credential_file( agent, cred_config.file )
+    if( !mounts.length && !sync && cred_config.file ) {
+        const file_mount = mount_credential_file( agent, cred_config.file, existing_tmpfile )
         if( file_mount ) {
-            mounts.push( file_mount.mount )
-            sync = file_mount.sync
+            const { mount, sync: file_sync } = file_mount
+            if( mount ) mounts.push( mount )
+            sync = file_sync
         }
     }
 
@@ -109,15 +133,18 @@ export const setup_darwin_credentials = async ( agent ) => {
  * Copy a credential file to a tmpfile and start the in-place sync daemon
  * @param {Object} agent - Agent adapter (for naming + container_paths)
  * @param {string} file_pattern - Path on host (may contain ~)
- * @returns {{ mount: Object, sync: Object } | null}
+ * @param {string} [existing_tmpfile] - Re-use this tmpfile (monitor case) instead of
+ *   creating a new one. When provided, no mount is returned (the foreground already
+ *   wired up the docker mount) — only the sync.
+ * @returns {{ mount: Object|null, sync: Object } | null}
  */
-const mount_credential_file = ( agent, file_pattern ) => {
+const mount_credential_file = ( agent, file_pattern, existing_tmpfile = null ) => {
 
     const expanded = file_pattern.replace( `~`, process.env.HOME )
 
     // copy_host_file_to_tmpfile returns null when the source is missing;
     // no need to existsSync first.
-    const tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
+    const tmpfile = existing_tmpfile || copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
     if( !tmpfile ) return null
 
     const read_source = async () => {
@@ -145,7 +172,12 @@ const mount_credential_file = ( agent, file_pattern ) => {
     log.info( `Credentials loaded from file: ${ expanded }` )
 
     return {
-        mount: { type: `volume`, source: tmpfile, target: agent.container_paths.creds },
+        // No new mount when re-using an existing tmpfile — the container is
+        // already running on it (the foreground built the docker command from
+        // the same path). The monitor only needs the sync.
+        mount: existing_tmpfile
+            ? null
+            : { type: `volume`, source: tmpfile, target: agent.container_paths.creds },
         sync,
     }
 
