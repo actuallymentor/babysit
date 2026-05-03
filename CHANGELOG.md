@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.6 — 2026-05-03
+
+### 🐛 Fixed
+- **Babysit container images now include `rg` on arm64.** The Dockerfile
+  installs `ripgrep` through Debian apt instead of guessing an upstream
+  `${ARCH}.deb` release asset that only exists for amd64.
+
 ## 0.9.5 — 2026-05-03
 
 ### 🐛 Fixed

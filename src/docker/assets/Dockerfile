@@ -28,8 +28,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     netcat-openbsd dnsutils iproute2 iputils-ping \
     # Editors / pagers
     vim nano less \
-    # Agent-friendly extras (sir-claudius parity)
-    shellcheck sqlite3 tree \
+    # Agent-friendly extras (sir-claudius parity). `ripgrep` comes from
+    # Debian here because upstream only publishes .deb assets for amd64; the
+    # apt package is arch-correct for both amd64 and arm64 images.
+    shellcheck sqlite3 tree ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI — agents working in repos need `gh` for PR/issue/auth flows.
@@ -45,10 +47,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Modern CLI tools via binary download (run as root)
 RUN set -eux; \
     ARCH="$(dpkg --print-architecture)"; \
-    # ripgrep
-    RG_VERSION="14.1.1"; \
-    curl -fsSL "https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep_${RG_VERSION}-1_${ARCH}.deb" -o /tmp/rg.deb \
-    && dpkg -i /tmp/rg.deb && rm /tmp/rg.deb; \
     # fd-find
     FD_VERSION="10.2.0"; \
     curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd_${FD_VERSION}_${ARCH}.deb" -o /tmp/fd.deb \

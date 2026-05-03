@@ -1,6 +1,6 @@
 {
   "name": "babysit",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "A CLI supervisor for LLM coding agent CLIs",
   "type": "module",
   "main": "src/index.js",

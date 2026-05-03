@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'bun:test'
+import { readFileSync } from 'fs'
 import { get_image_name } from '../src/docker/update.js'
 import { build_docker_command } from '../src/docker/run.js'
 import { claude } from '../src/agents/claude.js'
@@ -27,6 +28,19 @@ describe( `docker image`, () => {
         // `docker pull` and `docker run` will both fail at runtime
         expect( get_image_name() ).toBe( `actuallymentor/babysit:latest` )
         expect( get_image_name( `0.3.0` ) ).toBe( `actuallymentor/babysit:0.3.0` )
+
+    } )
+
+    it( `installs ripgrep through apt instead of an arch-guessed GitHub .deb`, () => {
+
+        // BurntSushi/ripgrep publishes .deb release assets for amd64 only.
+        // Debian's package is available for both amd64 and arm64, which keeps
+        // local Apple Silicon builds and multi-arch published images aligned.
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `shellcheck sqlite3 tree ripgrep` )
+        expect( dockerfile ).not.toContain( `ripgrep_\${` )
+        expect( dockerfile ).not.toContain( `/tmp/rg.deb` )
 
     } )
 
