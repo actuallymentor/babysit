@@ -61,7 +61,11 @@ export const cmd_start = async ( cmd ) => {
     // mount; the detached monitor will set up its own sync interval, so we
     // stop the foreground's sync as soon as the monitor is spawned to avoid
     // racing on the tmpfile.
-    const { mounts: creds_mounts, sync: creds_sync } = await setup_credentials( agent )
+    const {
+        mounts: creds_mounts,
+        sync: creds_sync,
+        sync_baseline: creds_sync_baseline,
+    } = await setup_credentials( agent )
 
     // Get agent-specific extra env
     const extra_env = agent.extra_env ? agent.extra_env( mode ) : {}
@@ -111,6 +115,7 @@ export const cmd_start = async ( cmd ) => {
         pwd: workspace,
         modifiers,
         creds_tmpfile: creds_mounts.find( m => m.type === `volume` )?.source || null,
+        creds_sync_baseline,
         started_at: new Date().toISOString(),
     }
     save_session( session_data )
@@ -126,10 +131,10 @@ export const cmd_start = async ( cmd ) => {
     // Hand the foreground's credential sync over to the detached monitor.
     // Both sync intervals would race on the same tmpfile if we left this one
     // running; the monitor's sync started inside the daemon a moment ago.
-    // stop() now returns a promise (final flush is async); we don't await it
-    // because the container has only just started and no token refresh can
-    // have happened yet — there's nothing to flush. The monitor's stop() will
-    // do the real flush at session end.
+    // stop() runs one final async flush. It is deliberately fire-and-forget:
+    // if a fast-starting agent already refreshed the tmpfile, either this
+    // flush or the monitor's baseline-aware sync will push it back to host.
+    // Awaiting here would only delay attaching the user's terminal.
     if( creds_sync ) creds_sync.stop().catch( e => log.debug( `Foreground sync stop: ${ e.message }` ) )
 
     // Hand the user's terminal over to tmux. Blocks until they detach

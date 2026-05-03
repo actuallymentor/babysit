@@ -11,7 +11,9 @@ import { setup_linux_credentials } from './linux.js'
  *   so its sync watches the same tmpfile the container is mounting — otherwise the
  *   container's OAuth refreshes never get propagated back to the host file and the
  *   next babysit session fails with "refresh token already used".
- * @returns {Promise<{ mounts: Array, sync: Object|null }>}
+ * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used
+ *   when reusing an existing tmpfile in the monitor
+ * @returns {Promise<{ mounts: Array, sync: Object|null, sync_baseline: Object|null }>}
  */
 export const setup_credentials = async ( agent, options = {} ) => {
 

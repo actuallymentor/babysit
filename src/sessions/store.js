@@ -13,6 +13,8 @@ import { log } from '../utils/log.js'
  * @param {string} session.pwd - Working directory
  * @param {string[]} session.modifiers - Active mode flags
  * @param {string} [session.creds_tmpfile] - Path to credentials tmpfile
+ * @param {Object|null} [session.creds_sync_baseline] - Safe hashes from the
+ *   credential capture handoff
  * @param {number} [session.creds_sync_pid] - PID of credential sync daemon
  * @param {string} session.started_at - ISO timestamp
  */

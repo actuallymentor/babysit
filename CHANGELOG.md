@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.4 — 2026-05-03
+
+### 🐛 Fixed
+- **`babysit codex --yolo` no longer loses fast startup token refreshes.**
+  The monitor now receives safe credential capture hashes from the foreground,
+  so a Codex refresh that happens before monitor sync starts is written back to
+  host `~/.codex/auth.json` instead of being overwritten by the stale host copy.
+
 ## 0.9.3 — 2026-05-03
 
 ### ✨ Changed

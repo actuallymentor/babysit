@@ -4,7 +4,39 @@ import { createHash } from 'crypto'
 import { log } from '../utils/log.js'
 import { rewrite_tmpfile } from '../utils/tmpfile.js'
 
-const quick_hash = ( str ) => createHash( `sha256` ).update( str ).digest( `hex` )
+/**
+ * Hash credential content without persisting the secret itself.
+ * @param {string} content - Credential file content
+ * @returns {string} SHA-256 hash
+ */
+export const hash_credential_content = ( content ) => createHash( `sha256` ).update( content ).digest( `hex` )
+
+/**
+ * Build the hash baseline for a host credential file and its mounted tmpfile.
+ * The values are safe to store in session metadata because they contain no
+ * credential material.
+ *
+ * @param {string} source_path - Host credential path
+ * @param {string} tmpfile_path - Mounted tmpfile path
+ * @returns {{ baseline_source_hash: string, baseline_tmpfile_hash: string }|null}
+ */
+export const build_credential_sync_baseline = ( source_path, tmpfile_path ) => {
+
+    try {
+
+        const source = readFileSync( source_path, `utf-8` )
+        const tmpfile = readFileSync( tmpfile_path, `utf-8` )
+
+        return {
+            baseline_source_hash: hash_credential_content( source ),
+            baseline_tmpfile_hash: hash_credential_content( tmpfile ),
+        }
+
+    } catch {
+        return null
+    }
+
+}
 
 // Refresh interval for credential sync daemon (5 minutes)
 const REFRESH_INTERVAL_MS = 300_000
@@ -33,21 +65,34 @@ const REFRESH_INTERVAL_MS = 300_000
  * @param {string} tmpfile_path - Path to the tmpfile mounted into docker
  * @param {Function|null} [write_destination=null] - Async function that receives the tmpfile's
  *   updated content and writes it back to the host source. Pass null to keep sync one-way.
+ * @param {Object} [options]
+ * @param {string|null} [options.baseline_source_hash] - Hash of the host source when the tmpfile
+ *   was captured by the foreground process
+ * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the tmpfile when it was mounted
  * @returns {{ stop: Function }} Controller with stop method
  */
-export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null ) => {
+export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null, options = {} ) => {
 
-    let last_source_hash = null
-    let last_tmpfile_hash = null
+    const { baseline_source_hash = null, baseline_tmpfile_hash = null } = options
+
+    let last_source_hash = baseline_source_hash
+    let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
 
     // Seed both hashes from the initial tmpfile write — at start of session,
-    // tmpfile content === source content, so they share a hash.
-    try {
-        const initial = readFileSync( tmpfile_path, `utf-8` )
-        last_source_hash = quick_hash( initial )
-        last_tmpfile_hash = last_source_hash
-    } catch {
-        // File may not exist yet
+    // tmpfile content === source content, so they share a hash. The detached
+    // monitor passes explicit foreground-capture hashes because codex can
+    // refresh the mounted tmpfile before the monitor starts; in that case,
+    // seeding from the current tmpfile would make the stale host file look
+    // like a deliberate re-auth and overwrite the fresh token.
+    if( !last_source_hash || !last_tmpfile_hash ) {
+        try {
+            const initial = readFileSync( tmpfile_path, `utf-8` )
+            const initial_hash = hash_credential_content( initial )
+            last_source_hash = last_source_hash || initial_hash
+            last_tmpfile_hash = last_tmpfile_hash || initial_hash
+        } catch {
+            // File may not exist yet
+        }
     }
 
     const tick = async () => {
@@ -63,8 +108,8 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
                 // tmpfile may have been removed (cleanup, etc.) — fall through
             }
 
-            const source_hash = source ? quick_hash( source ) : null
-            const tmpfile_hash = tmpfile_content ? quick_hash( tmpfile_content ) : null
+            const source_hash = source ? hash_credential_content( source ) : null
+            const tmpfile_hash = tmpfile_content ? hash_credential_content( tmpfile_content ) : null
 
             // Direction 1: host source changed (rare — user re-authed on host
             // while babysit was running). Push to tmpfile so the container's

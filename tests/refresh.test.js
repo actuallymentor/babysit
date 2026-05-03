@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import { start_credential_sync } from '../src/credentials/refresh.js'
+import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
 
 // stop() runs one final tick — the test surface for the bidirectional sync
 // without having to wait the full REFRESH_INTERVAL_MS for a periodic tick.
@@ -86,6 +86,36 @@ describe( `start_credential_sync`, () => {
 
         expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"Z"}` )
         expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( `{"token":"Z"}` )
+
+    } )
+
+    it( `uses the foreground baseline when the tmpfile rotated before monitor sync starts`, async () => {
+
+        writeFileSync( host_path, `{"refresh_token":"X"}` )
+        writeFileSync( tmpfile_path, `{"refresh_token":"X"}` )
+
+        const initial_hash = hash_credential_content( `{"refresh_token":"X"}` )
+
+        // Codex can refresh immediately during startup, before the detached
+        // monitor has established its sync. The monitor must compare against
+        // the foreground capture hash, not seed from the already-rotated
+        // tmpfile, or stale host state would overwrite the valid refresh.
+        writeFileSync( tmpfile_path, `{"refresh_token":"Y"}` )
+
+        const read_source = async () => readFileSync( host_path, `utf-8` )
+        const write_destination = async ( content ) => {
+            writeFileSync( host_path, content )
+        }
+
+        const sync = start_credential_sync( read_source, tmpfile_path, write_destination, {
+            baseline_source_hash: initial_hash,
+            baseline_tmpfile_hash: initial_hash,
+        } )
+
+        await sync.stop()
+
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"refresh_token":"Y"}` )
+        expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( `{"refresh_token":"Y"}` )
 
     } )
 

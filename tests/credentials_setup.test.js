@@ -91,6 +91,33 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     } )
 
+    it( `preserves a tmpfile rotation that happened before the monitor starts`, async () => {
+
+        const fg = await setup_linux_credentials( fake_agent )
+        const fg_tmpfile = fg.mounts.find( m => m.type === `volume` ).source
+
+        // Simulate codex refreshing during startup before the detached monitor
+        // has established its credential sync. The monitor receives the
+        // foreground capture baseline through session metadata, so it knows
+        // the host file is stale and the tmpfile is fresh.
+        writeFileSync( fg_tmpfile, `{"refresh_token":"startup-rotated"}` )
+
+        const mon = await setup_linux_credentials( fake_agent, {
+            existing_tmpfile: fg_tmpfile,
+            sync_baseline: fg.sync_baseline,
+        } )
+
+        await mon.sync.stop()
+
+        expect( readFileSync( join( dir, `.codex/auth.json` ), `utf-8` ) )
+            .toBe( `{"refresh_token":"startup-rotated"}` )
+        expect( readFileSync( fg_tmpfile, `utf-8` ) )
+            .toBe( `{"refresh_token":"startup-rotated"}` )
+
+        await fg.sync.stop()
+
+    } )
+
     it( `with existing_tmpfile, host-file changes still flow to the tmpfile (direction 1)`, async () => {
 
         const fg = await setup_linux_credentials( fake_agent )

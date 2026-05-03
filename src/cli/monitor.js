@@ -70,6 +70,7 @@ export const cmd_monitor = async ( cmd ) => {
     // babysit session, every time.
     const { sync: creds_sync } = await setup_credentials( agent, {
         existing_tmpfile: session.creds_tmpfile,
+        sync_baseline: session.creds_sync_baseline,
     } )
 
     log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
