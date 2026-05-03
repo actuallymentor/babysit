@@ -2,7 +2,12 @@ import mri from 'mri'
 import { is_agent } from '../agents/index.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop` ]
+const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `log` ]
+
+// Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
+// uses this to skip the value token too — without that, the user's `--log foo`
+// would leak `foo` to the agent CLI.
+const VALUE_FLAGS = new Set( [ `log` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -11,10 +16,15 @@ const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop` ]
  */
 export const parse_args = ( argv ) => {
 
+    // Pre-process so a bare `--log` (no value) becomes `--log=` and mri's
+    // `string` consumer doesn't grab the next flag as the value.
+    const prepared = normalise_value_flags( argv )
+
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
-    const args = mri( argv, {
+    const args = mri( prepared, {
         boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop` ],
+        string: [ `log` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -27,6 +37,10 @@ export const parse_args = ( argv ) => {
         sandbox: args.sandbox || false,
         mudbox: args.mudbox || false,
         loop: args.loop || false,
+        // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
+        // mri normalises the first two to args.log = '' / args.log = 'path'.
+        // false (flag absent) vs string (flag present, possibly empty for default).
+        log: ( typeof args.log === `string` ) ? args.log : false,
     }
 
     // Sandbox and mudbox describe contradictory mount strategies — fail fast
@@ -101,8 +115,14 @@ export const parse_args = ( argv ) => {
 const collect_passthrough = ( argv, agent_name, session_id = null ) => {
 
     const passthrough = []
+    let skip_next = false
 
     for( const arg of argv ) {
+
+        if( skip_next ) {
+            skip_next = false
+            continue
+        }
 
         // Skip the agent name (when there is one)
         if( agent_name && arg === agent_name ) continue
@@ -113,9 +133,14 @@ const collect_passthrough = ( argv, agent_name, session_id = null ) => {
         // Skip the resume session id (the agent adapter injects it via flags.resume)
         if( session_id && arg === session_id ) continue
 
-        // Skip known babysit flags
+        // Skip known babysit flags. For value-taking flags written without `=`,
+        // we also need to drop the following token — otherwise `--log foo.log`
+        // leaks `foo.log` into the agent's argv.
         const [ clean ] = arg.replace( /^-+/, `` ).split( `=` )
-        if( KNOWN_FLAGS.includes( clean ) ) continue
+        if( KNOWN_FLAGS.includes( clean ) ) {
+            if( VALUE_FLAGS.has( clean ) && !arg.includes( `=` ) ) skip_next = true
+            continue
+        }
 
         // Skip -h and -v aliases
         if( arg === `-h` || arg === `-v` ) continue
@@ -125,5 +150,43 @@ const collect_passthrough = ( argv, agent_name, session_id = null ) => {
     }
 
     return passthrough
+
+}
+
+/**
+ * Rewrite `--log` (no value, no `=`) as `--log=` before mri parses argv.
+ * Without this, mri's `string` mode would consume the *next* token as the
+ * value — even when that token is itself a flag like `--yolo`. After the
+ * rewrite mri sees an empty string and we treat that as "use the default
+ * log path".
+ *
+ * Idempotent on `--log=...` and `--log <value>` forms — only the standalone
+ * `--log` shape is affected.
+ *
+ * @param {string[]} argv
+ * @returns {string[]}
+ */
+const normalise_value_flags = ( argv ) => {
+
+    const out = []
+
+    for( let i = 0; i < argv.length; i++ ) {
+
+        const arg = argv[i]
+
+        if( arg === `--log` ) {
+
+            const next = argv[i + 1]
+            const has_value = next !== undefined && !next.startsWith( `-` )
+            out.push( has_value ? arg : `--log=` )
+            continue
+
+        }
+
+        out.push( arg )
+
+    }
+
+    return out
 
 }

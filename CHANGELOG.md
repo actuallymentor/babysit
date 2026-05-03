@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0 — 2026-05-03
+
+### ✨ Added
+- **`--log` flag** appends all tmux pane output to a logfile. Three call shapes accepted:
+  - `babysit claude --log` → default path `.YYYY_MM_DD_HH_MM.babysit.log` in cwd (hidden, named after session start time)
+  - `babysit claude --log=path.log` or `--log path.log` → custom path
+  - Absolute and `~/`-prefixed paths supported.
+
+  Each new session prepends a `Babysit session start: YYYY-MM-DD HH:MM:SS` line so the same file can host multiple sessions without ambiguity. Logging is implemented via `tmux pipe-pane` (server-side, survives detach), so the file keeps growing while you're reattached, detached, or running headless. Files are append-only — never truncated. tmux writes raw bytes including ANSI; pipe through `sed -E 's/\\x1B\\[[0-9;?]*[a-zA-Z]//g'` for plain text. Implementation: `src/utils/log_file.js` (path resolution, header) + `start_pipe_pane` in `src/tmux/capture.js`.
+
 ## 0.8.0 — 2026-05-02
 
 ### 🐛 Fixed
