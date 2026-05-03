@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { run_sync } from '../utils/exec.js'
 import { copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
-import { start_credential_sync } from './refresh.js'
+import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 
 /**
  * Set up credentials on Linux by copying credential files to tmpfiles
@@ -13,15 +13,18 @@ import { start_credential_sync } from './refresh.js'
  *   already mounting (created by the foreground). Without this, the monitor's sync would
  *   watch its own brand-new tmpfile and the container's OAuth refreshes would never make
  *   it back to the host file. See GOTCHAS.md.
- * @returns {{ mounts: Array, sync: Object|null }} Credential mounts and sync controller
+ * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
+ *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
+ * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null }} Credential mounts and sync controller
  */
-export const setup_linux_credentials = async ( agent, { existing_tmpfile = null } = {} ) => {
+export const setup_linux_credentials = async ( agent, { existing_tmpfile = null, sync_baseline = null } = {} ) => {
 
     const cred_config = agent.credentials?.linux
-    if( !cred_config ) return { mounts: [], sync: null }
+    if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null }
 
     const mounts = []
     let sync = null
+    let baseline = sync_baseline
 
     // File-based credentials (Claude, OpenCode, Codex OAuth, Gemini OAuth)
     if( cred_config.file ) {
@@ -47,13 +50,15 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null 
                 // gemini refresh tokens in place). See utils/tmpfile.js for why
                 // chmod is needed beyond writeFileSync's `mode` option.
                 tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
-                if( !tmpfile ) return { mounts, sync }
+                if( !tmpfile ) return { mounts, sync, sync_baseline: baseline }
 
                 mounts.push( {
                     type: `volume`,
                     source: tmpfile,
                     target: agent.container_paths.creds,
                 } )
+
+                baseline = build_credential_sync_baseline( expanded, tmpfile )
 
             }
 
@@ -79,7 +84,7 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null 
                 }
             }
 
-            sync = start_credential_sync( read_source, tmpfile, write_destination )
+            sync = start_credential_sync( read_source, tmpfile, write_destination, baseline || {} )
 
             log.info( `Credentials loaded from file: ${ expanded }` )
 
@@ -100,6 +105,6 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null 
         log.info( `Credentials loaded from env fallback: ${ cred_config.fallback_env }` )
     }
 
-    return { mounts, sync }
+    return { mounts, sync, sync_baseline: baseline }
 
 }
