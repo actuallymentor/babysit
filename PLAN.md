@@ -281,7 +281,7 @@ After `docker run` is dispatched, monitor loop watches the pane for `session_id_
 }
 ```
 
-On session exit (detected by `tmux has-session` returning non-zero), print `To resume this session, run \`babysit resume <agent_session_id>\``.
+On session exit (detected by `tmux has-session` returning non-zero), print `To resume this session, run:` then `babysit resume <agent_session_id>` on its own line (unquoted, so it's triple-click selectable).
 
 ### Statusline
 
