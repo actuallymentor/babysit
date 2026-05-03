@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.1 — 2026-05-03
+
+### 🐛 Fixed
+- **`--log` no longer consumes the next agent passthrough flag.** Bare `--log`
+  now uses the normalized argv for passthrough collection, so
+  `babysit claude --log --model sonnet` still forwards `--model sonnet`.
+- **Dead-session resume no longer enables logging unless `--log` is passed.**
+  Resume flag merging now preserves `log: false` while still honoring bare
+  `--log` as the default-path sentinel.
+- **`--log` now starts the tmux pipe before the agent command runs.** Fast
+  startup output is captured without echoing the docker boot command into the
+  pane or logfile.
+
 ## 0.9.0 — 2026-05-03
 
 ### ✨ Added

@@ -148,6 +148,18 @@ describe( `parse_args`, () => {
             expect( cmd.flags.yolo ).toBe( true )
         } )
 
+        it( `bare --log does not consume the next passthrough flag`, () => {
+            const cmd = parse_args( [ `claude`, `--log`, `--model`, `sonnet` ] )
+            expect( cmd.flags.log ).toBe( `` )
+            expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
+        } )
+
+        it( `bare --log does not consume passthrough on agent-less resume`, () => {
+            const cmd = parse_args( [ `resume`, `abc-123`, `--log`, `--model`, `sonnet` ] )
+            expect( cmd.flags.log ).toBe( `` )
+            expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
+        } )
+
         it( `--log and --yolo can appear in either order`, () => {
             const a = parse_args( [ `claude`, `--yolo`, `--log=x.log` ] )
             expect( a.flags.yolo ).toBe( true )

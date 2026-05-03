@@ -40,7 +40,7 @@ export const parse_args = ( argv ) => {
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.
         // false (flag absent) vs string (flag present, possibly empty for default).
-        log: ( typeof args.log === `string` ) ? args.log : false,
+        log:  typeof args.log === `string`  ? args.log : false,
     }
 
     // Sandbox and mudbox describe contradictory mount strategies — fail fast
@@ -74,7 +74,7 @@ export const parse_args = ( argv ) => {
             agent: null,
             session_id,
             flags,
-            passthrough: collect_passthrough( argv, null, session_id ),
+            passthrough: collect_passthrough( prepared, null, session_id ),
         }
     }
 
@@ -94,7 +94,7 @@ export const parse_args = ( argv ) => {
         // Collect passthrough args (unknown flags for the agent CLI).
         // Drop the session id when present so the agent adapter is the only place
         // that injects the resume flag — otherwise the id appears twice.
-        const passthrough = collect_passthrough( argv, agent, session_id )
+        const passthrough = collect_passthrough( prepared, agent, session_id )
 
         return { verb: sub_verb, agent, session_id, flags, passthrough }
 
