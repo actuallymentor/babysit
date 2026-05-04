@@ -98,6 +98,34 @@ export const build_docker_command = ( options ) => {
     flags.push( `-v`, `babysit-npm-global:/home/node/.npm-global` )
     flags.push( `-v`, `babysit-uv-cache:/home/node/.cache` )
 
+    // Mode environment
+    if( mode.yolo ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=yolo` )
+    else if( mode.sandbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=sandbox` )
+    else if( mode.mudbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=mudbox` )
+
+    // Modifiers shown in the statusline (defaults to "babysit" if no flags)
+    const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`
+    flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
+
+    // Pin the agent's home/config directory inside the container. Each agent
+    // exposes its own env var (CODEX_HOME, GEMINI_CLI_HOME, CLAUDE_CONFIG_DIR,
+    // OPENCODE_CONFIG_DIR). Setting it explicitly gives babysit a single
+    // source of truth for where the agent reads global instructions and
+    // credentials from — and stops a stray host-side value from redirecting
+    // the agent to a path we never mount.
+    if( agent.home?.env_var && agent.home?.dir ) {
+        flags.push( `-e`, `${ agent.home.env_var }=${ agent.home.dir }` )
+    }
+
+    // Per-agent extra config mounts. Mount these before credential and
+    // user-global files so a whole-dir mount (Codex needs this for atomic
+    // config.toml persists) can act as the base config home, then narrower
+    // file mounts layer into it.
+    for( const m of get_extra_mounts( agent.name )( { yolo: mode.yolo } ) ) {
+        const target = m.ro ? `${ m.container }:ro` : m.container
+        flags.push( `-v`, `${ m.host }:${ target }` )
+    }
+
     // Credential mounts
     if( creds_mounts ) {
         for( const mount of creds_mounts ) {
@@ -119,25 +147,6 @@ export const build_docker_command = ( options ) => {
     const gh_token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
     if( gh_token ) flags.push( `-e`, `GH_TOKEN=${ gh_token }` )
 
-    // Mode environment
-    if( mode.yolo ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=yolo` )
-    else if( mode.sandbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=sandbox` )
-    else if( mode.mudbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=mudbox` )
-
-    // Modifiers shown in the statusline (defaults to "babysit" if no flags)
-    const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`
-    flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
-
-    // Pin the agent's home/config directory inside the container. Each agent
-    // exposes its own env var (CODEX_HOME, GEMINI_CLI_HOME, CLAUDE_CONFIG_DIR,
-    // OPENCODE_CONFIG_DIR). Setting it explicitly gives babysit a single
-    // source of truth for where the agent reads global instructions and
-    // credentials from — and stops a stray host-side value from redirecting
-    // the agent to a path we never mount.
-    if( agent.home?.env_var && agent.home?.dir ) {
-        flags.push( `-e`, `${ agent.home.env_var }=${ agent.home.dir }` )
-    }
-
     // Bind-mount the user's cross-agent globals into each agent's native
     // discovery path (read-only). The agent loads it through its own
     // AGENTS.md / GEMINI.md / CLAUDE.md mechanism — no babysit-specific
@@ -155,17 +164,6 @@ export const build_docker_command = ( options ) => {
     // Extra environment variables from agent adapter
     for( const [ key, value ] of Object.entries( extra_env ) ) {
         flags.push( `-e`, `${ key }=${ value }` )
-    }
-
-    // Per-agent extra config mounts. Each agent's setup.js builder returns
-    // a list of `{ host, container, ro? }` tmpfile mounts that bypass
-    // first-run dialogs (claude .claude.json, codex config.toml, gemini
-    // settings.json + trustedFolders, etc). See src/agents/setup.js.
-    // `yolo` is forwarded so claude can suppress its bypass-permissions warning
-    // when the user has explicitly opted in via --yolo.
-    for( const m of get_extra_mounts( agent.name )( { yolo: mode.yolo } ) ) {
-        const target = m.ro ? `${ m.container }:ro` : m.container
-        flags.push( `-v`, `${ m.host }:${ target }` )
     }
 
     // Claude session state — named volumes, not bind mounts. See GOTCHAS.md #31

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
-import { copy_host_file_to_tmpfile, build_tmpfile } from '../utils/tmpfile.js'
+import { copy_host_file_to_tmpfile, build_tmpfile, build_tmpdir_with_file } from '../utils/tmpfile.js'
 import { expand_home_path } from '../credentials/paths.js'
 import { get_host_codex_home } from './codex.js'
 
@@ -171,7 +171,7 @@ export const build_claude_json_tmpfile = ( host_claude_json_path ) => {
 
 // Recent codex model versions that codex shows a one-time "new model
 // available" intro for. Fresh containers re-trigger these every session
-// because their state lives in config.toml, which we mount as a tmpfile
+// because their state lives in config.toml, which we mount in a tmpdir
 // snapshot. We pre-mark each one as "seen" (count >= 1) so the dialog
 // never appears. New versions can be appended here as codex ships them.
 export const CODEX_KNOWN_MODELS_FOR_NUX = [ `gpt-5`, `gpt-5.1`, `gpt-5.2`, `gpt-5.3`, `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, `gpt-5.5-codex` ]
@@ -193,10 +193,10 @@ export const codex_extra_mounts = () => {
 
     const host_config = join( expand_home_path( get_host_codex_home() ), `config.toml` )
     const raw = existsSync( host_config ) ? readFileSync( host_config, `utf-8` ) : ``
-    const tmpfile = build_tmpfile( `codex`, `config.toml`, inject_codex_first_run_bypass( raw ) )
+    const tmpdir = build_tmpdir_with_file( `codex`, `config.toml`, inject_codex_first_run_bypass( raw ) )
 
     const mounts = []
-    if( tmpfile ) mounts.push( { host: tmpfile, container: `/home/node/.codex/config.toml` } )
+    if( tmpdir ) mounts.push( { host: tmpdir, container: `/home/node/.codex` } )
 
     // NOTE: do NOT mount the host's installation_id. Mounting it breaks
     // codex's session machinery with "Failed to create session: Operation

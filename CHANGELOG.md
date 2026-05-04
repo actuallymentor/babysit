@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.8 — 2026-05-04
+
+### 🐛 Fixed
+- **Changing Codex's default model inside a Babysit container no longer fails
+  to persist `config.toml`.** Babysit now mounts Codex's injected config as a
+  writable temp `CODEX_HOME` directory instead of bind-mounting
+  `config.toml` as a single file, so Codex's atomic write-and-rename persist
+  path works. Auth and `AGENTS.md` mounts are layered into that directory
+  afterward.
+- **Codex now defaults to extra-high reasoning effort.** The default
+  `model_reasoning_effort` override changed from `high` to `xhigh`, matching
+  the highest Codex effort level.
+
 ## 0.9.7 — 2026-05-03
 
 ### 🐛 Fixed

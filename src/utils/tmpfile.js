@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, chmodSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, chmodSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, basename } from 'path'
 
@@ -69,6 +69,37 @@ export const build_tmpfile = ( tag, hint, content ) => {
 
     } catch ( e ) {
         log.debug( `Failed to build tmpfile (${ hint }): ${ e.message }` )
+        return null
+    }
+
+}
+
+/**
+ * Build a fresh world-writable tmpdir containing one chmod-666 file.
+ * Use this for agent state files that are persisted atomically via
+ * write-temp-and-rename: a bind-mounted single file can be written in place,
+ * but it cannot be replaced by renaming over the mount point.
+ *
+ * @param {string} tag - Short identifier baked into the tmpdir name
+ * @param {string} filename - Filename to create inside the tmpdir
+ * @param {string} content - File content to write
+ * @returns {string|null} Tmpdir path, or null on error
+ */
+export const build_tmpdir_with_file = ( tag, filename, content ) => {
+
+    try {
+
+        const tmpdir_path = mkdtempSync( join( tmpdir(), `babysit-${ tag }-${ filename }-` ) )
+        chmodSync( tmpdir_path, 0o777 )
+
+        const tmpfile = join( tmpdir_path, filename )
+        writeFileSync( tmpfile, content )
+        chmodSync( tmpfile, 0o666 )
+
+        return tmpdir_path
+
+    } catch ( e ) {
+        log.debug( `Failed to build tmpdir (${ filename }): ${ e.message }` )
         return null
     }
 

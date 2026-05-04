@@ -91,7 +91,7 @@ export const codex = {
         // Latest GA frontier model for coding (April 2026). Falls back to gpt-5.4 for
         // API-key auth without ChatGPT sign-in — users override with --model gpt-5.4.
         model: `gpt-5.5`,
-        effort: `high`,
+        effort: `xhigh`,
     },
 
     session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
