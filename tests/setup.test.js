@@ -226,12 +226,10 @@ describe( `codex_extra_mounts`, () => {
     it( `produces a config.toml mount with /workspace trusted and known model nags suppressed`, () => {
 
         const mounts = codex_extra_mounts()
-        const config_mount = mounts.find( m => m.container === `/home/node/.codex/config.toml` )
-        // If the host has no config.toml we'd skip this mount entirely; the
-        // test environment has one, so we expect the mount to be present.
+        const config_mount = mounts.find( m => m.container === `/home/node/.codex` )
         expect( config_mount ).toBeTruthy()
 
-        const content = readFileSync( config_mount.host, `utf-8` )
+        const content = readFileSync( join( config_mount.host, `config.toml` ), `utf-8` )
         expect( content ).toContain( `[projects."/workspace"]` )
         expect( content ).toContain( `trust_level = "trusted"` )
         // Each known model gets pre-marked seen so codex doesn't pop the
@@ -239,6 +237,22 @@ describe( `codex_extra_mounts`, () => {
         for ( const model of CODEX_KNOWN_MODELS_FOR_NUX ) {
             expect( content ).toContain( `"${ model }" = ` )
         }
+
+    } )
+
+    it( `mounts a writable config dir so Codex can atomically persist config.toml`, () => {
+
+        const mounts = codex_extra_mounts()
+        const config_mount = mounts.find( m => m.container === `/home/node/.codex` )
+        expect( config_mount ).toBeTruthy()
+
+        // Codex persists config changes by writing a temp file and renaming it
+        // over config.toml. A single-file bind mount accepts in-place writes
+        // but rejects that atomic replace path, causing "failed to persist
+        // config.toml" when changing the default model in the TUI.
+        expect( statSync( config_mount.host ).isDirectory() ).toBe( true )
+        expect( statSync( config_mount.host ).mode & 0o777 ).toBe( 0o777 )
+        expect( statSync( join( config_mount.host, `config.toml` ) ).mode & 0o777 ).toBe( 0o666 )
 
     } )
 
@@ -251,10 +265,10 @@ describe( `codex_extra_mounts`, () => {
         // connectors are also useless inside a sandboxed coding-agent
         // container. Disabled here via the documented features flag.
         const mounts = codex_extra_mounts()
-        const config_mount = mounts.find( m => m.container === `/home/node/.codex/config.toml` )
+        const config_mount = mounts.find( m => m.container === `/home/node/.codex` )
         expect( config_mount ).toBeTruthy()
 
-        const content = readFileSync( config_mount.host, `utf-8` )
+        const content = readFileSync( join( config_mount.host, `config.toml` ), `utf-8` )
         expect( content ).toMatch( /\[features\][\s\S]*apps\s*=\s*false/ )
 
     } )
@@ -270,10 +284,10 @@ describe( `codex_extra_mounts`, () => {
             writeFileSync( join( dir, `config.toml` ), `[projects."/custom-host"]\ntrust_level = "trusted"\n` )
 
             const mounts = codex_extra_mounts()
-            const config_mount = mounts.find( m => m.container === `/home/node/.codex/config.toml` )
+            const config_mount = mounts.find( m => m.container === `/home/node/.codex` )
             expect( config_mount ).toBeTruthy()
 
-            const content = readFileSync( config_mount.host, `utf-8` )
+            const content = readFileSync( join( config_mount.host, `config.toml` ), `utf-8` )
             expect( content ).toContain( `[projects."/custom-host"]` )
             expect( content ).toContain( `[projects."/workspace"]` )
 

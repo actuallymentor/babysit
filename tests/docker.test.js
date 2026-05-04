@@ -81,12 +81,12 @@ describe( `codex adapter`, () => {
         // The bare `reasoning_effort` key is silently ignored by codex; the real
         // config knob is `model_reasoning_effort`. Quote the value so it survives
         // YAML/TOML parsing inside codex's -c handler.
-        expect( codex.flags.effort( `high` ) ).toEqual( [ `-c`, `model_reasoning_effort="high"` ] )
+        expect( codex.flags.effort( `xhigh` ) ).toEqual( [ `-c`, `model_reasoning_effort="xhigh"` ] )
     } )
 
-    it( `defaults to the latest GA model at high effort`, () => {
+    it( `defaults to the latest GA model at extra-high effort`, () => {
         expect( codex.defaults.model ).toBe( `gpt-5.5` )
-        expect( codex.defaults.effort ).toBe( `high` )
+        expect( codex.defaults.effort ).toBe( `xhigh` )
     } )
 
     it( `skip_permissions bypasses both approvals and the internal sandbox`, () => {
@@ -302,7 +302,24 @@ describe( `build_docker_command`, () => {
         expect( cmd ).toContain( `--model gpt-5.5` )
         // model_reasoning_effort is the real codex config key (not reasoning_effort).
         // The full-quoted form is shell_quote'd into a single arg by build_docker_command.
-        expect( cmd ).toContain( `'model_reasoning_effort="high"'` )
+        expect( cmd ).toContain( `'model_reasoning_effort="xhigh"'` )
+
+    } )
+
+    it( `mounts Codex config home before narrower auth mounts`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: codex,
+            creds_mounts: [
+                { type: `volume`, source: `/tmp/codex-auth.json`, target: `/home/node/.codex/auth.json` },
+            ],
+        } ) )
+
+        const home_mount_index = cmd.indexOf( `:/home/node/.codex ` )
+        const auth_mount_index = cmd.indexOf( `:/home/node/.codex/auth.json` )
+
+        expect( home_mount_index ).toBeGreaterThan( -1 )
+        expect( auth_mount_index ).toBeGreaterThan( home_mount_index )
 
     } )
 
