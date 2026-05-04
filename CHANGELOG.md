@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.9 — 2026-05-04
+
+### ✨ Added
+- **Babysit now keeps macOS awake while sessions are active.** The detached
+  monitor starts `caffeinate -dimsu -w <pid>` on macOS and stops it when the
+  supervised tmux session ends, so long-running agents are not interrupted by
+  system sleep after you detach.
+
 ## 0.9.8 — 2026-05-04
 
 ### 🐛 Fixed

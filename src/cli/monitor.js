@@ -8,6 +8,7 @@ import { get_patterns } from '../patterns/index.js'
 import { apply_loop } from '../modes/loop.js'
 import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
+import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
 
 /**
  * Run the supervision loop for an already-launched session.
@@ -75,22 +76,30 @@ export const cmd_monitor = async ( cmd ) => {
 
     log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
 
-    await start_monitor( {
-        session_name: session.tmux_session,
-        config,
-        rules,
-        agent_patterns,
-        agent,
-        on_session_id: ( id ) => {
-            update_session( session.babysit_id, { agent_session_id: id } )
-        },
-        on_exit: async () => {
-            // Await so the sync's final flush completes before the process
-            // exits — otherwise a token refresh that happened in the last
-            // REFRESH_INTERVAL_MS window never makes it back to the host file.
-            if( creds_sync ) await creds_sync.stop()
-        },
-    } )
+    const caffeinate = start_caffeinate()
+
+    try {
+
+        await start_monitor( {
+            session_name: session.tmux_session,
+            config,
+            rules,
+            agent_patterns,
+            agent,
+            on_session_id: ( id ) => {
+                update_session( session.babysit_id, { agent_session_id: id } )
+            },
+            on_exit: async () => {
+                // Await so the sync's final flush completes before the process
+                // exits — otherwise a token refresh that happened in the last
+                // REFRESH_INTERVAL_MS window never makes it back to the host file.
+                if( creds_sync ) await creds_sync.stop()
+            },
+        } )
+
+    } finally {
+        stop_caffeinate( caffeinate )
+    }
 
     log.info( `Monitor exited for session ${ session.babysit_id }` )
 
