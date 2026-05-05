@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.1 — 2026-05-05
+
+### 🐛 Fixed
+- **Docker image builds no longer fail while installing `just`.** Babysit now
+  installs `just` from upstream multi-arch release assets instead of relying on
+  apt package availability in the slim Node base image.
+
 ## 0.11.0 — 2026-05-05
 
 ### ✨ Added

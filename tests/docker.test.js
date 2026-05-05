@@ -64,6 +64,18 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `installs just outside apt so slim-base package availability cannot break builds`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+        const [ apt_install_block ] = dockerfile.match( /RUN apt-get update && apt-get install[\s\S]*?&& rm -rf \/var\/lib\/apt\/lists\/\*/ )
+
+        expect( apt_install_block ).not.toMatch( /\bjust\b/ )
+        expect( dockerfile ).toContain( `JUST_VERSION=` )
+        expect( dockerfile ).toContain( `just-\${JUST_VERSION}-\${JUST_ARCH}-unknown-linux-musl.tar.gz` )
+        expect( dockerfile ).toContain( `| tar xz -C /usr/local/bin just` )
+
+    } )
+
     it( `installs nvm for the node user and smoke-tests it through bash`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
