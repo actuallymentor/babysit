@@ -3,12 +3,26 @@ import { resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
+import { build_system_prompt } from '../modes/prompt.js'
 
-const DEFAULT_YAML = `# babysit.yaml
+const yaml_block = ( text ) => String( text ).split( `\n` )
+    .map( line => `        ${ line }` )
+    .join( `\n` )
+
+const format_initial_prompt = ( text ) => {
+
+    if( !text ) return `""`
+
+    return `|-\n${ yaml_block( text ) }`
+
+}
+
+const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ) } = {} ) => `# babysit.yaml
 
 # Babysit configuration
 config:
-    initial_prompt: null # Prompt typed into the agent screen on launch. null uses babysit's built-in mode prompt; "" disables it.
+    # Prompt typed into the agent screen on launch. Set to null or "" to disable.
+    initial_prompt: ${ format_initial_prompt( initial_prompt ) }
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as \`on: idle\`
     commands:
         notify_command: >
@@ -57,16 +71,18 @@ const DEFAULT_CONFIG = {
 /**
  * Load babysit.yaml from the current directory, creating a default if missing
  * @param {string} [dir=process.cwd()] - Directory to look for babysit.yaml
+ * @param {Object} [options]
+ * @param {string} [options.default_initial_prompt] - Prompt to write into a newly-created babysit.yaml
  * @returns {{ config: Object, rules: Array }} Parsed config and rules
  */
-export const load_config = ( dir = process.cwd() ) => {
+export const load_config = ( dir = process.cwd(), { default_initial_prompt = build_system_prompt( {} ) } = {} ) => {
 
     const config_path = resolve( dir, `babysit.yaml` )
 
     // Create default if not present
     if( !existsSync( config_path ) ) {
         log.info( `Creating default babysit.yaml` )
-        writeFileSync( config_path, DEFAULT_YAML, `utf-8` )
+        writeFileSync( config_path, build_default_yaml( { initial_prompt: default_initial_prompt } ), `utf-8` )
     }
 
     const raw = readFileSync( config_path, `utf-8` )
@@ -136,6 +152,8 @@ const parse_on = ( value ) => {
 
 /**
  * Get the raw default yaml template string
+ * @param {Object} [options]
+ * @param {string} [options.initial_prompt] - Prompt to include in the default yaml
  * @returns {string} The default babysit.yaml content
  */
-export const get_default_yaml = () => DEFAULT_YAML
+export const get_default_yaml = ( options = {} ) => build_default_yaml( options )
