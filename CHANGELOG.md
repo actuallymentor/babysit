@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.11.0 — 2026-05-05
+
+### ✨ Added
+- **Babysit containers now include more agent-friendly project tooling.** Added
+  Bun, Corepack shims for pnpm/yarn, nvm, pip/pipx, just, file, and explicit
+  findutils coverage, with Dockerfile smoke checks for the new commands.
+
 ## 0.10.1 — 2026-05-05
 
 ### 🐛 Fixed
