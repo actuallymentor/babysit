@@ -75,6 +75,31 @@ babysit:
         expect( rules.length ).toBe( 1 )
     } )
 
+    it( `uses the generated launch prompt when an existing config omits initial_prompt`, () => {
+        writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
+config:
+    idle_timeout_s: 60
+babysit:
+    - on: idle
+      do: "keep going"
+` )
+        const { config } = load_config( tmpdir_path, { default_initial_prompt: `generated launch prompt` } )
+        expect( config.initial_prompt ).toBe( `generated launch prompt` )
+    } )
+
+    it( `keeps explicit null initial_prompt as startup typing opt-out`, () => {
+        writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
+config:
+    initial_prompt: null
+    idle_timeout_s: 60
+babysit:
+    - on: idle
+      do: "keep going"
+` )
+        const { config } = load_config( tmpdir_path, { default_initial_prompt: `generated launch prompt` } )
+        expect( config.initial_prompt ).toBe( null )
+    } )
+
     it( `treats a non-array babysit section as no rules`, () => {
         writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
 config: {}

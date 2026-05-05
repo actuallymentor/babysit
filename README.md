@@ -77,8 +77,9 @@ babysit:
 ```
 
 `config.initial_prompt` is typed into the agent screen once the session starts.
-New `babysit.yaml` files include Babysit's default launch prompt here. Set it
-to `null` or `""` to disable startup prompt typing.
+New `babysit.yaml` files include Babysit's default launch prompt here. Existing
+configs that omit it use the generated default prompt. Set it to `null` or `""`
+to disable startup prompt typing.
 
 ### `on:` triggers
 
