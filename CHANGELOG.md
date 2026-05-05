@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.12.2 — 2026-05-05
+
+### 🐛 Fixed
+- **Codex startup prompts no longer render duplicated or partially submitted.**
+  Babysit now waits for Codex's TUI before sending the launch prompt and
+  pastes multi-line prompts through tmux bracketed paste.
+
 ## 0.12.1 — 2026-05-05
 
 ### 🐛 Fixed

@@ -1,5 +1,6 @@
 import { spawn, execSync } from 'child_process'
 import { createInterface } from 'readline/promises'
+import { wait } from 'mentie'
 
 import { log } from '../utils/log.js'
 import { ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
@@ -11,10 +12,15 @@ import { build_system_prompt } from '../modes/prompt.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
+import { capture_pane } from '../tmux/capture.js'
 import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { DEFAULT_DOCKER_SOCKET, docker_socket_available } from '../docker/run.js'
+import { strip_ansi } from '../babysit/matcher.js'
+
+const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
+const INITIAL_PROMPT_READY_INTERVAL_MS = 250
 
 /**
  * Resolve the prompt babysit types into the agent pane once the TUI launches.
@@ -38,6 +44,63 @@ export const resolve_initial_prompt = ( config = {} ) => {
  * @returns {boolean}
  */
 export const should_send_initial_prompt = ( cmd = {} ) => cmd.verb !== `resume`
+
+/**
+ * Check whether an agent pane has reached the point where startup text can be
+ * pasted without racing terminal-mode setup.
+ * @param {Object} agent - Agent adapter
+ * @param {string} output - Raw pane output
+ * @returns {boolean} True when the agent has no readiness gate or it matches
+ */
+export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
+
+    const pattern = agent.initial_prompt_ready_pattern
+    if( !pattern ) return true
+
+    pattern.lastIndex = 0
+    return pattern.test( strip_ansi( output ) )
+
+}
+
+/**
+ * Wait for the agent TUI to be ready before typing the startup prompt.
+ * Agents without a readiness pattern are considered ready immediately.
+ * @param {string} session_name - Tmux session name
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options]
+ * @param {Function} [options.capture=capture_pane] - Pane capture helper
+ * @param {Function} [options.wait_fn=wait] - Sleep helper
+ * @param {number} [options.timeout_ms=60000] - Max wait before giving up
+ * @param {number} [options.interval_ms=250] - Poll interval
+ * @returns {Promise<boolean>} True when ready, false on timeout
+ */
+export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
+    capture = capture_pane,
+    wait_fn = wait,
+    timeout_ms = INITIAL_PROMPT_READY_TIMEOUT_MS,
+    interval_ms = INITIAL_PROMPT_READY_INTERVAL_MS,
+} = {} ) => {
+
+    if( !agent.initial_prompt_ready_pattern ) return true
+
+    const attempts = Math.max( 1, Math.ceil( timeout_ms / interval_ms ) )
+
+    for( let attempt = 0; attempt < attempts; attempt++ ) {
+
+        try {
+            const output = await capture( session_name, 1_000 )
+            if( is_initial_prompt_ready( agent, output ) ) return true
+        } catch {
+            return false
+        }
+
+        if( attempt < attempts - 1 ) await wait_fn( interval_ms )
+
+    }
+
+    return false
+
+}
 
 /**
  * Decide if a Docker socket session needs explicit user confirmation.
@@ -198,8 +261,13 @@ export const cmd_start = async ( cmd ) => {
     if( pipe_started ) log.info( `Logging tmux output to ${ log_path }` )
 
     if( initial_prompt ) {
-        log.info( `Sending initial prompt` )
-        await send_text( session_name, initial_prompt )
+        const prompt_ready = await wait_for_initial_prompt_ready( session_name, agent )
+        if( prompt_ready ) {
+            log.info( `Sending initial prompt` )
+            await send_text( session_name, initial_prompt )
+        } else {
+            log.warn( `Skipped initial prompt because ${ agent.name } did not reach its ready screen.` )
+        }
     }
 
     // Generate and save session metadata before spawning the monitor — the
