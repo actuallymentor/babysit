@@ -48,6 +48,7 @@ Created automatically on first run. Defines `on/do` rules — first match wins.
 
 ```yaml
 config:
+    initial_prompt: null
     idle_timeout_s: 300
     commands:
         notify_command: >
@@ -72,6 +73,10 @@ babysit:
       do: notify_command
       timeout: 05:00
 ```
+
+`config.initial_prompt` is typed into the agent screen once the session starts.
+Leave it as `null` to use Babysit's built-in mode prompt, set it to a string to
+replace that prompt, or set it to `""` to disable startup prompt typing.
 
 ### `on:` triggers
 

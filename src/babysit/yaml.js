@@ -8,6 +8,7 @@ const DEFAULT_YAML = `# babysit.yaml
 
 # Babysit configuration
 config:
+    initial_prompt: null # Prompt typed into the agent screen on launch. null uses babysit's built-in mode prompt; "" disables it.
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as \`on: idle\`
     commands:
         notify_command: >
@@ -45,6 +46,7 @@ babysit:
  * Default configuration values
  */
 const DEFAULT_CONFIG = {
+    initial_prompt: null,
     idle_timeout_s: 300,
     commands: {},
     lines_for_literal_match: 10,

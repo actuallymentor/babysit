@@ -11,7 +11,6 @@ const make_options = ( overrides = {} ) => ( {
     agent: codex,
     workspace: `/tmp/empty`,
     mode: { yolo: true },
-    system_prompt: ``,
     agent_args: [],
     creds_mounts: [],
     config: { isolate_dependencies: false },
@@ -172,23 +171,11 @@ describe( `agent home env vars`, () => {
 
 describe( `build_docker_command`, () => {
 
-    it( `single-quotes claude's --append-system-prompt value with spaces`, () => {
-
-        // Without quoting, the prompt would be split on spaces by sh -c
-        const cmd = build_docker_command( make_options( {
-            agent: claude,
-            system_prompt: `You are running. Be helpful.`,
-        } ) )
-
-        expect( cmd ).toContain( `--append-system-prompt 'You are running. Be helpful.'` )
-
-    } )
-
     it( `escapes embedded single quotes in shell values`, () => {
 
         const cmd = build_docker_command( make_options( {
             agent: claude,
-            system_prompt: `it's complicated`,
+            agent_args: [ `--model`, `it's complicated` ],
         } ) )
 
         // 'foo'\''bar' is the POSIX way to embed a single quote in a single-quoted string
@@ -196,80 +183,23 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `does not expand $-variables in the seeded first-message prompt`, () => {
-
-        // Babysit base prompt with $ should be passed literally, not
-        // expanded by the shell that materialises the docker command.
-        const cmd = build_docker_command( make_options( {
-            agent: codex,
-            system_prompt: `Use $HOME wisely`,
-        } ) )
-
-        // codex takes the prompt as the trailing positional arg — single-quoted
-        // by shell_quote because of the embedded space and $.
-        expect( cmd ).toContain( `'Use $HOME wisely'` )
-        expect( cmd ).not.toContain( `BABYSIT_SYSTEM_PROMPT` )
-
-    } )
-
-    it( `seeds the babysit base as a first-message FYI for codex (positional)`, () => {
-
-        const cmd = build_docker_command( make_options( {
-            agent: codex,
-            system_prompt: `hello world`,
-        } ) )
-
-        // codex CLI: `codex [OPTIONS] [PROMPT]` — prompt as final positional.
-        // Quoted because of the embedded space.
-        expect( cmd ).toMatch( /codex .* 'hello world'$/ )
-
-    } )
-
-    it( `seeds the babysit base as a first-message FYI for gemini (-i flag)`, () => {
-
-        const cmd = build_docker_command( make_options( {
-            agent: gemini,
-            system_prompt: `hello world`,
-        } ) )
-
-        // gemini -i / --prompt-interactive: "Execute the provided prompt and
-        // continue in interactive mode".
-        expect( cmd ).toContain( `-i 'hello world'` )
-
-    } )
-
-    it( `seeds the babysit base as a first-message FYI for opencode (--prompt)`, () => {
-
-        const cmd = build_docker_command( make_options( {
-            agent: opencode,
-            system_prompt: `hello world`,
-        } ) )
-
-        expect( cmd ).toContain( `--prompt 'hello world'` )
-
-    } )
-
-    it( `does not seed a first-message FYI for claude (uses --append-system-prompt instead)`, () => {
-
-        const cmd = build_docker_command( make_options( {
-            agent: claude,
-            system_prompt: `hello`,
-        } ) )
-
-        // Claude has the proper CLI flag — no need to burn a user-message slot
-        expect( cmd ).toContain( `--append-system-prompt hello` )
-        expect( cmd ).not.toContain( `--prompt hello` )
-        expect( cmd ).not.toContain( ` -i hello` )
-
-    } )
-
-    it( `does not set BABYSIT_SYSTEM_PROMPT* env vars (file-write mechanism removed)`, () => {
+    it( `keeps initial prompts out of the docker command`, () => {
 
         for ( const a of [ claude, codex, gemini, opencode ] ) {
             const cmd = build_docker_command( make_options( {
                 agent: a,
-                system_prompt: `hello`,
+                config: {
+                    isolate_dependencies: false,
+                    initial_prompt: `Use $HOME wisely`,
+                },
             } ) )
+
+            // Initial prompts are sent through tmux send-keys after launch, not
+            // as shell-visible CLI args or env vars in the docker command.
+            expect( cmd ).not.toContain( `Use $HOME wisely` )
+            expect( cmd ).not.toContain( `--append-system-prompt` )
+            expect( cmd ).not.toContain( `--prompt` )
+            expect( cmd ).not.toContain( ` -i ` )
             expect( cmd ).not.toContain( `BABYSIT_SYSTEM_PROMPT` )
         }
 

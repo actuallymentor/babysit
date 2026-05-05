@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { build_system_prompt } from '../src/modes/prompt.js'
+import { resolve_initial_prompt } from '../src/cli/start.js'
 
 describe( `build_system_prompt`, () => {
 
@@ -36,6 +37,25 @@ describe( `build_system_prompt`, () => {
     it( `does not embed sandbox text when sandbox is false`, () => {
         const prompt = build_system_prompt( { yolo: true } )
         expect( prompt ).not.toContain( `AGENT_AUTONOMY_MODE=sandbox` )
+    } )
+
+} )
+
+describe( `resolve_initial_prompt`, () => {
+
+    it( `uses the built-in mode prompt when config.initial_prompt is null`, () => {
+        const prompt = resolve_initial_prompt( { initial_prompt: null }, { yolo: true } )
+        expect( prompt ).toContain( `AGENT_AUTONOMY_MODE=yolo` )
+    } )
+
+    it( `uses config.initial_prompt when provided`, () => {
+        const prompt = resolve_initial_prompt( { initial_prompt: `custom launch brief` }, { yolo: true } )
+        expect( prompt ).toBe( `custom launch brief` )
+    } )
+
+    it( `allows an empty config.initial_prompt to disable startup typing`, () => {
+        const prompt = resolve_initial_prompt( { initial_prompt: `` }, { yolo: true } )
+        expect( prompt ).toBe( `` )
     } )
 
 } )

@@ -9,9 +9,24 @@ import { build_docker_command } from '../docker/run.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
+import { send_text } from '../tmux/send.js'
 import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
+
+/**
+ * Resolve the prompt babysit types into the agent pane once the TUI launches.
+ * @param {Object} config - babysit.yaml config section
+ * @param {Object} mode - Mode descriptor
+ * @returns {string} Initial prompt text, or an empty string to disable
+ */
+export const resolve_initial_prompt = ( config = {}, mode = {} ) => {
+
+    if( typeof config.initial_prompt === `string` ) return config.initial_prompt
+
+    return build_system_prompt( mode )
+
+}
 
 /**
  * Start a new babysit session
@@ -54,8 +69,10 @@ export const cmd_start = async ( cmd ) => {
     // keeps the rules object internally consistent during the foreground.
     if( flags.loop ) apply_loop( rules, workspace )
 
-    // Build system prompt
-    const system_prompt = build_system_prompt( mode )
+    // Build the launch prompt that babysit types into the agent's TUI. Keeping
+    // this in config.initial_prompt makes the delivery mechanism uniform across
+    // agents, including claude where we previously used --append-system-prompt.
+    const initial_prompt = resolve_initial_prompt( config, mode )
 
     // Set up credentials. The foreground owns the initial capture + docker
     // mount; the detached monitor will set up its own sync interval, so we
@@ -82,7 +99,7 @@ export const cmd_start = async ( cmd ) => {
 
     // Build the docker command
     const docker_command = build_docker_command( {
-        agent, workspace, mode, system_prompt,
+        agent, workspace, mode,
         agent_args, creds_mounts, config, extra_env, modifiers,
     } )
 
@@ -101,6 +118,11 @@ export const cmd_start = async ( cmd ) => {
     const session_name = make_session_name( workspace, agent.name )
     const { pipe_started } = await create_session( session_name, docker_command, { log_path } )
     if( pipe_started ) log.info( `Logging tmux output to ${ log_path }` )
+
+    if( initial_prompt ) {
+        log.info( `Sending initial prompt` )
+        await send_text( session_name, initial_prompt )
+    }
 
     // Generate and save session metadata before spawning the monitor — the
     // monitor reads this file to reconstruct config, agent, and tmux session
