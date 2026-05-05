@@ -17,14 +17,14 @@ import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 /**
  * Resolve the prompt babysit types into the agent pane once the TUI launches.
  * @param {Object} config - babysit.yaml config section
- * @param {Object} mode - Mode descriptor
  * @returns {string} Initial prompt text, or an empty string to disable
  */
-export const resolve_initial_prompt = ( config = {}, mode = {} ) => {
+export const resolve_initial_prompt = ( config = {} ) => {
 
-    if( typeof config.initial_prompt === `string` ) return config.initial_prompt
+    if( typeof config.initial_prompt !== `string` ) return ``
+    if( config.initial_prompt === `` ) return ``
 
-    return build_system_prompt( mode )
+    return config.initial_prompt
 
 }
 
@@ -45,16 +45,20 @@ export const cmd_start = async ( cmd ) => {
 
     ensure_dirs()
 
-    // Load babysit.yaml (creates default if missing)
-    const workspace = process.cwd()
-    const { config, rules } = load_config( workspace )
-
     // Build mode descriptor
     const mode = {
         yolo: flags.yolo,
         sandbox: flags.sandbox,
         mudbox: flags.mudbox,
     }
+
+    // Load babysit.yaml (creates default if missing). New config files get
+    // the generated mode-aware launch prompt written into config.initial_prompt;
+    // after that, the YAML value is the only source of truth.
+    const workspace = process.cwd()
+    const { config, rules } = load_config( workspace, {
+        default_initial_prompt: build_system_prompt( mode ),
+    } )
 
     // Compute the modifier list for the statusline + session metadata
     const modifiers = Object.entries( mode ).filter( ( [ , v ] ) => v ).map( ( [ k ] ) => k )
@@ -69,10 +73,9 @@ export const cmd_start = async ( cmd ) => {
     // keeps the rules object internally consistent during the foreground.
     if( flags.loop ) apply_loop( rules, workspace )
 
-    // Build the launch prompt that babysit types into the agent's TUI. Keeping
-    // this in config.initial_prompt makes the delivery mechanism uniform across
-    // agents, including claude where we previously used --append-system-prompt.
-    const initial_prompt = resolve_initial_prompt( config, mode )
+    // Build the launch prompt that babysit types into the agent's TUI.
+    // Null or an empty string intentionally disables startup typing.
+    const initial_prompt = resolve_initial_prompt( config )
 
     // Set up credentials. The foreground owns the initial capture + docker
     // mount; the detached monitor will set up its own sync interval, so we

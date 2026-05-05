@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1 — 2026-05-05
+
+### 🐛 Fixed
+- **`config.initial_prompt: null` now sends no startup prompt.** Fresh
+  `babysit.yaml` files include Babysit's generated default prompt directly,
+  so `null` or `""` can be used as explicit opt-out values.
+
 ## 0.10.0 — 2026-05-05
 
 ### ✨ Changed
@@ -7,8 +14,7 @@
   Babysit no longer passes its launch prompt through Claude's
   `--append-system-prompt` or other agents' prompt CLI flags. Instead,
   `config.initial_prompt` in `babysit.yaml` is typed into the tmux pane after
-  the agent starts. Leave it as `null` for Babysit's built-in mode prompt, set
-  a string to override it, or set `""` to disable startup prompt typing.
+  the agent starts.
 
 ## 0.9.9 — 2026-05-04
 

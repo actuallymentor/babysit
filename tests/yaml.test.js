@@ -24,9 +24,14 @@ describe( `babysit.yaml`, () => {
     it( `parses default config values`, () => {
         const { config } = load_config( tmpdir_path )
         expect( config.idle_timeout_s ).toBe( 300 )
-        expect( config.initial_prompt ).toBeNull()
+        expect( config.initial_prompt ).toContain( `running inside a Docker container` )
         expect( config.isolate_dependencies ).toBe( true )
         expect( config.lines_for_literal_match ).toBe( 10 )
+    } )
+
+    it( `writes the supplied default prompt into a newly-created yaml`, () => {
+        const { config } = load_config( tmpdir_path, { default_initial_prompt: `custom default prompt` } )
+        expect( config.initial_prompt ).toBe( `custom default prompt` )
     } )
 
     it( `parses rules from default yaml`, () => {
@@ -97,7 +102,13 @@ babysit:
         const yaml = get_default_yaml()
         expect( yaml ).toContain( `idle_timeout_s` )
         expect( yaml ).toContain( `initial_prompt` )
+        expect( yaml ).toContain( `running inside a Docker container` )
         expect( yaml ).toContain( `babysit:` )
+    } )
+
+    it( `returns default yaml with a caller-supplied prompt`, () => {
+        const yaml = get_default_yaml( { initial_prompt: `custom default prompt` } )
+        expect( yaml ).toContain( `custom default prompt` )
     } )
 
 } )

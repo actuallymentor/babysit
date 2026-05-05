@@ -48,7 +48,9 @@ Created automatically on first run. Defines `on/do` rules — first match wins.
 
 ```yaml
 config:
-    initial_prompt: null
+    initial_prompt: |-
+        You are running inside a Docker container — an isolated sandbox built for coding agents.
+        ...
     idle_timeout_s: 300
     commands:
         notify_command: >
@@ -75,8 +77,8 @@ babysit:
 ```
 
 `config.initial_prompt` is typed into the agent screen once the session starts.
-Leave it as `null` to use Babysit's built-in mode prompt, set it to a string to
-replace that prompt, or set it to `""` to disable startup prompt typing.
+New `babysit.yaml` files include Babysit's default launch prompt here. Set it
+to `null` or `""` to disable startup prompt typing.
 
 ### `on:` triggers
 

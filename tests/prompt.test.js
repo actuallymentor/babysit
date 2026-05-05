@@ -43,18 +43,18 @@ describe( `build_system_prompt`, () => {
 
 describe( `resolve_initial_prompt`, () => {
 
-    it( `uses the built-in mode prompt when config.initial_prompt is null`, () => {
-        const prompt = resolve_initial_prompt( { initial_prompt: null }, { yolo: true } )
-        expect( prompt ).toContain( `AGENT_AUTONOMY_MODE=yolo` )
+    it( `does nothing when config.initial_prompt is null`, () => {
+        const prompt = resolve_initial_prompt( { initial_prompt: null } )
+        expect( prompt ).toBe( `` )
     } )
 
     it( `uses config.initial_prompt when provided`, () => {
-        const prompt = resolve_initial_prompt( { initial_prompt: `custom launch brief` }, { yolo: true } )
+        const prompt = resolve_initial_prompt( { initial_prompt: `custom launch brief` } )
         expect( prompt ).toBe( `custom launch brief` )
     } )
 
     it( `allows an empty config.initial_prompt to disable startup typing`, () => {
-        const prompt = resolve_initial_prompt( { initial_prompt: `` }, { yolo: true } )
+        const prompt = resolve_initial_prompt( { initial_prompt: `` } )
         expect( prompt ).toBe( `` )
     } )
 
