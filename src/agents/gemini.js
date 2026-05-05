@@ -45,6 +45,7 @@ export const gemini = {
     flags: {
         skip_permissions: () => `--yolo`,
         resume: ( id ) => [ `--resume`, id ],
+        resume_latest: () => [ `--resume`, `latest` ],
         model: ( m ) => [ `--model`, m ],
         // Gemini has no effort/reasoning knob.
         effort: null,

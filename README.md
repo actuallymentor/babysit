@@ -153,6 +153,10 @@ babysit open <session_id>            Attach to an active session
 babysit resume <session_id> [flags]  Resume a previous session
 ```
 
+`babysit resume <session_id>` accepts the id printed when a Babysit session
+exits. If Babysit did not capture the agent's native session id before exit, it
+resumes the latest agent session from the original workspace.
+
 Unrecognised flags are passed through to the coding agent CLI:
 
 ```bash

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.11.2 — 2026-05-05
+
+### 🐛 Fixed
+- **`babysit resume <id>` no longer passes Babysit timestamp ids to agents.**
+  When no native agent session id was captured, Babysit now resumes the latest
+  agent session from the original workspace instead of sending the metadata id
+  to the agent CLI.
+- **Resumed sessions no longer receive the startup prompt as a new message.**
+  The configured `initial_prompt` still applies to fresh starts, but resume now
+  reopens existing context cleanly.
+
 ## 0.11.1 — 2026-05-05
 
 ### 🐛 Fixed
