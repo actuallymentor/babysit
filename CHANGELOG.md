@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.12.0 — 2026-05-05
+
+### ✨ Added
+- **`--docker` enables Docker-outside-of-Docker sessions.** Babysit now mounts
+  the host Docker socket, sets `DOCKER_HOST`, exports `BABYSIT_HOST_WORKSPACE`
+  for nested Babysit bind mounts, and installs Docker CLI/buildx/compose
+  tooling in the agent image.
+- **`--docker --sandbox` and `--docker --mudbox` now warn before launch.**
+  These combinations are allowed, but outside YOLO they require an explicit
+  `Y` because Docker socket access can bypass the modes' filesystem
+  expectations through sibling containers.
+
 ## 0.11.2 — 2026-05-05
 
 ### 🐛 Fixed

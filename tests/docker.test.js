@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'bun:test'
-import { readFileSync } from 'fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 import { get_image_name } from '../src/docker/update.js'
-import { build_docker_command } from '../src/docker/run.js'
+import { build_docker_command, resolve_workspace_mount_source } from '../src/docker/run.js'
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 import { gemini } from '../src/agents/gemini.js'
@@ -57,10 +59,23 @@ describe( `docker image`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
 
-        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `codex`, `gemini`, `claude`, `opencode` ] ) {
+        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `docker`, `codex`, `gemini`, `claude`, `opencode` ] ) {
             expect( dockerfile ).toContain( ` ${ cmd }` )
         }
         expect( dockerfile ).toContain( `command -v "$cmd"` )
+        expect( dockerfile ).toContain( `docker compose version` )
+        expect( dockerfile ).toContain( `docker buildx version` )
+
+    } )
+
+    it( `installs Docker CLI packages without installing the daemon`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `download.docker.com/linux/debian` )
+        expect( dockerfile ).toContain( `docker-ce-cli docker-buildx-plugin docker-compose-plugin` )
+        expect( dockerfile ).not.toContain( `apt-get install -y --no-install-recommends docker-ce ` )
+        expect( dockerfile ).not.toContain( `containerd.io` )
 
     } )
 
@@ -348,6 +363,48 @@ describe( `build_docker_command`, () => {
         expect( cmd ).not.toContain( `/home/node/.agents:ro` )
         const { gid } = statSync( real_agents )
         expect( cmd ).toContain( `--group-add ${ gid }` )
+
+    } )
+
+    it( `mounts the host Docker socket when --docker is enabled`, () => {
+
+        const tmpdir_path = mkdtempSync( join( tmpdir(), `babysit-docker-socket-` ) )
+        const socket_path = join( tmpdir_path, `docker.sock` )
+
+        try {
+            writeFileSync( socket_path, `` )
+            chmodSync( socket_path, 0o660 )
+
+            const cmd = build_docker_command( make_options( {
+                mode: { yolo: true, docker: true },
+                modifiers: [ `yolo`, `docker` ],
+                docker_socket_path: socket_path,
+            } ) )
+
+            expect( cmd ).toContain( `${ socket_path }:/var/run/docker.sock` )
+            expect( cmd ).toContain( `DOCKER_HOST=unix:///var/run/docker.sock` )
+            expect( cmd ).toContain( `BABYSIT_DOCKER=1` )
+            expect( cmd ).toContain( `BABYSIT_HOST_WORKSPACE=/tmp/empty` )
+            expect( cmd ).toContain( `BABYSIT_MODIFIERS=yolo·docker` )
+        } finally {
+            rmSync( tmpdir_path, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `maps nested /workspace paths back to the host workspace`, () => {
+
+        const previous = process.env.BABYSIT_HOST_WORKSPACE
+        process.env.BABYSIT_HOST_WORKSPACE = `/host/project`
+
+        try {
+            expect( resolve_workspace_mount_source( `/workspace` ) ).toBe( `/host/project` )
+            expect( resolve_workspace_mount_source( `/workspace/packages/app` ) ).toBe( `/host/project/packages/app` )
+            expect( resolve_workspace_mount_source( `/tmp/other` ) ).toBe( `/tmp/other` )
+        } finally {
+            if( previous === undefined ) delete process.env.BABYSIT_HOST_WORKSPACE
+            else process.env.BABYSIT_HOST_WORKSPACE = previous
+        }
 
     } )
 

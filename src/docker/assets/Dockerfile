@@ -46,6 +46,24 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Docker CLI only — --docker sessions mount the host daemon socket, so the
+# image needs client tooling but must not start its own Docker daemon.
+RUN install -m 0755 -d /etc/apt/keyrings \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && chmod a+r /etc/apt/keyrings/docker.asc \
+    && . /etc/os-release \
+    && printf '%s\n' \
+        'Types: deb' \
+        'URIs: https://download.docker.com/linux/debian' \
+        "Suites: ${VERSION_CODENAME}" \
+        'Components: stable' \
+        "Architectures: $(dpkg --print-architecture)" \
+        'Signed-By: /etc/apt/keyrings/docker.asc' \
+        > /etc/apt/sources.list.d/docker.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin docker-compose-plugin \
+    && rm -rf /var/lib/apt/lists/*
+
 # Modern CLI tools via binary download (run as root)
 RUN set -eux; \
     ARCH="$(dpkg --print-architecture)"; \
@@ -167,11 +185,13 @@ RUN set -eux; \
     for cmd in \
         git git-lfs python3 pip3 pipx sudo gosu curl wget jq tmux ssh openssl gpg \
         rsync tar zip unzip gzip xz zstd patch bwrap htop strace lsof ps file find \
-        nc dig ip ping vim nano less shellcheck sqlite3 tree rg just gh fd bat \
+        nc dig ip ping vim nano less shellcheck sqlite3 tree rg just gh docker fd bat \
         fzf yq scc uv uvx bun corepack pnpm yarn codex gemini claude opencode \
     ; do \
         command -v "$cmd"; \
     done; \
+    docker compose version; \
+    docker buildx version; \
     gosu node bash -lc 'source "$NVM_DIR/nvm.sh" && command -v nvm'
 
 WORKDIR /workspace

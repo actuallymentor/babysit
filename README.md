@@ -112,9 +112,21 @@ Supports `SS`, `MM:SS`, or `HH:MM:SS`. Overrides `idle_timeout_s` per rule.
 | `--yolo` | read-write mount | Skip agent permissions, set `AGENT_AUTONOMY_MODE=yolo` |
 | `--sandbox` | no mount | Ephemeral container, no host files |
 | `--mudbox` | read-only mount | Agent can read but not modify files |
+| `--docker` | *(additive)* | Mount the host Docker socket so Docker commands can run from inside the Babysit container |
 | `--loop` | *(additive)* | Override `on: idle` with `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" |
 
 Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. The exception is `--sandbox` and `--mudbox` together — they describe contradictory mount strategies, so babysit rejects the combination.
+
+`--docker` uses Docker-outside-of-Docker: Babysit mounts `/var/run/docker.sock`,
+sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
+commands run inside the session create sibling containers on the host daemon.
+For nested Babysit testing, `BABYSIT_HOST_WORKSPACE` preserves the original host
+path so inner containers can bind-mount the same project correctly.
+
+Because Docker socket access can create containers with host bind mounts,
+`--docker --sandbox` and `--docker --mudbox` weaken those modes. Babysit warns
+and requires an explicit `Y` before starting those combinations, except in YOLO
+mode where confirmations are skipped.
 
 ## Loop mode
 

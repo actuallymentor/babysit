@@ -14,6 +14,7 @@ const rebuild_flags = ( modifiers = [] ) => ( {
     yolo: modifiers.includes( `yolo` ),
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
+    docker: modifiers.includes( `docker` ),
     loop: modifiers.includes( `loop` ),
     log: false,
 } )

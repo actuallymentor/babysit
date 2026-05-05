@@ -7,6 +7,8 @@ import { AGENTS_DIR } from '../utils/paths.js'
 import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/render.js'
 import { get_extra_mounts } from '../agents/setup.js'
 
+export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
+
 /**
  * Single-quote a value for safe inclusion in a `sh -c` command string.
  * Strings made up of POSIX-portable filename chars are passed through unquoted
@@ -29,6 +31,59 @@ const shell_quote = ( value ) => {
 }
 
 /**
+ * Check whether the host Docker socket is available.
+ * @param {string} [socket_path=DEFAULT_DOCKER_SOCKET] - Host Docker socket path
+ * @returns {boolean} True when the socket path exists
+ */
+export const docker_socket_available = ( socket_path = DEFAULT_DOCKER_SOCKET ) => existsSync( socket_path )
+
+/**
+ * Map an in-container /workspace path back to the original daemon-host path.
+ * Docker bind mounts are resolved by the daemon host, so nested Babysit runs
+ * cannot use /workspace as a source path when talking to the host socket.
+ * @param {string} workspace - Current process workspace
+ * @returns {string} Host-visible source path for docker bind mounts
+ */
+export const resolve_workspace_mount_source = ( workspace ) => {
+
+    const host_workspace = process.env.BABYSIT_HOST_WORKSPACE
+    if( !host_workspace ) return workspace
+
+    if( workspace === `/workspace` ) return host_workspace
+    if( workspace.startsWith( `/workspace/` ) ) return join( host_workspace, workspace.slice( `/workspace/`.length ) )
+
+    return workspace
+
+}
+
+/**
+ * Add host Docker socket flags for Docker-outside-of-Docker.
+ * @param {string[]} flags - Docker command argument list to mutate
+ * @param {Object} options
+ * @param {string} options.socket_path - Host Docker socket path
+ * @param {string} options.workspace_source - Host-visible workspace path
+ */
+const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => {
+
+    if( !docker_socket_available( socket_path ) ) {
+        throw new Error( `--docker requested, but ${ socket_path } is not available on the host.` )
+    }
+
+    flags.push( `-v`, `${ socket_path }:${ DEFAULT_DOCKER_SOCKET }` )
+    flags.push( `-e`, `DOCKER_HOST=unix://${ DEFAULT_DOCKER_SOCKET }` )
+    flags.push( `-e`, `BABYSIT_DOCKER=1` )
+    flags.push( `-e`, `BABYSIT_HOST_WORKSPACE=${ workspace_source }` )
+
+    try {
+        const { gid } = statSync( socket_path )
+        flags.push( `--group-add`, String( gid ) )
+    } catch ( e ) {
+        log.debug( `Could not stat ${ socket_path } for group-add: ${ e.message }` )
+    }
+
+}
+
+/**
  * Build the full `docker run` command argv for launching a coding agent
  * @param {Object} options
  * @param {Object} options.agent - Agent adapter
@@ -39,12 +94,14 @@ const shell_quote = ( value ) => {
  * @param {Object} options.config - babysit.yaml config section
  * @param {Object} [options.extra_env={}] - Extra environment variables
  * @param {string[]} [options.modifiers=[]] - Active mode modifiers (yolo, mudbox, sandbox, loop) for the statusline
+ * @param {string} [options.docker_socket_path=DEFAULT_DOCKER_SOCKET] - Host Docker socket path for --docker
  * @returns {string} The full docker run command string
  */
 export const build_docker_command = ( options ) => {
 
-    const { agent, workspace, mode, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
+    const { agent, workspace, mode, agent_args, creds_mounts, config, extra_env = {}, modifiers = [], docker_socket_path = DEFAULT_DOCKER_SOCKET } = options
     const flags = []
+    const workspace_source = resolve_workspace_mount_source( workspace )
 
     // Base docker run flags
     flags.push( `docker`, `run`, `--rm`, `-it` )
@@ -56,10 +113,10 @@ export const build_docker_command = ( options ) => {
         log.debug( `Sandbox mode: workspace not mounted` )
     } else if( mode.mudbox ) {
         // Mudbox: read-only
-        flags.push( `-v`, `${ workspace }:/workspace:ro` )
+        flags.push( `-v`, `${ workspace_source }:/workspace:ro` )
     } else {
         // Default / yolo: read-write
-        flags.push( `-v`, `${ workspace }:/workspace` )
+        flags.push( `-v`, `${ workspace_source }:/workspace` )
     }
 
     // Mount ~/.agents read-write so agents can persist memories, skills, and
@@ -101,6 +158,8 @@ export const build_docker_command = ( options ) => {
     if( mode.yolo ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=yolo` )
     else if( mode.sandbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=sandbox` )
     else if( mode.mudbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=mudbox` )
+
+    if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
 
     // Modifiers shown in the statusline (defaults to "babysit" if no flags)
     const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`

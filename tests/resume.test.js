@@ -133,6 +133,7 @@ describe( `merge_resume_flags`, () => {
             yolo: true,
             sandbox: false,
             mudbox: false,
+            docker: false,
             loop: false,
             log: false,
         } )

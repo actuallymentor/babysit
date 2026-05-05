@@ -34,6 +34,12 @@ describe( `build_system_prompt`, () => {
         expect( prompt ).toContain( `maximum autonomy` )
     } )
 
+    it( `appends Docker socket guidance when mode.docker is set`, () => {
+        const prompt = build_system_prompt( { docker: true } )
+        expect( prompt ).toContain( `Docker-outside-of-Docker is enabled` )
+        expect( prompt ).toContain( `BABYSIT_HOST_WORKSPACE` )
+    } )
+
     it( `does not embed sandbox text when sandbox is false`, () => {
         const prompt = build_system_prompt( { yolo: true } )
         expect( prompt ).not.toContain( `AGENT_AUTONOMY_MODE=sandbox` )

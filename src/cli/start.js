@@ -1,4 +1,5 @@
 import { spawn, execSync } from 'child_process'
+import { createInterface } from 'readline/promises'
 
 import { log } from '../utils/log.js'
 import { ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
@@ -13,6 +14,7 @@ import { send_text } from '../tmux/send.js'
 import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
+import { DEFAULT_DOCKER_SOCKET, docker_socket_available } from '../docker/run.js'
 
 /**
  * Resolve the prompt babysit types into the agent pane once the TUI launches.
@@ -38,6 +40,52 @@ export const resolve_initial_prompt = ( config = {} ) => {
 export const should_send_initial_prompt = ( cmd = {} ) => cmd.verb !== `resume`
 
 /**
+ * Decide if a Docker socket session needs explicit user confirmation.
+ * @param {Object} mode - Mode config
+ * @returns {boolean} True when Babysit should ask before continuing
+ */
+export const should_confirm_docker_restricted_mode = ( mode = {} ) => {
+
+    const autonomy_mode = process.env.AGENT_AUTONOMY_MODE
+    const is_autonomous = mode.yolo || autonomy_mode === `yolo`
+
+    return mode.docker && ( mode.sandbox || mode.mudbox ) && !is_autonomous
+
+}
+
+/**
+ * Parse the user's restricted-mode Docker confirmation answer.
+ * @param {string} answer - User-entered answer
+ * @returns {boolean} True when the answer explicitly allows continuing
+ */
+export const allows_docker_restricted_mode = ( answer = `` ) => /^y(es)?$/i.test( answer.trim() )
+
+/**
+ * Warn before combining Docker socket access with sandbox/mudbox semantics.
+ * @param {Object} mode - Mode config
+ * @param {Object} [io]
+ * @param {NodeJS.ReadableStream} [io.input=process.stdin] - Prompt input
+ * @param {NodeJS.WritableStream} [io.output=process.stdout] - Prompt output
+ * @returns {Promise<boolean>} True when the user confirms
+ */
+export const confirm_docker_restricted_mode = async ( mode = {}, { input = process.stdin, output = process.stdout } = {} ) => {
+
+    const restricted_mode = mode.sandbox ? `--sandbox` : `--mudbox`
+
+    log.warn( `--docker mounts the host Docker socket into the Babysit container.` )
+    log.warn( `${ restricted_mode } will not be isolated from host writes, because Docker can start sibling containers with host bind mounts.` )
+
+    const rl = createInterface( { input, output } )
+    try {
+        const answer = await rl.question( `Continue with --docker ${ restricted_mode }? Type Y or n: ` )
+        return allows_docker_restricted_mode( answer )
+    } finally {
+        rl.close()
+    }
+
+}
+
+/**
  * Start a new babysit session
  * @param {Object} cmd - Parsed command { agent, flags, passthrough }
  */
@@ -59,6 +107,20 @@ export const cmd_start = async ( cmd ) => {
         yolo: flags.yolo,
         sandbox: flags.sandbox,
         mudbox: flags.mudbox,
+        docker: flags.docker,
+    }
+
+    if( mode.docker && !docker_socket_available() ) {
+        log.error( `--docker requested, but ${ DEFAULT_DOCKER_SOCKET } is not available on the host.` )
+        process.exit( 1 )
+    }
+
+    if( should_confirm_docker_restricted_mode( mode ) ) {
+        const confirmed = await confirm_docker_restricted_mode( mode )
+        if( !confirmed ) {
+            log.error( `Aborted --docker ${ mode.sandbox ? `--sandbox` : `--mudbox` } session.` )
+            process.exit( 1 )
+        }
     }
 
     // Load babysit.yaml (creates default if missing). New config files get

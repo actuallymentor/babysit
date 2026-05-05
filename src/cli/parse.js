@@ -2,7 +2,7 @@ import mri from 'mri'
 import { is_agent } from '../agents/index.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `log` ]
+const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `log` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
@@ -23,7 +23,7 @@ export const parse_args = ( argv ) => {
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker` ],
         string: [ `log` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -37,6 +37,7 @@ export const parse_args = ( argv ) => {
         sandbox: args.sandbox || false,
         mudbox: args.mudbox || false,
         loop: args.loop || false,
+        docker: args.docker || false,
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.
         // false (flag absent) vs string (flag present, possibly empty for default).
