@@ -24,6 +24,7 @@ describe( `babysit.yaml`, () => {
     it( `parses default config values`, () => {
         const { config } = load_config( tmpdir_path )
         expect( config.idle_timeout_s ).toBe( 300 )
+        expect( config.initial_prompt ).toBeNull()
         expect( config.isolate_dependencies ).toBe( true )
         expect( config.lines_for_literal_match ).toBe( 10 )
     } )
@@ -95,6 +96,7 @@ babysit:
     it( `returns default yaml string`, () => {
         const yaml = get_default_yaml()
         expect( yaml ).toContain( `idle_timeout_s` )
+        expect( yaml ).toContain( `initial_prompt` )
         expect( yaml ).toContain( `babysit:` )
     } )
 

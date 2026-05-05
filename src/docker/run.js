@@ -34,7 +34,6 @@ const shell_quote = ( value ) => {
  * @param {Object} options.agent - Agent adapter
  * @param {string} options.workspace - Host working directory
  * @param {Object} options.mode - Mode config { yolo, sandbox, mudbox }
- * @param {string} options.system_prompt - Full system prompt to inject
  * @param {string[]} options.agent_args - Extra args to pass to the agent CLI
  * @param {Object} options.creds_mounts - Credential mount specs from credentials module
  * @param {Object} options.config - babysit.yaml config section
@@ -44,7 +43,7 @@ const shell_quote = ( value ) => {
  */
 export const build_docker_command = ( options ) => {
 
-    const { agent, workspace, mode, system_prompt, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
+    const { agent, workspace, mode, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
     const flags = []
 
     // Base docker run flags
@@ -179,12 +178,12 @@ export const build_docker_command = ( options ) => {
     flags.push( get_image_name() )
 
     // Agent command with flags
-    const agent_cmd = build_agent_command( agent, mode, system_prompt, agent_args )
+    const agent_cmd = build_agent_command( agent, mode, agent_args )
     flags.push( ...agent_cmd )
 
     // The result is consumed by `sh -c` (see tmux/session.js create_session),
-    // so each argument needs proper shell-quoting — system prompts contain
-    // spaces, env values can contain `$`, etc.
+    // so each argument needs proper shell-quoting — passthrough args and env
+    // values can contain spaces, `$`, etc.
     return flags.map( shell_quote ).join( ` ` )
 
 }
@@ -193,24 +192,16 @@ export const build_docker_command = ( options ) => {
  * Build the coding agent command with all flags
  * @param {Object} agent - Agent adapter
  * @param {Object} mode - Mode flags
- * @param {string} system_prompt - System prompt to inject
  * @param {string[]} agent_args - Extra args for the agent
  * @returns {string[]} Command parts
  */
-const build_agent_command = ( agent, mode, system_prompt, agent_args ) => {
+const build_agent_command = ( agent, mode, agent_args ) => {
 
     const parts = [ agent.bin ]
 
     // Skip permissions in yolo mode
     if( mode.yolo && agent.flags.skip_permissions ) {
         const flag = agent.flags.skip_permissions()
-        if( Array.isArray( flag ) ) parts.push( ...flag )
-        else parts.push( flag )
-    }
-
-    // System prompt injection
-    if( system_prompt && agent.flags.append_system_prompt ) {
-        const flag = agent.flags.append_system_prompt( system_prompt )
         if( Array.isArray( flag ) ) parts.push( ...flag )
         else parts.push( flag )
     }
@@ -238,18 +229,6 @@ const build_agent_command = ( agent, mode, system_prompt, agent_args ) => {
 
     // Passthrough args (unknown flags go to the agent CLI)
     if( agent_args.length ) parts.push( ...agent_args )
-
-    // For agents without --append-system-prompt, seed the babysit base as
-    // a first-message FYI via each CLI's initial-prompt mechanism (codex
-    // positional, gemini -i, opencode --prompt). Keeps babysit's environment
-    // context out of the AGENTS.md file slot, which is reserved for the
-    // bind-mounted ~/.agents/AGENTS.md (user globals). Pushed last so
-    // positional args land at the end of the command.
-    if( system_prompt && !agent.flags.append_system_prompt && agent.flags.first_message ) {
-        const flag = agent.flags.first_message( system_prompt )
-        if( Array.isArray( flag ) ) parts.push( ...flag )
-        else parts.push( flag )
-    }
 
     return parts
 

@@ -59,8 +59,8 @@ export const codex = {
         // Codex's global instructions path: `${CODEX_HOME}/AGENTS.md`.
         // Babysit bind-mounts host `~/.agents/AGENTS.md` here read-only so
         // codex picks up the user's cross-agent globals via its own discovery.
-        // The babysit base prompt is delivered separately as a first-message
-        // FYI (codex has no --append-system-prompt flag).
+        // The babysit base prompt is delivered separately as
+        // config.initial_prompt typed into the tmux pane on launch.
         user_globals_file: `/home/node/.codex/AGENTS.md`,
     },
 
@@ -71,13 +71,6 @@ export const codex = {
         // leave the workspace-write sandbox active, blocking real edits in babysit
         // --yolo mode. Use the most permissive flag.
         skip_permissions: () => `--dangerously-bypass-approvals-and-sandbox`,
-        // Codex has no --append-system-prompt flag. Babysit delivers its base
-        // prompt as a first-message FYI via codex's positional PROMPT arg;
-        // the user's globals reach codex through the bind-mounted AGENTS.md.
-        append_system_prompt: null,
-        // Initial-prompt seeding — codex CLI: `codex [PROMPT]`, "Optional user
-        // prompt to start the session" (per --help). Stays interactive.
-        first_message: ( text ) => [ text ],
         // Interactive resume — `codex resume <id>`. The non-interactive form
         // (`codex exec resume`) wouldn't be supervisable through tmux.
         resume: ( id ) => [ `resume`, id ],

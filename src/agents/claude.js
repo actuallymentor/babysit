@@ -33,14 +33,13 @@ export const claude = {
         // Claude reads ~/.claude/CLAUDE.md as global context. Babysit
         // bind-mounts host `~/.agents/AGENTS.md` here so claude picks up
         // the user's cross-agent globals via its own discovery. Babysit's
-        // base prompt is delivered separately via --append-system-prompt.
+        // base prompt is delivered separately as config.initial_prompt typed
+        // into the tmux pane on launch.
         user_globals_file: `/home/node/.claude/CLAUDE.md`,
     },
 
     flags: {
         skip_permissions: () => `--dangerously-skip-permissions`,
-        append_system_prompt: ( text ) => [ `--append-system-prompt`, text ],
-        system_prompt: ( text ) => [ `--system-prompt`, text ],
         resume: ( id ) => [ `--resume`, id ],
         model: ( m ) => [ `--model`, m ],
         effort: ( e ) => [ `--effort`, e ],

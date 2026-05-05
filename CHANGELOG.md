@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.10.0 — 2026-05-05
+
+### ✨ Changed
+- **Initial prompt delivery is now uniform across all agents, including Claude.**
+  Babysit no longer passes its launch prompt through Claude's
+  `--append-system-prompt` or other agents' prompt CLI flags. Instead,
+  `config.initial_prompt` in `babysit.yaml` is typed into the tmux pane after
+  the agent starts. Leave it as `null` for Babysit's built-in mode prompt, set
+  a string to override it, or set `""` to disable startup prompt typing.
+
 ## 0.9.9 — 2026-05-04
 
 ### ✨ Added
