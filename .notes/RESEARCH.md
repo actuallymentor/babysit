@@ -2,6 +2,12 @@
 
 Last verified against vendor docs: April 2026.
 
+## Docker-outside-of-Docker
+- Verified against Docker docs on 2026-05-05.
+- Normal containers are unprivileged and cannot run a Docker daemon inside the container without `--privileged`; `--privileged` gives broad host-equivalent device/capability access, so Babysit should prefer Docker-outside-of-Docker over true Docker-in-Docker.
+- Bind mount sources are resolved on the Docker daemon host, not the client container. Nested Babysit sessions therefore need the original host workspace path (`BABYSIT_HOST_WORKSPACE`) when building `docker run -v ...:/workspace`.
+- Docker's Debian install docs support installing the client-side packages `docker-ce-cli`, `docker-buildx-plugin`, and `docker-compose-plugin` from the official Docker apt repository. Babysit's image installs those CLI/plugin packages only, not `docker-ce` or `containerd.io`.
+
 ## Claude Code
 - **Binary**: `claude`
 - **Skip perms**: `--dangerously-skip-permissions`

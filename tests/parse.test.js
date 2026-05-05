@@ -61,10 +61,18 @@ describe( `parse_args`, () => {
     } )
 
     it( `combines multiple mode flags`, () => {
-        const cmd = parse_args( [ `gemini`, `--mudbox`, `--yolo`, `--loop` ] )
+        const cmd = parse_args( [ `gemini`, `--mudbox`, `--yolo`, `--loop`, `--docker` ] )
         expect( cmd.flags.mudbox ).toBe( true )
         expect( cmd.flags.yolo ).toBe( true )
         expect( cmd.flags.loop ).toBe( true )
+        expect( cmd.flags.docker ).toBe( true )
+    } )
+
+    it( `does not pass --docker through to the agent`, () => {
+        const cmd = parse_args( [ `claude`, `--docker`, `--model`, `sonnet` ] )
+        expect( cmd.flags.docker ).toBe( true )
+        expect( cmd.passthrough ).not.toContain( `--docker` )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
     } )
 
     it( `sets help verb when no agent given`, () => {
