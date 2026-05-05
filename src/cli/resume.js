@@ -45,6 +45,31 @@ export const merge_resume_flags = ( modifiers = [], flags = {} ) => {
 }
 
 /**
+ * Resolve how a stored Babysit session should be resumed.
+ * If the monitor captured the agent-native session id, use it directly. If it
+ * did not, the Babysit id is only useful for looking up metadata; passing that
+ * timestamp-shaped id to the agent would fail, so use the agent's latest/
+ * continue mode from the restored workspace instead.
+ * @param {Object} session - Stored session metadata
+ * @returns {Object} Resume args for cmd_start
+ */
+export const resolve_resume_target = ( session ) => {
+
+    if( session.agent_session_id ) {
+        return {
+            session_id: session.agent_session_id,
+            resume_latest: false,
+        }
+    }
+
+    return {
+        session_id: null,
+        resume_latest: true,
+    }
+
+}
+
+/**
  * Resume a previous babysit session
  * If the tmux session is still alive, attach to it.
  * If it's exited, start a new session with the agent's resume flag.
@@ -89,10 +114,12 @@ export const cmd_resume = async ( cmd ) => {
             log.warn( `Original session pwd no longer exists: ${ session.pwd }` )
         }
 
+        const resume_target = resolve_resume_target( session )
+
         await cmd_start( {
             verb: `resume`,
             agent: session.agent,
-            session_id: session.agent_session_id || session_id,
+            ...resume_target,
             flags: merged_flags,
             passthrough,
         } )

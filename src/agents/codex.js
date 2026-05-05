@@ -74,6 +74,7 @@ export const codex = {
         // Interactive resume — `codex resume <id>`. The non-interactive form
         // (`codex exec resume`) wouldn't be supervisable through tmux.
         resume: ( id ) => [ `resume`, id ],
+        resume_latest: () => [ `resume`, `--last` ],
         model: ( m ) => [ `--model`, m ],
         // Codex reasoning effort lives behind the `model_reasoning_effort` config key
         // (the docs example "reasoning_effort" alone is silently ignored). Pass via -c.

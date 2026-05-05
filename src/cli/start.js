@@ -29,6 +29,15 @@ export const resolve_initial_prompt = ( config = {} ) => {
 }
 
 /**
+ * Decide whether Babysit should type the configured startup prompt.
+ * Resume should reopen existing context without injecting a fresh launch
+ * prompt as a new user message.
+ * @param {Object} cmd - Parsed command
+ * @returns {boolean}
+ */
+export const should_send_initial_prompt = ( cmd = {} ) => cmd.verb !== `resume`
+
+/**
  * Start a new babysit session
  * @param {Object} cmd - Parsed command { agent, flags, passthrough }
  */
@@ -75,7 +84,7 @@ export const cmd_start = async ( cmd ) => {
 
     // Build the launch prompt that babysit types into the agent's TUI.
     // Null or an empty string intentionally disables startup typing.
-    const initial_prompt = resolve_initial_prompt( config )
+    const initial_prompt = should_send_initial_prompt( cmd ) ? resolve_initial_prompt( config ) : ``
 
     // Set up credentials. The foreground owns the initial capture + docker
     // mount; the detached monitor will set up its own sync interval, so we
@@ -92,8 +101,12 @@ export const cmd_start = async ( cmd ) => {
 
     // Handle resume by injecting the resume flag
     const agent_args = [ ...passthrough ]
-    if( cmd.verb === `resume` && cmd.session_id ) {
-        if( agent.flags.resume ) {
+    if( cmd.verb === `resume` ) {
+        if( cmd.resume_latest && agent.flags.resume_latest ) {
+            const resume_flag = agent.flags.resume_latest()
+            if( Array.isArray( resume_flag ) ) agent_args.unshift( ...resume_flag )
+            else agent_args.unshift( resume_flag )
+        } else if( cmd.session_id && agent.flags.resume ) {
             const resume_flag = agent.flags.resume( cmd.session_id )
             if( Array.isArray( resume_flag ) ) agent_args.unshift( ...resume_flag )
             else agent_args.unshift( resume_flag )

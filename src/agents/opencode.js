@@ -39,6 +39,7 @@ export const opencode = {
     flags: {
         skip_permissions: () => `--dangerously-skip-permissions`,
         resume: ( id ) => [ `--session`, id ],
+        resume_latest: () => [ `--continue` ],
         model: ( m ) => [ `--model`, m ],
         effort: null,
     },

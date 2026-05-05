@@ -108,6 +108,10 @@ describe( `codex adapter`, () => {
         expect( args ).not.toContain( `exec` )
     } )
 
+    it( `falls back to codex latest-session resume when Babysit lacks a native id`, () => {
+        expect( codex.flags.resume_latest() ).toEqual( [ `resume`, `--last` ] )
+    } )
+
     it( `injects reasoning effort via -c model_reasoning_effort override`, () => {
         // The bare `reasoning_effort` key is silently ignored by codex; the real
         // config knob is `model_reasoning_effort`. Quote the value so it survives
@@ -124,6 +128,29 @@ describe( `codex adapter`, () => {
         // We already wrap codex in our own docker sandbox; --full-auto would leave
         // codex's internal sandbox active and block edits inside babysit --yolo.
         expect( codex.flags.skip_permissions() ).toBe( `--dangerously-bypass-approvals-and-sandbox` )
+    } )
+
+} )
+
+describe( `resume fallback flags`, () => {
+
+    it( `uses native latest-session flags for agents when Babysit only has metadata`, () => {
+        expect( claude.flags.resume_latest() ).toEqual( [ `--continue` ] )
+        expect( gemini.flags.resume_latest() ).toEqual( [ `--resume`, `latest` ] )
+        expect( opencode.flags.resume_latest() ).toEqual( [ `--continue` ] )
+    } )
+
+    it( `builds a supervisable codex latest-session command`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: codex,
+            agent_args: codex.flags.resume_latest(),
+        } ) )
+
+        expect( cmd ).toContain( ` codex ` )
+        expect( cmd ).toContain( ` resume --last` )
+        expect( cmd ).not.toContain( ` exec resume` )
+
     } )
 
 } )

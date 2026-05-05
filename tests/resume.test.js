@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
-import { cmd_resume, merge_resume_flags } from '../src/cli/resume.js'
+import { cmd_resume, merge_resume_flags, resolve_resume_target } from '../src/cli/resume.js'
+import { should_send_initial_prompt } from '../src/cli/start.js'
 import { generate_session_id, save_session } from '../src/sessions/store.js'
 
 // Create a session record on disk that resume.js will look up. Returns the
@@ -158,6 +159,50 @@ describe( `merge_resume_flags`, () => {
 
         expect( flags.log ).toBe( `runs/babysit.log` )
 
+    } )
+
+} )
+
+describe( `resume target resolution`, () => {
+
+    it( `uses captured agent-native session ids when present`, () => {
+
+        const target = resolve_resume_target( {
+            babysit_id: `20260505-120000-abcd`,
+            agent_session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+        } )
+
+        expect( target ).toEqual( {
+            session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+            resume_latest: false,
+        } )
+
+    } )
+
+    it( `uses latest-session fallback instead of passing Babysit ids to agents`, () => {
+
+        const target = resolve_resume_target( {
+            babysit_id: `20260505-120000-abcd`,
+            agent_session_id: null,
+        } )
+
+        expect( target ).toEqual( {
+            session_id: null,
+            resume_latest: true,
+        } )
+
+    } )
+
+} )
+
+describe( `resume prompt handling`, () => {
+
+    it( `does not type the startup prompt into resumed sessions`, () => {
+        expect( should_send_initial_prompt( { verb: `resume` } ) ).toBe( false )
+    } )
+
+    it( `still types the startup prompt into fresh sessions`, () => {
+        expect( should_send_initial_prompt( { verb: `start` } ) ).toBe( true )
     } )
 
 } )

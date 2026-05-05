@@ -41,6 +41,7 @@ export const claude = {
     flags: {
         skip_permissions: () => `--dangerously-skip-permissions`,
         resume: ( id ) => [ `--resume`, id ],
+        resume_latest: () => [ `--continue` ],
         model: ( m ) => [ `--model`, m ],
         effort: ( e ) => [ `--effort`, e ],
     },
