@@ -90,6 +90,12 @@ export const codex = {
 
     session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
 
+    // Codex is a full-screen TUI. Wait until it has drawn its first screen
+    // before pasting Babysit's launch prompt, otherwise the prompt can land
+    // while Codex is still switching terminal modes and render as duplicated
+    // or partially submitted text.
+    initial_prompt_ready_pattern: /OpenAI Codex/,
+
     extra_env: () => ( {} ),
 
     // Codex has no documented brew formula and no built-in self-update — the

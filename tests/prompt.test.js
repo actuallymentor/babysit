@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'bun:test'
 import { build_system_prompt } from '../src/modes/prompt.js'
-import { resolve_initial_prompt } from '../src/cli/start.js'
+import {
+    is_initial_prompt_ready,
+    resolve_initial_prompt,
+    wait_for_initial_prompt_ready,
+} from '../src/cli/start.js'
+import { codex } from '../src/agents/codex.js'
 
 describe( `build_system_prompt`, () => {
 
@@ -62,6 +67,54 @@ describe( `resolve_initial_prompt`, () => {
     it( `allows an empty config.initial_prompt to disable startup typing`, () => {
         const prompt = resolve_initial_prompt( { initial_prompt: `` } )
         expect( prompt ).toBe( `` )
+    } )
+
+} )
+
+describe( `initial prompt readiness`, () => {
+
+    it( `treats agents without a readiness pattern as ready`, () => {
+        expect( is_initial_prompt_ready( {}, `` ) ).toBe( true )
+    } )
+
+    it( `recognises Codex's first TUI screen`, () => {
+        const output = `
+>_ OpenAI Codex (v0.128.0)
+`
+        expect( is_initial_prompt_ready( codex, output ) ).toBe( true )
+    } )
+
+    it( `waits until the readiness pattern appears`, async () => {
+
+        const seen = []
+        const captures = [ `starting`, `still starting`, `OpenAI Codex` ]
+
+        const ready = await wait_for_initial_prompt_ready( `session`, codex, {
+            capture: async ( session_name ) => {
+                seen.push( session_name )
+                return captures.shift()
+            },
+            wait_fn: async () => null,
+            timeout_ms: 750,
+            interval_ms: 250,
+        } )
+
+        expect( ready ).toBe( true )
+        expect( seen.length ).toBe( 3 )
+
+    } )
+
+    it( `returns false when the ready screen never appears`, async () => {
+
+        const ready = await wait_for_initial_prompt_ready( `session`, codex, {
+            capture: async () => `loading`,
+            wait_fn: async () => null,
+            timeout_ms: 500,
+            interval_ms: 250,
+        } )
+
+        expect( ready ).toBe( false )
+
     } )
 
 } )
