@@ -125,7 +125,7 @@ export const cmd_start = async ( cmd ) => {
 
     // Load babysit.yaml (creates default if missing). New config files get
     // the generated mode-aware launch prompt written into config.initial_prompt;
-    // after that, the YAML value is the only source of truth.
+    // legacy configs that omit the field receive the same prompt as a fallback.
     const workspace = process.cwd()
     const { config, rules } = load_config( workspace, {
         default_initial_prompt: build_system_prompt( mode ),

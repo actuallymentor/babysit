@@ -88,8 +88,14 @@ export const load_config = ( dir = process.cwd(), { default_initial_prompt = bui
     const raw = readFileSync( config_path, `utf-8` )
     const parsed = parse( raw ) || {}
 
-    // Merge with defaults
-    const config = { ...DEFAULT_CONFIG, ... parsed.config || {}  }
+    // Merge with defaults. Older babysit.yaml files may predate
+    // config.initial_prompt; treat absence as "use the generated default",
+    // while preserving explicit null / "" as opt-outs.
+    const raw_config = parsed.config || {}
+    const config = { ...DEFAULT_CONFIG, ...raw_config }
+    if( !Object.hasOwn( raw_config, `initial_prompt` ) ) {
+        config.initial_prompt = default_initial_prompt
+    }
 
     // Parse the rules array
     const raw_rules = Array.isArray( parsed.babysit ) ? parsed.babysit : []

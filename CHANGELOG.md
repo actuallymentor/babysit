@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.1 — 2026-05-05
+
+### 🐛 Fixed
+- **Legacy `babysit.yaml` files receive the startup prompt again.** Existing
+  configs that omit `config.initial_prompt` now fall back to Babysit's
+  generated launch prompt, while explicit `null` or `""` still disables
+  startup prompt typing.
+
 ## 0.12.0 — 2026-05-05
 
 ### ✨ Added
