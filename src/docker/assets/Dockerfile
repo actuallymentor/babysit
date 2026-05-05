@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Agent-friendly extras (sir-claudius parity). `ripgrep` comes from
     # Debian here because upstream only publishes .deb assets for amd64; the
     # apt package is arch-correct for both amd64 and arm64 images.
-    shellcheck sqlite3 tree ripgrep just \
+    shellcheck sqlite3 tree ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI — agents working in repos need `gh` for PR/issue/auth flows.
@@ -71,6 +71,12 @@ RUN set -eux; \
     if [ "$ARCH" = "amd64" ]; then SCC_ARCH="x86_64"; else SCC_ARCH="arm64"; fi; \
     curl -fsSL "https://github.com/boyter/scc/releases/latest/download/scc_Linux_${SCC_ARCH}.tar.gz" \
     | tar xz -C /usr/local/bin scc; \
+    # just — install the upstream multi-arch musl build instead of relying on
+    # apt availability in the slim base image.
+    JUST_VERSION="1.50.0"; \
+    if [ "$ARCH" = "amd64" ]; then JUST_ARCH="x86_64"; else JUST_ARCH="aarch64"; fi; \
+    curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${JUST_ARCH}-unknown-linux-musl.tar.gz" \
+    | tar xz -C /usr/local/bin just; \
     # bun — common JS runtime/package manager/test runner used by modern repos
     BUN_VERSION="1.3.13"; \
     if [ "$ARCH" = "amd64" ]; then BUN_ARCH="x64"; else BUN_ARCH="aarch64"; fi; \
