@@ -15,11 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Version control
     git git-lfs \
     # Languages
-    python3 python3-venv \
+    python3 python3-venv python3-pip pipx \
     # CLI essentials. `gosu` is used by the entrypoint to drop privileges
     # back to `node` after a uid remap (see entrypoint.sh).
     sudo gosu curl wget jq tmux openssh-client \
-    openssl gnupg ca-certificates \
+    openssl gnupg ca-certificates file findutils \
     rsync tar zip unzip gzip xz-utils zstd patch \
     # Codex sandboxing — codex prefers a system bubblewrap on PATH and falls
     # back to a vendored copy with a startup warning if missing
@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Agent-friendly extras (sir-claudius parity). `ripgrep` comes from
     # Debian here because upstream only publishes .deb assets for amd64; the
     # apt package is arch-correct for both amd64 and arm64 images.
-    shellcheck sqlite3 tree ripgrep \
+    shellcheck sqlite3 tree ripgrep just \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI — agents working in repos need `gh` for PR/issue/auth flows.
@@ -70,7 +70,14 @@ RUN set -eux; \
     # scc — fast LOC counter (sir-claudius parity, frequently used by agents to size codebases)
     if [ "$ARCH" = "amd64" ]; then SCC_ARCH="x86_64"; else SCC_ARCH="arm64"; fi; \
     curl -fsSL "https://github.com/boyter/scc/releases/latest/download/scc_Linux_${SCC_ARCH}.tar.gz" \
-    | tar xz -C /usr/local/bin scc
+    | tar xz -C /usr/local/bin scc; \
+    # bun — common JS runtime/package manager/test runner used by modern repos
+    BUN_VERSION="1.3.13"; \
+    if [ "$ARCH" = "amd64" ]; then BUN_ARCH="x64"; else BUN_ARCH="aarch64"; fi; \
+    curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip" -o /tmp/bun.zip; \
+    unzip -q /tmp/bun.zip -d /tmp; \
+    install -m 0755 "/tmp/bun-linux-${BUN_ARCH}/bun" /usr/local/bin/bun; \
+    rm -rf /tmp/bun.zip "/tmp/bun-linux-${BUN_ARCH}"
 
 # Python uv (fast pip replacement) — install system-wide
 RUN set -eux; \
@@ -108,16 +115,29 @@ COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 
-# Codex (OpenAI) + Gemini CLI — install globally via npm as root
-RUN npm install -g @openai/codex @google/gemini-cli
+# Codex (OpenAI) + Gemini CLI — install globally via npm as root.
+# Corepack gives agents pnpm/yarn when project package-manager metadata expects them.
+RUN corepack enable \
+    && npm install -g @openai/codex @google/gemini-cli
 
 # Switch to non-root user for user-scoped agent installs
 USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
+ENV NVM_DIR=/home/node/.nvm
 # Claude's `install.sh` symlinks to ~/.local/bin/claude and OpenCode's `install`
 # script likewise drops a binary in ~/.local/bin (or ~/.opencode/bin). All three
 # need to be on PATH or the agent commands resolve to "command not found" at runtime.
 ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:/home/node/.opencode/bin:$PATH"
+
+# nvm — user-scoped Node version switching for repos that pin versions in .nvmrc.
+RUN set -eux; \
+    NVM_VERSION="v0.40.4"; \
+    git clone --depth 1 --branch "$NVM_VERSION" https://github.com/nvm-sh/nvm.git "$NVM_DIR"; \
+    printf '%s\n' \
+        'export NVM_DIR="$HOME/.nvm"' \
+        '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' \
+        '[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"' \
+        >> /home/node/.bashrc
 
 # Claude Code — installs into /home/node
 RUN curl -fsSL https://claude.ai/install.sh | bash
@@ -139,13 +159,14 @@ USER root
 
 RUN set -eux; \
     for cmd in \
-        git git-lfs python3 sudo gosu curl wget jq tmux ssh openssl gpg \
-        rsync tar zip unzip gzip xz zstd patch bwrap htop strace lsof ps \
-        nc dig ip ping vim nano less shellcheck sqlite3 tree rg gh fd bat \
-        fzf yq scc uv uvx codex gemini claude opencode \
+        git git-lfs python3 pip3 pipx sudo gosu curl wget jq tmux ssh openssl gpg \
+        rsync tar zip unzip gzip xz zstd patch bwrap htop strace lsof ps file find \
+        nc dig ip ping vim nano less shellcheck sqlite3 tree rg just gh fd bat \
+        fzf yq scc uv uvx bun corepack pnpm yarn codex gemini claude opencode \
     ; do \
         command -v "$cmd"; \
-    done
+    done; \
+    gosu node bash -lc 'source "$NVM_DIR/nvm.sh" && command -v nvm'
 
 WORKDIR /workspace
 

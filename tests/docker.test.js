@@ -57,10 +57,30 @@ describe( `docker image`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
 
-        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `scc`, `uv`, `uvx`, `codex`, `gemini`, `claude`, `opencode` ] ) {
+        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `codex`, `gemini`, `claude`, `opencode` ] ) {
             expect( dockerfile ).toContain( ` ${ cmd }` )
         }
         expect( dockerfile ).toContain( `command -v "$cmd"` )
+
+    } )
+
+    it( `installs nvm for the node user and smoke-tests it through bash`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `NVM_VERSION="v0.40.4"` )
+        expect( dockerfile ).toContain( `https://github.com/nvm-sh/nvm.git` )
+        expect( dockerfile ).toContain( `source "$NVM_DIR/nvm.sh" && command -v nvm` )
+
+    } )
+
+    it( `enables common JS package managers through corepack`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `corepack enable` )
+        expect( dockerfile ).toContain( ` pnpm ` )
+        expect( dockerfile ).toContain( ` yarn ` )
 
     } )
 
