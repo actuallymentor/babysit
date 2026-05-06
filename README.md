@@ -208,6 +208,27 @@ npm run build
 
 Produces static binaries in `dist/` for linux-x64, linux-arm64, darwin-x64, darwin-arm64.
 
+## Testing
+
+```bash
+bun test
+npm run test:e2e
+npm run test:all
+```
+
+`npm run test:e2e` builds a local Babysit image, derives a fake-agent image
+from it, then starts real Docker/tmux sessions to verify startup prompts,
+monitor actions, logging, nested Docker, mount modes, dependency isolation, and
+credential sync without calling model APIs.
+
+For faster repeat runs with an existing base image:
+
+```bash
+BABYSIT_E2E_BASE_IMAGE=actuallymentor/babysit:latest \
+BABYSIT_E2E_SKIP_BASE_BUILD=1 \
+npm run test:e2e
+```
+
 ## License
 
 ISC

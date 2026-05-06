@@ -83,6 +83,10 @@ const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => 
 
 }
 
+const get_docker_run_prefix = () => process.env.BABYSIT_DOCKER_USE_SUDO === `1`
+    ? [ `sudo`, `docker`, `run` ]
+    : [ `docker`, `run` ]
+
 /**
  * Build the full `docker run` command argv for launching a coding agent
  * @param {Object} options
@@ -104,8 +108,12 @@ export const build_docker_command = ( options ) => {
     const workspace_source = resolve_workspace_mount_source( workspace )
 
     // Base docker run flags
-    flags.push( `docker`, `run`, `--rm`, `-it` )
+    flags.push( ...get_docker_run_prefix(), `--rm`, `-it` )
     flags.push( `--name`, `babysit-${ agent.name }-${ Date.now() }` )
+
+    if( process.env.BABYSIT_E2E_RUN_ID ) {
+        flags.push( `--label`, `babysit.e2e_run=${ process.env.BABYSIT_E2E_RUN_ID }` )
+    }
 
     // Workspace mount (mode-dependent)
     if( mode.sandbox ) {
@@ -128,7 +136,7 @@ export const build_docker_command = ( options ) => {
     // agent writes back inheriting the host group so the host user can still
     // edit them. Per-file read-only is preserved via host file perms.
     if( existsSync( AGENTS_DIR ) ) {
-        flags.push( `-v`, `${ AGENTS_DIR }:/home/node/.agents` )
+        flags.push( `-v`, `${ resolve_workspace_mount_source( AGENTS_DIR ) }:/home/node/.agents` )
         try {
             const { gid } = statSync( AGENTS_DIR )
             flags.push( `--group-add`, String( gid ) )
@@ -161,6 +169,10 @@ export const build_docker_command = ( options ) => {
 
     if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
 
+    for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
+        if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )
+    }
+
     // Modifiers shown in the statusline (defaults to "babysit" if no flags)
     const modifier_label = modifiers.length ? modifiers.join( `·` ) : `babysit`
     flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
@@ -181,14 +193,14 @@ export const build_docker_command = ( options ) => {
     // file mounts layer into it.
     for( const m of get_extra_mounts( agent.name )( { yolo: mode.yolo } ) ) {
         const target = m.ro ? `${ m.container }:ro` : m.container
-        flags.push( `-v`, `${ m.host }:${ target }` )
+        flags.push( `-v`, `${ resolve_workspace_mount_source( m.host ) }:${ target }` )
     }
 
     // Credential mounts
     if( creds_mounts ) {
         for( const mount of creds_mounts ) {
             if( mount.type === `volume` ) {
-                flags.push( `-v`, `${ mount.source }:${ mount.target }` )
+                flags.push( `-v`, `${ resolve_workspace_mount_source( mount.source ) }:${ mount.target }` )
             } else if( mount.type === `env` ) {
                 flags.push( `-e`, `${ mount.key }=${ mount.value }` )
             }
@@ -213,11 +225,11 @@ export const build_docker_command = ( options ) => {
     // its vanilla state.
     const user_agents_md = join( AGENTS_DIR, `AGENTS.md` )
     if( existsSync( user_agents_md ) && agent.container_paths?.user_globals_file ) {
-        flags.push( `-v`, `${ user_agents_md }:${ agent.container_paths.user_globals_file }:ro` )
+        flags.push( `-v`, `${ resolve_workspace_mount_source( user_agents_md ) }:${ agent.container_paths.user_globals_file }:ro` )
     }
 
     // Loop deadline — bind-mount so the in-container statusline can read host-written countdowns
-    flags.push( `-v`, `${ LOOP_DEADLINE_PATH }:${ LOOP_DEADLINE_CONTAINER_PATH }:ro` )
+    flags.push( `-v`, `${ resolve_workspace_mount_source( LOOP_DEADLINE_PATH ) }:${ LOOP_DEADLINE_CONTAINER_PATH }:ro` )
 
     // Extra environment variables from agent adapter
     for( const [ key, value ] of Object.entries( extra_env ) ) {

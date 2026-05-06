@@ -5,13 +5,20 @@ import { log } from '../utils/log.js'
 const DOCKER_IMAGE = `actuallymentor/babysit`
 
 /**
+ * Resolve the Docker image Babysit should run.
+ * @param {string} [tag='latest'] - Image tag for the published image
+ * @returns {string} Full image reference
+ */
+export const get_image_name = ( tag = `latest` ) => process.env.BABYSIT_DOCKER_IMAGE || `${ DOCKER_IMAGE }:${ tag }`
+
+/**
  * Pull the latest babysit docker image
  * @param {string} [tag='latest'] - Image tag to pull
  * @returns {Promise<void>}
  */
 export const pull_image = async ( tag = `latest` ) => {
 
-    const image = `${ DOCKER_IMAGE }:${ tag }`
+    const image = get_image_name( tag )
 
     try {
         log.debug( `Pulling docker image: ${ image }` )
@@ -22,10 +29,3 @@ export const pull_image = async ( tag = `latest` ) => {
     }
 
 }
-
-/**
- * Get the image name with tag
- * @param {string} [tag='latest'] - Image tag
- * @returns {string}
- */
-export const get_image_name = ( tag = `latest` ) => `${ DOCKER_IMAGE }:${ tag }`
