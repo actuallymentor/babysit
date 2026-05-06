@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.babysit-e2e-*
 *.pem
 *.key
 .DS_Store

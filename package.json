@@ -1,6 +1,6 @@
 {
   "name": "babysit",
-  "version": "0.12.2",
+  "version": "0.13.0",
   "description": "A CLI supervisor for LLM coding agent CLIs",
   "type": "module",
   "main": "src/index.js",
@@ -11,6 +11,8 @@
     "start": "node src/index.js",
     "build": "bash scripts/build.sh",
     "test": "bun test",
+    "test:e2e": "node tests/e2e/run.js",
+    "test:all": "bun test && node tests/e2e/run.js",
     "lint": "eslint --fix src",
     "prepare": "husky"
   },

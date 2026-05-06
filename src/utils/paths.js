@@ -8,7 +8,7 @@ const home = homedir()
 export const BABYSIT_DIR = join( home, `.babysit` )
 export const SESSIONS_DIR = join( BABYSIT_DIR, `sessions` )
 export const AGENTS_DIR = join( home, `.agents` )
-export const TMUX_SOCKET = `babysit`
+export const TMUX_SOCKET = process.env.BABYSIT_TMUX_SOCKET || `babysit`
 
 /**
  * Ensure the babysit config directories exist

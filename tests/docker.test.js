@@ -21,6 +21,28 @@ const make_options = ( overrides = {} ) => ( {
     ...overrides,
 } )
 
+const with_env = ( values, fn ) => {
+
+    const previous = Object.fromEntries(
+        Object.keys( values ).map( key => [ key, process.env[ key ] ] )
+    )
+
+    try {
+        for ( const [ key, value ] of Object.entries( values ) ) {
+            if( value === undefined ) delete process.env[ key ]
+            else process.env[ key ] = value
+        }
+
+        return fn()
+    } finally {
+        for ( const [ key, value ] of Object.entries( previous ) ) {
+            if( value === undefined ) delete process.env[ key ]
+            else process.env[ key ] = value
+        }
+    }
+
+}
+
 describe( `docker image`, () => {
 
     it( `points at the published image (actuallymentor/babysit)`, () => {
@@ -30,6 +52,13 @@ describe( `docker image`, () => {
         expect( get_image_name() ).toBe( `actuallymentor/babysit:latest` )
         expect( get_image_name( `0.3.0` ) ).toBe( `actuallymentor/babysit:0.3.0` )
 
+    } )
+
+    it( `can be overridden for local E2E images`, () => {
+        with_env( { BABYSIT_DOCKER_IMAGE: `babysit:e2e-fake` }, () => {
+            expect( get_image_name() ).toBe( `babysit:e2e-fake` )
+            expect( get_image_name( `0.3.0` ) ).toBe( `babysit:e2e-fake` )
+        } )
     } )
 
     it( `installs ripgrep through apt instead of an arch-guessed GitHub .deb`, () => {
@@ -392,6 +421,27 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `can run docker through sudo for containerized E2E hosts`, () => {
+        with_env( { BABYSIT_DOCKER_USE_SUDO: `1` }, () => {
+            const cmd = build_docker_command( make_options() )
+            expect( cmd.startsWith( `sudo docker run` ) ).toBe( true )
+        } )
+    } )
+
+    it( `labels and forwards E2E metadata when present`, () => {
+        with_env( {
+            BABYSIT_E2E_RUN_ID: `run-123`,
+            BABYSIT_E2E_SIBLING_IMAGE: `babysit:e2e-fake`,
+            BABYSIT_DOCKER_IMAGE: `babysit:e2e-fake`,
+        }, () => {
+            const cmd = build_docker_command( make_options() )
+            expect( cmd ).toContain( `--label babysit.e2e_run=run-123` )
+            expect( cmd ).toContain( `BABYSIT_E2E_RUN_ID=run-123` )
+            expect( cmd ).toContain( `BABYSIT_E2E_SIBLING_IMAGE=babysit:e2e-fake` )
+            expect( cmd ).toContain( ` babysit:e2e-fake ` )
+        } )
+    } )
+
     it( `maps nested /workspace paths back to the host workspace`, () => {
 
         const previous = process.env.BABYSIT_HOST_WORKSPACE
@@ -406,6 +456,20 @@ describe( `build_docker_command`, () => {
             else process.env.BABYSIT_HOST_WORKSPACE = previous
         }
 
+    } )
+
+    it( `maps all /workspace bind mount sources back to the host workspace`, () => {
+        with_env( { BABYSIT_HOST_WORKSPACE: `/host/project` }, () => {
+            const cmd = build_docker_command( make_options( {
+                workspace: `/workspace/e2e`,
+                creds_mounts: [
+                    { type: `volume`, source: `/workspace/tmp/auth.json`, target: `/home/node/.codex/auth.json` },
+                ],
+            } ) )
+
+            expect( cmd ).toContain( `/host/project/e2e:/workspace` )
+            expect( cmd ).toContain( `/host/project/tmp/auth.json:/home/node/.codex/auth.json` )
+        } )
     } )
 
 } )

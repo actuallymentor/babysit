@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0 — 2026-05-06
+
+### ✨ Added
+- **Repeatable Docker/tmux E2E protocol.** `npm run test:e2e` now builds a
+  fake-agent Babysit image and drives real tmux/Docker sessions through
+  startup prompts, monitor rules, logging, nested Docker, mount modes,
+  dependency isolation, and credential sync.
+
+### 🐛 Fixed
+- **Nested Docker bind mounts now remap every `/workspace` source.** Credential
+  tmpfiles, injected config dirs, globals, and loop-deadline mounts now use
+  `BABYSIT_HOST_WORKSPACE` path mapping when they live under `/workspace`, not
+  only the primary workspace mount.
+
 ## 0.12.2 — 2026-05-05
 
 ### 🐛 Fixed
