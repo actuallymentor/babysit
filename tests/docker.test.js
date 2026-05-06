@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { get_image_name } from '../src/docker/update.js'
-import { build_docker_command, resolve_workspace_mount_source } from '../src/docker/run.js'
+import { build_agent_state_volume_name, build_docker_command, get_agent_state_mounts, resolve_workspace_mount_source } from '../src/docker/run.js'
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 import { gemini } from '../src/agents/gemini.js'
@@ -194,6 +194,7 @@ describe( `resume fallback flags`, () => {
         expect( cmd ).toContain( ` codex ` )
         expect( cmd ).toContain( ` resume --last` )
         expect( cmd ).not.toContain( ` exec resume` )
+        expect( cmd ).toContain( `:/home/node/.codex/sessions` )
 
     } )
 
@@ -336,6 +337,74 @@ describe( `build_docker_command`, () => {
         // model_reasoning_effort is the real codex config key (not reasoning_effort).
         // The full-quoted form is shell_quote'd into a single arg by build_docker_command.
         expect( cmd ).toContain( `'model_reasoning_effort="xhigh"'` )
+
+    } )
+
+    it( `renders exact native-id resume commands for each agent`, () => {
+
+        const uuid = `019df81b-ce45-70f0-ab6e-3cbd64c83397`
+
+        expect( build_docker_command( make_options( {
+            agent: claude,
+            agent_args: claude.flags.resume( uuid ),
+        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model opus --effort max --resume ${ uuid }` )
+
+        expect( build_docker_command( make_options( {
+            agent: codex,
+            agent_args: codex.flags.resume( uuid ),
+        } ) ) ).toContain( ` codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.5 -c 'model_reasoning_effort="xhigh"' resume ${ uuid }` )
+
+        expect( build_docker_command( make_options( {
+            agent: gemini,
+            agent_args: gemini.flags.resume( uuid ),
+        } ) ) ).toContain( ` gemini --yolo --skip-trust --resume ${ uuid }` )
+
+        expect( build_docker_command( make_options( {
+            agent: opencode,
+            agent_args: opencode.flags.resume( `ses_66a71b6f4ffeq796jvvOpJQ04m` ),
+        } ) ) ).toContain( ` opencode --dangerously-skip-permissions --model openai/gpt-5.5 --session ses_66a71b6f4ffeq796jvvOpJQ04m` )
+
+    } )
+
+    it( `mounts persistent native resume state for every non-sandbox agent`, () => {
+
+        expect( get_agent_state_mounts( claude, `/tmp/empty`, { yolo: true } ) ).toEqual( [
+            { source: `babysit-claude-projects`, target: `/home/node/.claude/projects` },
+            { source: `babysit-claude-plans`, target: `/home/node/.claude/plans` },
+            { source: `babysit-claude-todos`, target: `/home/node/.claude/todos` },
+        ] )
+
+        const codex_cmd = build_docker_command( make_options( { agent: codex } ) )
+        const codex_cmd_with_env = build_docker_command( make_options( {
+            agent: codex,
+            extra_env: codex.extra_env(),
+        } ) )
+        const gemini_cmd = build_docker_command( make_options( { agent: gemini } ) )
+        const opencode_cmd = build_docker_command( make_options( { agent: opencode } ) )
+
+        expect( codex_cmd ).toContain( `:/home/node/.codex/sessions` )
+        expect( codex_cmd ).toContain( `:/home/node/.codex/sqlite` )
+        expect( codex_cmd_with_env ).toContain( `CODEX_SQLITE_HOME=/home/node/.codex/sqlite` )
+        expect( gemini_cmd ).toContain( `:/home/node/.gemini/tmp` )
+        expect( opencode_cmd ).toContain( `:/home/node/.local/share/opencode` )
+
+    } )
+
+    it( `scopes non-Claude state volumes to the host-visible workspace`, async () => {
+
+        await with_env( { BABYSIT_HOST_WORKSPACE: `/host/project` }, () => {
+            const volume_name = build_agent_state_volume_name( `codex`, `sessions`, `/workspace/packages/app` )
+            expect( volume_name ).toBe( build_agent_state_volume_name( `codex`, `sessions`, `/host/project/packages/app` ) )
+            expect( volume_name ).toMatch( /^babysit-codex-sessions-[0-9a-f]{12}$/ )
+        } )
+
+    } )
+
+    it( `skips persistent native resume state in sandbox mode`, () => {
+
+        for ( const a of [ claude, codex, gemini, opencode ] ) {
+            expect( get_agent_state_mounts( a, `/tmp/empty`, { sandbox: true } ) ).toEqual( [] )
+        }
 
     } )
 

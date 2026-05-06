@@ -120,6 +120,7 @@ export const cmd_resume = async ( cmd ) => {
         await cmd_start( {
             verb: `resume`,
             agent: session.agent,
+            metadata_resolved: true,
             ...resume_target,
             flags: merged_flags,
             passthrough,

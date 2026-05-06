@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
 import { cmd_resume, merge_resume_flags, resolve_resume_target } from '../src/cli/resume.js'
-import { should_send_initial_prompt } from '../src/cli/start.js'
+import { resolve_agent_resume_target, resolve_stored_agent_resume_session, should_send_initial_prompt } from '../src/cli/start.js'
 import { generate_session_id, save_session } from '../src/sessions/store.js'
 
 // Create a session record on disk that resume.js will look up. Returns the
@@ -191,6 +191,106 @@ describe( `resume target resolution`, () => {
             session_id: null,
             resume_latest: true,
         } )
+
+    } )
+
+} )
+
+describe( `explicit agent resume target resolution`, () => {
+
+    const codex = { name: `codex` }
+
+    it( `passes unknown ids through as native agent ids`, () => {
+
+        const target = resolve_agent_resume_target(
+            { verb: `resume`, session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397` },
+            codex,
+            () => null
+        )
+
+        expect( target ).toEqual( {
+            session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+            resume_latest: false,
+        } )
+
+    } )
+
+    it( `translates Babysit ids to captured native ids`, () => {
+
+        const target = resolve_agent_resume_target(
+            { verb: `resume`, session_id: `20260505-120000-abcd` },
+            codex,
+            () => ( {
+                agent: `codex`,
+                agent_session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+            } )
+        )
+
+        expect( target ).toEqual( {
+            session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+            resume_latest: false,
+        } )
+
+    } )
+
+    it( `falls back to latest when a Babysit record lacks a native id`, () => {
+
+        const target = resolve_agent_resume_target(
+            { verb: `resume`, session_id: `20260505-120000-abcd` },
+            codex,
+            () => ( {
+                agent: `codex`,
+                agent_session_id: null,
+            } )
+        )
+
+        expect( target ).toEqual( {
+            session_id: null,
+            resume_latest: true,
+        } )
+
+    } )
+
+    it( `reports an agent mismatch instead of passing the wrong id through`, () => {
+
+        const target = resolve_agent_resume_target(
+            { verb: `resume`, session_id: `20260505-120000-abcd` },
+            codex,
+            () => ( {
+                agent: `claude`,
+                agent_session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+            } )
+        )
+
+        expect( target.agent_mismatch ).toBe( `claude` )
+
+    } )
+
+    it( `finds stored metadata so explicit agent resumes can restore cwd`, () => {
+
+        const stored = {
+            agent: `codex`,
+            pwd: `/workspace/app`,
+            agent_session_id: `019df81b-ce45-70f0-ab6e-3cbd64c83397`,
+        }
+
+        expect( resolve_stored_agent_resume_session(
+            { verb: `resume`, session_id: `20260505-120000-abcd` },
+            codex,
+            () => stored
+        ) ).toEqual( stored )
+
+    } )
+
+    it( `marks stored metadata mismatches before cwd restoration`, () => {
+
+        const stored = resolve_stored_agent_resume_session(
+            { verb: `resume`, session_id: `20260505-120000-abcd` },
+            codex,
+            () => ( { agent: `claude`, pwd: `/workspace/app` } )
+        )
+
+        expect( stored.agent_mismatch ).toBe( `claude` )
 
     } )
 

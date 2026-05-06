@@ -141,6 +141,8 @@ const ensure = ( condition, message ) => {
     if( !condition ) throw new Error( message )
 }
 
+const count_occurrences = ( content, needle ) => content.split( needle ).length - 1
+
 const write_file = ( path, content ) => {
     mkdirSync( dirname( path ), { recursive: true } )
     writeFileSync( path, content )
@@ -171,12 +173,12 @@ const latest_session = () => {
     return sessions.sort( ( a, b ) => String( b.started_at ).localeCompare( String( a.started_at ) ) )[0]
 }
 
-const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => {
+const launch_babysit_command = async ( workspace, args, timeout_ms = 90_000 ) => {
 
     // In a non-TTY test process, Babysit's foreground tmux attach exits
     // immediately after cmd_start has saved session metadata. The E2E harness
     // intentionally uses that metadata to keep driving the detached tmux pane.
-    await run( `node`, [ join( repo_root, `src/index.js` ), `codex`, ...args ], {
+    await run( `node`, [ join( repo_root, `src/index.js` ), ...args ], {
         cwd: workspace,
         env: e2e_env(),
         timeout_ms,
@@ -194,6 +196,12 @@ const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => {
 
     return session
 }
+
+const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => launch_babysit_command(
+    workspace,
+    [ `codex`, ...args ],
+    timeout_ms
+)
 
 const capture = async ( session ) => {
     const { stdout } = await tmux( [ `capture-pane`, `-t`, session.tmux_session, `-p`, `-S`, `-1000` ] )
@@ -283,6 +291,38 @@ babysit:
 
 }
 
+const run_resume_session = async () => {
+    const workspace = make_workspace( `resume`, `config:
+    initial_prompt: "BABYSIT_E2E_INITIAL_PROMPT"
+babysit: []
+` )
+    const session = await launch_babysit( workspace, [ `--yolo` ] )
+
+    await wait_until( `initial prompt marker`, () => existsSync( join( workspace, `e2e-initial-prompt.txt` ) ) )
+    await wait_until( `captured native session id`, () => {
+        const stored = latest_session()
+        return stored.babysit_id === session.babysit_id && stored.agent_session_id
+    } )
+
+    const native_id = latest_session().agent_session_id
+    await stop_session( session )
+
+    const resumed = await launch_babysit_command( workspace, [ `resume`, session.babysit_id ] )
+    const resume_args_path = join( workspace, `e2e-resume-args.txt` )
+    await wait_until( `resume args marker`, () => existsSync( resume_args_path ) )
+
+    const args = JSON.parse( readFileSync( resume_args_path, `utf8` ) )
+    const log_content = readFileSync( join( workspace, `e2e-fake-agent.log` ), `utf8` )
+    const initial_prompt_count = count_occurrences( log_content, `BABYSIT_E2E_INITIAL_PROMPT` )
+
+    ensure( args.includes( `resume` ), `resumed Codex command did not include the resume subcommand` )
+    ensure( args.includes( native_id ), `resumed Codex command did not use the captured native session id` )
+    ensure( initial_prompt_count === 1, `resume should not receive the initial prompt again` )
+
+    await stop_session( resumed )
+
+}
+
 const run_mudbox_session = async () => {
     const workspace = make_workspace( `mudbox`, `config:
     initial_prompt: "BABYSIT_E2E_WRITE_ATTEMPT"
@@ -353,6 +393,7 @@ try {
     await build_images()
 
     await run_default_session()
+    await run_resume_session()
     await run_mudbox_session()
     await run_sandbox_session()
     await run_dependency_session()

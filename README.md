@@ -41,6 +41,7 @@ babysit open <session_id>
 3. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 4. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
 5. **Credential sync** — host credentials are refreshed in the background so long-running sessions don't lose auth
+6. **Resume state** — agent-native session history is kept in persistent Docker volumes, so `babysit resume` can reopen Claude, Codex, Gemini, and OpenCode sessions after their containers exit
 
 ## `babysit.yaml`
 
@@ -218,8 +219,8 @@ npm run test:all
 
 `npm run test:e2e` builds a local Babysit image, derives a fake-agent image
 from it, then starts real Docker/tmux sessions to verify startup prompts,
-monitor actions, logging, nested Docker, mount modes, dependency isolation, and
-credential sync without calling model APIs.
+resume handoff, monitor actions, logging, nested Docker, mount modes,
+dependency isolation, and credential sync without calling model APIs.
 
 For faster repeat runs with an existing base image:
 

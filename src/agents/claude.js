@@ -51,8 +51,10 @@ export const claude = {
         effort: `max`,
     },
 
-    // Pattern to capture the session ID from claude's output
-    session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
+    // Pattern to capture the session ID from claude's output. The TUI can show
+    // either a status-style "Session ID: ..." line or a ready-to-paste
+    // `claude --resume ...` command when it exits.
+    session_id_pattern: /(?:claude\s+(?:--resume|-r)\s+|session(?:\s+id)?[:\s]+)([0-9a-f-]{36})/i,
 
     // Claude is a full-screen TUI. Wait until the welcome screen is visible
     // before pasting Babysit's launch prompt, otherwise the prompt can land

@@ -88,7 +88,11 @@ export const codex = {
         effort: `xhigh`,
     },
 
-    session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
+    // Codex prints a ready-to-paste exit hint like:
+    // "To continue this session, run codex resume <uuid>". Capture that as
+    // well as status-style "Session ID: ..." output; otherwise Babysit falls
+    // back to `codex resume --last`, which is inherently less precise.
+    session_id_pattern: /(?:codex\s+resume\s+|session(?:\s+id)?[:\s]+)([0-9a-f-]{36})/i,
 
     // Codex is a full-screen TUI. Wait until it has drawn its first screen
     // before pasting Babysit's launch prompt, otherwise the prompt can land
@@ -96,7 +100,16 @@ export const codex = {
     // or partially submitted text.
     initial_prompt_ready_pattern: /OpenAI Codex/,
 
-    extra_env: () => ( {} ),
+    /**
+     * Keep Codex's newer SQLite-backed state under CODEX_HOME too. The
+     * matching Docker volume is mounted in docker/run.js; the env var covers
+     * Codex versions that would otherwise choose a temp sqlite home in some
+     * sandbox modes.
+     * @returns {Object} Environment variables
+     */
+    extra_env: () => ( {
+        CODEX_SQLITE_HOME: `/home/node/.codex/sqlite`,
+    } ),
 
     // Codex has no documented brew formula and no built-in self-update — the
     // canonical upgrade path per OpenAI's docs is `npm install -g @openai/codex@latest`.

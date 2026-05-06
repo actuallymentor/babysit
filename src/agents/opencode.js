@@ -52,7 +52,10 @@ export const opencode = {
         model: `openai/gpt-5.5`,
     },
 
-    session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
+    // OpenCode session ids are commonly `ses_...`, not UUIDs. Capture its
+    // native `opencode --session <id>` resume hint as well as generic status
+    // lines so Babysit does not reduce OpenCode to an imprecise --continue.
+    session_id_pattern: /(?:opencode\s+.*?--session\s+|session(?:\s+id)?[:\s]+)([a-z]+_[A-Za-z0-9]+|[0-9a-f-]{36})/i,
 
     extra_env: () => ( {} ),
 

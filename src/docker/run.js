@@ -1,3 +1,4 @@
+import { createHash } from 'crypto'
 import { existsSync, statSync } from 'fs'
 import { join } from 'path'
 import { log } from '../utils/log.js'
@@ -86,6 +87,69 @@ const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => 
 const get_docker_run_prefix = () => process.env.BABYSIT_DOCKER_USE_SUDO === `1`
     ? [ `sudo`, `docker`, `run` ]
     : [ `docker`, `run` ]
+
+/**
+ * Build a stable Docker volume name for agent state scoped to a workspace.
+ * @param {string} agent_name - Agent adapter name
+ * @param {string} label - State label, e.g. sessions/sqlite/tmp
+ * @param {string} workspace - Current workspace path
+ * @returns {string} Docker volume name
+ */
+export const build_agent_state_volume_name = ( agent_name, label, workspace ) => {
+
+    const workspace_source = resolve_workspace_mount_source( workspace )
+    const path_hash = createHash( `sha256` ).update( workspace_source ).digest( `hex` ).slice( 0, 12 )
+
+    return `babysit-${ agent_name }-${ label }-${ path_hash }`
+
+}
+
+/**
+ * Persistent agent-local state needed for native resume commands.
+ * @param {Object} agent - Agent adapter
+ * @param {string} workspace - Current workspace path
+ * @param {Object} mode - Mode config
+ * @returns {{ source: string, target: string }[]} Docker volume mounts
+ */
+export const get_agent_state_mounts = ( agent, workspace, mode = {} ) => {
+
+    // Sandbox mode is deliberately ephemeral: no host workspace, no persistent
+    // agent transcript volumes. This preserves the existing Claude behavior and
+    // keeps sandbox resumes from leaking local state across isolated runs.
+    if( mode.sandbox ) return []
+
+    const scoped = label => build_agent_state_volume_name( agent.name, label, workspace )
+
+    if( agent.name === `claude` ) {
+        return [
+            { source: `babysit-claude-projects`, target: `/home/node/.claude/projects` },
+            { source: `babysit-claude-plans`, target: `/home/node/.claude/plans` },
+            { source: `babysit-claude-todos`, target: `/home/node/.claude/todos` },
+        ]
+    }
+
+    if( agent.name === `codex` ) {
+        return [
+            { source: scoped( `sessions` ), target: `/home/node/.codex/sessions` },
+            { source: scoped( `sqlite` ), target: `/home/node/.codex/sqlite` },
+        ]
+    }
+
+    if( agent.name === `gemini` ) {
+        return [
+            { source: scoped( `tmp` ), target: `/home/node/.gemini/tmp` },
+        ]
+    }
+
+    if( agent.name === `opencode` ) {
+        return [
+            { source: scoped( `data` ), target: `/home/node/.local/share/opencode` },
+        ]
+    }
+
+    return []
+
+}
 
 /**
  * Build the full `docker run` command argv for launching a coding agent
@@ -196,6 +260,14 @@ export const build_docker_command = ( options ) => {
         flags.push( `-v`, `${ resolve_workspace_mount_source( m.host ) }:${ target }` )
     }
 
+    // Agent-native resume state. Claude already needed this for projects/plans/
+    // todos; Codex, Gemini, and OpenCode also store local transcripts/session
+    // indexes outside auth files, so fresh containers need persistent volumes
+    // here or `resume --last` / `--session <id>` starts from an empty install.
+    for( const m of get_agent_state_mounts( agent, workspace, mode ) ) {
+        flags.push( `-v`, `${ m.source }:${ m.target }` )
+    }
+
     // Credential mounts
     if( creds_mounts ) {
         for( const mount of creds_mounts ) {
@@ -234,15 +306,6 @@ export const build_docker_command = ( options ) => {
     // Extra environment variables from agent adapter
     for( const [ key, value ] of Object.entries( extra_env ) ) {
         flags.push( `-e`, `${ key }=${ value }` )
-    }
-
-    // Claude session state — named volumes, not bind mounts. See GOTCHAS.md #31
-    // for why (perm bleed, sudo chown leaking to host). Sandbox skips so the
-    // session is fully ephemeral.
-    if( agent.name === `claude` && !mode.sandbox ) {
-        flags.push( `-v`, `babysit-claude-projects:/home/node/.claude/projects` )
-        flags.push( `-v`, `babysit-claude-plans:/home/node/.claude/plans` )
-        flags.push( `-v`, `babysit-claude-todos:/home/node/.claude/todos` )
     }
 
     // Docker image
