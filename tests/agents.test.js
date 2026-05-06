@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { get_agent, SUPPORTED_AGENTS, is_agent } from '../src/agents/index.js'
+import { extract_session_id } from '../src/sessions/extract.js'
 
 describe( `agent registry`, () => {
 
@@ -14,6 +15,38 @@ describe( `agent registry`, () => {
     it( `identifies known agents`, () => {
         expect( is_agent( `claude` ) ).toBe( true )
         expect( is_agent( `invalid` ) ).toBe( false )
+    } )
+
+} )
+
+describe( `agent session id capture`, () => {
+
+    const uuid = `019df81b-ce45-70f0-ab6e-3cbd64c83397`
+
+    it( `captures Claude status and resume-hint ids`, () => {
+        const claude = get_agent( `claude` )
+        expect( extract_session_id( `Session ID: ${ uuid }`, claude.session_id_pattern ) ).toBe( uuid )
+        expect( extract_session_id( `To continue, run claude --resume ${ uuid }`, claude.session_id_pattern ) ).toBe( uuid )
+    } )
+
+    it( `captures Codex resume hints`, () => {
+        const codex = get_agent( `codex` )
+        expect( extract_session_id( `To continue this session, run codex resume ${ uuid }`, codex.session_id_pattern ) ).toBe( uuid )
+        expect( extract_session_id( `Session ID: ${ uuid }`, codex.session_id_pattern ) ).toBe( uuid )
+    } )
+
+    it( `captures Gemini resume ids`, () => {
+        const gemini = get_agent( `gemini` )
+        expect( extract_session_id( `gemini --resume ${ uuid }`, gemini.session_id_pattern ) ).toBe( uuid )
+        expect( extract_session_id( `session: ${ uuid }`, gemini.session_id_pattern ) ).toBe( uuid )
+    } )
+
+    it( `captures OpenCode ses_ ids`, () => {
+        const opencode = get_agent( `opencode` )
+        const opencode_id = `ses_66a71b6f4ffeq796jvvOpJQ04m`
+
+        expect( extract_session_id( `opencode --session ${ opencode_id }`, opencode.session_id_pattern ) ).toBe( opencode_id )
+        expect( extract_session_id( `Session ID: ${ opencode_id }`, opencode.session_id_pattern ) ).toBe( opencode_id )
     } )
 
 } )

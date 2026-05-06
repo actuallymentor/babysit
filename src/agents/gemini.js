@@ -62,7 +62,10 @@ export const gemini = {
     // own plan select the model is more portable than guessing.
     defaults: {},
 
-    session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
+    // Gemini supports `gemini --resume <uuid>` and also surfaces session ids in
+    // status/browser output. Capture both shapes so Babysit can resume the
+    // exact chat instead of falling back to "latest" when possible.
+    session_id_pattern: /(?:gemini\s+(?:--resume|-r)\s+|session(?:\s+id)?[:\s]+)([0-9a-f-]{36})/i,
 
     extra_env: () => ( {} ),
 

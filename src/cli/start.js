@@ -1,4 +1,5 @@
 import { spawn, execSync } from 'child_process'
+import { existsSync } from 'fs'
 import { createInterface } from 'readline/promises'
 import { wait } from 'mentie'
 
@@ -44,6 +45,91 @@ export const resolve_initial_prompt = ( config = {} ) => {
  * @returns {boolean}
  */
 export const should_send_initial_prompt = ( cmd = {} ) => cmd.verb !== `resume`
+
+/**
+ * Resolve stored Babysit metadata for explicit agent resume commands.
+ * @param {Object} cmd - Parsed command
+ * @param {Object} agent - Agent adapter
+ * @param {Function} [session_loader=load_session] - Metadata lookup helper
+ * @returns {Object|null} Stored session, optional agent_mismatch field, or null
+ */
+export const resolve_stored_agent_resume_session = ( cmd = {}, agent = {}, session_loader = load_session ) => {
+
+    if( cmd.verb !== `resume` || !cmd.session_id ) return null
+
+    const stored = session_loader( cmd.session_id )
+    if( !stored ) return null
+
+    if( stored.agent && agent.name && stored.agent !== agent.name ) {
+        return { ...stored, agent_mismatch: stored.agent }
+    }
+
+    return stored
+
+}
+
+/**
+ * Resolve explicit agent resume targets.
+ * `babysit <agent> resume <babysit_id>` should translate the Babysit metadata
+ * id before it reaches the agent CLI. If there is no stored record, treat the
+ * id as a native agent id so power users can still run direct resumes.
+ * @param {Object} cmd - Parsed command
+ * @param {Object} agent - Agent adapter
+ * @param {Function} [session_loader=load_session] - Metadata lookup helper
+ * @returns {{ session_id: string|null, resume_latest: boolean, agent_mismatch?: string }}
+ */
+export const resolve_agent_resume_target = ( cmd = {}, agent = {}, session_loader = load_session ) => {
+
+    if( cmd.verb !== `resume` ) {
+        return {
+            session_id: cmd.session_id || null,
+            resume_latest: Boolean( cmd.resume_latest ),
+        }
+    }
+
+    if( cmd.resume_latest ) {
+        return {
+            session_id: null,
+            resume_latest: true,
+        }
+    }
+
+    if( !cmd.session_id ) {
+        return {
+            session_id: null,
+            resume_latest: false,
+        }
+    }
+
+    const stored = session_loader( cmd.session_id )
+    if( !stored ) {
+        return {
+            session_id: cmd.session_id,
+            resume_latest: false,
+        }
+    }
+
+    if( stored.agent && agent.name && stored.agent !== agent.name ) {
+        return {
+            session_id: cmd.session_id,
+            resume_latest: false,
+            agent_mismatch: stored.agent,
+        }
+    }
+
+    if( stored.agent_session_id ) {
+        return {
+            session_id: stored.agent_session_id,
+            resume_latest: false,
+        }
+    }
+
+    return {
+        session_id: null,
+        resume_latest: true,
+    }
+
+}
 
 /**
  * Check whether an agent pane has reached the point where startup text can be
@@ -163,6 +249,25 @@ export const cmd_start = async ( cmd ) => {
         process.exit( 1 )
     }
 
+    // Explicit `babysit <agent> resume <id>` can receive either an agent-native
+    // id or a Babysit metadata id. When the id maps to stored metadata, restore
+    // the original workspace before loading babysit.yaml and before hashing
+    // workspace-scoped Docker state volumes.
+    const stored_resume_session = cmd.metadata_resolved
+        ? null
+        : resolve_stored_agent_resume_session( cmd, agent )
+    if( stored_resume_session?.agent_mismatch ) {
+        log.error( `Session ${ cmd.session_id } belongs to ${ stored_resume_session.agent_mismatch }, not ${ agent.name }` )
+        process.exit( 1 )
+    }
+
+    if( stored_resume_session?.pwd && existsSync( stored_resume_session.pwd ) ) {
+        log.debug( `Restoring cwd: ${ stored_resume_session.pwd }` )
+        process.chdir( stored_resume_session.pwd )
+    } else if( stored_resume_session?.pwd ) {
+        log.warn( `Original session pwd no longer exists: ${ stored_resume_session.pwd }` )
+    }
+
     ensure_dirs()
 
     // Build mode descriptor
@@ -227,12 +332,19 @@ export const cmd_start = async ( cmd ) => {
     // Handle resume by injecting the resume flag
     const agent_args = [ ...passthrough ]
     if( cmd.verb === `resume` ) {
-        if( cmd.resume_latest && agent.flags.resume_latest ) {
+        const resume_target = resolve_agent_resume_target( cmd, agent )
+
+        if( resume_target.agent_mismatch ) {
+            log.error( `Session ${ cmd.session_id } belongs to ${ resume_target.agent_mismatch }, not ${ agent.name }` )
+            process.exit( 1 )
+        }
+
+        if( resume_target.resume_latest && agent.flags.resume_latest ) {
             const resume_flag = agent.flags.resume_latest()
             if( Array.isArray( resume_flag ) ) agent_args.unshift( ...resume_flag )
             else agent_args.unshift( resume_flag )
-        } else if( cmd.session_id && agent.flags.resume ) {
-            const resume_flag = agent.flags.resume( cmd.session_id )
+        } else if( resume_target.session_id && agent.flags.resume ) {
+            const resume_flag = agent.flags.resume( resume_target.session_id )
             if( Array.isArray( resume_flag ) ) agent_args.unshift( ...resume_flag )
             else agent_args.unshift( resume_flag )
         }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.13.2 — 2026-05-06
+
+### 🐛 Fixed
+- **`babysit resume` now preserves native session state for every agent.**
+  Codex, Gemini, and OpenCode now get persistent resume-state volumes like
+  Claude already did, and Codex/OpenCode session ids are captured more reliably.
+- **Explicit `babysit <agent> resume <id>` handles Babysit ids safely.**
+  Stored metadata ids now restore the original workspace and translate to the
+  agent-native id before invoking the agent CLI.
+
 ## 0.13.1 — 2026-05-06
 
 ### 🐛 Fixed

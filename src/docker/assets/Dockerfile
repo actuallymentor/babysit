@@ -120,8 +120,9 @@ RUN mkdir -p \
         /home/node/.claude/projects \
         /home/node/.claude/plans \
         /home/node/.claude/todos \
-        /home/node/.codex \
-        /home/node/.gemini \
+        /home/node/.codex/sessions \
+        /home/node/.codex/sqlite \
+        /home/node/.gemini/tmp \
         /home/node/.config/opencode \
         /home/node/.local/share/opencode \
         /home/node/.agents \

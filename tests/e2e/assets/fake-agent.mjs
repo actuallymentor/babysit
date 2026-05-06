@@ -9,6 +9,7 @@ const agent_name = process.argv[1] ? basename( process.argv[1] ) : `agent`
 const workspace = `/workspace`
 const marker_log = `${ workspace }/e2e-fake-agent.log`
 const session_id = `00000000-0000-4000-8000-${ String( process.pid ).padStart( 12, `0` ).slice( -12 ) }`
+const agent_args = process.argv.slice( 2 )
 
 const ensure_parent = ( path ) => mkdirSync( dirname( path ), { recursive: true } )
 
@@ -151,7 +152,12 @@ console.log( `OpenAI Codex` )
 console.log( `${ agent_name } fake agent ready` )
 console.log( `session: ${ session_id }` )
 console.log( `FAKE_AGENT_READY` )
+record( `argv ${ JSON.stringify( agent_args ) }` )
 record( `ready ${ session_id }` )
+
+if( agent_args.includes( `resume` ) ) {
+    write_marker( `${ workspace }/e2e-resume-args.txt`, JSON.stringify( agent_args ) )
+}
 
 const rl = createInterface( {
     input: process.stdin,
