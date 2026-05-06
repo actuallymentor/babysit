@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.1 — 2026-05-06
+
+### 🐛 Fixed
+- **Claude startup prompts now wait for the TUI before pasting.** This stops
+  `babysit claude --yolo` from echoing the launch prompt multiple times during
+  Claude startup.
+
 ## 0.13.0 — 2026-05-06
 
 ### ✨ Added

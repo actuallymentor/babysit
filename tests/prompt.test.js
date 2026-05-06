@@ -5,6 +5,7 @@ import {
     resolve_initial_prompt,
     wait_for_initial_prompt_ready,
 } from '../src/cli/start.js'
+import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 
 describe( `build_system_prompt`, () => {
@@ -82,6 +83,27 @@ describe( `initial prompt readiness`, () => {
 >_ OpenAI Codex (v0.128.0)
 `
         expect( is_initial_prompt_ready( codex, output ) ).toBe( true )
+    } )
+
+    it( `recognises Claude's first TUI screen`, () => {
+        const output = `
+Claude Code v2.1.128
+Welcome back Mentor!
+`
+        expect( is_initial_prompt_ready( claude, output ) ).toBe( true )
+    } )
+
+    it( `does not require Claude's banner to use three-part semver`, () => {
+        expect( is_initial_prompt_ready( claude, `Claude Code v3` ) ).toBe( true )
+    } )
+
+    it( `does not treat early Claude pane echo as ready`, () => {
+        const output = `
+You are running inside a Docker container.
+
+Do NOT add Co-Authored-By lines to git commit messages.
+`
+        expect( is_initial_prompt_ready( claude, output ) ).toBe( false )
     } )
 
     it( `waits until the readiness pattern appears`, async () => {
