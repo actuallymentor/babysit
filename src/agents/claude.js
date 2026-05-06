@@ -54,6 +54,12 @@ export const claude = {
     // Pattern to capture the session ID from claude's output
     session_id_pattern: /session[:\s]+([0-9a-f-]{36})/i,
 
+    // Claude is a full-screen TUI. Wait until the welcome screen is visible
+    // before pasting Babysit's launch prompt, otherwise the prompt can land
+    // while Claude is still switching terminal modes and echo into the pane
+    // multiple times before ending up in the composer.
+    initial_prompt_ready_pattern: /Claude Code v\d/,
+
     /**
      * Get extra environment variables for this agent
      * @returns {Object} Environment variables
