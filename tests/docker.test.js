@@ -21,7 +21,7 @@ const make_options = ( overrides = {} ) => ( {
     ...overrides,
 } )
 
-const with_env = ( values, fn ) => {
+const with_env = async ( values, fn ) => {
 
     const previous = Object.fromEntries(
         Object.keys( values ).map( key => [ key, process.env[ key ] ] )
@@ -33,7 +33,7 @@ const with_env = ( values, fn ) => {
             else process.env[ key ] = value
         }
 
-        return fn()
+        return await fn()
     } finally {
         for ( const [ key, value ] of Object.entries( previous ) ) {
             if( value === undefined ) delete process.env[ key ]
@@ -54,8 +54,8 @@ describe( `docker image`, () => {
 
     } )
 
-    it( `can be overridden for local E2E images`, () => {
-        with_env( { BABYSIT_DOCKER_IMAGE: `babysit:e2e-fake` }, () => {
+    it( `can be overridden for local E2E images`, async () => {
+        await with_env( { BABYSIT_DOCKER_IMAGE: `babysit:e2e-fake` }, () => {
             expect( get_image_name() ).toBe( `babysit:e2e-fake` )
             expect( get_image_name( `0.3.0` ) ).toBe( `babysit:e2e-fake` )
         } )
@@ -421,15 +421,15 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `can run docker through sudo for containerized E2E hosts`, () => {
-        with_env( { BABYSIT_DOCKER_USE_SUDO: `1` }, () => {
+    it( `can run docker through sudo for containerized E2E hosts`, async () => {
+        await with_env( { BABYSIT_DOCKER_USE_SUDO: `1` }, () => {
             const cmd = build_docker_command( make_options() )
             expect( cmd.startsWith( `sudo docker run` ) ).toBe( true )
         } )
     } )
 
-    it( `labels and forwards E2E metadata when present`, () => {
-        with_env( {
+    it( `labels and forwards E2E metadata when present`, async () => {
+        await with_env( {
             BABYSIT_E2E_RUN_ID: `run-123`,
             BABYSIT_E2E_SIBLING_IMAGE: `babysit:e2e-fake`,
             BABYSIT_DOCKER_IMAGE: `babysit:e2e-fake`,
@@ -458,8 +458,8 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `maps all /workspace bind mount sources back to the host workspace`, () => {
-        with_env( { BABYSIT_HOST_WORKSPACE: `/host/project` }, () => {
+    it( `maps all /workspace bind mount sources back to the host workspace`, async () => {
+        await with_env( { BABYSIT_HOST_WORKSPACE: `/host/project` }, () => {
             const cmd = build_docker_command( make_options( {
                 workspace: `/workspace/e2e`,
                 creds_mounts: [

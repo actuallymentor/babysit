@@ -6,6 +6,8 @@ const DOCKER_IMAGE = `actuallymentor/babysit`
 
 /**
  * Resolve the Docker image Babysit should run.
+ * BABYSIT_DOCKER_IMAGE is a full image reference override used by E2E; when
+ * it is set, the tag argument is intentionally ignored.
  * @param {string} [tag='latest'] - Image tag for the published image
  * @returns {string} Full image reference
  */

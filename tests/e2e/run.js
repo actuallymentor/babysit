@@ -172,6 +172,10 @@ const latest_session = () => {
 }
 
 const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => {
+
+    // In a non-TTY test process, Babysit's foreground tmux attach exits
+    // immediately after cmd_start has saved session metadata. The E2E harness
+    // intentionally uses that metadata to keep driving the detached tmux pane.
     await run( `node`, [ join( repo_root, `src/index.js` ), `codex`, ...args ], {
         cwd: workspace,
         env: e2e_env(),
@@ -344,7 +348,7 @@ const cleanup = async () => {
 
 try {
     ensure( await command_ok( `tmux`, [ `-V` ] ), `tmux is required for E2E tests` )
-    ensure( await command_ok( `docker`, [ `info` ] ) || use_sudo_docker, `Docker is required for E2E tests` )
+    ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
 
     await build_images()
 

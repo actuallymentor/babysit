@@ -76,8 +76,17 @@ const run_sibling_container = () => {
         `printf sibling-ok > /host_workspace/e2e-sibling.txt`,
     ]
     const sudo_args = [ `sudo`, ...docker_args ]
-    const attempts = [ docker_args, sudo_args ].map( run_docker_candidate )
-    const success = attempts.find( attempt => attempt.ok )
+    const attempts = []
+    let success = null
+
+    for( const candidate of [ docker_args, sudo_args ] ) {
+        const attempt = run_docker_candidate( candidate )
+        attempts.push( attempt )
+        if( attempt.ok ) {
+            success = attempt
+            break
+        }
+    }
 
     if( success ) {
         write_marker( `${ workspace }/e2e-docker.txt`, `sibling-ok` )
