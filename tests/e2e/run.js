@@ -7,6 +7,8 @@ import { dirname, join, resolve } from 'path'
 import { fileURLToPath } from 'url'
 import { spawn } from 'child_process'
 
+import { SUPPORTED_AGENTS } from '../../src/agents/index.js'
+
 const repo_root = resolve( fileURLToPath( new URL( `../../`, import.meta.url ) ) )
 const run_id = `babysit-e2e-${ Date.now() }-${ Math.random().toString( 16 ).slice( 2, 8 ) }`
 const tmux_socket = run_id
@@ -197,10 +199,14 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 90_000 ) =>
     return session
 }
 
-const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => launch_babysit_command(
+const launch_agent = async ( workspace, agent, args, timeout_ms = 90_000 ) => launch_babysit_command(
     workspace,
-    [ `codex`, ...args ],
+    [ agent, ...args ],
     timeout_ms
+)
+
+const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => (
+    launch_agent( workspace, `codex`, args, timeout_ms )
 )
 
 const capture = async ( session ) => {
@@ -209,7 +215,10 @@ const capture = async ( session ) => {
 }
 
 const send_text = async ( session, text ) => {
-    await tmux( [ `send-keys`, `-t`, session.tmux_session, `-l`, text ] )
+    const buffer_name = `babysit-e2e-${ process.pid }-${ Date.now() }-${ Math.random().toString( 36 ).slice( 2 ) }`
+
+    await tmux( [ `set-buffer`, `-b`, buffer_name, text ] )
+    await tmux( [ `paste-buffer`, `-pr`, `-d`, `-b`, buffer_name, `-t`, session.tmux_session ] )
     await tmux( [ `send-keys`, `-t`, session.tmux_session, `Enter` ] )
 }
 
@@ -254,6 +263,30 @@ const build_images = async () => {
         `-f`, join( repo_root, `tests/e2e/assets/Dockerfile.fake` ),
         join( repo_root, `tests/e2e/assets` ),
     ], { timeout_ms: 300_000 } )
+}
+
+const run_submit_parity_sessions = async () => {
+    for( const agent of SUPPORTED_AGENTS ) {
+        const marker = `BABYSIT_E2E_AUTO_PROMPT_${ agent.toUpperCase() }`
+        const workspace = make_workspace( `submit-${ agent }`, `config:
+    initial_prompt: "BABYSIT_E2E_INITIAL_PROMPT_${ agent.toUpperCase() }"
+babysit:
+    - on: "FAKE_AGENT_READY"
+      do: "${ marker }"
+      timeout: 1
+` )
+        const session = await launch_agent( workspace, agent, [ `--yolo` ] )
+
+        await wait_until(
+            `${ agent } initial prompt marker`,
+            () => existsSync( join( workspace, `e2e-initial-prompt.txt` ) )
+        )
+        await wait_until(
+            `${ agent } auto prompt marker`,
+            () => existsSync( join( workspace, `e2e-auto-prompt-${ agent }.txt` ) )
+        )
+        await stop_session( session )
+    }
 }
 
 const run_default_session = async () => {
@@ -392,6 +425,7 @@ try {
 
     await build_images()
 
+    await run_submit_parity_sessions()
     await run_default_session()
     await run_resume_session()
     await run_mudbox_session()
