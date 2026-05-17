@@ -8,8 +8,26 @@ import { spawnSync } from 'child_process'
 const agent_name = process.argv[1] ? basename( process.argv[1] ) : `agent`
 const workspace = `/workspace`
 const marker_log = `${ workspace }/e2e-fake-agent.log`
-const session_id = `00000000-0000-4000-8000-${ String( process.pid ).padStart( 12, `0` ).slice( -12 ) }`
 const agent_args = process.argv.slice( 2 )
+const session_prefix_by_agent = {
+    claude: `c1a`,
+    codex: `c0d`,
+    gemini: `9e1`,
+    opencode: `0ce`,
+}
+const ready_banner_by_agent = {
+    claude: `Claude Code v3`,
+    codex: `OpenAI Codex`,
+    gemini: `Gemini CLI`,
+    opencode: `OpenCode`,
+}
+
+// Dockerized fake agents often run as PID 1, so native ids need their own
+// entropy or resume lookups can collide across agent sessions.
+const session_prefix = session_prefix_by_agent[ agent_name ] || `000`
+const random_session_bits = Math.floor( Math.random() * 0x1000000000 ).toString( 16 ).padStart( 9, `0` )
+const session_tail = `${ session_prefix }${ random_session_bits }`
+const session_id = `00000000-0000-4000-8000-${ session_tail }`
 
 const ensure_parent = ( path ) => mkdirSync( dirname( path ), { recursive: true } )
 
@@ -108,6 +126,12 @@ const run_sibling_container = () => {
 const handle_prompt = ( line ) => {
     record( `input ${ JSON.stringify( line ) }` )
 
+    const auto_prompt_agent = line.match( /BABYSIT_E2E_AUTO_PROMPT_([A-Z]+)/ )?.[1]?.toLowerCase()
+    if( auto_prompt_agent ) {
+        write_marker( `${ workspace }/e2e-auto-prompt-${ auto_prompt_agent }.txt`, line )
+        console.log( `AUTO_PROMPT_OK ${ auto_prompt_agent }` )
+    }
+
     if( line.includes( `BABYSIT_E2E_INITIAL_PROMPT` ) ) {
         write_marker( `${ workspace }/e2e-initial-prompt.txt`, line )
         console.log( `INITIAL_PROMPT_OK` )
@@ -148,7 +172,7 @@ if( process.argv.includes( `--version` ) ) {
     process.exit( 0 )
 }
 
-console.log( `OpenAI Codex` )
+console.log( ready_banner_by_agent[ agent_name ] || `${ agent_name } fake agent` )
 console.log( `${ agent_name } fake agent ready` )
 console.log( `session: ${ session_id }` )
 console.log( `FAKE_AGENT_READY` )
