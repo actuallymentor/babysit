@@ -2,8 +2,6 @@ import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
 
-const has_line_break = text => /[\r\n]/.test( text )
-
 const make_buffer_name = () => `babysit-send-${ process.pid }-${ Date.now() }-${ Math.random().toString( 36 ).slice( 2 ) }`
 
 const run_tmux = ( runner, args ) => runner( `tmux`, [ `-L`, TMUX_SOCKET, ...args ] )
@@ -34,14 +32,20 @@ export const send_enter = async ( session_name, { runner = run } = {} ) => {
 }
 
 /**
- * Paste multi-line text through tmux's paste buffer.
+ * Paste text through tmux's paste buffer.
+ *
+ * Using bracketed paste for single-line text matters for Codex: rapid
+ * `send-keys -l` input followed immediately by Enter is treated as a
+ * paste-like burst, and Codex turns that Enter into a newline instead of a
+ * submit. An explicit paste event clears that suppression window.
+ *
  * @param {string} session_name - The session name
  * @param {string} text - Text to paste
  * @param {Object} [options]
  * @param {Function} [options.runner=run] - Command runner, injected by tests
  * @returns {Promise<void>}
  */
-const paste_multiline_text = async ( session_name, text, { runner = run } = {} ) => {
+const paste_text = async ( session_name, text, { runner = run } = {} ) => {
 
     const buffer_name = make_buffer_name()
 
@@ -58,13 +62,12 @@ const paste_multiline_text = async ( session_name, text, { runner = run } = {} )
 
 /**
  * Send a text string followed by Enter.
- * Single-line text uses tmux's `-l` flag so characters like `$`, `!`, and
- * backticks are passed through literally instead of being interpreted as tmux
- * key names.
  *
- * Multi-line text is pasted through a tmux buffer with bracketed paste enabled.
- * Without this, embedded newlines are delivered as real Enter key presses,
- * splitting a launch prompt into partial messages in TUI agents like Codex.
+ * Text is pasted through a tmux buffer with bracketed paste enabled. Without
+ * this, embedded newlines are delivered as real Enter key presses, splitting a
+ * launch prompt into partial messages in TUI agents like Codex. It also avoids
+ * Codex's paste-burst heuristic swallowing the final Enter for single-line
+ * prompts like the default loop action.
  *
  * @param {string} session_name - The session name
  * @param {string} text - The text to type and submit
@@ -76,8 +79,7 @@ export const send_text = async ( session_name, text, { runner = run } = {} ) => 
 
     log.debug( `Sending text to session: ${ text.slice( 0, 80 ) }...` )
 
-    if( has_line_break( text ) ) await paste_multiline_text( session_name, text, { runner } )
-    else await run_tmux( runner, [ `send-keys`, `-t`, session_name, `-l`, text ] )
+    await paste_text( session_name, text, { runner } )
 
     await send_enter( session_name, { runner } )
 
