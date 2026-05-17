@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.13.3 — 2026-05-17
+
+### 🐛 Fixed
+- **Codex loop prompts now submit instead of becoming multiline drafts.**
+  Babysit now bracket-pastes every automated prompt before pressing Enter, so
+  Codex's paste-burst heuristic does not turn the submit key into a newline.
+
 ## 0.13.2 — 2026-05-06
 
 ### 🐛 Fixed
