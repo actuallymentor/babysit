@@ -324,6 +324,8 @@ export const cmd_start = async ( cmd ) => {
         mounts: creds_mounts,
         sync: creds_sync,
         sync_baseline: creds_sync_baseline,
+        sync_baselines: creds_sync_baselines,
+        tmpfiles: creds_tmpfiles,
     } = await setup_credentials( agent )
 
     // Get agent-specific extra env
@@ -394,8 +396,10 @@ export const cmd_start = async ( cmd ) => {
         tmux_session: session_name,
         pwd: workspace,
         modifiers,
-        creds_tmpfile: creds_mounts.find( m => m.type === `volume` )?.source || null,
+        creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
+        creds_tmpfiles,
         creds_sync_baseline,
+        creds_sync_baselines,
         started_at: new Date().toISOString(),
     }
     save_session( session_data )

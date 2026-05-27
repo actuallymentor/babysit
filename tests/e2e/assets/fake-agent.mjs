@@ -21,6 +21,12 @@ const ready_banner_by_agent = {
     gemini: `Gemini CLI`,
     opencode: `OpenCode`,
 }
+const credential_paths = {
+    claude: `/home/node/.claude/.credentials.json`,
+    codex: `/home/node/.codex/auth.json`,
+    gemini: `/home/node/.gemini/oauth_creds.json`,
+    opencode: `/home/node/.local/share/opencode/auth.json`,
+}
 
 // Dockerized fake agents often run as PID 1, so native ids need their own
 // entropy or resume lookups can collide across agent sessions.
@@ -50,6 +56,16 @@ const write_marker = ( path, content ) => {
         console.log( `WRITE_FAILED ${ path } ${ e.code || e.message }` )
         return false
     }
+}
+
+const assert_all_credentials_present = () => {
+    const missing = Object.entries( credential_paths )
+        .filter( ( [ , path ] ) => !existsSync( path ) )
+        .map( ( [ agent ] ) => agent )
+
+    const result = missing.length ? `missing:${ missing.join( `,` ) }` : `ok`
+    write_marker( `${ workspace }/e2e-all-creds-${ agent_name }.txt`, result )
+    console.log( `ALL_CREDENTIALS_${ missing.length ? `MISSING` : `OK` } ${ result }` )
 }
 
 const rotate_credentials = () => {
@@ -178,6 +194,7 @@ console.log( `session: ${ session_id }` )
 console.log( `FAKE_AGENT_READY` )
 record( `argv ${ JSON.stringify( agent_args ) }` )
 record( `ready ${ session_id }` )
+assert_all_credentials_present()
 
 if( agent_args.includes( `resume` ) ) {
     write_marker( `${ workspace }/e2e-resume-args.txt`, JSON.stringify( agent_args ) )

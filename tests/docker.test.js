@@ -425,6 +425,25 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `can mount credentials for inactive agents into the active agent container`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: codex,
+            creds_mounts: [
+                { type: `volume`, source: `/tmp/claude-creds.json`, target: `/home/node/.claude/.credentials.json` },
+                { type: `volume`, source: `/tmp/codex-auth.json`, target: `/home/node/.codex/auth.json` },
+                { type: `volume`, source: `/tmp/gemini-oauth.json`, target: `/home/node/.gemini/oauth_creds.json` },
+                { type: `volume`, source: `/tmp/opencode-auth.json`, target: `/home/node/.local/share/opencode/auth.json` },
+            ],
+        } ) )
+
+        expect( cmd ).toContain( `/tmp/claude-creds.json:/home/node/.claude/.credentials.json` )
+        expect( cmd ).toContain( `/tmp/codex-auth.json:/home/node/.codex/auth.json` )
+        expect( cmd ).toContain( `/tmp/gemini-oauth.json:/home/node/.gemini/oauth_creds.json` )
+        expect( cmd ).toContain( `/tmp/opencode-auth.json:/home/node/.local/share/opencode/auth.json` )
+
+    } )
+
     it( `does not bind-mount claude's writable session dirs in sandbox mode`, () => {
 
         // RO-mounting projects/plans/todos in sandbox would crash claude on its

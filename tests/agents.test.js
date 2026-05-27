@@ -94,6 +94,7 @@ describe( `credential coverage`, () => {
     // unauthenticated even though the user logged in on the host. Was true for
     // codex/gemini OAuth and for opencode-on-darwin before the fix.
 
+    const claude = get_agent( `claude` )
     const codex = get_agent( `codex` )
     const gemini = get_agent( `gemini` )
     const opencode = get_agent( `opencode` )
@@ -140,6 +141,7 @@ describe( `credential coverage`, () => {
     it( `each agent declares a container target for its credential file`, () => {
         // The darwin/linux setup_credentials code mounts the host tmpfile to
         // agent.container_paths.creds — null targets silently drop the mount.
+        expect( claude.container_paths.creds ).toBe( `/home/node/.claude/.credentials.json` )
         expect( codex.container_paths.creds ).toBe( `/home/node/.codex/auth.json` )
         expect( gemini.container_paths.creds ).toBe( `/home/node/.gemini/oauth_creds.json` )
         expect( opencode.container_paths.creds ).toBe( `/home/node/.local/share/opencode/auth.json` )
@@ -148,7 +150,7 @@ describe( `credential coverage`, () => {
     it( `each credential mount target is an absolute container path`, () => {
         // Targets must be absolute and container-local — relative paths confuse
         // docker's bind-mount, and host paths would point at user files.
-        for ( const a of [ codex, gemini, opencode ] ) {
+        for ( const a of [ claude, codex, gemini, opencode ] ) {
             expect( a.container_paths.creds.startsWith( `/home/node/` ) ).toBe( true )
         }
     } )
