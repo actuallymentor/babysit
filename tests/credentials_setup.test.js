@@ -3,6 +3,8 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync
 import { join } from 'path'
 import { tmpdir } from 'os'
 
+import { get_agent } from '../src/agents/index.js'
+import { setup_credentials } from '../src/credentials/index.js'
 import { setup_linux_credentials } from '../src/credentials/linux.js'
 
 // Regression suite for the monitor-tmpfile fix.
@@ -136,6 +138,143 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         await mon.sync.stop()
 
         expect( readFileSync( fg_tmpfile, `utf-8` ) ).toBe( `{"refresh_token":"reauthed"}` )
+
+    } )
+
+} )
+
+describe( `setup_credentials multi-agent capture`, () => {
+
+    let dir
+    let original_home
+    let original_codex_home
+    let original_codex_api_key
+    let original_openai_api_key
+    let original_gemini_api_key
+
+    const credential_paths = {
+        claude: `.claude/.credentials.json`,
+        codex: `.codex/auth.json`,
+        gemini: `.gemini/oauth_creds.json`,
+        opencode: `.local/share/opencode/auth.json`,
+    }
+
+    const container_targets = {
+        claude: `/home/node/.claude/.credentials.json`,
+        codex: `/home/node/.codex/auth.json`,
+        gemini: `/home/node/.gemini/oauth_creds.json`,
+        opencode: `/home/node/.local/share/opencode/auth.json`,
+    }
+
+    const host_credential_path = ( agent_name ) => join( dir, credential_paths[ agent_name ] )
+
+    const seed_host_credentials = () => {
+
+        mkdirSync( join( dir, `.claude` ), { recursive: true } )
+        mkdirSync( join( dir, `.codex` ), { recursive: true } )
+        mkdirSync( join( dir, `.gemini` ), { recursive: true } )
+        mkdirSync( join( dir, `.local/share/opencode` ), { recursive: true } )
+
+        for ( const [ agent_name, relative_path ] of Object.entries( credential_paths ) ) {
+            writeFileSync( join( dir, relative_path ), `{"agent":"${ agent_name }","refresh_token":"original"}` )
+        }
+
+    }
+
+    beforeEach( () => {
+
+        dir = mkdtempSync( join( tmpdir(), `babysit-creds-all-` ) )
+        seed_host_credentials()
+
+        original_home = process.env.HOME
+        original_codex_home = process.env.CODEX_HOME
+        original_codex_api_key = process.env.CODEX_API_KEY
+        original_openai_api_key = process.env.OPENAI_API_KEY
+        original_gemini_api_key = process.env.GEMINI_API_KEY
+
+        process.env.HOME = dir
+        delete process.env.CODEX_HOME
+        delete process.env.CODEX_API_KEY
+        delete process.env.OPENAI_API_KEY
+        delete process.env.GEMINI_API_KEY
+
+    } )
+
+    afterEach( () => {
+
+        process.env.HOME = original_home
+
+        if( original_codex_home === undefined ) delete process.env.CODEX_HOME
+        else process.env.CODEX_HOME = original_codex_home
+
+        if( original_codex_api_key === undefined ) delete process.env.CODEX_API_KEY
+        else process.env.CODEX_API_KEY = original_codex_api_key
+
+        if( original_openai_api_key === undefined ) delete process.env.OPENAI_API_KEY
+        else process.env.OPENAI_API_KEY = original_openai_api_key
+
+        if( original_gemini_api_key === undefined ) delete process.env.GEMINI_API_KEY
+        else process.env.GEMINI_API_KEY = original_gemini_api_key
+
+        rmSync( dir, { recursive: true, force: true } )
+
+    } )
+
+    it( `captures credential mounts for every supported agent on a codex launch`, async () => {
+
+        const result = await setup_credentials( get_agent( `codex` ) )
+        const volume_targets = result.mounts
+            .filter( mount => mount.type === `volume` )
+            .map( mount => mount.target )
+
+        expect( volume_targets ).toEqual( expect.arrayContaining( Object.values( container_targets ) ) )
+        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `claude`, `codex`, `gemini`, `opencode` ] )
+        expect( Object.keys( result.sync_baselines ).sort() ).toEqual( [ `claude`, `codex`, `gemini`, `opencode` ] )
+        expect( result.creds_tmpfile ).toBeUndefined()
+
+        await result.sync.stop()
+
+    } )
+
+    it( `monitor handoff reuses every foreground tmpfile without creating new mounts`, async () => {
+
+        const foreground = await setup_credentials( get_agent( `codex` ) )
+        const monitor = await setup_credentials( get_agent( `codex` ), {
+            existing_tmpfiles: foreground.tmpfiles,
+            sync_baselines: foreground.sync_baselines,
+        } )
+
+        expect( monitor.mounts.find( mount => mount.type === `volume` ) ).toBeUndefined()
+        expect( monitor.tmpfiles ).toEqual( foreground.tmpfiles )
+
+        await foreground.sync.stop()
+
+        writeFileSync( foreground.tmpfiles.claude, `{"agent":"claude","refresh_token":"rotated"}` )
+        await monitor.sync.stop()
+
+        expect( readFileSync( host_credential_path( `claude` ), `utf-8` ) )
+            .toBe( `{"agent":"claude","refresh_token":"rotated"}` )
+
+    } )
+
+    it( `legacy monitor handoff syncs only the active agent tmpfile`, async () => {
+
+        const foreground = await setup_credentials( get_agent( `codex` ) )
+        const legacy_monitor = await setup_credentials( get_agent( `codex` ), {
+            existing_tmpfile: foreground.tmpfiles.codex,
+            sync_baseline: foreground.sync_baselines.codex,
+        } )
+
+        expect( legacy_monitor.mounts.find( mount => mount.type === `volume` ) ).toBeUndefined()
+        expect( Object.keys( legacy_monitor.tmpfiles ) ).toEqual( [ `codex` ] )
+
+        await foreground.sync.stop()
+
+        writeFileSync( foreground.tmpfiles.codex, `{"agent":"codex","refresh_token":"legacy-rotated"}` )
+        await legacy_monitor.sync.stop()
+
+        expect( readFileSync( host_credential_path( `codex` ), `utf-8` ) )
+            .toBe( `{"agent":"codex","refresh_token":"legacy-rotated"}` )
 
     } )
 

@@ -12,9 +12,12 @@ import { log } from '../utils/log.js'
  * @param {string} session.tmux_session - Tmux session name
  * @param {string} session.pwd - Working directory
  * @param {string[]} session.modifiers - Active mode flags
- * @param {string} [session.creds_tmpfile] - Path to credentials tmpfile
+ * @param {string} [session.creds_tmpfile] - Legacy active-agent credentials tmpfile
+ * @param {Object} [session.creds_tmpfiles] - Per-agent credential tmpfiles
  * @param {Object|null} [session.creds_sync_baseline] - Safe hashes from the
- *   credential capture handoff
+ *   legacy active-agent credential capture handoff
+ * @param {Object|null} [session.creds_sync_baselines] - Per-agent safe hashes
+ *   from the credential capture handoff
  * @param {number} [session.creds_sync_pid] - PID of credential sync daemon
  * @param {string} session.started_at - ISO timestamp
  */

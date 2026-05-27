@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.0 — 2026-05-27
+
+### ✨ Added
+- **Active sessions now receive credentials for every supported agent.**
+  A Codex session can invoke Claude, Gemini, or OpenCode inside the Babysit
+  container using the host credentials for those tools, and the monitor keeps
+  every mounted credential tmpfile synced back to the host.
+
 ## 0.13.3 — 2026-05-17
 
 ### 🐛 Fixed

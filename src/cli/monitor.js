@@ -61,17 +61,24 @@ export const cmd_monitor = async ( cmd ) => {
     // capture and the docker mount, but its setInterval dies with it — without
     // this, tokens would stop refreshing the moment the user detaches.
     //
-    // CRITICAL: pass `existing_tmpfile` so the monitor's sync watches the SAME
-    // tmpfile the container is already mounting. `copy_host_file_to_tmpfile`
-    // bakes Date.now() into the path, so a fresh setup_credentials call would
-    // mint a brand-new tmpfile that nobody writes to — and the container's
-    // OAuth refreshes (the whole reason for bidirectional sync) would never
-    // make it back to the host file. Symptom: "Your access token could not be
+    // CRITICAL: pass the foreground tmpfiles so the monitor watches the SAME
+    // files the container is already mounting. `copy_host_file_to_tmpfile`
+    // bakes Date.now() into each path, so a fresh setup_credentials call would
+    // mint brand-new tmpfiles that nobody writes to — and in-container OAuth
+    // refreshes (the whole reason for bidirectional sync) would never make it
+    // back to the host files. Symptom: "Your access token could not be
     // refreshed because your refresh token was already used" on the NEXT
     // babysit session, every time.
+    const existing_tmpfiles = session.creds_tmpfiles || (
+        session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {}
+    )
+    const sync_baselines = session.creds_sync_baselines || (
+        session.creds_sync_baseline ? { [ session.agent ]: session.creds_sync_baseline } : {}
+    )
+
     const { sync: creds_sync } = await setup_credentials( agent, {
-        existing_tmpfile: session.creds_tmpfile,
-        sync_baseline: session.creds_sync_baseline,
+        existing_tmpfiles,
+        sync_baselines,
     } )
 
     log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )

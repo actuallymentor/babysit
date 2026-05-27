@@ -26,8 +26,14 @@ const use_sudo_docker = !docker_without_sudo && docker_with_sudo
 mkdirSync( home, { recursive: true } )
 mkdirSync( workspaces_root, { recursive: true } )
 mkdirSync( workspace_tmp, { recursive: true } )
+mkdirSync( join( home, `.claude` ), { recursive: true } )
 mkdirSync( join( home, `.codex` ), { recursive: true } )
+mkdirSync( join( home, `.gemini` ), { recursive: true } )
+mkdirSync( join( home, `.local/share/opencode` ), { recursive: true } )
+writeFileSync( join( home, `.claude/.credentials.json` ), JSON.stringify( { refresh_token: `e2e-claude-token` } ) )
 writeFileSync( join( home, `.codex/auth.json` ), JSON.stringify( { refresh_token: `e2e-original-token` } ) )
+writeFileSync( join( home, `.gemini/oauth_creds.json` ), JSON.stringify( { refresh_token: `e2e-gemini-token` } ) )
+writeFileSync( join( home, `.local/share/opencode/auth.json` ), JSON.stringify( { refresh_token: `e2e-opencode-token` } ) )
 
 const docker = async ( args, options = {} ) => {
     if( use_sudo_docker ) return run( `sudo`, [ `docker`, ...args ], options )
@@ -284,6 +290,14 @@ babysit:
         await wait_until(
             `${ agent } auto prompt marker`,
             () => existsSync( join( workspace, `e2e-auto-prompt-${ agent }.txt` ) )
+        )
+        await wait_until(
+            `${ agent } all credential marker`,
+            () => existsSync( join( workspace, `e2e-all-creds-${ agent }.txt` ) )
+        )
+        ensure(
+            readFileSync( join( workspace, `e2e-all-creds-${ agent }.txt` ), `utf8` ) === `ok`,
+            `${ agent } session did not receive every agent credential file`
         )
         await stop_session( session )
     }
