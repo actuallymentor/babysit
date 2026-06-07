@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.1 — 2026-06-07
+
+### 🐛 Fixed
+- **`babysit codex` no longer exits immediately with `no sessions`.**
+  Codex credential and shared-instruction mounts now prepare or seed nested
+  files inside the writable `CODEX_HOME` tmpdir before Docker starts.
+
 ## 0.14.0 — 2026-05-27
 
 ### ✨ Added

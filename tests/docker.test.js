@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { get_image_name } from '../src/docker/update.js'
-import { build_agent_state_volume_name, build_docker_command, get_agent_state_mounts, resolve_workspace_mount_source } from '../src/docker/run.js'
+import { build_agent_state_volume_name, build_docker_command, get_agent_state_mounts, prepare_nested_file_mountpoint, resolve_workspace_mount_source, should_mount_user_globals } from '../src/docker/run.js'
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 import { gemini } from '../src/agents/gemini.js'
@@ -233,6 +233,19 @@ describe( `user-globals bind-mount target`, () => {
         expect( claude.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
     } )
 
+    it( `skips a dedicated bind when an extra mount already supplies globals`, () => {
+
+        expect( should_mount_user_globals(
+            codex,
+            [ { host: `/tmp/codex-home`, container: `/home/node/.codex`, provides_user_globals: true } ],
+            true
+        ) ).toBe( false )
+
+        expect( should_mount_user_globals( codex, [], true ) ).toBe( true )
+        expect( should_mount_user_globals( codex, [], false ) ).toBe( false )
+
+    } )
+
 } )
 
 describe( `agent home env vars`, () => {
@@ -274,6 +287,27 @@ describe( `agent home env vars`, () => {
 } )
 
 describe( `build_docker_command`, () => {
+
+    it( `pre-creates nested file mountpoints inside tmpdir-backed config homes`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-nested-mount-` ) )
+
+        try {
+
+            expect( prepare_nested_file_mountpoint(
+                [ { host: dir, container: `/home/node/.codex` } ],
+                `/home/node/.codex/auth.json`
+            ) ).toBe( true )
+
+            const mountpoint = join( dir, `auth.json` )
+            expect( existsSync( mountpoint ) ).toBe( true )
+            expect( statSync( mountpoint ).mode & 0o777 ).toBe( 0o666 )
+
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
 
     it( `escapes embedded single quotes in shell values`, () => {
 

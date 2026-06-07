@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import {
     build_claude_settings_tmpfile,
     build_claude_json_tmpfile,
+    build_codex_config_tmpdir,
     claude_extra_mounts,
     codex_extra_mounts,
     gemini_extra_mounts,
@@ -211,6 +212,37 @@ describe( `claude_extra_mounts`, () => {
 } )
 
 describe( `codex_extra_mounts`, () => {
+
+    it( `copies shared AGENTS.md into the writable CODEX_HOME tmpdir`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-codex-globals-` ) )
+        const user_globals_path = join( dir, `AGENTS.md` )
+        writeFileSync( user_globals_path, `Use the shared instructions.\n` )
+
+        const { tmpdir: codex_home, provides_user_globals } = build_codex_config_tmpdir( ``, { user_globals_path } )
+
+        expect( provides_user_globals ).toBe( true )
+        expect( readFileSync( join( codex_home, `AGENTS.md` ), `utf-8` ) ).toBe( `Use the shared instructions.\n` )
+        expect( readFileSync( join( codex_home, `config.toml` ), `utf-8` ) ).toContain( `[projects."/workspace"]` )
+
+        rmSync( dir, { recursive: true, force: true } )
+        rmSync( codex_home, { recursive: true, force: true } )
+
+    } )
+
+    it( `does not claim shared globals when AGENTS.md is missing`, () => {
+
+        const missing_path = join( tmpdir(), `babysit-missing-agents-${ Date.now() }.md` )
+        const { tmpdir: codex_home, provides_user_globals } = build_codex_config_tmpdir( ``, {
+            user_globals_path: missing_path,
+        } )
+
+        expect( provides_user_globals ).toBe( false )
+        expect( existsSync( join( codex_home, `AGENTS.md` ) ) ).toBe( false )
+
+        rmSync( codex_home, { recursive: true, force: true } )
+
+    } )
 
     it( `does NOT mount installation_id (regression: triggers EPERM in container)`, () => {
 
