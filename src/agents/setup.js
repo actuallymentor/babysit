@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
-import { copy_host_file_to_tmpfile, build_tmpfile, build_tmpdir_with_file } from '../utils/tmpfile.js'
+import { copy_host_file_to_tmpfile, build_tmpfile, build_tmpdir_with_files } from '../utils/tmpfile.js'
 import { expand_home_path } from '../credentials/paths.js'
 import { get_host_codex_home } from './codex.js'
 
@@ -177,37 +177,6 @@ export const build_claude_json_tmpfile = ( host_claude_json_path ) => {
 export const CODEX_KNOWN_MODELS_FOR_NUX = [ `gpt-5`, `gpt-5.1`, `gpt-5.2`, `gpt-5.3`, `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, `gpt-5.5-codex` ]
 
 /**
- * Codex extra mounts. Codex stores per-directory trust in
- * ~/.codex/config.toml under `[projects."<path>"] trust_level = "trusted"`.
- * Without an entry for /workspace, codex shows a "Do you trust the contents
- * of this directory?" dialog on every fresh container that the user has to
- * click through. We copy the host's config.toml and add /workspace.
- *
- * We also pre-mark recent models as "seen" in `[tui.model_availability_nux]`
- * so codex doesn't pop the "Try new model" intro on launch — that dialog
- * has no flag override and would otherwise stall the supervised session.
- *
- * @returns {{ host: string, container: string }[]}
- */
-export const codex_extra_mounts = () => {
-
-    const host_config = join( expand_home_path( get_host_codex_home() ), `config.toml` )
-    const raw = existsSync( host_config ) ? readFileSync( host_config, `utf-8` ) : ``
-    const tmpdir = build_tmpdir_with_file( `codex`, `config.toml`, inject_codex_first_run_bypass( raw ) )
-
-    const mounts = []
-    if( tmpdir ) mounts.push( { host: tmpdir, container: `/home/node/.codex` } )
-
-    // NOTE: do NOT mount the host's installation_id. Mounting it breaks
-    // codex's session machinery with "Failed to create session: Operation
-    // not permitted" — see GOTCHAS.md #33. Regression test in
-    // tests/setup.test.js asserts this exclusion.
-
-    return mounts
-
-}
-
-/**
  * Inject the "trust /workspace" + "model nux seen" entries into a codex
  * config.toml, plus disable the `apps` feature flag (which spawns the
  * codex_apps MCP). Idempotent: re-running on output of itself produces
@@ -259,6 +228,67 @@ const inject_codex_first_run_bypass = ( raw ) => {
     }
 
     return out
+
+}
+
+/**
+ * Build the temporary Codex config directory mounted as CODEX_HOME.
+ * @param {string} raw_config - Host config.toml content, or empty string
+ * @param {Object} [options]
+ * @param {string} [options.user_globals_path] - Host ~/.agents/AGENTS.md path
+ * @returns {{ tmpdir: string|null, provides_user_globals: boolean }}
+ */
+export const build_codex_config_tmpdir = ( raw_config, {
+    user_globals_path = join( AGENTS_DIR, `AGENTS.md` ),
+} = {} ) => {
+
+    const files = {
+        [`config.toml`]: inject_codex_first_run_bypass( raw_config ),
+    }
+
+    const provides_user_globals = existsSync( user_globals_path )
+    if( provides_user_globals ) files[`AGENTS.md`] = readFileSync( user_globals_path, `utf-8` )
+
+    return {
+        tmpdir: build_tmpdir_with_files( `codex`, `config`, files ),
+        provides_user_globals,
+    }
+
+}
+
+/**
+ * Codex extra mounts. Codex stores per-directory trust in
+ * ~/.codex/config.toml under `[projects."<path>"] trust_level = "trusted"`.
+ * Without an entry for /workspace, codex shows a "Do you trust the contents
+ * of this directory?" dialog on every fresh container that the user has to
+ * click through. We copy the host's config.toml and add /workspace.
+ *
+ * We also pre-mark recent models as "seen" in `[tui.model_availability_nux]`
+ * so codex doesn't pop the "Try new model" intro on launch — that dialog
+ * has no flag override and would otherwise stall the supervised session.
+ *
+ * Because Codex needs the whole CODEX_HOME directory mounted writable for
+ * atomic config.toml saves, ~/.agents/AGENTS.md is copied into that tmpdir
+ * instead of mounted as a second nested bind. Docker Desktop rejects creating
+ * a nested file mount inside the tmpdir-backed CODEX_HOME mount.
+ *
+ * @returns {{ host: string, container: string, provides_user_globals?: boolean }[]}
+ */
+export const codex_extra_mounts = () => {
+
+    const host_config = join( expand_home_path( get_host_codex_home() ), `config.toml` )
+    const raw = existsSync( host_config ) ? readFileSync( host_config, `utf-8` ) : ``
+    const { tmpdir, provides_user_globals } = build_codex_config_tmpdir( raw )
+
+    const mounts = []
+    if( tmpdir ) mounts.push( { host: tmpdir, container: `/home/node/.codex`, provides_user_globals } )
+
+    // NOTE: do NOT mount the host's installation_id. Mounting it breaks
+    // codex's session machinery with "Failed to create session: Operation
+    // not permitted" — see GOTCHAS.md #33. Regression test in
+    // tests/setup.test.js asserts this exclusion.
+
+    return mounts
 
 }
 

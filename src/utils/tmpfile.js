@@ -75,6 +75,38 @@ export const build_tmpfile = ( tag, hint, content ) => {
 }
 
 /**
+ * Build a fresh world-writable tmpdir containing chmod-666 files.
+ * Use this when an agent needs a whole writable config directory mounted, but
+ * Babysit still has to seed more than one file inside that directory.
+ *
+ * @param {string} tag - Short identifier baked into the tmpdir name
+ * @param {string} hint - Filename or label hint baked into the tmpdir name
+ * @param {Object.<string, string>} files - Map of filename to file content
+ * @returns {string|null} Tmpdir path, or null on error
+ */
+export const build_tmpdir_with_files = ( tag, hint, files ) => {
+
+    try {
+
+        const tmpdir_path = mkdtempSync( join( tmpdir(), `babysit-${ tag }-${ hint }-` ) )
+        chmodSync( tmpdir_path, 0o777 )
+
+        Object.entries( files ).forEach( ( [ filename, content ] ) => {
+            const tmpfile = join( tmpdir_path, filename )
+            writeFileSync( tmpfile, content )
+            chmodSync( tmpfile, 0o666 )
+        } )
+
+        return tmpdir_path
+
+    } catch ( e ) {
+        log.debug( `Failed to build tmpdir (${ hint }): ${ e.message }` )
+        return null
+    }
+
+}
+
+/**
  * Build a fresh world-writable tmpdir containing one chmod-666 file.
  * Use this for agent state files that are persisted atomically via
  * write-temp-and-rename: a bind-mounted single file can be written in place,
@@ -87,21 +119,7 @@ export const build_tmpfile = ( tag, hint, content ) => {
  */
 export const build_tmpdir_with_file = ( tag, filename, content ) => {
 
-    try {
-
-        const tmpdir_path = mkdtempSync( join( tmpdir(), `babysit-${ tag }-${ filename }-` ) )
-        chmodSync( tmpdir_path, 0o777 )
-
-        const tmpfile = join( tmpdir_path, filename )
-        writeFileSync( tmpfile, content )
-        chmodSync( tmpfile, 0o666 )
-
-        return tmpdir_path
-
-    } catch ( e ) {
-        log.debug( `Failed to build tmpdir (${ filename }): ${ e.message }` )
-        return null
-    }
+    return build_tmpdir_with_files( tag, filename, { [ filename ]: content } )
 
 }
 

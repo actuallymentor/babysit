@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
-import { existsSync, statSync } from 'fs'
-import { join } from 'path'
+import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
 import { detect_dependency_volumes } from './volumes.js'
@@ -152,6 +152,47 @@ export const get_agent_state_mounts = ( agent, workspace, mode = {} ) => {
 }
 
 /**
+ * Decide whether the shared ~/.agents/AGENTS.md file needs a dedicated bind.
+ * Some agent config mounts, currently Codex's whole CODEX_HOME tmpdir, seed
+ * the globals file internally to avoid Docker nested-bind failures.
+ * @param {Object} agent - Agent adapter
+ * @param {Object[]} extra_mounts - Per-agent extra mount descriptors
+ * @param {boolean} user_globals_exists - Whether ~/.agents/AGENTS.md exists
+ * @returns {boolean}
+ */
+export const should_mount_user_globals = ( agent = {}, extra_mounts = [], user_globals_exists = false ) => {
+
+    const user_globals_supplied = extra_mounts.some( m => m.provides_user_globals )
+
+    return Boolean( user_globals_exists && agent.container_paths?.user_globals_file && !user_globals_supplied )
+
+}
+
+/**
+ * Pre-create file targets for nested bind mounts inside whole-directory
+ * config mounts. Docker Desktop cannot create the mountpoint itself once the
+ * parent is already backed by a host tmpdir.
+ * @param {Object[]} extra_mounts - Per-agent extra mount descriptors
+ * @param {string} target_path - Container file path for a later bind mount
+ * @returns {boolean} True when a nested mountpoint was prepared
+ */
+export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path ) => {
+
+    const parent_mount = extra_mounts.find( m => target_path.startsWith( `${ m.container }/` ) )
+    if( !parent_mount ) return false
+
+    const relative_target = target_path.slice( parent_mount.container.length + 1 )
+    const mountpoint = join( parent_mount.host, relative_target )
+
+    mkdirSync( dirname( mountpoint ), { recursive: true } )
+    if( !existsSync( mountpoint ) ) writeFileSync( mountpoint, `` )
+    chmodSync( mountpoint, 0o666 )
+
+    return true
+
+}
+
+/**
  * Build the full `docker run` command argv for launching a coding agent
  * @param {Object} options
  * @param {Object} options.agent - Agent adapter
@@ -255,7 +296,8 @@ export const build_docker_command = ( options ) => {
     // user-global files so a whole-dir mount (Codex needs this for atomic
     // config.toml persists) can act as the base config home, then narrower
     // file mounts layer into it.
-    for( const m of get_extra_mounts( agent.name )( { yolo: mode.yolo } ) ) {
+    const extra_mounts = get_extra_mounts( agent.name )( { yolo: mode.yolo } )
+    for( const m of extra_mounts ) {
         const target = m.ro ? `${ m.container }:ro` : m.container
         flags.push( `-v`, `${ resolve_workspace_mount_source( m.host ) }:${ target }` )
     }
@@ -272,6 +314,7 @@ export const build_docker_command = ( options ) => {
     if( creds_mounts ) {
         for( const mount of creds_mounts ) {
             if( mount.type === `volume` ) {
+                prepare_nested_file_mountpoint( extra_mounts, mount.target )
                 flags.push( `-v`, `${ resolve_workspace_mount_source( mount.source ) }:${ mount.target }` )
             } else if( mount.type === `env` ) {
                 flags.push( `-e`, `${ mount.key }=${ mount.value }` )
@@ -296,7 +339,8 @@ export const build_docker_command = ( options ) => {
     // file existing so a missing ~/.agents/AGENTS.md leaves the agent in
     // its vanilla state.
     const user_agents_md = join( AGENTS_DIR, `AGENTS.md` )
-    if( existsSync( user_agents_md ) && agent.container_paths?.user_globals_file ) {
+    if( should_mount_user_globals( agent, extra_mounts, existsSync( user_agents_md ) ) ) {
+        prepare_nested_file_mountpoint( extra_mounts, agent.container_paths.user_globals_file )
         flags.push( `-v`, `${ resolve_workspace_mount_source( user_agents_md ) }:${ agent.container_paths.user_globals_file }:ro` )
     }
 
