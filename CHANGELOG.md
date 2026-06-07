@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.2 — 2026-06-07
+
+### 🐛 Fixed
+- **`babysit codex` no longer trips Codex's nested bubblewrap sandbox.**
+  Non-YOLO Codex sessions now disable only Codex's internal sandbox while
+  preserving approvals; Docker remains the outer isolation boundary.
+
 ## 0.14.1 — 2026-06-07
 
 ### 🐛 Fixed

@@ -174,6 +174,10 @@ describe( `codex adapter`, () => {
         expect( codex.flags.skip_permissions() ).toBe( `--dangerously-bypass-approvals-and-sandbox` )
     } )
 
+    it( `can bypass the internal sandbox without skipping approvals`, () => {
+        expect( codex.flags.bypass_sandbox() ).toEqual( [ `--sandbox`, `danger-full-access` ] )
+    } )
+
 } )
 
 describe( `resume fallback flags`, () => {
@@ -371,6 +375,19 @@ describe( `build_docker_command`, () => {
         // model_reasoning_effort is the real codex config key (not reasoning_effort).
         // The full-quoted form is shell_quote'd into a single arg by build_docker_command.
         expect( cmd ).toContain( `'model_reasoning_effort="xhigh"'` )
+
+    } )
+
+    it( `disables codex's internal sandbox without bypassing approvals outside yolo`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: codex,
+            mode: { yolo: false },
+            modifiers: [],
+        } ) )
+
+        expect( cmd ).toContain( ` codex --sandbox danger-full-access --model gpt-5.5` )
+        expect( cmd ).not.toContain( `--dangerously-bypass-approvals-and-sandbox` )
 
     } )
 

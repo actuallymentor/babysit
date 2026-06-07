@@ -71,6 +71,11 @@ export const codex = {
         // leave the workspace-write sandbox active, blocking real edits in babysit
         // --yolo mode. Use the most permissive flag.
         skip_permissions: () => `--dangerously-bypass-approvals-and-sandbox`,
+        // Non-yolo Babysit sessions should still ask for approvals, but Codex's
+        // own bubblewrap sandbox cannot create user namespaces inside the
+        // unprivileged Docker container. Use Codex's no-sandbox mode while
+        // preserving its approval policy.
+        bypass_sandbox: () => [ `--sandbox`, `danger-full-access` ],
         // Interactive resume — `codex resume <id>`. The non-interactive form
         // (`codex exec resume`) wouldn't be supervisable through tmux.
         resume: ( id ) => [ `resume`, id ],

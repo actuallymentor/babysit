@@ -382,6 +382,10 @@ const build_agent_command = ( agent, mode, agent_args ) => {
         const flag = agent.flags.skip_permissions()
         if( Array.isArray( flag ) ) parts.push( ...flag )
         else parts.push( flag )
+    } else if( agent.flags.bypass_sandbox ) {
+        const flag = agent.flags.bypass_sandbox()
+        if( Array.isArray( flag ) ) parts.push( ...flag )
+        else parts.push( flag )
     }
 
     // Max model and effort
