@@ -8,6 +8,7 @@ import { ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { setup_credentials } from '../credentials/index.js'
+import { setup_github_cli_credentials } from '../credentials/github.js'
 import { build_docker_command } from '../docker/run.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { apply_loop } from '../modes/loop.js'
@@ -327,6 +328,7 @@ export const cmd_start = async ( cmd ) => {
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
     } = await setup_credentials( agent )
+    const github_cli_mounts = setup_github_cli_credentials()
 
     // Get agent-specific extra env
     const extra_env = agent.extra_env ? agent.extra_env( mode ) : {}
@@ -355,7 +357,11 @@ export const cmd_start = async ( cmd ) => {
     // Build the docker command
     const docker_command = build_docker_command( {
         agent, workspace, mode,
-        agent_args, creds_mounts, config, extra_env, modifiers,
+        agent_args,
+        creds_mounts: [ ...github_cli_mounts, ...creds_mounts ],
+        config,
+        extra_env,
+        modifiers,
     } )
 
     // Start tmux output logging if --log was passed. The header goes in BEFORE
