@@ -8,6 +8,12 @@ Last verified against vendor docs: April 2026.
 - Bind mount sources are resolved on the Docker daemon host, not the client container. Nested Babysit sessions therefore need the original host workspace path (`BABYSIT_HOST_WORKSPACE`) when building `docker run -v ...:/workspace`.
 - Docker's Debian install docs support installing the client-side packages `docker-ce-cli`, `docker-buildx-plugin`, and `docker-compose-plugin` from the official Docker apt repository. Babysit's image installs those CLI/plugin packages only, not `docker-ce` or `containerd.io`.
 
+## GitHub CLI
+- Verified against the official GitHub CLI manual on 2026-06-08.
+- `GH_CONFIG_DIR` controls where gh reads/writes config. Without it, gh uses `$XDG_CONFIG_HOME/gh`, then platform-specific defaults, then `$HOME/.config/gh` on Unix-like systems.
+- `gh auth login` can store tokens in a system credential store; only fallback/insecure storage writes the token directly into the config files. Use host `gh auth token` to materialise the active token for containers.
+- Headless container auth should use `GH_TOKEN` / `GITHUB_TOKEN` for github.com and `GH_ENTERPRISE_TOKEN` / `GITHUB_ENTERPRISE_TOKEN` for GitHub Enterprise Server. If `GH_HOST` is set, pass it through alongside the matching token.
+
 ## Claude Code
 - **Binary**: `claude`
 - **Skip perms**: `--dangerously-skip-permissions`

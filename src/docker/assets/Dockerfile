@@ -123,6 +123,7 @@ RUN mkdir -p \
         /home/node/.codex/sessions \
         /home/node/.codex/sqlite \
         /home/node/.gemini/tmp \
+        /home/node/.config/gh \
         /home/node/.config/opencode \
         /home/node/.local/share/opencode \
         /home/node/.agents \

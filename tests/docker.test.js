@@ -88,7 +88,7 @@ describe( `docker image`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
 
-        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `docker`, `codex`, `gemini`, `claude`, `opencode` ] ) {
+        for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `gh`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `docker`, `codex`, `gemini`, `claude`, `opencode` ] ) {
             expect( dockerfile ).toContain( ` ${ cmd }` )
         }
         expect( dockerfile ).toContain( `command -v "$cmd"` )
@@ -105,6 +105,14 @@ describe( `docker image`, () => {
         expect( dockerfile ).toContain( `docker-ce-cli docker-buildx-plugin docker-compose-plugin` )
         expect( dockerfile ).not.toContain( `apt-get install -y --no-install-recommends docker-ce ` )
         expect( dockerfile ).not.toContain( `containerd.io` )
+
+    } )
+
+    it( `pre-creates the GitHub CLI config directory for auth mounts`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `/home/node/.config/gh` )
 
     } )
 
@@ -473,6 +481,23 @@ describe( `build_docker_command`, () => {
 
         expect( home_mount_index ).toBeGreaterThan( -1 )
         expect( auth_mount_index ).toBeGreaterThan( home_mount_index )
+
+    } )
+
+    it( `renders read-only credential directory mounts`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            agent: codex,
+            creds_mounts: [
+                { type: `volume`, source: `/tmp/gh-config`, target: `/home/node/.config/gh`, ro: true },
+                { type: `env`, key: `GH_CONFIG_DIR`, value: `/home/node/.config/gh` },
+                { type: `env`, key: `GH_TOKEN`, value: `fake-token` },
+            ],
+        } ) )
+
+        expect( cmd ).toContain( `/tmp/gh-config:/home/node/.config/gh:ro` )
+        expect( cmd ).toContain( `GH_CONFIG_DIR=/home/node/.config/gh` )
+        expect( cmd ).toContain( `GH_TOKEN=fake-token` )
 
     } )
 

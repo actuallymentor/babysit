@@ -315,7 +315,8 @@ export const build_docker_command = ( options ) => {
         for( const mount of creds_mounts ) {
             if( mount.type === `volume` ) {
                 prepare_nested_file_mountpoint( extra_mounts, mount.target )
-                flags.push( `-v`, `${ resolve_workspace_mount_source( mount.source ) }:${ mount.target }` )
+                const target = mount.ro ? `${ mount.target }:ro` : mount.target
+                flags.push( `-v`, `${ resolve_workspace_mount_source( mount.source ) }:${ target }` )
             } else if( mount.type === `env` ) {
                 flags.push( `-e`, `${ mount.key }=${ mount.value }` )
             }
@@ -327,10 +328,6 @@ export const build_docker_command = ( options ) => {
     for( const key of git_vars ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )
     }
-
-    // GitHub token passthrough
-    const gh_token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN
-    if( gh_token ) flags.push( `-e`, `GH_TOKEN=${ gh_token }` )
 
     // Bind-mount the user's cross-agent globals into each agent's native
     // discovery path (read-only). The agent loads it through its own

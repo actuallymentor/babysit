@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.3 — 2026-06-08
+
+### 🐛 Fixed
+- **Host `gh` authentication now works inside Babysit containers.** Babysit
+  now mounts the host GitHub CLI config read-only and passes the active host
+  `gh auth token` into the container as the appropriate GitHub token env var.
+
 ## 0.14.2 — 2026-06-07
 
 ### 🐛 Fixed
