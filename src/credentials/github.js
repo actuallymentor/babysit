@@ -24,6 +24,8 @@ export const resolve_host_gh_config_dir = ( env = process.env ) => {
 
 const is_public_github_host = host => !host || host === `github.com` || host.endsWith( `.ghe.com` )
 
+const token_key_for_host = host => is_public_github_host( host ) ? `GH_TOKEN` : `GH_ENTERPRISE_TOKEN`
+
 const env_token_mounts = ( env = process.env ) => {
 
     const mounts = []
@@ -70,7 +72,7 @@ export const read_host_gh_token = ( {
 
     return {
         type: `env`,
-        key: is_public_github_host( env.GH_HOST ) ? `GH_TOKEN` : `GH_ENTERPRISE_TOKEN`,
+        key: token_key_for_host( env.GH_HOST ),
         value: token,
     }
 
@@ -108,7 +110,9 @@ export const setup_github_cli_credentials = ( {
     if( env.GH_HOST ) mounts.push( { type: `env`, key: `GH_HOST`, value: env.GH_HOST } )
 
     const direct_token_mounts = env_token_mounts( env )
-    if( direct_token_mounts.length ) return [ ...mounts, ...direct_token_mounts ]
+    const expected_token_key = token_key_for_host( env.GH_HOST )
+    const has_direct_token_for_host = direct_token_mounts.some( ( { key } ) => key === expected_token_key )
+    if( has_direct_token_for_host ) return [ ...mounts, ...direct_token_mounts ]
 
     const token_mount = read_host_gh_token( { env, spawn_sync } )
     if( token_mount ) {
@@ -116,6 +120,6 @@ export const setup_github_cli_credentials = ( {
         mounts.push( token_mount )
     }
 
-    return mounts
+    return [ ...mounts, ...direct_token_mounts ]
 
 }
