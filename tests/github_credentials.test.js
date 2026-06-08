@@ -70,6 +70,58 @@ describe( `GitHub CLI credential passthrough`, () => {
 
     } )
 
+    it( `extracts enterprise auth when GH_HOST is enterprise but only GH_TOKEN is set`, () => {
+
+        let calls = 0
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                HOME: `/home/alice`,
+                GH_HOST: `github.internal`,
+                GH_TOKEN: `public-token`,
+            },
+            exists_sync: () => false,
+            spawn_sync: ( cmd, args ) => {
+                calls += 1
+                expect( cmd ).toBe( `gh` )
+                expect( args ).toEqual( [ `auth`, `token`, `--hostname`, `github.internal` ] )
+                return { status: 0, stdout: `enterprise-token\n` }
+            },
+        } )
+
+        expect( calls ).toBe( 1 )
+        expect( mounts ).toEqual( [
+            { type: `env`, key: `GH_HOST`, value: `github.internal` },
+            { type: `env`, key: `GH_ENTERPRISE_TOKEN`, value: `enterprise-token` },
+            { type: `env`, key: `GH_TOKEN`, value: `public-token` },
+        ] )
+
+    } )
+
+    it( `extracts public auth when only an enterprise token env var is set`, () => {
+
+        let calls = 0
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                HOME: `/home/alice`,
+                GH_ENTERPRISE_TOKEN: `enterprise-token`,
+            },
+            exists_sync: () => false,
+            spawn_sync: ( cmd, args ) => {
+                calls += 1
+                expect( cmd ).toBe( `gh` )
+                expect( args ).toEqual( [ `auth`, `token` ] )
+                return { status: 0, stdout: `public-token\n` }
+            },
+        } )
+
+        expect( calls ).toBe( 1 )
+        expect( mounts ).toEqual( [
+            { type: `env`, key: `GH_TOKEN`, value: `public-token` },
+            { type: `env`, key: `GH_ENTERPRISE_TOKEN`, value: `enterprise-token` },
+        ] )
+
+    } )
+
     it( `extracts host gh auth into GH_TOKEN for github.com`, () => {
 
         const calls = []
