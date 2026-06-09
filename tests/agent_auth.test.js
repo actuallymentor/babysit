@@ -4,11 +4,13 @@ import { PassThrough } from 'stream'
 
 import { SUPPORTED_AGENTS, get_agent } from '../src/agents/index.js'
 import {
+    answered_ok,
     build_host_auth_args,
     build_host_auth_prompt,
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
     format_utc_timestamp,
+    last_nonempty_line,
     run_host_agent_auth_check,
     should_continue_with_unauthenticated_agents,
     unauthenticated_agent_names,
@@ -32,6 +34,33 @@ const fake_spawn = ( { code = 0, stdout = `ok\n`, stderr = `` } = {}, on_spawn =
         if( stderr ) child.stderr.write( stderr )
         child.emit( `close`, code )
     } )
+
+    return child
+
+}
+
+const fake_hanging_spawn = ( on_kill = () => {} ) => () => {
+
+    const child = new EventEmitter()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.kill = signal => {
+        on_kill( signal )
+        return true
+    }
+
+    return child
+
+}
+
+const fake_error_spawn = error => () => {
+
+    const child = new EventEmitter()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.kill = () => {}
+
+    queueMicrotask( () => child.emit( `error`, error ) )
 
     return child
 
@@ -98,6 +127,44 @@ describe( `host agent auth checks`, () => {
         expect( result.reason ).toBe( `choose an auth method` )
     } )
 
+    it( `checks the final non-empty response line for ok`, () => {
+        expect( last_nonempty_line( `warning\n\nok\n` ) ).toBe( `ok` )
+        expect( answered_ok( `warning\nok\n` ) ).toBe( true )
+        expect( answered_ok( `looking ok at the time` ) ).toBe( false )
+    } )
+
+    it( `marks missing adapter auth metadata as unauthenticated`, async () => {
+        const result = await run_host_agent_auth_check( { name: `missing`, bin: `missing` } )
+
+        expect( result.authenticated ).toBe( false )
+        expect( result.reason ).toBe( `missing auth check command` )
+    } )
+
+    it( `marks spawn errors as unauthenticated`, async () => {
+        const result = await run_host_agent_auth_check( get_agent( `claude` ), {
+            spawn_fn: fake_error_spawn( new Error( `not found` ) ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.authenticated ).toBe( false )
+        expect( result.reason ).toBe( `not found` )
+    } )
+
+    it( `times out stuck auth checks and escalates after SIGTERM`, async () => {
+        const signals = []
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            spawn_fn: fake_hanging_spawn( signal => signals.push( signal ) ),
+            timeout_ms: 1,
+            kill_grace_ms: 1,
+        } )
+
+        await new Promise( resolve => setTimeout( resolve, 5 ) )
+
+        expect( result.authenticated ).toBe( false )
+        expect( result.reason ).toBe( `timed out` )
+        expect( signals ).toEqual( [ `SIGTERM`, `SIGKILL` ] )
+    } )
+
     it( `checks all supported agents with the same prompt`, async () => {
         const calls = []
         const results = await check_host_agent_authentication( {
@@ -113,6 +180,21 @@ describe( `host agent auth checks`, () => {
         expect( unauthenticated_agent_names( results ) ).toEqual( [ `codex` ] )
     } )
 
+    it( `converts rejected auth runners into unauthenticated results`, async () => {
+        const results = await check_host_agent_authentication( {
+            agent_names: [ `claude` ],
+            run_auth_check: async () => {
+                throw new Error( `runner exploded` )
+            },
+        } )
+
+        expect( results ).toEqual( [ {
+            name: `claude`,
+            authenticated: false,
+            reason: `runner exploded`,
+        } ] )
+    } )
+
     it( `defaults the unauthenticated prompt to exit unless the user says no`, () => {
         expect( should_continue_with_unauthenticated_agents( `n` ) ).toBe( true )
         expect( should_continue_with_unauthenticated_agents( `no` ) ).toBe( true )
@@ -126,6 +208,7 @@ describe( `host agent auth checks`, () => {
         const output = new PassThrough()
         let rendered = ``
 
+        input.isTTY = true
         output.on( `data`, chunk => {
             rendered += chunk.toString()
         } )
@@ -135,6 +218,22 @@ describe( `host agent auth checks`, () => {
 
         await expect( answer ).resolves.toBe( true )
         expect( rendered ).toBe( `Unauthenticated agents: claude, codex. Exit? [Y/n] ` )
+    } )
+
+    it( `defaults to exit instead of hanging when stdin is not a TTY`, async () => {
+        const input = new PassThrough()
+        const output = new PassThrough()
+        let rendered = ``
+
+        input.isTTY = false
+        output.on( `data`, chunk => {
+            rendered += chunk.toString()
+        } )
+
+        await expect(
+            confirm_continue_with_unauthenticated_agents( [ `gemini` ], { input, output } )
+        ).resolves.toBe( false )
+        expect( rendered ).toBe( `Unauthenticated agents: gemini. Exit? [Y/n] \n` )
     } )
 
 } )

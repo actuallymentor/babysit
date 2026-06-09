@@ -5,6 +5,7 @@ import { strip_ansi } from '../babysit/matcher.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
 
 export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
+export const HOST_AUTH_CHECK_KILL_GRACE_MS = 1_500
 
 /**
  * Format a date like the shell example in the boot auth-check prompt.
@@ -38,18 +39,36 @@ export const build_host_auth_args = ( agent, prompt ) => {
 }
 
 /**
+ * Get the last non-empty line of command output.
+ * @param {string} output - Raw or stripped command output
+ * @returns {string} Last non-empty output line
+ */
+export const last_nonempty_line = ( output = `` ) => 
+    output.split( /\r?\n/ ).map( line => line.trim() ).filter( Boolean ).at( -1 ) || ``
+
+
+/**
+ * Check whether a host auth probe produced the requested answer.
+ * @param {string} output - Stripped command stdout
+ * @returns {boolean} True when the final response line is exactly ok
+ */
+export const answered_ok = ( output = `` ) => /^ok$/i.test( last_nonempty_line( output ) )
+
+/**
  * Run a real prompt through one host-installed agent CLI.
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
  * @param {string} [options.prompt] - Prompt to send
  * @param {Function} [options.spawn_fn=spawn] - Spawn helper for tests
  * @param {number} [options.timeout_ms=90000] - Max wait before treating the agent as unauthenticated
+ * @param {number} [options.kill_grace_ms=1500] - Delay between SIGTERM and SIGKILL on timeout
  * @returns {Promise<{ name: string, authenticated: boolean, reason?: string }>}
  */
 export const run_host_agent_auth_check = async ( agent, {
     prompt = build_host_auth_prompt(),
     spawn_fn = spawn,
     timeout_ms = HOST_AUTH_CHECK_TIMEOUT_MS,
+    kill_grace_ms = HOST_AUTH_CHECK_KILL_GRACE_MS,
 } = {} ) => new Promise( resolve => {
 
     const args = build_host_auth_args( agent, prompt )
@@ -74,22 +93,28 @@ export const run_host_agent_auth_check = async ( agent, {
     let stderr = ``
     let settled = false
     let timeout
+    let kill_timeout
 
-    const finish = result => {
+    const finish = ( result, { keep_kill_timeout = false } = {} ) => {
         if( settled ) return
 
         settled = true
         clearTimeout( timeout )
+        if( !keep_kill_timeout ) clearTimeout( kill_timeout )
         resolve( result )
     }
 
     timeout = setTimeout( () => {
         if( typeof child.kill === `function` ) child.kill( `SIGTERM` )
+        kill_timeout = setTimeout( () => {
+            if( typeof child.kill === `function` ) child.kill( `SIGKILL` )
+        }, kill_grace_ms )
+
         finish( {
             name: agent.name,
             authenticated: false,
             reason: `timed out`,
-        } )
+        }, { keep_kill_timeout: true } )
     }, timeout_ms )
 
     child.stdout?.on( `data`, chunk => {
@@ -109,12 +134,12 @@ export const run_host_agent_auth_check = async ( agent, {
     child.on( `close`, code => {
         const output = strip_ansi( stdout ).trim()
         const diagnostic = strip_ansi( stderr || stdout ).trim()
-        const answered_ok = /\bok\b/i.test( output )
+        const is_authenticated = code === 0 && answered_ok( output )
 
         finish( {
             name: agent.name,
-            authenticated: code === 0 && answered_ok,
-            reason: code === 0 && answered_ok ? undefined : diagnostic || `exited with code ${ code }`,
+            authenticated: is_authenticated,
+            reason: is_authenticated ? undefined : diagnostic || `exited with code ${ code }`,
             output,
         } )
     } )
@@ -137,8 +162,19 @@ export const check_host_agent_authentication = async ( {
 
     const prompt = build_host_auth_prompt( date )
     const agents = agent_names.map( get_agent ).filter( Boolean )
+    const results = await Promise.allSettled(
+        agents.map( agent => run_auth_check( agent, { prompt } ) )
+    )
 
-    return Promise.all( agents.map( agent => run_auth_check( agent, { prompt } ) ) )
+    return results.map( ( result, index ) => {
+        if( result.status === `fulfilled` ) return result.value
+
+        return {
+            name: agents[index].name,
+            authenticated: false,
+            reason: result.reason?.message || String( result.reason ),
+        }
+    } )
 
 }
 
@@ -172,6 +208,11 @@ export const confirm_continue_with_unauthenticated_agents = async ( names, {
 } = {} ) => {
 
     const question = `Unauthenticated agents: ${ names.join( `, ` ) }. Exit? [Y/n] `
+    if( !input.isTTY ) {
+        output.write( `${ question }\n` )
+        return false
+    }
+
     const rl = createInterface( { input, output } )
 
     try {
