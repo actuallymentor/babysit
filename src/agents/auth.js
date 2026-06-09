@@ -95,12 +95,15 @@ export const run_host_agent_auth_check = async ( agent, {
     let timeout
     let kill_timeout
 
+    const current_output = () => strip_ansi( stdout ).trim()
+    const clear_kill_timeout = () => clearTimeout( kill_timeout )
+
     const finish = ( result, { keep_kill_timeout = false } = {} ) => {
         if( settled ) return
 
         settled = true
         clearTimeout( timeout )
-        if( !keep_kill_timeout ) clearTimeout( kill_timeout )
+        if( !keep_kill_timeout ) clear_kill_timeout()
         resolve( result )
     }
 
@@ -114,6 +117,7 @@ export const run_host_agent_auth_check = async ( agent, {
             name: agent.name,
             authenticated: false,
             reason: `timed out`,
+            output: current_output(),
         }, { keep_kill_timeout: true } )
     }, timeout_ms )
 
@@ -125,14 +129,19 @@ export const run_host_agent_auth_check = async ( agent, {
         stderr += chunk.toString()
     } )
 
-    child.on( `error`, error => finish( {
-        name: agent.name,
-        authenticated: false,
-        reason: error.message,
-    } ) )
+    child.on( `error`, error => {
+        clear_kill_timeout()
+        finish( {
+            name: agent.name,
+            authenticated: false,
+            reason: error.message,
+            output: current_output(),
+        } )
+    } )
 
     child.on( `close`, code => {
-        const output = strip_ansi( stdout ).trim()
+        clear_kill_timeout()
+        const output = current_output()
         const diagnostic = strip_ansi( stderr || stdout ).trim()
         const is_authenticated = code === 0 && answered_ok( output )
 

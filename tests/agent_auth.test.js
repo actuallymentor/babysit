@@ -53,6 +53,21 @@ const fake_hanging_spawn = ( on_kill = () => {} ) => () => {
 
 }
 
+const fake_sigterm_exit_spawn = ( on_kill = () => {} ) => () => {
+
+    const child = new EventEmitter()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.kill = signal => {
+        on_kill( signal )
+        if( signal === `SIGTERM` ) queueMicrotask( () => child.emit( `close`, null ) )
+        return true
+    }
+
+    return child
+
+}
+
 const fake_error_spawn = error => () => {
 
     const child = new EventEmitter()
@@ -158,11 +173,26 @@ describe( `host agent auth checks`, () => {
             kill_grace_ms: 1,
         } )
 
-        await new Promise( resolve => setTimeout( resolve, 5 ) )
+        await new Promise( resolve => setTimeout( resolve, 20 ) )
 
         expect( result.authenticated ).toBe( false )
         expect( result.reason ).toBe( `timed out` )
         expect( signals ).toEqual( [ `SIGTERM`, `SIGKILL` ] )
+    } )
+
+    it( `does not escalate to SIGKILL when the child exits after SIGTERM`, async () => {
+        const signals = []
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            spawn_fn: fake_sigterm_exit_spawn( signal => signals.push( signal ) ),
+            timeout_ms: 1,
+            kill_grace_ms: 20,
+        } )
+
+        await new Promise( resolve => setTimeout( resolve, 30 ) )
+
+        expect( result.authenticated ).toBe( false )
+        expect( result.reason ).toBe( `timed out` )
+        expect( signals ).toEqual( [ `SIGTERM` ] )
     } )
 
     it( `checks all supported agents with the same prompt`, async () => {
