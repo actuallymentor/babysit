@@ -11,6 +11,11 @@ import { setup_credentials } from '../credentials/index.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
 import { build_docker_command } from '../docker/run.js'
 import { build_system_prompt } from '../modes/prompt.js'
+import {
+    check_host_agent_authentication,
+    confirm_continue_with_unauthenticated_agents,
+    unauthenticated_agent_names,
+} from '../agents/auth.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
@@ -288,6 +293,19 @@ export const cmd_start = async ( cmd ) => {
         const confirmed = await confirm_docker_restricted_mode( mode )
         if( !confirmed ) {
             log.error( `Aborted --docker ${ mode.sandbox ? `--sandbox` : `--mudbox` } session.` )
+            process.exit( 1 )
+        }
+    }
+
+    log.info( `Checking host agent authentication` )
+    const auth_results = await check_host_agent_authentication()
+
+    const unauthenticated_agents = unauthenticated_agent_names( auth_results )
+    if( unauthenticated_agents.length ) {
+        const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents )
+
+        if( !should_continue ) {
+            log.error( `Aborted because host agent authentication is incomplete.` )
             process.exit( 1 )
         }
     }

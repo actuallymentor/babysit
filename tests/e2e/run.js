@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { mkdtemp } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join, resolve } from 'path'
@@ -17,6 +17,7 @@ const fake_image = process.env.BABYSIT_E2E_FAKE_IMAGE || `babysit:e2e-fake`
 const root = await mkdtemp( join( repo_root, `.babysit-e2e-${ run_id }-` ) )
 const state_root = await mkdtemp( join( tmpdir(), `${ run_id }-` ) )
 const home = join( state_root, `home` )
+const host_bin = join( state_root, `bin` )
 const workspaces_root = join( root, `workspaces` )
 const workspace_tmp = join( root, `tmp` )
 const docker_without_sudo = await command_ok( `docker`, [ `info` ] )
@@ -24,6 +25,7 @@ const docker_with_sudo = docker_without_sudo ? false : await command_ok( `sudo`,
 const use_sudo_docker = !docker_without_sudo && docker_with_sudo
 
 mkdirSync( home, { recursive: true } )
+mkdirSync( host_bin, { recursive: true } )
 mkdirSync( workspaces_root, { recursive: true } )
 mkdirSync( workspace_tmp, { recursive: true } )
 mkdirSync( join( home, `.claude` ), { recursive: true } )
@@ -34,6 +36,10 @@ writeFileSync( join( home, `.claude/.credentials.json` ), JSON.stringify( { refr
 writeFileSync( join( home, `.codex/auth.json` ), JSON.stringify( { refresh_token: `e2e-original-token` } ) )
 writeFileSync( join( home, `.gemini/oauth_creds.json` ), JSON.stringify( { refresh_token: `e2e-gemini-token` } ) )
 writeFileSync( join( home, `.local/share/opencode/auth.json` ), JSON.stringify( { refresh_token: `e2e-opencode-token` } ) )
+
+for( const agent of SUPPORTED_AGENTS ) {
+    symlinkSync( join( repo_root, `tests/e2e/assets/fake-agent.mjs` ), join( host_bin, agent ) )
+}
 
 const docker = async ( args, options = {} ) => {
     if( use_sudo_docker ) return run( `sudo`, [ `docker`, ...args ], options )
@@ -48,6 +54,7 @@ const e2e_env = () => {
         HOME: home,
         TMPDIR: workspace_tmp,
         CODEX_HOME: join( home, `.codex` ),
+        PATH: `${ host_bin }:${ process.env.PATH }`,
         AGENT_AUTONOMY_MODE: `yolo`,
         BABYSIT_TMUX_SOCKET: tmux_socket,
         BABYSIT_DOCKER_IMAGE: fake_image,

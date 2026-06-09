@@ -69,19 +69,22 @@ describe( `cmd_resume cwd handling`, () => {
         const elsewhere = mkdtempSync( join( tmpdir(), `babysit-resume-elsewhere-` ) )
         process.chdir( elsewhere )
 
-        // cmd_resume calls cmd_start which tries to launch docker. We catch
-        // any exception (docker isn't installed in this test env) — what we
-        // care about is the chdir happening BEFORE cmd_start fails.
-        try {
-            await cmd_resume( {
-                session_id: id,
-                flags: { yolo: false, sandbox: false, mudbox: false, loop: false },
-                passthrough: [],
-            } )
-        } catch { /* expected — cmd_start will fail without docker/tmux */ }
+        let start_cwd = null
 
-        // Process cwd should now be the seeded session's pwd
+        await cmd_resume( {
+            session_id: id,
+            flags: { yolo: false, sandbox: false, mudbox: false, loop: false },
+            passthrough: [],
+        }, {
+            start: async () => {
+                start_cwd = process.cwd()
+            },
+        } )
+
+        // Process cwd should now be the seeded session's pwd before the start
+        // delegate sees the resumed command.
         expect( process.cwd() ).toBe( temp_workspace )
+        expect( start_cwd ).toBe( temp_workspace )
 
         // Cleanup
         rmSync( elsewhere, { recursive: true, force: true } )
@@ -103,13 +106,13 @@ describe( `cmd_resume cwd handling`, () => {
         const id = seed_session( ghost_pwd )
         rmSync( ghost_pwd, { recursive: true, force: true } )
 
-        try {
-            await cmd_resume( {
-                session_id: id,
-                flags: { yolo: false, sandbox: false, mudbox: false, loop: false },
-                passthrough: [],
-            } )
-        } catch { /* expected — cmd_start fails without docker/tmux */ }
+        await cmd_resume( {
+            session_id: id,
+            flags: { yolo: false, sandbox: false, mudbox: false, loop: false },
+            passthrough: [],
+        }, {
+            start: async () => {},
+        } )
 
         // We should NOT have chdir'd into the ghost path
         expect( process.cwd() ).not.toBe( ghost_pwd )

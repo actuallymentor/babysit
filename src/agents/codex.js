@@ -86,6 +86,10 @@ export const codex = {
         effort: ( e ) => [ `-c`, `model_reasoning_effort="${ e }"` ],
     },
 
+    auth_check: {
+        args: prompt => [ `exec`, `--ephemeral`, `--skip-git-repo-check`, `--color`, `never`, prompt ],
+    },
+
     defaults: {
         // Latest GA frontier model for coding (April 2026). Falls back to gpt-5.4 for
         // API-key auth without ChatGPT sign-in — users override with --model gpt-5.4.

@@ -46,6 +46,10 @@ export const claude = {
         effort: ( e ) => [ `--effort`, e ],
     },
 
+    auth_check: {
+        args: prompt => [ `-p`, prompt, `--no-session-persistence` ],
+    },
+
     defaults: {
         model: `opus`,
         effort: `max`,

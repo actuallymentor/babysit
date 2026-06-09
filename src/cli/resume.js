@@ -75,8 +75,10 @@ export const resolve_resume_target = ( session ) => {
  * If the tmux session is still alive, attach to it.
  * If it's exited, start a new session with the agent's resume flag.
  * @param {Object} cmd - Parsed command { session_id, flags }
+ * @param {Object} [options]
+ * @param {Function} [options.start=cmd_start] - Start command delegate, injectable for tests
  */
-export const cmd_resume = async ( cmd ) => {
+export const cmd_resume = async ( cmd, { start = cmd_start } = {} ) => {
 
     const { session_id, flags = {}, passthrough = [] } = cmd
 
@@ -117,7 +119,7 @@ export const cmd_resume = async ( cmd ) => {
 
         const resume_target = resolve_resume_target( session )
 
-        await cmd_start( {
+        await start( {
             verb: `resume`,
             agent: session.agent,
             metadata_resolved: true,
