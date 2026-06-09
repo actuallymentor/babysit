@@ -188,6 +188,16 @@ if( process.argv.includes( `--version` ) ) {
     process.exit( 0 )
 }
 
+const is_auth_check = agent_args.includes( `-p` )
+    || agent_args.includes( `--prompt` )
+    || agent_args[0] === `exec`
+    || agent_args[0] === `run`
+
+if( is_auth_check ) {
+    console.log( `ok` )
+    process.exit( 0 )
+}
+
 console.log( ready_banner_by_agent[ agent_name ] || `${ agent_name } fake agent` )
 console.log( `${ agent_name } fake agent ready` )
 console.log( `session: ${ session_id }` )

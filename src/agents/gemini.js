@@ -51,6 +51,10 @@ export const gemini = {
         effort: null,
     },
 
+    auth_check: {
+        args: prompt => [ `--skip-trust`, `-p`, prompt ],
+    },
+
     // Outside yolo, trustedFolders.json is the source of truth — don't
     // override it with --skip-trust.
     extra_args: ( mode ) => mode?.yolo ? [ `--skip-trust` ] : [],

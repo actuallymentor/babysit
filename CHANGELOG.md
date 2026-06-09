@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0 — 2026-06-09
+
+### ✨ Added
+- **Startup now verifies host agent authentication before Docker launch.**
+  Babysit calls Claude, Codex, Gemini, and OpenCode with a tiny `ok` prompt
+  and asks whether to exit if any host agent cannot answer.
+
 ## 0.14.3 — 2026-06-08
 
 ### 🐛 Fixed

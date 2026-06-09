@@ -44,6 +44,10 @@ export const opencode = {
         effort: null,
     },
 
+    auth_check: {
+        args: prompt => [ `run`, prompt ],
+    },
+
     // gpt-5.5-pro (opencode's built-in default) is rejected by
     // ChatGPT-account auth — see GOTCHAS.md #36. openai/gpt-5.5 works
     // for both OAuth and API-key paths; non-openai providers override
