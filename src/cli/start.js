@@ -14,6 +14,7 @@ import { build_system_prompt } from '../modes/prompt.js'
 import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
+    format_host_auth_status_message,
     unauthenticated_agent_names,
 } from '../agents/auth.js'
 import { apply_loop } from '../modes/loop.js'
@@ -297,7 +298,7 @@ export const cmd_start = async ( cmd ) => {
         }
     }
 
-    log.info( `Checking host agent authentication` )
+    log.info( format_host_auth_status_message() )
     const auth_results = await check_host_agent_authentication()
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )

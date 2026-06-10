@@ -26,6 +26,15 @@ export const build_host_auth_prompt = ( date = new Date() ) =>
 
 
 /**
+ * Build the boot message shown before host auth checks start.
+ * @param {string[]} agent_names - Host agent names being checked
+ * @returns {string} Human-readable auth status message
+ */
+export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS ) => 
+    `Checking authentication status for ${ agent_names.join( `, ` ) }`
+
+
+/**
  * Build the command arguments for an agent's host auth check.
  * @param {Object} agent - Agent adapter
  * @param {string} prompt - Prompt to send to the host agent CLI
@@ -171,9 +180,10 @@ export const check_host_agent_authentication = async ( {
 
     const prompt = build_host_auth_prompt( date )
     const agents = agent_names.map( get_agent ).filter( Boolean )
-    const results = await Promise.allSettled(
-        agents.map( agent => run_auth_check( agent, { prompt } ) )
+    const auth_tasks = agents.map( agent => 
+        Promise.resolve().then( () => run_auth_check( agent, { prompt } ) )
     )
+    const results = await Promise.allSettled( auth_tasks )
 
     return results.map( ( result, index ) => {
         if( result.status === `fulfilled` ) return result.value
