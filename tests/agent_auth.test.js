@@ -9,6 +9,7 @@ import {
     build_host_auth_prompt,
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
+    format_host_auth_status_message,
     format_utc_timestamp,
     last_nonempty_line,
     run_host_agent_auth_check,
@@ -103,6 +104,11 @@ describe( `host agent auth checks`, () => {
             .toEqual( [ `--skip-trust`, `-p`, prompt ] )
         expect( build_host_auth_args( get_agent( `opencode` ), prompt ) )
             .toEqual( [ `run`, prompt ] )
+    } )
+
+    it( `formats the boot auth status message with every host agent`, () => {
+        expect( format_host_auth_status_message() )
+            .toBe( `Checking authentication status for claude, codex, gemini, opencode` )
     } )
 
     it( `runs an agent auth command and treats exit zero as authenticated`, async () => {
@@ -208,6 +214,31 @@ describe( `host agent auth checks`, () => {
         expect( calls.map( call => call.name ) ).toEqual( SUPPORTED_AGENTS )
         expect( calls.every( call => call.prompt.includes( `2026-06-09 12:34:56 UTC` ) ) ).toBe( true )
         expect( unauthenticated_agent_names( results ) ).toEqual( [ `codex` ] )
+    } )
+
+    it( `starts every host auth check before waiting for results`, async () => {
+        const calls = []
+        let release_checks
+        const all_checks_started = new Promise( resolve => {
+            release_checks = resolve
+        } )
+
+        const auth_check = check_host_agent_authentication( {
+            run_auth_check: async agent => {
+                calls.push( agent.name )
+                await all_checks_started
+                return { name: agent.name, authenticated: true }
+            },
+        } )
+
+        await Promise.resolve()
+
+        expect( calls ).toEqual( SUPPORTED_AGENTS )
+
+        release_checks()
+        await expect( auth_check ).resolves.toEqual(
+            SUPPORTED_AGENTS.map( name => ( { name, authenticated: true } ) )
+        )
     } )
 
     it( `converts rejected auth runners into unauthenticated results`, async () => {

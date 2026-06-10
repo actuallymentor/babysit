@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.1 — 2026-06-10
+
+### 🐛 Fixed
+- **Host auth boot checks now show which agents are being checked.** Babysit
+  prints `Checking authentication status for claude, codex, gemini, opencode`
+  and keeps those checks launched as a parallel batch.
+
 ## 0.15.0 — 2026-06-09
 
 ### ✨ Added
