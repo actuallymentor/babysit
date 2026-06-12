@@ -15,6 +15,7 @@ import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
     format_host_auth_status_message,
+    select_host_auth_check_agents,
     unauthenticated_agent_names,
 } from '../agents/auth.js'
 import { apply_loop } from '../modes/loop.js'
@@ -298,8 +299,13 @@ export const cmd_start = async ( cmd ) => {
         }
     }
 
-    log.info( format_host_auth_status_message() )
-    const auth_results = await check_host_agent_authentication()
+    const auth_agents = select_host_auth_check_agents( { active_agent_name: agent.name } )
+    log.info( format_host_auth_status_message( auth_agents.map( a => a.name ) ) )
+
+    const auth_results = await check_host_agent_authentication( {
+        agents: auth_agents,
+        filter_by_recent_auth_evidence: false,
+    } )
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )
     if( unauthenticated_agents.length ) {

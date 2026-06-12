@@ -1,11 +1,19 @@
 import { spawn } from 'child_process'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
+import { dirname, join } from 'path'
 import { createInterface } from 'readline/promises'
 
 import { strip_ansi } from '../babysit/matcher.js'
+import { resolve_credential_file } from '../credentials/paths.js'
+import { detect_platform } from '../utils/platform.js'
+import { BABYSIT_DIR } from '../utils/paths.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
 
 export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
 export const HOST_AUTH_CHECK_KILL_GRACE_MS = 1_500
+export const HOST_AUTH_RECENCY_DAYS = 7
+export const HOST_AUTH_RECENCY_MS = HOST_AUTH_RECENCY_DAYS * 24 * 60 * 60 * 1_000
+export const HOST_AUTH_CACHE_PATH = join( BABYSIT_DIR, `host-auth-cache.json` )
 
 /**
  * Format a date like the shell example in the boot auth-check prompt.
@@ -31,7 +39,245 @@ export const build_host_auth_prompt = ( date = new Date() ) =>
  * @returns {string} Human-readable auth status message
  */
 export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS ) => 
-    `Checking authentication status for ${ agent_names.join( `, ` ) }`
+    agent_names.length
+        ? `Checking authentication status for ${ agent_names.join( `, ` ) }`
+        : `No recent host agent authentications found; skipping authentication checks`
+
+/**
+ * Read the lightweight host auth cache. It stores timestamps only, never
+ * credential content.
+ * @param {Object} [options]
+ * @param {string} [options.cache_path] - Cache file path
+ * @returns {{ version: number, agents: Object }} Cache contents
+ */
+export const read_host_auth_cache = ( {
+    cache_path = HOST_AUTH_CACHE_PATH,
+} = {} ) => {
+
+    try {
+        if( !existsSync( cache_path ) ) return { version: 1, agents: {} }
+
+        const parsed = JSON.parse( readFileSync( cache_path, `utf-8` ) )
+        return {
+            version: 1,
+            agents: parsed?.agents && typeof parsed.agents === `object` ? parsed.agents : {},
+        }
+    } catch {
+        return { version: 1, agents: {} }
+    }
+
+}
+
+/**
+ * Persist successful host auth checks for future boot filtering.
+ * @param {string[]} agent_names - Agent names that successfully answered the prompt check
+ * @param {Object} [options]
+ * @param {Date} [options.date] - Timestamp to store
+ * @param {string} [options.cache_path] - Cache file path
+ * @returns {{ version: number, agents: Object }} Updated cache
+ */
+export const record_host_auth_successes = ( agent_names = [], {
+    date = new Date(),
+    cache_path = HOST_AUTH_CACHE_PATH,
+} = {} ) => {
+
+    const cache = read_host_auth_cache( { cache_path } )
+    const authenticated_at = date.toISOString()
+    const cache_entry = name => cache.agents?.[ name ] || {}
+    const agents = {
+        ...cache.agents,
+        ...Object.fromEntries(
+            agent_names.map( name => [
+                name,
+                {
+                    ...cache_entry( name ),
+                    authenticated_at,
+                },
+            ] )
+        ),
+    }
+    const next_cache = { version: 1, agents }
+
+    try {
+        mkdirSync( dirname( cache_path ), { recursive: true } )
+        writeFileSync( cache_path, `${ JSON.stringify( next_cache, null, 2 ) }\n` )
+    } catch {
+        // Cache writes should never block the actual auth check flow.
+    }
+
+    return next_cache
+
+}
+
+/**
+ * Check whether a timestamp is inside the host auth relevance window.
+ * @param {string|number|Date} value - Timestamp value
+ * @param {Object} [options]
+ * @param {Date} [options.date] - Reference time
+ * @param {number} [options.recency_ms] - Allowed age
+ * @returns {boolean} True when the timestamp is recent enough
+ */
+export const is_recent_host_auth_timestamp = ( value, {
+    date = new Date(),
+    recency_ms = HOST_AUTH_RECENCY_MS,
+} = {} ) => {
+
+    const timestamp = value instanceof Date ? value.getTime() : new Date( value ).getTime()
+    if( !Number.isFinite( timestamp ) ) return false
+
+    const age_ms = date.getTime() - timestamp
+    return age_ms >= 0 && age_ms <= recency_ms
+
+}
+
+/**
+ * Resolve the credential metadata for the current host platform.
+ * @param {Object} agent - Agent adapter
+ * @param {string} [platform] - Host platform
+ * @returns {Object|null} Credential config
+ */
+export const get_host_credential_config = ( agent, platform = detect_platform() ) =>
+    agent?.credentials?.[ platform ] || null
+
+/**
+ * Check for credential environment variables that imply intentional current use.
+ * @param {Object|null} cred_config - Agent credential metadata
+ * @param {Object} [env] - Environment values
+ * @returns {boolean} True when a supported auth env var is present
+ */
+export const has_host_auth_env = ( cred_config, env = process.env ) => {
+
+    const primary = cred_config?.env_key && env[ cred_config.env_key ]
+    const fallback = cred_config?.fallback_env && env[ cred_config.fallback_env ]
+
+    return Boolean( primary || fallback )
+
+}
+
+/**
+ * Check whether an agent has a recent host credential file.
+ * This intentionally uses stat metadata only and never reads credential content.
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options]
+ * @param {Date} [options.date] - Reference time
+ * @param {string} [options.platform] - Host platform
+ * @param {number} [options.recency_ms] - Allowed age
+ * @returns {{ recent: boolean, path?: string, mtime?: Date }} Credential file evidence
+ */
+export const get_recent_host_credential_file_evidence = ( agent, {
+    date = new Date(),
+    platform = detect_platform(),
+    recency_ms = HOST_AUTH_RECENCY_MS,
+} = {} ) => {
+
+    const cred_config = get_host_credential_config( agent, platform )
+    const file = cred_config?.file || cred_config?.fallback_file
+    if( !file ) return { recent: false }
+
+    const path = resolve_credential_file( file )
+
+    try {
+        const stat = statSync( path )
+        if( !stat.isFile() ) return { recent: false, path, mtime: stat.mtime }
+
+        return {
+            recent: is_recent_host_auth_timestamp( stat.mtime, { date, recency_ms } ),
+            path,
+            mtime: stat.mtime,
+        }
+    } catch {
+        return { recent: false, path }
+    }
+
+}
+
+/**
+ * Decide whether a host agent is worth a real prompt-level auth check.
+ * The active agent is always checked. Inactive agents need recent evidence so
+ * legacy installs do not slow down startup or trigger irrelevant auth prompts.
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options]
+ * @param {string|null} [options.active_agent_name] - Agent requested for this session
+ * @param {Object} [options.cache] - Parsed host auth cache
+ * @param {Date} [options.date] - Reference time
+ * @param {Object} [options.env] - Environment values
+ * @param {string} [options.platform] - Host platform
+ * @param {number} [options.recency_ms] - Allowed age
+ * @returns {{ should_check: boolean, reason: string }} Auth-check decision
+ */
+export const get_host_auth_check_decision = ( agent, {
+    active_agent_name = null,
+    cache = { agents: {} },
+    date = new Date(),
+    env = process.env,
+    platform = detect_platform(),
+    recency_ms = HOST_AUTH_RECENCY_MS,
+} = {} ) => {
+
+    if( agent?.name && agent.name === active_agent_name ) {
+        return { should_check: true, reason: `active agent` }
+    }
+
+    const authenticated_at = cache?.agents?.[ agent?.name ]?.authenticated_at
+    if( is_recent_host_auth_timestamp( authenticated_at, { date, recency_ms } ) ) {
+        return { should_check: true, reason: `recent successful auth check` }
+    }
+
+    const cred_config = get_host_credential_config( agent, platform )
+    if( has_host_auth_env( cred_config, env ) ) {
+        return { should_check: true, reason: `auth environment variable present` }
+    }
+
+    const file_evidence = get_recent_host_credential_file_evidence( agent, {
+        date,
+        platform,
+        recency_ms,
+    } )
+    if( file_evidence.recent ) return { should_check: true, reason: `recent credential file` }
+
+    return { should_check: false, reason: `no recent auth evidence` }
+
+}
+
+/**
+ * Select host agents that should receive prompt-level auth checks.
+ * @param {Object} [options]
+ * @param {string[]} [options.agent_names=SUPPORTED_AGENTS] - Candidate agent names
+ * @param {string|null} [options.active_agent_name] - Agent requested for this session
+ * @param {Date} [options.date] - Reference time
+ * @param {Function} [options.read_cache] - Cache reader
+ * @param {string} [options.cache_path] - Cache file path
+ * @param {Object} [options.env] - Environment values
+ * @param {string} [options.platform] - Host platform
+ * @param {number} [options.recency_ms] - Allowed age
+ * @returns {Object[]} Agent adapters to check
+ */
+export const select_host_auth_check_agents = ( {
+    agent_names = SUPPORTED_AGENTS,
+    active_agent_name = null,
+    date = new Date(),
+    read_cache = read_host_auth_cache,
+    cache_path = HOST_AUTH_CACHE_PATH,
+    env = process.env,
+    platform = detect_platform(),
+    recency_ms = HOST_AUTH_RECENCY_MS,
+} = {} ) => {
+
+    const cache = read_cache( { cache_path } )
+
+    return agent_names
+        .map( get_agent )
+        .filter( Boolean )
+        .filter( agent => get_host_auth_check_decision( agent, {
+            active_agent_name,
+            cache,
+            date,
+            env,
+            platform,
+            recency_ms,
+        } ).should_check )
+
+}
 
 
 /**
@@ -165,35 +411,65 @@ export const run_host_agent_auth_check = async ( agent, {
 } )
 
 /**
- * Check prompt-level host authentication for every supported agent.
+ * Check prompt-level host authentication for relevant supported agents.
  * @param {Object} [options]
- * @param {string[]} [options.agent_names=SUPPORTED_AGENTS] - Agent names to check
+ * @param {string[]} [options.agent_names=SUPPORTED_AGENTS] - Candidate agent names
+ * @param {string|null} [options.active_agent_name] - Agent requested for this session
+ * @param {Object[]|null} [options.agents] - Pre-selected agent adapters to check
  * @param {Date} [options.date=new Date()] - Date used in the shared prompt
  * @param {Function} [options.run_auth_check=run_host_agent_auth_check] - Runner for tests
+ * @param {boolean} [options.filter_by_recent_auth_evidence=true] - Whether to skip inactive agents without recent evidence
+ * @param {Function} [options.record_auth_successes=record_host_auth_successes] - Cache writer
+ * @param {string} [options.cache_path] - Cache file path
  * @returns {Promise<Array<{ name: string, authenticated: boolean, reason?: string }>>}
  */
 export const check_host_agent_authentication = async ( {
     agent_names = SUPPORTED_AGENTS,
+    active_agent_name = null,
+    agents = null,
     date = new Date(),
     run_auth_check = run_host_agent_auth_check,
+    filter_by_recent_auth_evidence = true,
+    record_auth_successes = record_host_auth_successes,
+    cache_path = HOST_AUTH_CACHE_PATH,
 } = {} ) => {
 
     const prompt = build_host_auth_prompt( date )
-    const agents = agent_names.map( get_agent ).filter( Boolean )
-    const auth_tasks = agents.map( agent => 
+    const agents_to_check = agents || (
+        filter_by_recent_auth_evidence
+            ? select_host_auth_check_agents( {
+                agent_names,
+                active_agent_name,
+                date,
+                cache_path,
+            } )
+            : agent_names.map( get_agent ).filter( Boolean )
+    )
+
+    const auth_tasks = agents_to_check.map( agent =>
         Promise.resolve().then( () => run_auth_check( agent, { prompt } ) )
     )
     const results = await Promise.allSettled( auth_tasks )
 
-    return results.map( ( result, index ) => {
+    const auth_results = results.map( ( result, index ) => {
         if( result.status === `fulfilled` ) return result.value
 
         return {
-            name: agents[index].name,
+            name: agents_to_check[index].name,
             authenticated: false,
             reason: result.reason?.message || String( result.reason ),
         }
     } )
+
+    const authenticated_agent_names = auth_results
+        .filter( result => result.authenticated )
+        .map( result => result.name )
+
+    if( authenticated_agent_names.length ) {
+        record_auth_successes( authenticated_agent_names, { date, cache_path } )
+    }
+
+    return auth_results
 
 }
 
