@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.3 — 2026-06-12
+
+### 🐛 Fixed
+- **Startup auth checks now use the requested boot copy.** Babysit prints
+  `Checking agent auth status...` before host agent auth checks run.
+
 ## 0.15.2 — 2026-06-12
 
 ### 🐛 Fixed

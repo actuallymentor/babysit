@@ -40,7 +40,7 @@ export const build_host_auth_prompt = ( date = new Date() ) =>
  */
 export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS ) => 
     agent_names.length
-        ? `Checking authentication status for ${ agent_names.join( `, ` ) }`
+        ? `Checking agent auth status...`
         : `No recent host agent authentications found; skipping authentication checks`
 
 /**

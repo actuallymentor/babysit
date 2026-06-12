@@ -115,9 +115,9 @@ describe( `host agent auth checks`, () => {
             .toEqual( [ `run`, prompt ] )
     } )
 
-    it( `formats the boot auth status message with every host agent`, () => {
+    it( `formats the requested boot auth status message`, () => {
         expect( format_host_auth_status_message() )
-            .toBe( `Checking authentication status for claude, codex, gemini, opencode` )
+            .toBe( `Checking agent auth status...` )
         expect( format_host_auth_status_message( [] ) )
             .toBe( `No recent host agent authentications found; skipping authentication checks` )
     } )
