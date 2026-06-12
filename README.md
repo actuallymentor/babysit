@@ -36,7 +36,7 @@ babysit open <session_id>
 
 ## How it works
 
-1. **Host auth check** — before Docker launch, babysit asks each supported host agent (`claude`, `codex`, `gemini`, `opencode`) to answer a tiny `ok` prompt. If any fail, it prints `Unauthenticated agents: ... Exit? [Y/n]`
+1. **Host auth check** — before Docker launch, babysit asks the requested host agent, plus supported agents with recent auth evidence, to answer a tiny `ok` prompt. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]`
 2. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
 3. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open <id>`
 4. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach

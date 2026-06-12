@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.2 — 2026-06-12
+
+### 🐛 Fixed
+- **Startup auth checks now skip unused legacy agents.** Babysit always checks
+  the requested agent, but checks other agents only when they have recent auth
+  evidence or a recent successful auth-check cache entry.
+
 ## 0.15.1 — 2026-06-10
 
 ### 🐛 Fixed
