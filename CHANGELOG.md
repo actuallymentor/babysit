@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.4 — 2026-06-22
+
+### 🐛 Fixed
+- **`--docker` now works on macOS without the `/var/run/docker.sock` symlink.**
+  Babysit resolves Docker Desktop's user socket, `DOCKER_HOST`, or the active
+  Docker context before launching the agent container.
+
 ## 0.15.3 — 2026-06-12
 
 ### 🐛 Fixed
