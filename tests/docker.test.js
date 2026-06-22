@@ -3,7 +3,16 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync, re
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { get_image_name } from '../src/docker/update.js'
-import { build_agent_state_volume_name, build_docker_command, get_agent_state_mounts, prepare_nested_file_mountpoint, resolve_workspace_mount_source, should_mount_user_globals } from '../src/docker/run.js'
+import {
+    build_agent_state_volume_name,
+    build_docker_command,
+    docker_host_socket_path,
+    get_agent_state_mounts,
+    prepare_nested_file_mountpoint,
+    resolve_docker_socket_path,
+    resolve_workspace_mount_source,
+    should_mount_user_globals,
+} from '../src/docker/run.js'
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 import { gemini } from '../src/agents/gemini.js'
@@ -582,6 +591,76 @@ describe( `build_docker_command`, () => {
         } finally {
             rmSync( tmpdir_path, { recursive: true, force: true } )
         }
+
+    } )
+
+    it( `extracts local Unix sockets from DOCKER_HOST`, () => {
+
+        expect( docker_host_socket_path( `unix:///tmp/docker.sock` ) ).toBe( `/tmp/docker.sock` )
+        expect( docker_host_socket_path( `tcp://127.0.0.1:2375` ) ).toBe( null )
+        expect( docker_host_socket_path( `` ) ).toBe( null )
+
+    } )
+
+    it( `resolves Docker Desktop's macOS user socket`, () => {
+
+        const socket_path = `/Users/mentor/.docker/run/docker.sock`
+
+        expect( resolve_docker_socket_path( {
+            env: {},
+            home: `/Users/mentor`,
+            platform: `darwin`,
+            exists: path => path === socket_path,
+            spawn_sync: () => ( { status: 1 } ),
+        } ) ).toBe( socket_path )
+
+    } )
+
+    it( `resolves a local Unix socket from DOCKER_HOST`, () => {
+
+        const socket_path = `/tmp/custom-docker.sock`
+
+        expect( resolve_docker_socket_path( {
+            env: { DOCKER_HOST: `unix://${ socket_path }` },
+            exists: path => path === socket_path,
+            spawn_sync: () => {
+                throw new Error( `Docker context should not be inspected when DOCKER_HOST exists` )
+            },
+        } ) ).toBe( socket_path )
+
+    } )
+
+    it( `prefers the active Docker context over the default socket`, () => {
+
+        const socket_path = `/Users/mentor/.docker/context/docker.sock`
+
+        expect( resolve_docker_socket_path( {
+            env: {},
+            home: `/Users/mentor`,
+            platform: `darwin`,
+            exists: path => path === socket_path || path === `/var/run/docker.sock`,
+            spawn_sync: () => ( {
+                status: 0,
+                stdout: `unix://${ socket_path }\n`,
+            } ),
+        } ) ).toBe( socket_path )
+
+    } )
+
+    it( `falls back to the active Docker context socket`, () => {
+
+        const socket_path = `/Users/mentor/.docker/custom/docker.sock`
+
+        expect( resolve_docker_socket_path( {
+            env: {},
+            home: `/Users/mentor`,
+            platform: `darwin`,
+            exists: path => path === socket_path,
+            spawn_sync: () => ( {
+                status: 0,
+                stdout: `unix://${ socket_path }\n`,
+            } ),
+        } ) ).toBe( socket_path )
 
     } )
 

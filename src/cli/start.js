@@ -25,7 +25,7 @@ import { capture_pane } from '../tmux/capture.js'
 import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
-import { DEFAULT_DOCKER_SOCKET, docker_socket_available } from '../docker/run.js'
+import { DEFAULT_DOCKER_SOCKET, resolve_docker_socket_path } from '../docker/run.js'
 import { strip_ansi } from '../babysit/matcher.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
@@ -286,8 +286,10 @@ export const cmd_start = async ( cmd ) => {
         docker: flags.docker,
     }
 
-    if( mode.docker && !docker_socket_available() ) {
-        log.error( `--docker requested, but ${ DEFAULT_DOCKER_SOCKET } is not available on the host.` )
+    const docker_socket_path = mode.docker ? resolve_docker_socket_path() : null
+    if( mode.docker && !docker_socket_path ) {
+        log.error( `--docker requested, but no local Docker socket is available on the host.` )
+        log.error( `Checked ${ DEFAULT_DOCKER_SOCKET }, Docker Desktop's macOS user socket, DOCKER_HOST, and the active Docker context.` )
         process.exit( 1 )
     }
 
@@ -387,6 +389,7 @@ export const cmd_start = async ( cmd ) => {
         config,
         extra_env,
         modifiers,
+        docker_socket_path,
     } )
 
     // Start tmux output logging if --log was passed. The header goes in BEFORE

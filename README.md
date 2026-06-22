@@ -120,11 +120,14 @@ Supports `SS`, `MM:SS`, or `HH:MM:SS`. Overrides `idle_timeout_s` per rule.
 
 Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. The exception is `--sandbox` and `--mudbox` together — they describe contradictory mount strategies, so babysit rejects the combination.
 
-`--docker` uses Docker-outside-of-Docker: Babysit mounts `/var/run/docker.sock`,
+`--docker` uses Docker-outside-of-Docker: Babysit mounts the host Docker socket,
 sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
 commands run inside the session create sibling containers on the host daemon.
-For nested Babysit testing, `BABYSIT_HOST_WORKSPACE` preserves the original host
-path so inner containers can bind-mount the same project correctly.
+On macOS, Babysit also recognizes Docker Desktop's user-scoped socket
+(`~/.docker/run/docker.sock`) and the active Docker context when
+`/var/run/docker.sock` is not present. For nested Babysit testing,
+`BABYSIT_HOST_WORKSPACE` preserves the original host path so inner containers
+can bind-mount the same project correctly.
 
 Because Docker socket access can create containers with host bind mounts,
 `--docker --sandbox` and `--docker --mudbox` weaken those modes. Babysit warns

@@ -1,5 +1,7 @@
 import { createHash } from 'crypto'
+import { spawnSync } from 'child_process'
 import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
@@ -9,6 +11,103 @@ import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/
 import { get_extra_mounts } from '../agents/setup.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
+
+/**
+ * Extract a Unix socket path from a Docker host URI.
+ * @param {string} docker_host - DOCKER_HOST-style URI
+ * @returns {string|null} Local Unix socket path, or null for unsupported hosts
+ */
+export const docker_host_socket_path = ( docker_host = `` ) => {
+
+    const value = String( docker_host || `` ).trim()
+    if( !value.startsWith( `unix://` ) ) return null
+
+    const socket_path = value.slice( `unix://`.length )
+    return socket_path || null
+
+}
+
+/**
+ * Host socket paths Babysit can mount into a Docker-outside-of-Docker session.
+ * Docker Desktop for Mac may not create /var/run/docker.sock unless that
+ * privileged symlink option is enabled, but the user-scoped socket still works.
+ * @param {Object} [options]
+ * @param {Object} [options.env=process.env] - Environment to inspect
+ * @param {string} [options.home=homedir()] - Host home directory
+ * @param {string} [options.platform=process.platform] - Host platform
+ * @returns {string[]} Candidate Unix socket paths
+ */
+export const docker_socket_candidates = ( {
+    env = process.env,
+    home = homedir(),
+    platform = process.platform,
+} = {} ) => {
+
+    const mac_socket_paths = platform === `darwin`
+        ? [
+            join( home, `.docker`, `run`, `docker.sock` ),
+            join( home, `Library`, `Containers`, `com.docker.docker`, `Data`, `docker.sock` ),
+        ]
+        : []
+
+    const candidates = [
+        docker_host_socket_path( env.DOCKER_HOST ),
+        DEFAULT_DOCKER_SOCKET,
+        ...mac_socket_paths,
+    ].filter( Boolean )
+
+    return [ ...new Set( candidates ) ]
+
+}
+
+/**
+ * Read the active Docker CLI context and return its Unix socket, when local.
+ * @param {Object} [options]
+ * @param {Function} [options.spawn_sync=spawnSync] - Test seam for process spawn
+ * @returns {string|null} Local Unix socket path from the active Docker context
+ */
+export const docker_context_socket_path = ( { spawn_sync = spawnSync } = {} ) => {
+
+    const result = spawn_sync( `docker`, [
+        `context`,
+        `inspect`,
+        `--format`,
+        `{{ .Endpoints.docker.Host }}`,
+    ], {
+        encoding: `utf8`,
+        stdio: [ `ignore`, `pipe`, `ignore` ],
+        timeout: 2_000,
+    } )
+
+    if( result.error || result.status !== 0 ) return null
+
+    return docker_host_socket_path( result.stdout )
+
+}
+
+/**
+ * Find a host Docker socket that can be bind-mounted into the agent container.
+ * @param {Object} [options]
+ * @param {Function} [options.exists=existsSync] - Test seam for file existence
+ * @returns {string|null} Existing local Unix socket path
+ */
+export const resolve_docker_socket_path = ( options = {} ) => {
+
+    const { exists = existsSync, env = process.env } = options
+
+    const env_socket = docker_host_socket_path( env.DOCKER_HOST )
+    if( env_socket && exists( env_socket ) ) return env_socket
+
+    const context_socket = docker_context_socket_path( options )
+    if( context_socket && exists( context_socket ) ) return context_socket
+
+    const fallback_sockets = docker_socket_candidates( { ...options, env: {} } )
+    const fallback_socket = fallback_sockets.find( socket_path => exists( socket_path ) )
+    if( fallback_socket ) return fallback_socket
+
+    return null
+
+}
 
 /**
  * Single-quote a value for safe inclusion in a `sh -c` command string.
@@ -33,10 +132,10 @@ const shell_quote = ( value ) => {
 
 /**
  * Check whether the host Docker socket is available.
- * @param {string} [socket_path=DEFAULT_DOCKER_SOCKET] - Host Docker socket path
+ * @param {string} [socket_path=resolve_docker_socket_path()] - Host Docker socket path
  * @returns {boolean} True when the socket path exists
  */
-export const docker_socket_available = ( socket_path = DEFAULT_DOCKER_SOCKET ) => existsSync( socket_path )
+export const docker_socket_available = ( socket_path = resolve_docker_socket_path() ) => Boolean( socket_path && existsSync( socket_path ) )
 
 /**
  * Map an in-container /workspace path back to the original daemon-host path.
@@ -208,9 +307,12 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  */
 export const build_docker_command = ( options ) => {
 
-    const { agent, workspace, mode, agent_args, creds_mounts, config, extra_env = {}, modifiers = [], docker_socket_path = DEFAULT_DOCKER_SOCKET } = options
+    const { agent, workspace, mode, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
     const flags = []
     const workspace_source = resolve_workspace_mount_source( workspace )
+    const docker_socket_path = mode.docker
+        ? options.docker_socket_path || DEFAULT_DOCKER_SOCKET
+        : null
 
     // Base docker run flags
     flags.push( ...get_docker_run_prefix(), `--rm`, `-it` )
