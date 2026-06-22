@@ -8,10 +8,13 @@ import { PassThrough } from 'stream'
 import { SUPPORTED_AGENTS, get_agent } from '../src/agents/index.js'
 import {
     answered_ok,
+    build_docker_auth_check_command_args,
+    build_docker_auth_check_cleanup_command_args,
     build_host_auth_args,
     build_host_auth_prompt,
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
+    docker_auth_check_container_name,
     format_host_auth_status_message,
     format_utc_timestamp,
     get_host_auth_check_decision,
@@ -113,6 +116,51 @@ describe( `host agent auth checks`, () => {
             .toEqual( [ `--skip-trust`, `-p`, prompt ] )
         expect( build_host_auth_args( get_agent( `opencode` ), prompt ) )
             .toEqual( [ `run`, prompt ] )
+    } )
+
+    it( `builds auth checks against the Babysit Docker image`, () => {
+        const args = build_docker_auth_check_command_args( get_agent( `codex` ), {
+            prompt: `hello`,
+            workspace: `/tmp/project`,
+            mode: { yolo: true },
+            creds_mounts: [ { type: `env`, key: `CODEX_API_KEY`, value: `test-token` } ],
+        } )
+
+        expect( args.slice( 0, 3 ) ).toEqual( [ `docker`, `run`, `--rm` ] )
+        expect( args ).not.toContain( `-it` )
+        expect( args ).toContain( `CODEX_API_KEY=test-token` )
+        expect( args ).toContain( `actuallymentor/babysit:latest` )
+        expect( args.some( arg => arg.includes( `/tmp/project:/workspace` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `/home/node/.agents` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `/home/node/.codex/sessions` ) ) ).toBe( false )
+        expect( args.slice( -7 ) ).toEqual( [
+            `codex`,
+            `exec`,
+            `--ephemeral`,
+            `--skip-git-repo-check`,
+            `--color`,
+            `never`,
+            `hello`,
+        ] )
+    } )
+
+    it( `builds cleanup commands for Dockerized auth-check containers`, () => {
+        const command_args = [
+            `sudo`,
+            `docker`,
+            `run`,
+            `--rm`,
+            `--name`,
+            `babysit-codex-123`,
+            `actuallymentor/babysit:latest`,
+            `codex`,
+        ]
+
+        expect( docker_auth_check_container_name( command_args ) ).toBe( `babysit-codex-123` )
+        expect( build_docker_auth_check_cleanup_command_args( command_args ) )
+            .toEqual( [ `sudo`, `docker`, `rm`, `-f`, `babysit-codex-123` ] )
+        expect( build_docker_auth_check_cleanup_command_args( [ `docker`, `run`, `--rm` ] ) )
+            .toBeNull()
     } )
 
     it( `formats the requested boot auth status message`, () => {
@@ -263,7 +311,7 @@ describe( `host agent auth checks`, () => {
         expect( agents.map( agent => agent.name ) ).toEqual( [ `codex`, `gemini` ] )
     } )
 
-    it( `runs an agent auth command and treats exit zero as authenticated`, async () => {
+    it( `runs a Dockerized agent auth command and treats exit zero as authenticated`, async () => {
         const calls = []
         const result = await run_host_agent_auth_check( get_agent( `claude` ), {
             prompt: `hello`,
@@ -273,8 +321,11 @@ describe( `host agent auth checks`, () => {
 
         expect( result.authenticated ).toBe( true )
         expect( result.output ).toBe( `ok` )
-        expect( calls[0].cmd ).toBe( `claude` )
-        expect( calls[0].args ).toEqual( [ `-p`, `hello`, `--no-session-persistence` ] )
+        expect( calls[0].cmd ).toBe( `docker` )
+        expect( calls[0].args ).toContain( `run` )
+        expect( calls[0].args ).not.toContain( `-it` )
+        expect( calls[0].args ).toContain( `actuallymentor/babysit:latest` )
+        expect( calls[0].args.slice( -4 ) ).toEqual( [ `claude`, `-p`, `hello`, `--no-session-persistence` ] )
         expect( calls[0].options.env.NO_COLOR ).toBe( `1` )
     } )
 
@@ -325,8 +376,15 @@ describe( `host agent auth checks`, () => {
 
     it( `times out stuck auth checks and escalates after SIGTERM`, async () => {
         const signals = []
+        const cleanups = []
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
             spawn_fn: fake_hanging_spawn( signal => signals.push( signal ) ),
+            cleanup_spawn_fn: ( cmd, args, options ) => {
+                const child = new EventEmitter()
+                child.unref = () => {}
+                cleanups.push( { cmd, args, options } )
+                return child
+            },
             timeout_ms: 1,
             kill_grace_ms: 1,
         } )
@@ -336,6 +394,11 @@ describe( `host agent auth checks`, () => {
         expect( result.authenticated ).toBe( false )
         expect( result.reason ).toBe( `timed out` )
         expect( signals ).toEqual( [ `SIGTERM`, `SIGKILL` ] )
+        expect( cleanups.length ).toBe( 1 )
+        expect( cleanups[0].cmd ).toBe( `docker` )
+        expect( cleanups[0].args.slice( 0, 2 ) ).toEqual( [ `rm`, `-f` ] )
+        expect( cleanups[0].args[2].startsWith( `babysit-opencode-` ) ).toBe( true )
+        expect( cleanups[0].options.env.NO_COLOR ).toBe( `1` )
     } )
 
     it( `does not escalate to SIGKILL when the child exits after SIGTERM`, async () => {

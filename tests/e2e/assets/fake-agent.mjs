@@ -194,7 +194,8 @@ const is_auth_check = agent_args.includes( `-p` )
     || agent_args[0] === `run`
 
 if( is_auth_check ) {
-    // Host-side Babysit startup probes use each agent's headless prompt mode.
+    // Babysit's startup probes run inside the Docker image and use each
+    // agent's headless prompt mode.
     // Real interactive E2E sessions do not pass these shapes at process start.
     console.log( `ok` )
     process.exit( 0 )

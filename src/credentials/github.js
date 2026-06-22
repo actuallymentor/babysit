@@ -22,6 +22,22 @@ export const resolve_host_gh_config_dir = ( env = process.env ) => {
 
 }
 
+/**
+ * Check whether a gh config dir can be mounted by the active Docker daemon.
+ * In nested Babysit runs the Docker daemon is outside the container, so only
+ * /workspace paths can be remapped back to the original host workspace.
+ * @param {string} config_dir - Host-side gh config directory candidate
+ * @param {Object} [env=process.env] - Environment to inspect
+ * @returns {boolean} True when the path is safe to pass as a Docker bind source
+ */
+export const can_mount_host_gh_config_dir = ( config_dir, env = process.env ) => {
+
+    if( !env.BABYSIT_HOST_WORKSPACE ) return true
+
+    return config_dir === `/workspace` || config_dir.startsWith( `/workspace/` )
+
+}
+
 const is_public_github_host = host => !host || host === `github.com` || host.endsWith( `.ghe.com` )
 
 const token_key_for_host = host => is_public_github_host( host ) ? `GH_TOKEN` : `GH_ENTERPRISE_TOKEN`
@@ -97,7 +113,7 @@ export const setup_github_cli_credentials = ( {
     const mounts = []
     const config_dir = resolve_host_gh_config_dir( env )
 
-    if( exists_sync( config_dir ) ) {
+    if( exists_sync( config_dir ) && can_mount_host_gh_config_dir( config_dir, env ) ) {
         mounts.push( {
             type: `volume`,
             source: config_dir,

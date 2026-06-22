@@ -5,6 +5,7 @@ import { createInterface } from 'readline/promises'
 
 import { strip_ansi } from '../babysit/matcher.js'
 import { resolve_credential_file } from '../credentials/paths.js'
+import { build_docker_command_args } from '../docker/run.js'
 import { detect_platform } from '../utils/platform.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
@@ -310,24 +311,136 @@ export const last_nonempty_line = ( output = `` ) =>
 export const answered_ok = ( output = `` ) => /^ok$/i.test( last_nonempty_line( output ) )
 
 /**
- * Run a real prompt through one host-installed agent CLI.
+ * Build a Dockerized auth-check command for one agent.
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
  * @param {string} [options.prompt] - Prompt to send
+ * @param {string} [options.workspace=process.cwd()] - Workspace used to scope Docker state
+ * @param {Object} [options.mode={}] - Babysit mode flags
+ * @param {Object[]} [options.creds_mounts=[]] - Credential mounts/env from setup_credentials
+ * @param {Object} [options.config={ isolate_dependencies: false }] - Babysit config
+ * @param {Object} [options.extra_env={}] - Extra environment variables
+ * @returns {string[]|null} Docker argv, or null when the adapter cannot be checked
+ */
+export const build_docker_auth_check_command_args = ( agent, {
+    prompt = build_host_auth_prompt(),
+    workspace = process.cwd(),
+    mode = {},
+    creds_mounts = [],
+    config = { isolate_dependencies: false },
+    extra_env = {},
+} = {} ) => {
+
+    const auth_args = build_host_auth_args( agent, prompt )
+    if( !agent?.bin || !auth_args ) return null
+
+    const agent_extra_env = typeof agent.extra_env === `function`
+        ? agent.extra_env( mode )
+        : {}
+    const auth_mode = {
+        ...mode,
+        docker: false,
+    }
+
+    return build_docker_command_args( {
+        agent,
+        workspace,
+        mode: auth_mode,
+        agent_args: [],
+        creds_mounts,
+        config: {
+            ...config,
+            isolate_dependencies: false,
+        },
+        extra_env: {
+            ...agent_extra_env,
+            ...extra_env,
+            NO_COLOR: `1`,
+        },
+        modifiers: [],
+        interactive: false,
+        mount_workspace: false,
+        include_agents_dir: false,
+        include_user_globals: false,
+        include_loop_deadline: false,
+        include_agent_state: false,
+        agent_command: [ agent.bin, ...auth_args ],
+    } )
+
+}
+
+/**
+ * Extract the generated Docker container name from auth-check argv.
+ * @param {string[]} command_args - Docker run command argv
+ * @returns {string|null} Container name, or null when absent
+ */
+export const docker_auth_check_container_name = ( command_args = [] ) => {
+
+    const name_index = command_args.indexOf( `--name` )
+    if( name_index === -1 ) return null
+
+    return command_args[ name_index + 1 ] || null
+
+}
+
+/**
+ * Build the cleanup command for a timed-out auth-check container.
+ * Killing `docker run` with SIGKILL does not propagate SIGKILL into the
+ * container, so timeout cleanup must reap the container explicitly.
+ * @param {string[]} command_args - Docker run command argv
+ * @returns {string[]|null} Docker cleanup argv, or null when no name is present
+ */
+export const build_docker_auth_check_cleanup_command_args = ( command_args = [] ) => {
+
+    const container_name = docker_auth_check_container_name( command_args )
+    if( !container_name ) return null
+
+    const docker_prefix = command_args[0] === `sudo`
+        ? [ `sudo`, `docker` ]
+        : [ `docker` ]
+
+    return [ ...docker_prefix, `rm`, `-f`, container_name ]
+
+}
+
+/**
+ * Run a real prompt through the agent CLI installed inside Babysit's Docker image.
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options]
+ * @param {string} [options.prompt] - Prompt to send
+ * @param {string} [options.workspace=process.cwd()] - Workspace used to scope Docker state
+ * @param {Object} [options.mode={}] - Babysit mode flags
+ * @param {Object[]} [options.creds_mounts=[]] - Credential mounts/env from setup_credentials
+ * @param {Object} [options.config={ isolate_dependencies: false }] - Babysit config
+ * @param {Object} [options.extra_env={}] - Extra environment variables
  * @param {Function} [options.spawn_fn=spawn] - Spawn helper for tests
+ * @param {Function} [options.cleanup_spawn_fn=spawn] - Spawn helper for timeout cleanup
  * @param {number} [options.timeout_ms=90000] - Max wait before treating the agent as unauthenticated
  * @param {number} [options.kill_grace_ms=1500] - Delay between SIGTERM and SIGKILL on timeout
  * @returns {Promise<{ name: string, authenticated: boolean, reason?: string }>}
  */
 export const run_host_agent_auth_check = async ( agent, {
     prompt = build_host_auth_prompt(),
+    workspace = process.cwd(),
+    mode = {},
+    creds_mounts = [],
+    config = { isolate_dependencies: false },
+    extra_env = {},
     spawn_fn = spawn,
+    cleanup_spawn_fn = spawn,
     timeout_ms = HOST_AUTH_CHECK_TIMEOUT_MS,
     kill_grace_ms = HOST_AUTH_CHECK_KILL_GRACE_MS,
 } = {} ) => new Promise( resolve => {
 
-    const args = build_host_auth_args( agent, prompt )
-    if( !agent?.bin || !args ) {
+    const command_args = build_docker_auth_check_command_args( agent, {
+        prompt,
+        workspace,
+        mode,
+        creds_mounts,
+        config,
+        extra_env,
+    } )
+    if( !command_args ) {
         resolve( {
             name: agent?.name || `unknown`,
             authenticated: false,
@@ -336,7 +449,9 @@ export const run_host_agent_auth_check = async ( agent, {
         return
     }
 
-    const child = spawn_fn( agent.bin, args, {
+    const [ cmd, ...args ] = command_args
+    const cleanup_command_args = build_docker_auth_check_cleanup_command_args( command_args )
+    const child = spawn_fn( cmd, args, {
         stdio: [ `ignore`, `pipe`, `pipe` ],
         env: {
             ...process.env,
@@ -353,6 +468,24 @@ export const run_host_agent_auth_check = async ( agent, {
     const current_output = () => strip_ansi( stdout ).trim()
     const clear_kill_timeout = () => clearTimeout( kill_timeout )
 
+    const cleanup_timed_out_container = () => {
+
+        if( !cleanup_command_args ) return
+
+        const [ cleanup_cmd, ...cleanup_args ] = cleanup_command_args
+        const cleanup_child = cleanup_spawn_fn( cleanup_cmd, cleanup_args, {
+            stdio: `ignore`,
+            env: {
+                ...process.env,
+                NO_COLOR: `1`,
+            },
+        } )
+
+        cleanup_child?.on?.( `error`, () => {} )
+        cleanup_child?.unref?.()
+
+    }
+
     const finish = ( result, { keep_kill_timeout = false } = {} ) => {
         if( settled ) return
 
@@ -366,6 +499,7 @@ export const run_host_agent_auth_check = async ( agent, {
         if( typeof child.kill === `function` ) child.kill( `SIGTERM` )
         kill_timeout = setTimeout( () => {
             if( typeof child.kill === `function` ) child.kill( `SIGKILL` )
+            cleanup_timed_out_container()
         }, kill_grace_ms )
 
         finish( {
