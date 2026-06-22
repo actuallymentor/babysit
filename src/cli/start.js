@@ -15,6 +15,7 @@ import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
     format_host_auth_status_message,
+    run_host_agent_auth_check,
     select_host_auth_check_agents,
     unauthenticated_agent_names,
 } from '../agents/auth.js'
@@ -301,19 +302,46 @@ export const cmd_start = async ( cmd ) => {
         }
     }
 
+    const workspace = process.cwd()
+
+    // Set up credentials before auth checks so the prompt probes exercise the
+    // same in-container agent binaries and mounted auth state as the real
+    // Babysit session. The sync stays alive for the foreground session below.
+    const {
+        mounts: creds_mounts,
+        sync: creds_sync,
+        sync_baseline: creds_sync_baseline,
+        sync_baselines: creds_sync_baselines,
+        tmpfiles: creds_tmpfiles,
+    } = await setup_credentials( agent )
+    const github_cli_mounts = setup_github_cli_credentials()
+    const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts ]
+
     const auth_agents = select_host_auth_check_agents( { active_agent_name: agent.name } )
     log.info( format_host_auth_status_message( auth_agents.map( a => a.name ) ) )
 
     const auth_results = await check_host_agent_authentication( {
         agents: auth_agents,
         filter_by_recent_auth_evidence: false,
+        run_auth_check: ( auth_agent, options ) => run_host_agent_auth_check( auth_agent, {
+            ...options,
+            workspace,
+            mode,
+            creds_mounts,
+            config: { isolate_dependencies: false },
+        } ),
     } )
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )
     if( unauthenticated_agents.length ) {
+        auth_results
+            .filter( result => !result.authenticated )
+            .forEach( result => log.debug( `Auth check failed for ${ result.name }: ${ result.reason || `unknown reason` }` ) )
+
         const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents )
 
         if( !should_continue ) {
+            if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after auth abort: ${ e.message }` ) )
             log.error( `Aborted because host agent authentication is incomplete.` )
             process.exit( 1 )
         }
@@ -322,7 +350,6 @@ export const cmd_start = async ( cmd ) => {
     // Load babysit.yaml (creates default if missing). New config files get
     // the generated mode-aware launch prompt written into config.initial_prompt;
     // legacy configs that omit the field receive the same prompt as a fallback.
-    const workspace = process.cwd()
     const { config, rules } = load_config( workspace, {
         default_initial_prompt: build_system_prompt( mode ),
     } )
@@ -343,19 +370,6 @@ export const cmd_start = async ( cmd ) => {
     // Build the launch prompt that babysit types into the agent's TUI.
     // Null or an empty string intentionally disables startup typing.
     const initial_prompt = should_send_initial_prompt( cmd ) ? resolve_initial_prompt( config ) : ``
-
-    // Set up credentials. The foreground owns the initial capture + docker
-    // mount; the detached monitor will set up its own sync interval, so we
-    // stop the foreground's sync as soon as the monitor is spawned to avoid
-    // racing on the tmpfile.
-    const {
-        mounts: creds_mounts,
-        sync: creds_sync,
-        sync_baseline: creds_sync_baseline,
-        sync_baselines: creds_sync_baselines,
-        tmpfiles: creds_tmpfiles,
-    } = await setup_credentials( agent )
-    const github_cli_mounts = setup_github_cli_credentials()
 
     // Get agent-specific extra env
     const extra_env = agent.extra_env ? agent.extra_env( mode ) : {}
@@ -385,7 +399,7 @@ export const cmd_start = async ( cmd ) => {
     const docker_command = build_docker_command( {
         agent, workspace, mode,
         agent_args,
-        creds_mounts: [ ...github_cli_mounts, ...creds_mounts ],
+        creds_mounts: all_creds_mounts,
         config,
         extra_env,
         modifiers,

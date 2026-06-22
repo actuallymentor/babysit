@@ -292,7 +292,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
 }
 
 /**
- * Build the full `docker run` command argv for launching a coding agent
+ * Build the full `docker run` command argv for launching a coding agent.
  * @param {Object} options
  * @param {Object} options.agent - Agent adapter
  * @param {string} options.workspace - Host working directory
@@ -303,11 +303,34 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {Object} [options.extra_env={}] - Extra environment variables
  * @param {string[]} [options.modifiers=[]] - Active mode modifiers (yolo, mudbox, sandbox, loop) for the statusline
  * @param {string} [options.docker_socket_path=DEFAULT_DOCKER_SOCKET] - Host Docker socket path for --docker
- * @returns {string} The full docker run command string
+ * @param {boolean} [options.interactive=true] - Whether to allocate stdin + TTY
+ * @param {boolean} [options.mount_workspace=true] - Whether to bind-mount the host workspace
+ * @param {boolean} [options.include_agents_dir=true] - Whether to mount the shared ~/.agents directory
+ * @param {boolean} [options.include_user_globals=true] - Whether to mount ~/.agents/AGENTS.md into the agent home
+ * @param {boolean} [options.include_loop_deadline=true] - Whether to mount the statusline loop deadline file
+ * @param {boolean} [options.include_agent_state=true] - Whether to mount persistent native resume state
+ * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
+ * @returns {string[]} Docker argv
  */
-export const build_docker_command = ( options ) => {
+export const build_docker_command_args = ( options ) => {
 
-    const { agent, workspace, mode, agent_args, creds_mounts, config, extra_env = {}, modifiers = [] } = options
+    const {
+        agent,
+        workspace,
+        mode = {},
+        agent_args = [],
+        creds_mounts = [],
+        config = {},
+        extra_env = {},
+        modifiers = [],
+        interactive = true,
+        mount_workspace = true,
+        include_agents_dir = true,
+        include_user_globals = true,
+        include_loop_deadline = true,
+        include_agent_state = true,
+        agent_command = null,
+    } = options
     const flags = []
     const workspace_source = resolve_workspace_mount_source( workspace )
     const docker_socket_path = mode.docker
@@ -315,7 +338,8 @@ export const build_docker_command = ( options ) => {
         : null
 
     // Base docker run flags
-    flags.push( ...get_docker_run_prefix(), `--rm`, `-it` )
+    flags.push( ...get_docker_run_prefix(), `--rm` )
+    if( interactive ) flags.push( `-it` )
     flags.push( `--name`, `babysit-${ agent.name }-${ Date.now() }` )
 
     if( process.env.BABYSIT_E2E_RUN_ID ) {
@@ -323,7 +347,9 @@ export const build_docker_command = ( options ) => {
     }
 
     // Workspace mount (mode-dependent)
-    if( mode.sandbox ) {
+    if( !mount_workspace ) {
+        log.debug( `Workspace mount disabled for docker command` )
+    } else if( mode.sandbox ) {
         // Sandbox: no workspace mount — ephemeral
         log.debug( `Sandbox mode: workspace not mounted` )
     } else if( mode.mudbox ) {
@@ -342,7 +368,7 @@ export const build_docker_command = ( options ) => {
     // then grant access, and SGID (when set on the host dir) keeps files the
     // agent writes back inheriting the host group so the host user can still
     // edit them. Per-file read-only is preserved via host file perms.
-    if( existsSync( AGENTS_DIR ) ) {
+    if( include_agents_dir && existsSync( AGENTS_DIR ) ) {
         flags.push( `-v`, `${ resolve_workspace_mount_source( AGENTS_DIR ) }:/home/node/.agents` )
         try {
             const { gid } = statSync( AGENTS_DIR )
@@ -353,7 +379,7 @@ export const build_docker_command = ( options ) => {
     }
 
     // Dependency volume isolation (unless disabled in config)
-    if( config.isolate_dependencies !== false && !mode.sandbox ) {
+    if( mount_workspace && config.isolate_dependencies !== false && !mode.sandbox ) {
 
         const dep_volumes = detect_dependency_volumes( workspace )
 
@@ -408,8 +434,10 @@ export const build_docker_command = ( options ) => {
     // todos; Codex, Gemini, and OpenCode also store local transcripts/session
     // indexes outside auth files, so fresh containers need persistent volumes
     // here or `resume --last` / `--session <id>` starts from an empty install.
-    for( const m of get_agent_state_mounts( agent, workspace, mode ) ) {
-        flags.push( `-v`, `${ m.source }:${ m.target }` )
+    if( include_agent_state ) {
+        for( const m of get_agent_state_mounts( agent, workspace, mode ) ) {
+            flags.push( `-v`, `${ m.source }:${ m.target }` )
+        }
     }
 
     // Credential mounts
@@ -438,13 +466,15 @@ export const build_docker_command = ( options ) => {
     // file existing so a missing ~/.agents/AGENTS.md leaves the agent in
     // its vanilla state.
     const user_agents_md = join( AGENTS_DIR, `AGENTS.md` )
-    if( should_mount_user_globals( agent, extra_mounts, existsSync( user_agents_md ) ) ) {
+    if( include_user_globals && should_mount_user_globals( agent, extra_mounts, existsSync( user_agents_md ) ) ) {
         prepare_nested_file_mountpoint( extra_mounts, agent.container_paths.user_globals_file )
         flags.push( `-v`, `${ resolve_workspace_mount_source( user_agents_md ) }:${ agent.container_paths.user_globals_file }:ro` )
     }
 
     // Loop deadline — bind-mount so the in-container statusline can read host-written countdowns
-    flags.push( `-v`, `${ resolve_workspace_mount_source( LOOP_DEADLINE_PATH ) }:${ LOOP_DEADLINE_CONTAINER_PATH }:ro` )
+    if( include_loop_deadline ) {
+        flags.push( `-v`, `${ resolve_workspace_mount_source( LOOP_DEADLINE_PATH ) }:${ LOOP_DEADLINE_CONTAINER_PATH }:ro` )
+    }
 
     // Extra environment variables from agent adapter
     for( const [ key, value ] of Object.entries( extra_env ) ) {
@@ -455,13 +485,24 @@ export const build_docker_command = ( options ) => {
     flags.push( get_image_name() )
 
     // Agent command with flags
-    const agent_cmd = build_agent_command( agent, mode, agent_args )
+    const agent_cmd = agent_command || build_agent_command( agent, mode, agent_args )
     flags.push( ...agent_cmd )
+
+    return flags
+
+}
+
+/**
+ * Build the shell-quoted `docker run` command string for launching a coding agent.
+ * @param {Object} options - Docker command options
+ * @returns {string} The full docker run command string
+ */
+export const build_docker_command = ( options ) => {
 
     // The result is consumed by `sh -c` (see tmux/session.js create_session),
     // so each argument needs proper shell-quoting — passthrough args and env
     // values can contain spaces, `$`, etc.
-    return flags.map( shell_quote ).join( ` ` )
+    return build_docker_command_args( options ).map( shell_quote ).join( ` ` )
 
 }
 

@@ -6,6 +6,7 @@ import { get_image_name } from '../src/docker/update.js'
 import {
     build_agent_state_volume_name,
     build_docker_command,
+    build_docker_command_args,
     docker_host_socket_path,
     get_agent_state_mounts,
     prepare_nested_file_mountpoint,
@@ -308,6 +309,27 @@ describe( `agent home env vars`, () => {
 } )
 
 describe( `build_docker_command`, () => {
+
+    it( `can build noninteractive argv without mounting the workspace`, () => {
+
+        const args = build_docker_command_args( make_options( {
+            interactive: false,
+            mount_workspace: false,
+            include_agents_dir: false,
+            include_user_globals: false,
+            include_loop_deadline: false,
+            include_agent_state: false,
+            agent_command: [ `codex`, `exec`, `hello` ],
+        } ) )
+
+        expect( args.slice( 0, 3 ) ).toEqual( [ `docker`, `run`, `--rm` ] )
+        expect( args ).not.toContain( `-it` )
+        expect( args.some( arg => arg.includes( `/tmp/empty:/workspace` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `/home/node/.agents` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `/home/node/.codex/sessions` ) ) ).toBe( false )
+        expect( args.slice( -3 ) ).toEqual( [ `codex`, `exec`, `hello` ] )
+
+    } )
 
     it( `pre-creates nested file mountpoints inside tmpdir-backed config homes`, () => {
 

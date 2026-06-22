@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 
 import {
+    can_mount_host_gh_config_dir,
     GH_CONFIG_CONTAINER_DIR,
     read_host_gh_token,
     resolve_host_gh_config_dir,
@@ -44,6 +45,73 @@ describe( `GitHub CLI credential passthrough`, () => {
                 ro: true,
             },
             { type: `env`, key: `GH_CONFIG_DIR`, value: GH_CONFIG_CONTAINER_DIR },
+        ] )
+
+    } )
+
+    it( `detects gh config dirs that nested Docker can safely bind`, () => {
+
+        expect( can_mount_host_gh_config_dir( `/home/alice/.config/gh`, {} ) ).toBe( true )
+
+        const nested_env = { BABYSIT_HOST_WORKSPACE: `/Users/alice/project` }
+
+        expect( can_mount_host_gh_config_dir( `/workspace`, nested_env ) ).toBe( true )
+        expect( can_mount_host_gh_config_dir( `/workspace/.config/gh`, nested_env ) ).toBe( true )
+        expect( can_mount_host_gh_config_dir( `/home/node/.config/gh`, nested_env ) ).toBe( false )
+
+    } )
+
+    it( `skips non-host-visible gh config binds in nested Docker contexts`, () => {
+
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                HOME: `/home/node`,
+                BABYSIT_HOST_WORKSPACE: `/Users/alice/project`,
+            },
+            exists_sync: path => path === `/home/node/.config/gh`,
+            spawn_sync: () => ( { status: 1, stdout: `` } ),
+        } )
+
+        expect( mounts ).toEqual( [] )
+
+    } )
+
+    it( `keeps workspace gh config binds in nested Docker contexts`, () => {
+
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                GH_CONFIG_DIR: `/workspace/.gh`,
+                BABYSIT_HOST_WORKSPACE: `/Users/alice/project`,
+            },
+            exists_sync: path => path === `/workspace/.gh`,
+            spawn_sync: () => ( { status: 1, stdout: `` } ),
+        } )
+
+        expect( mounts ).toEqual( [
+            {
+                type: `volume`,
+                source: `/workspace/.gh`,
+                target: GH_CONFIG_CONTAINER_DIR,
+                ro: true,
+            },
+            { type: `env`, key: `GH_CONFIG_DIR`, value: GH_CONFIG_CONTAINER_DIR },
+        ] )
+
+    } )
+
+    it( `still extracts host gh tokens when nested config binds are skipped`, () => {
+
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                HOME: `/home/node`,
+                BABYSIT_HOST_WORKSPACE: `/Users/alice/project`,
+            },
+            exists_sync: path => path === `/home/node/.config/gh`,
+            spawn_sync: () => ( { status: 0, stdout: `host-token\n` } ),
+        } )
+
+        expect( mounts ).toEqual( [
+            { type: `env`, key: `GH_TOKEN`, value: `host-token` },
         ] )
 
     } )

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.5 — 2026-06-22
+
+### 🐛 Fixed
+- **Startup auth checks now use Babysit's Dockerized agent CLIs.** Babysit
+  mounts credentials first, probes the agent inside the image, and avoids host
+  agent binaries for auth validation.
+- **Nested Docker sessions skip container-only GitHub CLI config binds.** Babysit
+  still passes extracted `gh` tokens through, but avoids mounting paths the host
+  Docker daemon cannot see.
+- **Timed-out auth probes now reap their Docker containers.** Babysit removes
+  the named probe container after the SIGTERM grace window.
+
 ## 0.15.4 — 2026-06-22
 
 ### 🐛 Fixed
