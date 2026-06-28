@@ -6,9 +6,31 @@ import { load_config } from '../babysit/yaml.js'
 import { get_agent } from '../agents/index.js'
 import { get_patterns } from '../patterns/index.js'
 import { apply_loop } from '../modes/loop.js'
+import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
+
+/**
+ * Rebuild the launch mode from stored session modifiers.
+ * @param {string[]} modifiers - Stored session modifiers
+ * @returns {Object} Mode descriptor for prompt construction
+ */
+export const mode_from_modifiers = ( modifiers = [] ) => ( {
+    yolo: modifiers.includes( `yolo` ),
+    sandbox: modifiers.includes( `sandbox` ),
+    mudbox: modifiers.includes( `mudbox` ),
+    docker: modifiers.includes( `docker` ),
+} )
+
+/**
+ * Load babysit config for a detached monitor using the original launch mode.
+ * @param {Object} session - Stored session metadata
+ * @returns {{ config: Object, rules: Array }} Parsed config and rules
+ */
+export const load_monitor_config = ( session = {} ) => load_config( session.pwd, {
+    default_initial_prompt: build_system_prompt( mode_from_modifiers( session.modifiers ) ),
+} )
 
 /**
  * Run the supervision loop for an already-launched session.
@@ -47,7 +69,7 @@ export const cmd_monitor = async ( cmd ) => {
         }
     }
 
-    const { config, rules } = load_config( session.pwd )
+    const { config, rules } = load_monitor_config( session )
 
     // Re-apply --loop if it was active in the original session — the rule
     // override mutates `rules` in place, so the monitor will see the LOOP.md

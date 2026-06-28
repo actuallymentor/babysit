@@ -3,7 +3,7 @@ import { wait } from 'mentie'
 
 import { log } from '../utils/log.js'
 import { send_text, send_enter, send_shift_tab } from '../tmux/send.js'
-import { load_markdown_segments, split_segments } from './segments.js'
+import { expand_segments, load_markdown_segments, split_segments } from './segments.js'
 import { IdleTracker, strip_ansi } from './matcher.js'
 import { capture_pane } from '../tmux/capture.js'
 
@@ -52,14 +52,14 @@ export const execute_action = async ( session_name, action, config ) => {
     // Markdown file path
     if( action_str.endsWith( `.md` ) ) {
         log.info( `Action: executing markdown file ${ action_str }` )
-        await execute_markdown( session_name, action_str )
+        await execute_markdown( session_name, action_str, config )
         return
     }
 
     // String with === segments (inline multi-step instructions)
     if( action_str.includes( `===` ) ) {
         log.info( `Action: executing segmented instruction` )
-        const segments = split_segments( action_str )
+        const segments = expand_segments( split_segments( action_str ), config )
         await execute_segments( session_name, segments )
         return
     }
@@ -93,11 +93,12 @@ const run_shell_command = ( command ) => new Promise( ( resolve, reject ) => {
  * Load and execute a markdown file as segmented instructions
  * @param {string} session_name - The tmux session name
  * @param {string} file_path - Path to the markdown file
+ * @param {Object} config - The babysit config section
  * @returns {Promise<void>}
  */
-const execute_markdown = async ( session_name, file_path ) => {
+const execute_markdown = async ( session_name, file_path, config ) => {
 
-    const segments = load_markdown_segments( file_path )
+    const segments = load_markdown_segments( file_path, { config } )
     if( !segments ) return
 
     await execute_segments( session_name, segments )

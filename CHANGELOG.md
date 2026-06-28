@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.16.0 — 2026-06-28
+
+### ✨ Added
+- **LOOP.md can reuse the startup prompt.** Put `%initial_prompt%` in
+  `LOOP.md` to paste the configured `config.initial_prompt` as part of a loop
+  segment.
+
 ## 0.15.6 — 2026-06-28
 
 ### 🐛 Fixed
