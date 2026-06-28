@@ -35,16 +35,19 @@ export const make_session_name = ( pwd, agent_name ) => {
  * @param {string} command - Pre-quoted shell command to run inside the session
  * @param {Object} [options]
  * @param {string|null} [options.log_path] - Optional host path for pipe-pane logging
+ * @param {string|null} [options.startup_log_path] - Optional short-lived startup diagnostic log path
  * @returns {Promise<{pipe_started: boolean}>}
  */
-export const create_session = async ( session_name, command, { log_path = null } = {} ) => {
+export const create_session = async ( session_name, command, { log_path = null, startup_log_path = null } = {} ) => {
+
+    const pipe_log_path = log_path || startup_log_path
 
     const boot_shell = [
         `read _`,
         `boot_command="$1"`,
         `exec sh -c "$boot_command"`,
     ].join( `; ` )
-    const session_command = log_path
+    const session_command = pipe_log_path
         ? [ `sh`, `-c`, boot_shell, `sh`, command ]
         : [ `sh`, `-c`, command ]
 
@@ -64,18 +67,19 @@ export const create_session = async ( session_name, command, { log_path = null }
 
     let pipe_started = false
 
-    if( log_path ) {
+    if( pipe_log_path ) {
 
         try {
-            await start_pipe_pane( session_name, log_path )
+            await start_pipe_pane( session_name, pipe_log_path )
             pipe_started = true
         } catch ( e ) {
             log.warn( `Could not start pipe-pane logging: ${ e.message }` )
         }
 
-        // Release the boot shell only after pipe-pane is active, otherwise fast
-        // startup output can escape the logfile. The real command is held as a
-        // shell argument so it is not echoed into the user's terminal/log.
+        // Release the boot shell only after pipe-pane has had a chance to
+        // attach, otherwise fast startup output can escape diagnostics. The
+        // real command is held as a shell argument so it is not echoed into
+        // the user's terminal/log.
         await run( `tmux`, [ `-L`, TMUX_SOCKET, `send-keys`, `-t`, session_name, `Enter` ] )
 
     }

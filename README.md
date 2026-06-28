@@ -36,13 +36,14 @@ babysit open <session_id>
 
 ## How it works
 
-1. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the requested agent, plus supported agents with recent auth evidence, to answer a tiny `ok` prompt inside the Babysit Docker image. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]`
-2. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
-3. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open <id>`
-4. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
-5. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
-6. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
-7. **Resume state** — agent-native session history is kept in persistent Docker volumes, so `babysit resume` can reopen Claude, Codex, Gemini, and OpenCode sessions after their containers exit
+1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
+2. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the requested agent, plus supported agents with recent auth evidence, to answer a tiny `ok` prompt inside the Babysit Docker image. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]`
+3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
+4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open <id>`
+5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
+6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
+7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
+8. **Resume state** — agent-native session history is kept in persistent Docker volumes, so `babysit resume` can reopen Claude, Codex, Gemini, and OpenCode sessions after their containers exit
 
 ## `babysit.yaml`
 

@@ -1,15 +1,21 @@
 import { spawn, execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs'
+import { join } from 'path'
 import { createInterface } from 'readline/promises'
 import { wait } from 'mentie'
 
-import { log } from '../utils/log.js'
-import { ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
+import { log, print_error } from '../utils/log.js'
+import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { setup_credentials } from '../credentials/index.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
-import { build_docker_command } from '../docker/run.js'
+import {
+    DEFAULT_DOCKER_SOCKET,
+    build_docker_command,
+    docker_daemon_status,
+    resolve_docker_socket_path,
+} from '../docker/run.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import {
     check_host_agent_authentication,
@@ -22,15 +28,16 @@ import {
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
-import { capture_pane } from '../tmux/capture.js'
+import { capture_pane, stop_pipe_pane } from '../tmux/capture.js'
 import { save_session, load_session, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
-import { DEFAULT_DOCKER_SOCKET, resolve_docker_socket_path } from '../docker/run.js'
 import { strip_ansi } from '../babysit/matcher.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
+const STARTUP_EXIT_GRACE_MS = 750
+const STARTUP_LOG_TAIL_LINES = 80
 
 /**
  * Resolve the prompt babysit types into the agent pane once the TUI launches.
@@ -198,6 +205,119 @@ export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
 }
 
 /**
+ * Create the short-lived diagnostic path used before a launch is known-good.
+ * @param {string} session_name - Tmux session name
+ * @param {Object} [options]
+ * @param {string} [options.babysit_dir] - Base Babysit state directory
+ * @returns {string} Absolute diagnostic log path
+ */
+export const startup_diagnostic_log_path = ( session_name, {
+    babysit_dir = BABYSIT_DIR,
+} = {} ) => {
+
+    const safe_name = session_name
+        .replace( /[^a-zA-Z0-9_.-]/g, `_` )
+        .slice( 0, 180 )
+
+    const dir = join( babysit_dir, `launch-logs` )
+    mkdirSync( dir, { recursive: true } )
+
+    return join( dir, `${ safe_name }.log` )
+
+}
+
+/**
+ * Read a concise, plain-text tail from a startup diagnostic log.
+ * @param {string|null} log_path - Diagnostic log path
+ * @param {Object} [options]
+ * @param {number} [options.max_lines=80] - Maximum lines to return
+ * @returns {string} Log tail, stripped of ANSI control sequences
+ */
+export const read_startup_log_tail = ( log_path, {
+    max_lines = STARTUP_LOG_TAIL_LINES,
+} = {} ) => {
+
+    if( !log_path ) return ``
+
+    try {
+        const raw = readFileSync( log_path, `utf8` )
+        const clean = strip_ansi( raw ).replace( /\r/g, `` )
+        const lines = clean
+            .split( `\n` )
+            .map( line => line.trimEnd() )
+            .filter( line => line.trim() )
+
+        return lines.slice( -max_lines ).join( `\n` ).trim()
+    } catch {
+        return ``
+    }
+
+}
+
+/**
+ * Remove a short-lived startup diagnostic log after a healthy launch.
+ * @param {string|null} log_path - Diagnostic log path
+ */
+const remove_startup_diagnostic_log = ( log_path ) => {
+
+    if( !log_path ) return
+
+    try {
+        rmSync( log_path, { force: true } )
+    } catch {
+        // Best effort cleanup only.
+    }
+
+}
+
+/**
+ * Stop the internal diagnostic pipe once startup has succeeded.
+ * @param {string} session_name - Tmux session name
+ * @param {Object} options
+ * @param {boolean} options.uses_user_log - True when --log owns pipe-pane
+ * @param {boolean} options.pipe_started - True when pipe-pane started
+ * @param {string|null} options.diagnostic_log_path - Internal diagnostic path
+ */
+const stop_startup_diagnostics = async ( session_name, {
+    uses_user_log,
+    pipe_started,
+    diagnostic_log_path,
+} ) => {
+
+    if( uses_user_log || !pipe_started ) return
+
+    try {
+        await stop_pipe_pane( session_name )
+    } catch ( e ) {
+        log.debug( `Could not stop startup diagnostics: ${ e.message }` )
+    }
+
+    remove_startup_diagnostic_log( diagnostic_log_path )
+
+}
+
+/**
+ * Print the real startup output when the tmux session dies before attach.
+ * @param {Object} agent - Agent adapter
+ * @param {string|null} diagnostic_log_path - Startup diagnostic path
+ */
+export const report_startup_failure = ( agent = {}, diagnostic_log_path = null ) => {
+
+    const output = read_startup_log_tail( diagnostic_log_path )
+    const name = agent.name || `agent`
+
+    print_error( `${ name } exited before Babysit could attach.` )
+
+    if( output ) {
+        print_error( `Startup output:` )
+        output.split( `\n` ).forEach( line => print_error( `  ${ line }` ) )
+    } else {
+        print_error( `No startup output was captured. Re-run with --log=PATH for full pane output.` )
+    }
+
+}
+
+/**
  * Decide if a Docker socket session needs explicit user confirmation.
  * @param {Object} mode - Mode config
  * @returns {boolean} True when Babysit should ask before continuing
@@ -291,6 +411,14 @@ export const cmd_start = async ( cmd ) => {
     if( mode.docker && !docker_socket_path ) {
         log.error( `--docker requested, but no local Docker socket is available on the host.` )
         log.error( `Checked ${ DEFAULT_DOCKER_SOCKET }, Docker Desktop's macOS user socket, DOCKER_HOST, and the active Docker context.` )
+        process.exit( 1 )
+    }
+
+    const docker_status = docker_daemon_status()
+    if( !docker_status.available ) {
+        print_error( `Docker is not running or is not reachable.` )
+        if( docker_status.reason ) print_error( docker_status.reason )
+        print_error( `Start Docker and try again.` )
         process.exit( 1 )
     }
 
@@ -419,8 +547,13 @@ export const cmd_start = async ( cmd ) => {
 
     // Create tmux session (detached — we'll attach the foreground in a moment)
     const session_name = make_session_name( workspace, agent.name )
-    const { pipe_started } = await create_session( session_name, docker_command, { log_path } )
-    if( pipe_started ) log.info( `Logging tmux output to ${ log_path }` )
+    const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
+    const { pipe_started } = await create_session( session_name, docker_command, {
+        log_path,
+        startup_log_path: log_path ? null : diagnostic_log_path,
+    } )
+    if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
+    else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
 
     if( initial_prompt ) {
         const prompt_ready = await wait_for_initial_prompt_ready( session_name, agent )
@@ -431,6 +564,24 @@ export const cmd_start = async ( cmd ) => {
             log.warn( `Skipped initial prompt because ${ agent.name } did not reach its ready screen.` )
         }
     }
+
+    // Give very fast Docker/container failures a chance to close the tmux
+    // session before we save resumable metadata. Without this, tmux attach can
+    // print only "no sessions" while the actual Docker error disappears.
+    await wait( STARTUP_EXIT_GRACE_MS )
+
+    if( !await has_session( session_name ) ) {
+        report_startup_failure( agent, diagnostic_log_path )
+        if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after startup failure: ${ e.message }` ) )
+        if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
+        process.exit( 1 )
+    }
+
+    await stop_startup_diagnostics( session_name, {
+        uses_user_log: Boolean( log_path ),
+        pipe_started,
+        diagnostic_log_path,
+    } )
 
     // Generate and save session metadata before spawning the monitor — the
     // monitor reads this file to reconstruct config, agent, and tmux session

@@ -137,6 +137,63 @@ const shell_quote = ( value ) => {
  */
 export const docker_socket_available = ( socket_path = resolve_docker_socket_path() ) => Boolean( socket_path && existsSync( socket_path ) )
 
+const get_docker_prefix = () => process.env.BABYSIT_DOCKER_USE_SUDO === `1`
+    ? [ `sudo`, `docker` ]
+    : [ `docker` ]
+
+/**
+ * Check whether the Docker CLI can talk to the daemon before Babysit creates
+ * a tmux session around `docker run`.
+ * @param {Object} [options]
+ * @param {Function} [options.spawn_sync=spawnSync] - Test seam for process spawn
+ * @returns {{ available: boolean, reason?: string, version?: string }} Docker daemon status
+ */
+export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
+
+    const [ cmd, ...prefix_args ] = get_docker_prefix()
+    let result
+
+    try {
+        result = spawn_sync( cmd, [
+            ...prefix_args,
+            `info`,
+            `--format`,
+            `{{.ServerVersion}}`,
+        ], {
+            encoding: `utf8`,
+            stdio: [ `ignore`, `pipe`, `pipe` ],
+            timeout: 5_000,
+        } )
+    } catch ( error ) {
+        return {
+            available: false,
+            reason: error.message,
+        }
+    }
+
+    if( result.error ) {
+        return {
+            available: false,
+            reason: result.error.message,
+        }
+    }
+
+    if( result.status !== 0 ) {
+        const diagnostic = ( result.stderr || result.stdout || `` ).trim()
+
+        return {
+            available: false,
+            reason: diagnostic || `${ cmd } ${ prefix_args.concat( `info` ).join( ` ` ) } exited with code ${ result.status }`,
+        }
+    }
+
+    return {
+        available: true,
+        version: String( result.stdout || `` ).trim(),
+    }
+
+}
+
 /**
  * Map an in-container /workspace path back to the original daemon-host path.
  * Docker bind mounts are resolved by the daemon host, so nested Babysit runs
@@ -183,9 +240,7 @@ const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => 
 
 }
 
-const get_docker_run_prefix = () => process.env.BABYSIT_DOCKER_USE_SUDO === `1`
-    ? [ `sudo`, `docker`, `run` ]
-    : [ `docker`, `run` ]
+const get_docker_run_prefix = () => [ ...get_docker_prefix(), `run` ]
 
 /**
  * Build a stable Docker volume name for agent state scoped to a workspace.

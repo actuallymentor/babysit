@@ -62,3 +62,11 @@ export const start_pipe_pane = async ( session_name, log_path ) => {
     ] )
 
 }
+
+/**
+ * Stop streaming a pane's output through tmux pipe-pane.
+ * @param {string} session_name - Tmux session to detach the pipe from
+ * @returns {Promise<string>} tmux stdout
+ */
+export const stop_pipe_pane = async ( session_name ) =>
+    run( `tmux`, [ `-L`, TMUX_SOCKET, `pipe-pane`, `-t`, session_name ] )
