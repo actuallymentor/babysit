@@ -12,6 +12,7 @@ import { cmd_open } from './cli/open.js'
 import { cmd_resume } from './cli/resume.js'
 import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
+import { cmd_config } from './cli/config.js'
 import { check_dependencies } from './deps/check.js'
 
 // Subcommands that need a dep check before they run. `help` and `--version`
@@ -74,6 +75,10 @@ const main = async () => {
 
     case `update`:
         await cmd_update()
+        break
+
+    case `config`:
+        await cmd_config( cmd )
         break
 
     case `__monitor`:

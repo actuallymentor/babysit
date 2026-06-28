@@ -3,12 +3,23 @@ import { is_agent } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `log`, `port` ]
+const KNOWN_FLAGS = [
+    `help`,
+    `version`,
+    `yolo`,
+    `sandbox`,
+    `mudbox`,
+    `loop`,
+    `docker`,
+    `log`,
+    `port`,
+    `auth-check-agents`,
+]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `log`, `port` ] )
+const VALUE_FLAGS = new Set( [ `log`, `port`, `auth-check-agents` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -25,7 +36,7 @@ export const parse_args = ( argv ) => {
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
         boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker` ],
-        string: [ `log`, `port` ],
+        string: [ `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -43,6 +54,7 @@ export const parse_args = ( argv ) => {
         // mri normalises the first two to args.log = '' / args.log = 'path'.
         // false (flag absent) vs string (flag present, possibly empty for default).
         log:  typeof args.log === `string`  ? args.log : false,
+        auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),
@@ -57,6 +69,9 @@ export const parse_args = ( argv ) => {
     // Determine what the user wants to do
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
+
+    // babysit config
+    if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }
 
     // babysit update — the only update path: deps check + git pulls + docker
     // pull + host agent CLI updates. Regular subcommands no longer auto-update.

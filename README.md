@@ -32,12 +32,15 @@ babysit list
 
 # Attach to a running session
 babysit open <session_id>
+
+# Choose which agent logins babysit checks on startup
+babysit config --auth-check-agents codex,claude
 ```
 
 ## How it works
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
-2. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the requested agent, plus supported agents with recent auth evidence, to answer a tiny `ok` prompt inside the Babysit Docker image. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]`
+2. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the agents selected in `babysit config` to answer a tiny `ok` prompt inside the Babysit Docker image. Codex and Claude are checked by default. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]` and points to `babysit config`
 3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
 4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open <id>`
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
@@ -178,6 +181,20 @@ config:
     isolate_dependencies: false
 ```
 
+## Host configuration
+
+`babysit config` edits host-level settings stored under `~/.babysit`.
+
+The first setting controls which coding agents get startup authentication
+checks. Codex and Claude are selected by default:
+
+```bash
+babysit config
+babysit config --auth-check-agents codex,claude
+babysit config --auth-check-agents all
+babysit config --auth-check-agents none
+```
+
 ## Subcommands
 
 ```
@@ -186,6 +203,8 @@ babysit <agent> resume <id> [flags]  Resume a previous session
 babysit list                         List active sessions
 babysit open <session_id>            Attach to an active session
 babysit resume <session_id> [flags]  Resume a previous session
+babysit config                       Configure babysit settings
+babysit update                       Refresh babysit, ~/.agents, and the docker image
 ```
 
 `babysit resume <session_id>` accepts the id printed when a Babysit session

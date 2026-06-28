@@ -14,6 +14,13 @@ describe( `parse_args`, () => {
         expect( cmd.agent ).toBeNull()
     } )
 
+    it( `recognises babysit config`, () => {
+        const cmd = parse_args( [ `config`, `--auth-check-agents`, `codex,claude` ] )
+        expect( cmd.verb ).toBe( `config` )
+        expect( cmd.agent ).toBeNull()
+        expect( cmd.flags.auth_check_agents ).toBe( `codex,claude` )
+    } )
+
     it( `recognises babysit open <id>`, () => {
         const cmd = parse_args( [ `open`, `abc-123` ] )
         expect( cmd.verb ).toBe( `open` )

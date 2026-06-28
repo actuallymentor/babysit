@@ -16,6 +16,7 @@ Usage:
   babysit list                         List active sessions
   babysit open <session_id>            Attach to an active session
   babysit resume <session_id> [flags]  Resume a previous session
+  babysit config                       Configure babysit settings
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
 Agents: ${ agents }
@@ -27,6 +28,8 @@ Flags:
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
   --port PORT     Publish host PORT to the same container port
   --port H:C      Publish host port H to container port C
+  --auth-check-agents LIST
+                  With "babysit config", set checked agents (codex,claude / all / none)
   --loop          Override idle action with LOOP.md or "Keep going"
   --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)
   -h, --help      Show this help
@@ -39,6 +42,7 @@ Examples:
   babysit codex --sandbox --loop
   babysit gemini --mudbox --yolo
   babysit opencode resume abc-123 --yolo
+  babysit config --auth-check-agents codex,claude
   babysit list
   babysit open babysit_myrepo_claude_1234567890
 `

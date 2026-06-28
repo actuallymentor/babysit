@@ -445,12 +445,11 @@ export const cmd_start = async ( cmd ) => {
     const github_cli_mounts = setup_github_cli_credentials()
     const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts ]
 
-    const auth_agents = select_host_auth_check_agents( { active_agent_name: agent.name } )
+    const auth_agents = select_host_auth_check_agents()
     log.info( format_host_auth_status_message( auth_agents.map( a => a.name ) ) )
 
     const auth_results = await check_host_agent_authentication( {
         agents: auth_agents,
-        filter_by_recent_auth_evidence: false,
         run_auth_check: ( auth_agent, options ) => run_host_agent_auth_check( auth_agent, {
             ...options,
             workspace,
