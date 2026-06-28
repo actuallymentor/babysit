@@ -1,13 +1,14 @@
 import mri from 'mri'
 import { is_agent } from '../agents/index.js'
+import { normalise_port_mappings } from '../docker/ports.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `log` ]
+const KNOWN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `log`, `port` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `log` ] )
+const VALUE_FLAGS = new Set( [ `log`, `port` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -24,7 +25,7 @@ export const parse_args = ( argv ) => {
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
         boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker` ],
-        string: [ `log` ],
+        string: [ `log`, `port` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -42,6 +43,9 @@ export const parse_args = ( argv ) => {
         // mri normalises the first two to args.log = '' / args.log = 'path'.
         // false (flag absent) vs string (flag present, possibly empty for default).
         log:  typeof args.log === `string`  ? args.log : false,
+        // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
+        // are preserved as an ordered list of Docker publish mappings.
+        ports: normalise_port_mappings( args.port ),
     }
 
     // Sandbox and mudbox describe contradictory mount strategies — fail fast

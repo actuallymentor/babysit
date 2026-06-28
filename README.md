@@ -117,6 +117,8 @@ Supports `SS`, `MM:SS`, or `HH:MM:SS`. Overrides `idle_timeout_s` per rule.
 | `--sandbox` | no mount | Ephemeral container, no host files |
 | `--mudbox` | read-only mount | Agent can read but not modify files |
 | `--docker` | *(additive)* | Mount the host Docker socket so Docker commands can run from inside the Babysit container |
+| `--port PORT` | *(additive)* | Publish a host port to the same container port |
+| `--port HOST:CONTAINER` | *(additive)* | Publish a host port to a different container port |
 | `--loop` | *(additive)* | Override `on: idle` with `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" |
 
 Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. The exception is `--sandbox` and `--mudbox` together — they describe contradictory mount strategies, so babysit rejects the combination.
@@ -134,6 +136,11 @@ Because Docker socket access can create containers with host bind mounts,
 `--docker --sandbox` and `--docker --mudbox` weaken those modes. Babysit warns
 and requires an explicit `Y` before starting those combinations, except in YOLO
 mode where confirmations are skipped.
+
+Use `--port` to publish services running inside the Babysit container. `--port
+80` maps host port `80` to container port `80`; `--port 663:12345` maps host
+port `663` to container port `12345`. Repeat `--port` to publish multiple
+ports.
 
 ## Loop mode
 

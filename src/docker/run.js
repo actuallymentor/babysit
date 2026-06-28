@@ -9,6 +9,7 @@ import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
 import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/render.js'
 import { get_extra_mounts } from '../agents/setup.js'
+import { normalise_port_mappings } from './ports.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 
@@ -357,6 +358,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {Object} options.config - babysit.yaml config section
  * @param {Object} [options.extra_env={}] - Extra environment variables
  * @param {string[]} [options.modifiers=[]] - Active mode modifiers (yolo, mudbox, sandbox, loop) for the statusline
+ * @param {string[]} [options.ports=[]] - Port publish mappings, either PORT or HOSTPORT:CONTAINERPORT
  * @param {string} [options.docker_socket_path=DEFAULT_DOCKER_SOCKET] - Host Docker socket path for --docker
  * @param {boolean} [options.interactive=true] - Whether to allocate stdin + TTY
  * @param {boolean} [options.mount_workspace=true] - Whether to bind-mount the host workspace
@@ -378,6 +380,7 @@ export const build_docker_command_args = ( options ) => {
         config = {},
         extra_env = {},
         modifiers = [],
+        ports = [],
         interactive = true,
         mount_workspace = true,
         include_agents_dir = true,
@@ -399,6 +402,10 @@ export const build_docker_command_args = ( options ) => {
 
     if( process.env.BABYSIT_E2E_RUN_ID ) {
         flags.push( `--label`, `babysit.e2e_run=${ process.env.BABYSIT_E2E_RUN_ID }` )
+    }
+
+    for( const port of normalise_port_mappings( ports ) ) {
+        flags.push( `-p`, port )
     }
 
     // Workspace mount (mode-dependent)

@@ -25,6 +25,8 @@ Flags:
   --sandbox       Ephemeral container, no workspace mount
   --mudbox        Read-only workspace mount
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
+  --port PORT     Publish host PORT to the same container port
+  --port H:C      Publish host port H to container port C
   --loop          Override idle action with LOOP.md or "Keep going"
   --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)
   -h, --help      Show this help

@@ -75,6 +75,36 @@ describe( `parse_args`, () => {
         expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
     } )
 
+    it( `normalises --port PORT to a same-port Docker mapping`, () => {
+        const cmd = parse_args( [ `codex`, `--port`, `80` ] )
+        expect( cmd.flags.ports ).toEqual( [ `80:80` ] )
+        expect( cmd.passthrough ).not.toContain( `--port` )
+        expect( cmd.passthrough ).not.toContain( `80` )
+    } )
+
+    it( `normalises --port host:container mappings`, () => {
+        const cmd = parse_args( [ `codex`, `--port=663:12345` ] )
+        expect( cmd.flags.ports ).toEqual( [ `663:12345` ] )
+        expect( cmd.passthrough ).not.toContain( `--port=663:12345` )
+    } )
+
+    it( `preserves repeated --port mappings in order`, () => {
+        const cmd = parse_args( [ `codex`, `--port`, `80`, `--port=663:12345` ] )
+        expect( cmd.flags.ports ).toEqual( [ `80:80`, `663:12345` ] )
+    } )
+
+    it( `does not pass --port through on agent-less resume`, () => {
+        const cmd = parse_args( [ `resume`, `abc-123`, `--port`, `3000`, `--model`, `sonnet` ] )
+        expect( cmd.flags.ports ).toEqual( [ `3000:3000` ] )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
+    } )
+
+    it( `rejects invalid --port values`, () => {
+        expect( () => parse_args( [ `codex`, `--port`, `3000:bad` ] ) ).toThrow( /Invalid --port/ )
+        expect( () => parse_args( [ `codex`, `--port`, `70000` ] ) ).toThrow( /between 1 and 65535/ )
+        expect( () => parse_args( [ `codex`, `--port` ] ) ).toThrow( /requires a value/ )
+    } )
+
     it( `sets help verb when no agent given`, () => {
         const cmd = parse_args( [] )
         expect( cmd.verb ).toBe( `help` )
