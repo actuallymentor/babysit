@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.18.0 — 2026-06-28
+
+### ✨ Added
+- **`babysit config` configures startup auth checks.** Choose checked agents
+  with `--auth-check-agents`; defaults are Codex and Claude.
+
+### Changed
+- **Startup auth checks now use configured agents.** Babysit no longer selects
+  agents from active/recent auth evidence.
+
 ## 0.17.0 — 2026-06-28
 
 ### ✨ Added
