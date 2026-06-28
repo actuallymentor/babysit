@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { build_system_prompt } from '../src/modes/prompt.js'
+import { load_monitor_config } from '../src/cli/monitor.js'
 import {
     is_initial_prompt_ready,
     read_startup_log_tail,
@@ -54,6 +55,36 @@ describe( `build_system_prompt`, () => {
     it( `does not embed sandbox text when sandbox is false`, () => {
         const prompt = build_system_prompt( { yolo: true } )
         expect( prompt ).not.toContain( `AGENT_AUTONOMY_MODE=sandbox` )
+    } )
+
+} )
+
+describe( `load_monitor_config`, () => {
+
+    it( `uses the original mode-aware prompt for legacy configs`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-monitor-config-` ) )
+
+        try {
+            writeFileSync( join( dir, `babysit.yaml` ), `
+config:
+    idle_timeout_s: 60
+babysit:
+    - on: idle
+      do: "keep going"
+` )
+
+            const { config } = load_monitor_config( {
+                pwd: dir,
+                modifiers: [ `yolo`, `docker`, `loop` ],
+            } )
+
+            expect( config.initial_prompt ).toContain( `AGENT_AUTONOMY_MODE=yolo` )
+            expect( config.initial_prompt ).toContain( `Docker-outside-of-Docker is enabled` )
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
     } )
 
 } )

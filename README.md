@@ -153,6 +153,15 @@ Check for bugs
 Check if the specification is fully implemented
 ```
 
+Use `%initial_prompt%` in `LOOP.md` to paste the configured
+`config.initial_prompt`:
+
+```markdown
+%initial_prompt%
+===
+Keep going
+```
+
 ## Dependency isolation
 
 By default, babysit mounts `node_modules` and `.venv` as named Docker volumes instead of bind-mounting the host copies. This avoids cross-platform binary mismatches (host macOS binaries vs container Linux). Disable with:
