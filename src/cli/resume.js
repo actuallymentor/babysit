@@ -10,18 +10,20 @@ import { cmd_start } from './start.js'
  * @param {string[]} modifiers - e.g. ['yolo', 'loop']
  * @returns {Object} Flag object
  */
-const rebuild_flags = ( modifiers = [] ) => ( {
+const rebuild_flags = ( modifiers = [], session = {} ) => ( {
     yolo: modifiers.includes( `yolo` ),
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
     loop: modifiers.includes( `loop` ),
     log: false,
+    ports: Array.isArray( session.ports ) ? session.ports : [],
 } )
 
 const is_explicit_user_flag = ( [ key, value ] ) => {
 
     if( key === `log` ) return value !== false
+    if( key === `ports` ) return Array.isArray( value ) && value.length > 0
 
     return Boolean( value )
 
@@ -33,15 +35,16 @@ const is_explicit_user_flag = ( [ key, value ] ) => {
  * cannot be filtered with the boolean mode flags.
  * @param {string[]} [modifiers] - Stored session modifiers
  * @param {Object} [flags] - Parsed resume-time flags
+ * @param {Object} [session] - Stored session metadata
  * @returns {Object} Flags for cmd_start
  */
-export const merge_resume_flags = ( modifiers = [], flags = {} ) => {
+export const merge_resume_flags = ( modifiers = [], flags = {}, session = {} ) => {
 
     const explicit_user_flags = Object.fromEntries(
         Object.entries( flags ).filter( is_explicit_user_flag )
     )
 
-    return { ...rebuild_flags( modifiers ), ...explicit_user_flags }
+    return { ...rebuild_flags( modifiers, session ), ...explicit_user_flags }
 
 }
 
@@ -104,7 +107,7 @@ export const cmd_resume = async ( cmd, { start = cmd_start } = {} ) => {
         // so the user can add --loop or --yolo when resuming an older session.
         log.info( `Resuming ${ session.agent } session: ${ session_id }` )
 
-        const merged_flags = merge_resume_flags( session.modifiers, flags )
+        const merged_flags = merge_resume_flags( session.modifiers, flags, session )
 
         // chdir to the session's original working directory so cmd_start picks up
         // the right babysit.yaml and resolves cwd-relative paths (./IDLE.md,

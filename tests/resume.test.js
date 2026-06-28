@@ -139,6 +139,7 @@ describe( `merge_resume_flags`, () => {
             docker: false,
             loop: false,
             log: false,
+            ports: [],
         } )
 
     } )
@@ -162,6 +163,30 @@ describe( `merge_resume_flags`, () => {
         )
 
         expect( flags.log ).toBe( `runs/babysit.log` )
+
+    } )
+
+    it( `preserves stored port mappings on dead-session resume`, () => {
+
+        const flags = merge_resume_flags(
+            [ `yolo` ],
+            { yolo: false, sandbox: false, mudbox: false, loop: false, log: false, ports: [] },
+            { ports: [ `80:80`, `663:12345` ] }
+        )
+
+        expect( flags.ports ).toEqual( [ `80:80`, `663:12345` ] )
+
+    } )
+
+    it( `lets explicit resume-time ports replace stored mappings`, () => {
+
+        const flags = merge_resume_flags(
+            [ `yolo` ],
+            { yolo: false, sandbox: false, mudbox: false, loop: false, log: false, ports: [ `3000:3000` ] },
+            { ports: [ `80:80` ] }
+        )
+
+        expect( flags.ports ).toEqual( [ `3000:3000` ] )
 
     } )
 

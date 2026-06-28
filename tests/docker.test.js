@@ -406,6 +406,43 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `publishes requested ports before the Docker image`, () => {
+
+        const args = build_docker_command_args( make_options( {
+            ports: [ `80`, `663:12345` ],
+            include_agents_dir: false,
+            include_user_globals: false,
+            include_loop_deadline: false,
+        } ) )
+
+        const image_index = args.indexOf( get_image_name() )
+        const first_publish_index = args.indexOf( `-p` )
+
+        expect( args ).toContain( `80:80` )
+        expect( args ).toContain( `663:12345` )
+        expect( first_publish_index ).toBeGreaterThan( -1 )
+        expect( first_publish_index ).toBeLessThan( image_index )
+
+        const published_ports = args
+            .map( ( arg, index ) => arg === `-p` ? args[ index + 1 ] : null )
+            .filter( Boolean )
+        expect( published_ports ).toEqual( [ `80:80`, `663:12345` ] )
+
+    } )
+
+    it( `renders port publishes in the shell command`, () => {
+
+        const cmd = build_docker_command( make_options( {
+            ports: [ `663:12345` ],
+            include_agents_dir: false,
+            include_user_globals: false,
+            include_loop_deadline: false,
+        } ) )
+
+        expect( cmd ).toContain( ` -p 663:12345 ` )
+
+    } )
+
     it( `auto-applies max-effort and latest-model defaults`, () => {
 
         const cmd = build_docker_command( make_options( { agent: codex } ) )

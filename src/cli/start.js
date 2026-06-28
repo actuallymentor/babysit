@@ -531,6 +531,7 @@ export const cmd_start = async ( cmd ) => {
         config,
         extra_env,
         modifiers,
+        ports: flags.ports || [],
         docker_socket_path,
     } )
 
@@ -595,6 +596,7 @@ export const cmd_start = async ( cmd ) => {
         tmux_session: session_name,
         pwd: workspace,
         modifiers,
+        ports: flags.ports || [],
         creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
         creds_tmpfiles,
         creds_sync_baseline,

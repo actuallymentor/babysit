@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0 — 2026-06-28
+
+### ✨ Added
+- **`--port` publishes container ports.** Use `--port 663:12345` to map a host
+  port to a different container port, or `--port 80` to map the same port on
+  both sides.
+
 ## 0.16.0 — 2026-06-28
 
 ### ✨ Added
