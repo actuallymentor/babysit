@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.6 — 2026-06-28
+
+### 🐛 Fixed
+- **Startup now fails before tmux when Docker is not reachable.** Babysit
+  checks the Docker daemon before creating a session, so stopped Docker
+  Desktop prints the real connection error instead of tmux `no sessions`.
+- **Fast container exits now show startup output.** Babysit captures a
+  short-lived tmux diagnostic log during launch and prints it when the agent
+  exits before attach.
+
 ## 0.15.5 — 2026-06-22
 
 ### 🐛 Fixed

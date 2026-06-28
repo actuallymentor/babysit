@@ -7,6 +7,7 @@ import {
     build_agent_state_volume_name,
     build_docker_command,
     build_docker_command_args,
+    docker_daemon_status,
     docker_host_socket_path,
     get_agent_state_mounts,
     prepare_nested_file_mountpoint,
@@ -621,6 +622,53 @@ describe( `build_docker_command`, () => {
         expect( docker_host_socket_path( `unix:///tmp/docker.sock` ) ).toBe( `/tmp/docker.sock` )
         expect( docker_host_socket_path( `tcp://127.0.0.1:2375` ) ).toBe( null )
         expect( docker_host_socket_path( `` ) ).toBe( null )
+
+    } )
+
+    it( `reports when the Docker daemon is reachable`, () => {
+
+        const status = docker_daemon_status( {
+            spawn_sync: ( cmd, args, options ) => {
+                expect( cmd ).toBe( `docker` )
+                expect( args ).toEqual( [ `info`, `--format`, `{{.ServerVersion}}` ] )
+                expect( options.stdio ).toEqual( [ `ignore`, `pipe`, `pipe` ] )
+
+                return { status: 0, stdout: `26.1.0\n` }
+            },
+        } )
+
+        expect( status ).toEqual( { available: true, version: `26.1.0` } )
+
+    } )
+
+    it( `surfaces Docker daemon connection errors`, () => {
+
+        const status = docker_daemon_status( {
+            spawn_sync: () => ( {
+                status: 1,
+                stderr: `Cannot connect to the Docker daemon\n`,
+            } ),
+        } )
+
+        expect( status ).toEqual( {
+            available: false,
+            reason: `Cannot connect to the Docker daemon`,
+        } )
+
+    } )
+
+    it( `reports Docker spawn errors`, () => {
+
+        const status = docker_daemon_status( {
+            spawn_sync: () => ( {
+                error: new Error( `docker not found` ),
+            } ),
+        } )
+
+        expect( status ).toEqual( {
+            available: false,
+            reason: `docker not found`,
+        } )
 
     } )
 

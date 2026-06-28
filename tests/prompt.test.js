@@ -1,8 +1,13 @@
 import { describe, it, expect } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
 import { build_system_prompt } from '../src/modes/prompt.js'
 import {
     is_initial_prompt_ready,
+    read_startup_log_tail,
     resolve_initial_prompt,
+    startup_diagnostic_log_path,
     wait_for_initial_prompt_ready,
 } from '../src/cli/start.js'
 import { claude } from '../src/agents/claude.js'
@@ -136,6 +141,47 @@ Do NOT add Co-Authored-By lines to git commit messages.
         } )
 
         expect( ready ).toBe( false )
+
+    } )
+
+} )
+
+describe( `startup diagnostics`, () => {
+
+    it( `creates diagnostic paths under Babysit's launch log directory`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-startup-path-` ) )
+
+        try {
+            const path = startup_diagnostic_log_path( `babysit_/tmp/project_codex_123`, { babysit_dir: dir } )
+
+            expect( path.startsWith( join( dir, `launch-logs` ) ) ).toBe( true )
+            expect( path.endsWith( `.log` ) ).toBe( true )
+            expect( path ).not.toContain( `/tmp/project` )
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `returns a stripped tail from startup output`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-startup-tail-` ) )
+        const path = join( dir, `startup.log` )
+
+        try {
+            writeFileSync( path, `one\n\x1b[31mtwo\x1b[0m\nthree\n` )
+
+            expect( read_startup_log_tail( path, { max_lines: 2 } ) ).toBe( `two\nthree` )
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `returns an empty string when no startup log exists`, () => {
+
+        expect( read_startup_log_tail( `/tmp/not-a-real-babysit-startup.log` ) ).toBe( `` )
 
     } )
 
