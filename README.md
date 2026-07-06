@@ -217,6 +217,9 @@ Unrecognised flags are passed through to the coding agent CLI:
 babysit claude --yolo --model sonnet --effort high
 ```
 
+By default, Babysit starts Claude with `--model best --effort max` and Codex
+with `--model gpt-5.5 -c model_reasoning_effort="xhigh"`.
+
 ## Logging tmux output
 
 Pass `--log` to append everything the tmux pane renders to a logfile. The header `Babysit session start: YYYY-MM-DD HH:MM:SS` is prepended to each session's block, so several runs can share one file.

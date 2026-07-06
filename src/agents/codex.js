@@ -91,8 +91,8 @@ export const codex = {
     },
 
     defaults: {
-        // Latest GA frontier model for coding (April 2026). Falls back to gpt-5.4 for
-        // API-key auth without ChatGPT sign-in — users override with --model gpt-5.4.
+        // Current strongest recommended Codex model. If an account lacks access,
+        // users can still override with a supported model via --model.
         model: `gpt-5.5`,
         effort: `xhigh`,
     },

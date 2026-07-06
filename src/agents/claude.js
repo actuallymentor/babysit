@@ -51,7 +51,10 @@ export const claude = {
     },
 
     defaults: {
-        model: `opus`,
+        // `best` resolves to Fable 5 when the user's organization has access,
+        // otherwise the latest Opus. That keeps the default at the most capable
+        // Claude model available to the current account.
+        model: `best`,
         effort: `max`,
     },
 

@@ -443,7 +443,7 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `auto-applies max-effort and latest-model defaults`, () => {
+    it( `auto-applies Codex max-effort and latest-model defaults`, () => {
 
         const cmd = build_docker_command( make_options( { agent: codex } ) )
 
@@ -452,6 +452,16 @@ describe( `build_docker_command`, () => {
         // model_reasoning_effort is the real codex config key (not reasoning_effort).
         // The full-quoted form is shell_quote'd into a single arg by build_docker_command.
         expect( cmd ).toContain( `'model_reasoning_effort="xhigh"'` )
+
+    } )
+
+    it( `auto-applies Claude's strongest available model and max effort`, () => {
+
+        const cmd = build_docker_command( make_options( { agent: claude } ) )
+
+        // Claude Code's `best` alias uses Fable 5 when available, otherwise
+        // the latest Opus. `max` is the deepest supported --effort level.
+        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model best --effort max` )
 
     } )
 
@@ -475,7 +485,7 @@ describe( `build_docker_command`, () => {
         expect( build_docker_command( make_options( {
             agent: claude,
             agent_args: claude.flags.resume( uuid ),
-        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model opus --effort max --resume ${ uuid }` )
+        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model best --effort max --resume ${ uuid }` )
 
         expect( build_docker_command( make_options( {
             agent: codex,
