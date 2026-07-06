@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.19.0 — 2026-07-06
+
+### Changed
+- **Claude now defaults to the strongest available model.** Babysit launches
+  Claude with `--model best --effort max`, selecting Fable 5 where available
+  and otherwise the latest Opus.
+- **Codex max defaults were re-verified.** Babysit continues to launch Codex
+  with `--model gpt-5.5` and `model_reasoning_effort="xhigh"`.
+
 ## 0.18.0 — 2026-06-28
 
 ### ✨ Added
