@@ -12,6 +12,9 @@ import { get_extra_mounts } from '../agents/setup.js'
 import { normalise_port_mappings } from './ports.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
+export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
+export const BABYSIT_RC_CONTAINER_PATH = `/home/node/.babysitrc`
+export const BABYSIT_HOST_RC_ENV = `BABYSIT_HOST_BABYSITRC`
 
 /**
  * Extract a Unix socket path from a Docker host URI.
@@ -363,9 +366,11 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.interactive=true] - Whether to allocate stdin + TTY
  * @param {boolean} [options.mount_workspace=true] - Whether to bind-mount the host workspace
  * @param {boolean} [options.include_agents_dir=true] - Whether to mount the shared ~/.agents directory
+ * @param {boolean} [options.include_babysit_rc=true] - Whether to mount ~/.babysitrc when present
  * @param {boolean} [options.include_user_globals=true] - Whether to mount ~/.agents/AGENTS.md into the agent home
  * @param {boolean} [options.include_loop_deadline=true] - Whether to mount the statusline loop deadline file
  * @param {boolean} [options.include_agent_state=true] - Whether to mount persistent native resume state
+ * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
  * @returns {string[]} Docker argv
  */
@@ -384,9 +389,11 @@ export const build_docker_command_args = ( options ) => {
         interactive = true,
         mount_workspace = true,
         include_agents_dir = true,
+        include_babysit_rc = true,
         include_user_globals = true,
         include_loop_deadline = true,
         include_agent_state = true,
+        babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
         agent_command = null,
     } = options
     const flags = []
@@ -438,6 +445,25 @@ export const build_docker_command_args = ( options ) => {
         } catch ( e ) {
             log.debug( `Could not stat ${ AGENTS_DIR } for group-add: ${ e.message }` )
         }
+    }
+
+    // Optional host env bootstrap. The entrypoint sources this as the node
+    // user just before launching the selected agent, so users can keep tokens
+    // and tool-specific exports in one host-local file without baking them
+    // into babysit.yaml or the Docker image. The host path env lets nested
+    // Docker-outside-of-Docker sessions remount the same host file even though
+    // the inner client only sees it at /home/node/.babysitrc.
+    const carried_babysit_rc_source = process.env[ BABYSIT_HOST_RC_ENV ]
+    const babysit_rc_source = carried_babysit_rc_source || babysit_rc_path
+    const babysit_rc_exists = babysit_rc_source && (
+        carried_babysit_rc_source === babysit_rc_source
+        || existsSync( babysit_rc_source )
+    )
+
+    if( include_babysit_rc && babysit_rc_exists ) {
+        const mount_source = resolve_workspace_mount_source( babysit_rc_source )
+        flags.push( `-v`, `${ mount_source }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
+        flags.push( `-e`, `${ BABYSIT_HOST_RC_ENV }=${ mount_source }` )
     }
 
     // Dependency volume isolation (unless disabled in config)

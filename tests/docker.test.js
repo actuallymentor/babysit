@@ -4,6 +4,8 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { get_image_name } from '../src/docker/update.js'
 import {
+    BABYSIT_HOST_RC_ENV,
+    BABYSIT_RC_CONTAINER_PATH,
     build_agent_state_volume_name,
     build_docker_command,
     build_docker_command_args,
@@ -124,6 +126,18 @@ describe( `docker image`, () => {
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
 
         expect( dockerfile ).toContain( `/home/node/.config/gh` )
+
+    } )
+
+    it( `sources the host-mounted babysit rc before launching the agent`, () => {
+
+        const entrypoint = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
+
+        expect( entrypoint ).toContain( `/home/node/.babysitrc` )
+        expect( entrypoint ).toContain( `gosu node env HOME=/home/node bash -c` )
+        expect( entrypoint ).toContain( `set -a` )
+        expect( entrypoint ).toContain( `source /home/node/.babysitrc` )
+        expect( entrypoint ).toContain( `exec "$@"` )
 
     } )
 
@@ -403,6 +417,61 @@ describe( `build_docker_command`, () => {
 
         expect( build_docker_command( make_options( { agent: claude } ) ) )
             .toContain( `CLAUDE_CONFIG_DIR=/home/node/.claude` )
+
+    } )
+
+    it( `mounts host ~/.babysitrc read-only when present`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-rc-` ) )
+        const babysit_rc_path = join( dir, `.babysitrc` )
+
+        try {
+            writeFileSync( babysit_rc_path, `PLAIN_ASSIGNMENT=available\nexport EXPORTED_ASSIGNMENT=available\n` )
+
+            const args = build_docker_command_args( make_options( {
+                babysit_rc_path,
+                include_agents_dir: false,
+                include_user_globals: false,
+                include_loop_deadline: false,
+            } ) )
+
+            expect( args ).toContain( `${ babysit_rc_path }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
+            expect( args ).toContain( `${ BABYSIT_HOST_RC_ENV }=${ babysit_rc_path }` )
+
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `skips the babysit rc mount when the host file is absent`, () => {
+
+        const args = build_docker_command_args( make_options( {
+            babysit_rc_path: `/tmp/definitely-missing-babysitrc`,
+            include_agents_dir: false,
+            include_user_globals: false,
+            include_loop_deadline: false,
+        } ) )
+
+        expect( args.some( arg => arg.includes( BABYSIT_RC_CONTAINER_PATH ) ) ).toBe( false )
+
+    } )
+
+    it( `uses the carried host babysit rc path for nested Docker sessions`, async () => {
+
+        await with_env( { [ BABYSIT_HOST_RC_ENV ]: `/Users/alice/.babysitrc` }, () => {
+
+            const args = build_docker_command_args( make_options( {
+                babysit_rc_path: `/home/node/.babysitrc`,
+                include_agents_dir: false,
+                include_user_globals: false,
+                include_loop_deadline: false,
+            } ) )
+
+            expect( args ).toContain( `/Users/alice/.babysitrc:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
+            expect( args ).toContain( `${ BABYSIT_HOST_RC_ENV }=/Users/alice/.babysitrc` )
+
+        } )
 
     } )
 
