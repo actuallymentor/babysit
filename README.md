@@ -195,6 +195,18 @@ babysit config --auth-check-agents all
 babysit config --auth-check-agents none
 ```
 
+If `~/.babysitrc` exists, Babysit bind-mounts it read-only into the container
+and sources it as the `node` user immediately before launching the coding
+agent. Use it for host-local environment setup:
+
+```bash
+OPENAI_API_KEY=...
+export CUSTOM_TOOL_HOME="$HOME/.custom-tool"
+```
+
+Plain `KEY=value` assignments and `export KEY=value` lines are both available
+in the coding agent's environment.
+
 ## Subcommands
 
 ```

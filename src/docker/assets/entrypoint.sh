@@ -55,5 +55,18 @@ if [ -d /home/node/.agents/skills ] && [ ! -e /home/node/.claude/skills ]; then
     gosu node ln -s /home/node/.agents/skills /home/node/.claude/skills 2>/dev/null || true
 fi
 
+# Source the host-mounted ~/.babysitrc as the runtime user so environment
+# customisations use the same HOME and uid as the coding agent. `set -a`
+# exports plain KEY=value assignments as child-process environment variables.
+if [ -f /home/node/.babysitrc ]; then
+    exec gosu node env HOME=/home/node bash -c '
+        set -a
+        # shellcheck source=/dev/null
+        source /home/node/.babysitrc || exit $?
+        set +a
+        exec "$@"
+    ' babysit-agent "$@"
+fi
+
 # Drop privileges back to node (now uid=$HOST_UID) and exec the agent.
 exec gosu node "$@"

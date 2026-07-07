@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0 — 2026-07-07
+
+### ✨ Added
+- **`~/.babysitrc` can define agent environment variables.** When the host file
+  exists, Babysit mounts it read-only into the container and sources it as the
+  coding-agent user before launch, exporting both `KEY=value` and
+  `export KEY=value` assignments.
+
 ## 0.19.0 — 2026-07-06
 
 ### Changed
