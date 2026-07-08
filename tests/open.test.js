@@ -178,3 +178,119 @@ describe( `cmd_open without a session id`, () => {
     } )
 
 } )
+
+describe( `cmd_open with a session id`, () => {
+
+    it( `attaches directly when the id is an active tmux session name`, async () => {
+
+        let attached_session = null
+
+        await cmd_open( { session_id: `babysit_direct_codex_1` }, {
+            has_session_fn: async session_name => session_name === `babysit_direct_codex_1`,
+            list_sessions_fn: async () => {
+                throw new Error( `Unexpected fuzzy lookup` )
+            },
+            list_stored_sessions_fn: () => {
+                throw new Error( `Unexpected stored lookup` )
+            },
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_direct_codex_1` )
+
+    } )
+
+    it( `attaches through stored Babysit metadata ids`, async () => {
+
+        const { stored_sessions } = session_fixtures()
+        let attached_session = null
+
+        await cmd_open( { session_id: `baby-2` }, {
+            has_session_fn: async session_name => session_name === `babysit_/workspace/app_claude_2`,
+            list_sessions_fn: async () => [],
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_/workspace/app_claude_2` )
+
+    } )
+
+    it( `attaches through stored agent-native session ids`, async () => {
+
+        const { stored_sessions } = session_fixtures()
+        let attached_session = null
+
+        await cmd_open( { session_id: `agent-1` }, {
+            has_session_fn: async session_name => session_name === `babysit_/workspace/app_codex_1`,
+            list_sessions_fn: async () => [],
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_/workspace/app_codex_1` )
+
+    } )
+
+    it( `falls back to fuzzy active-session matching`, async () => {
+
+        const { tmux_sessions } = session_fixtures()
+        let attached_session = null
+
+        await cmd_open( { session_id: `other_codex` }, {
+            has_session_fn: async () => false,
+            list_sessions_fn: async () => tmux_sessions,
+            list_stored_sessions_fn: () => [],
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_/workspace/other_codex_3` )
+
+    } )
+
+    it( `exits when an explicit id cannot be resolved`, async () => {
+
+        let exit_code = null
+        let attached_session = null
+
+        const errors = await capture_errors( async () => {
+            await cmd_open( { session_id: `missing-id` }, {
+                has_session_fn: async () => false,
+                list_sessions_fn: async () => [],
+                list_stored_sessions_fn: () => [],
+                attach_session_fn: session_name => {
+                    attached_session = session_name
+                },
+                exit_fn: code => {
+                    exit_code = code
+                },
+            } )
+        } )
+
+        expect( attached_session ).toBeNull()
+        expect( exit_code ).toBe( 1 )
+        expect( errors ).toContain( `No active session found for: missing-id` )
+
+    } )
+
+} )
