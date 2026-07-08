@@ -247,6 +247,53 @@ describe( `cmd_open with a session id`, () => {
 
     } )
 
+    it( `attaches through partial stored tmux session ids`, async () => {
+
+        const { stored_sessions } = session_fixtures()
+        let attached_session = null
+
+        await cmd_open( { session_id: `app_claude` }, {
+            has_session_fn: async session_name => session_name === `babysit_/workspace/app_claude_2`,
+            list_sessions_fn: async () => [],
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_/workspace/app_claude_2` )
+
+    } )
+
+    it( `does not attach through stale stored metadata`, async () => {
+
+        const { stored_sessions } = session_fixtures()
+        let attached_session = null
+        let exit_code = null
+
+        const errors = await capture_errors( async () => {
+            await cmd_open( { session_id: `baby-1` }, {
+                has_session_fn: async () => false,
+                list_sessions_fn: async () => [],
+                list_stored_sessions_fn: () => stored_sessions,
+                attach_session_fn: session_name => {
+                    attached_session = session_name
+                },
+                exit_fn: code => {
+                    exit_code = code
+                },
+            } )
+        } )
+
+        expect( attached_session ).toBeNull()
+        expect( exit_code ).toBe( 1 )
+        expect( errors ).toContain( `No active session found for: baby-1` )
+
+    } )
+
     it( `falls back to fuzzy active-session matching`, async () => {
 
         const { tmux_sessions } = session_fixtures()
