@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.21.0 — 2026-07-08
+
+### ✨ Added
+- **`babysit open` can infer the current workspace session.** Run it without
+  an id to attach to the only active session for the current directory, or see
+  matching sessions when several are active.
+
 ## 0.20.0 — 2026-07-07
 
 ### ✨ Added

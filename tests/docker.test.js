@@ -420,7 +420,7 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `mounts host ~/.babysitrc read-only when present`, () => {
+    it( `mounts host ~/.babysitrc read-only when present`, async () => {
 
         const dir = mkdtempSync( join( tmpdir(), `babysit-rc-` ) )
         const babysit_rc_path = join( dir, `.babysitrc` )
@@ -428,15 +428,19 @@ describe( `build_docker_command`, () => {
         try {
             writeFileSync( babysit_rc_path, `PLAIN_ASSIGNMENT=available\nexport EXPORTED_ASSIGNMENT=available\n` )
 
-            const args = build_docker_command_args( make_options( {
-                babysit_rc_path,
-                include_agents_dir: false,
-                include_user_globals: false,
-                include_loop_deadline: false,
-            } ) )
+            await with_env( { [ BABYSIT_HOST_RC_ENV ]: undefined }, () => {
 
-            expect( args ).toContain( `${ babysit_rc_path }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
-            expect( args ).toContain( `${ BABYSIT_HOST_RC_ENV }=${ babysit_rc_path }` )
+                const args = build_docker_command_args( make_options( {
+                    babysit_rc_path,
+                    include_agents_dir: false,
+                    include_user_globals: false,
+                    include_loop_deadline: false,
+                } ) )
+
+                expect( args ).toContain( `${ babysit_rc_path }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
+                expect( args ).toContain( `${ BABYSIT_HOST_RC_ENV }=${ babysit_rc_path }` )
+
+            } )
 
         } finally {
             rmSync( dir, { recursive: true, force: true } )
@@ -444,16 +448,20 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `skips the babysit rc mount when the host file is absent`, () => {
+    it( `skips the babysit rc mount when the host file is absent`, async () => {
 
-        const args = build_docker_command_args( make_options( {
-            babysit_rc_path: `/tmp/definitely-missing-babysitrc`,
-            include_agents_dir: false,
-            include_user_globals: false,
-            include_loop_deadline: false,
-        } ) )
+        await with_env( { [ BABYSIT_HOST_RC_ENV ]: undefined }, () => {
 
-        expect( args.some( arg => arg.includes( BABYSIT_RC_CONTAINER_PATH ) ) ).toBe( false )
+            const args = build_docker_command_args( make_options( {
+                babysit_rc_path: `/tmp/definitely-missing-babysitrc`,
+                include_agents_dir: false,
+                include_user_globals: false,
+                include_loop_deadline: false,
+            } ) )
+
+            expect( args.some( arg => arg.includes( BABYSIT_RC_CONTAINER_PATH ) ) ).toBe( false )
+
+        } )
 
     } )
 

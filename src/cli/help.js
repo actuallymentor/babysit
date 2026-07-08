@@ -14,7 +14,7 @@ Usage:
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id> [flags]  Resume a previous session
   babysit list                         List active sessions
-  babysit open <session_id>            Attach to an active session
+  babysit open [session_id]            Attach to an active session
   babysit resume <session_id> [flags]  Resume a previous session
   babysit config                       Configure babysit settings
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
@@ -44,6 +44,7 @@ Examples:
   babysit opencode resume abc-123 --yolo
   babysit config --auth-check-agents codex,claude
   babysit list
+  babysit open
   babysit open babysit_myrepo_claude_1234567890
 `
 

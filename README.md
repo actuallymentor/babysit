@@ -30,7 +30,10 @@ babysit resume <session_id> --yolo
 # List active sessions
 babysit list
 
-# Attach to a running session
+# Attach to the only running session for the current directory
+babysit open
+
+# Attach to a specific running session
 babysit open <session_id>
 
 # Choose which agent logins babysit checks on startup
@@ -42,7 +45,7 @@ babysit config --auth-check-agents codex,claude
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
 2. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the agents selected in `babysit config` to answer a tiny `ok` prompt inside the Babysit Docker image. Codex and Claude are checked by default. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]` and points to `babysit config`
 3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
-4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open <id>`
+4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id>` from anywhere
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
 7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
@@ -213,11 +216,16 @@ in the coding agent's environment.
 babysit <agent> [flags]              Start a new session
 babysit <agent> resume <id> [flags]  Resume a previous session
 babysit list                         List active sessions
-babysit open <session_id>            Attach to an active session
+babysit open [session_id]            Attach to an active session
 babysit resume <session_id> [flags]  Resume a previous session
 babysit config                       Configure babysit settings
 babysit update                       Refresh babysit, ~/.agents, and the docker image
 ```
+
+Run `babysit open` without an id from a workspace directory to attach to its
+only active session. When more than one active session belongs to that
+directory, Babysit prints the matching sessions and IDs so you can choose one
+with `babysit open <session_id>`.
 
 `babysit resume <session_id>` accepts the id printed when a Babysit session
 exits. If Babysit did not capture the agent's native session id before exit, it

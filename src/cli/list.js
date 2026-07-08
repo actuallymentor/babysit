@@ -2,19 +2,25 @@ import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
 
 /**
- * List all active babysit sessions
+ * Pad a string to a fixed width
+ * @param {string} str - Input string
+ * @param {number} width - Target width
+ * @returns {string}
  */
-export const cmd_list = async () => {
+const pad = ( str, width ) => String( str ).padEnd( width )
 
-    const tmux_sessions = await list_sessions()
-    const stored_sessions = list_stored_sessions()
+/**
+ * Print active sessions in the same table shape used by `babysit list`.
+ * @param {Array<{ name: string, attached: boolean }>} tmux_sessions - Active tmux sessions
+ * @param {Object[]} stored_sessions - Stored Babysit metadata
+ * @param {Object} [options]
+ * @param {string} [options.title] - Table title
+ */
+export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
+    title = `Active babysit sessions:`,
+} = {} ) => {
 
-    if( tmux_sessions.length === 0 ) {
-        console.log( `No active babysit sessions.` )
-        return
-    }
-
-    console.log( `\nActive babysit sessions:\n` )
+    console.log( `\n${ title }\n` )
     console.log( `  ${ pad( `SESSION`, 50 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `STATUS`, 10 ) }  ID` )
     console.log( `  ${ `-`.repeat( 90 ) }` )
 
@@ -35,9 +41,18 @@ export const cmd_list = async () => {
 }
 
 /**
- * Pad a string to a fixed width
- * @param {string} str - Input string
- * @param {number} width - Target width
- * @returns {string}
+ * List all active babysit sessions
  */
-const pad = ( str, width ) => String( str ).padEnd( width )
+export const cmd_list = async () => {
+
+    const tmux_sessions = await list_sessions()
+    const stored_sessions = list_stored_sessions()
+
+    if( tmux_sessions.length === 0 ) {
+        console.log( `No active babysit sessions.` )
+        return
+    }
+
+    print_active_sessions_table( tmux_sessions, stored_sessions )
+
+}
