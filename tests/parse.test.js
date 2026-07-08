@@ -27,6 +27,12 @@ describe( `parse_args`, () => {
         expect( cmd.session_id ).toBe( `abc-123` )
     } )
 
+    it( `recognises babysit open without an id`, () => {
+        const cmd = parse_args( [ `open` ] )
+        expect( cmd.verb ).toBe( `open` )
+        expect( cmd.session_id ).toBeUndefined()
+    } )
+
     it( `recognises babysit resume <id> with no agent`, () => {
         const cmd = parse_args( [ `resume`, `abc-123`, `--yolo` ] )
         expect( cmd.verb ).toBe( `resume` )
