@@ -120,7 +120,7 @@ Check if the specification is fully implemented
 - `babysit` passes host credentials for the coding agents to the container in a platform specific manner, this may mean periodically refreshing the token on the host. See `sir-claudius` source code for reference but note that the implementation should be different and improved for `babysit`
 - `babysit` updates itself in a github action just like `sir-claudius`
 - any flags passed to `babysit` that it does not recognize are passed as arguments to the coding agent cli
-- for coding CLIs that have effort and model settings, `babysit` always auto-selects the maximum effort and latest model
+- for coding CLIs that have effort and model settings, `babysit` auto-selects the latest model and a high-effort default
 - the statusline is similar to sir-claudius but without the usage logic
 
 ## Implementation details

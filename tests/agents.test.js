@@ -178,10 +178,10 @@ describe( `model defaults`, () => {
         expect( get_agent( `gemini` ).defaults.model ).toBeUndefined()
     } )
 
-    it( `claude and codex force their strongest available max-effort models`, () => {
+    it( `claude and codex force their preferred frontier defaults`, () => {
         expect( get_agent( `claude` ).defaults.model ).toBe( `best` )
         expect( get_agent( `claude` ).defaults.effort ).toBe( `max` )
-        expect( get_agent( `codex` ).defaults.model ).toBe( `gpt-5.5` )
+        expect( get_agent( `codex` ).defaults.model ).toBe( `gpt-5.6-sol` )
         expect( get_agent( `codex` ).defaults.effort ).toBe( `xhigh` )
     } )
 
