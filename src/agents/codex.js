@@ -91,9 +91,9 @@ export const codex = {
     },
 
     defaults: {
-        // Current strongest recommended Codex model. If an account lacks access,
-        // users can still override with a supported model via --model.
-        model: `gpt-5.5`,
+        // Current frontier Codex model at the preferred extra-high reasoning
+        // level. Users can override either setting when needed.
+        model: `gpt-5.6-sol`,
         effort: `xhigh`,
     },
 

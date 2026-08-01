@@ -238,7 +238,7 @@ babysit claude --yolo --model sonnet --effort high
 ```
 
 By default, Babysit starts Claude with `--model best --effort max` and Codex
-with `--model gpt-5.5 -c model_reasoning_effort="xhigh"`.
+with `--model gpt-5.6-sol -c model_reasoning_effort="xhigh"`.
 
 ## Logging tmux output
 

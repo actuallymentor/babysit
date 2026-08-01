@@ -1,6 +1,6 @@
 # Agent CLI Research
 
-Last verified against vendor docs: 2026-07-06.
+Last verified against vendor docs: 2026-08-01.
 
 ## Docker-outside-of-Docker
 - Verified against Docker docs on 2026-05-05.
@@ -19,7 +19,7 @@ Last verified against vendor docs: 2026-07-06.
 - **Skip perms**: `--dangerously-skip-permissions`
 - **System prompt**: `--append-system-prompt "text"` (preferred — preserves built-in capabilities). `--system-prompt "text"` replaces the entire prompt.
 - **Resume**: `claude --resume <id>` or `claude -r <id>`
-- **Model**: `--model best` is the highest-capability default for Babysit as of 2026-07-06. Claude Code docs say `best` uses Fable 5 where the organization has access, otherwise the latest Opus. `--model fable` hard-pins Fable 5 but can be unavailable under zero-data-retention / policy constraints.
+- **Model**: `--model best` is the highest-capability default for Babysit as of 2026-08-01. Claude Code docs say `best` uses Fable 5 where the organization has access, otherwise the latest Opus. `--model fable` hard-pins Fable 5 but can be unavailable under zero-data-retention / policy constraints.
 - **Effort**: `--effort max` (other levels: low, medium, high, xhigh; available levels depend on the model)
 - **Creds**: `~/.claude/.credentials.json` (linux), Keychain service "Claude Code-credentials" (macOS)
 - **Install location**: `~/.local/bin/claude` (binary lives under `~/.local/share/claude/versions/` with a symlink in `~/.local/bin`). Container Dockerfile must add `~/.local/bin` to PATH.
@@ -29,8 +29,8 @@ Last verified against vendor docs: 2026-07-06.
 - **Skip perms**: `--dangerously-bypass-approvals-and-sandbox` (alias `--yolo`). `--full-auto` only skips approvals — it leaves codex's `workspace-write` sandbox active, which blocks real edits inside our docker container.
 - **System prompt**: no CLI flag — codex reads `AGENTS.override.md` then `AGENTS.md` from `${CODEX_HOME}` (default `~/.codex`). The legacy `instructions.md` filename is silently ignored. Babysit pins `CODEX_HOME=/home/node/.codex` and writes the prompt to `AGENTS.md` via the entrypoint.
 - **Resume**: `codex resume <id>` for interactive (what we use), `codex exec resume <id>` for non-interactive
-- **Model**: `--model gpt-5.5` (verified 2026-07-06 against OpenAI Codex docs as the newest frontier model for complex coding, computer use, knowledge work, and research workflows in Codex)
-- **Effort**: `-c model_reasoning_effort="xhigh"` for max effort (NOT bare `reasoning_effort` — that key is silently ignored). Values: `minimal`, `low`, `medium`, `high`, `xhigh` (xhigh is the highest)
+- **Model**: `--model gpt-5.6-sol` (verified 2026-08-01 against OpenAI's live latest-model resolver and model guide as the frontier GPT-5.6 model for complex reasoning and coding; the `gpt-5.6` alias currently routes to it)
+- **Effort**: `-c model_reasoning_effort="xhigh"` is Babysit's preferred quality-first default (NOT bare `reasoning_effort` — that key is silently ignored). GPT-5.6 also supports `max`, but Babysit intentionally leaves that opt-in.
 - **Creds**: `${CODEX_HOME}/auth.json` for ChatGPT-OAuth login (default flow, `~/.codex/auth.json` only when `CODEX_HOME` is unset). `CODEX_API_KEY` / `OPENAI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively on top so users can override.
 - **Home env**: `CODEX_HOME` — default `~/.codex`, controls where global AGENTS.md / config / sessions / auth.json live
 

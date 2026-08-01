@@ -174,7 +174,7 @@ export const build_claude_json_tmpfile = ( host_claude_json_path ) => {
 // because their state lives in config.toml, which we mount in a tmpdir
 // snapshot. We pre-mark each one as "seen" (count >= 1) so the dialog
 // never appears. New versions can be appended here as codex ships them.
-export const CODEX_KNOWN_MODELS_FOR_NUX = [ `gpt-5`, `gpt-5.1`, `gpt-5.2`, `gpt-5.3`, `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, `gpt-5.5-codex` ]
+export const CODEX_KNOWN_MODELS_FOR_NUX = [ `gpt-5`, `gpt-5.1`, `gpt-5.2`, `gpt-5.3`, `gpt-5.3-codex`, `gpt-5.4`, `gpt-5.5`, `gpt-5.5-codex`, `gpt-5.6`, `gpt-5.6-sol` ]
 
 /**
  * Inject the "trust /workspace" + "model nux seen" entries into a codex

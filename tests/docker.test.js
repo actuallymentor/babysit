@@ -196,8 +196,8 @@ describe( `codex adapter`, () => {
         expect( codex.flags.effort( `xhigh` ) ).toEqual( [ `-c`, `model_reasoning_effort="xhigh"` ] )
     } )
 
-    it( `defaults to the latest GA model at extra-high effort`, () => {
-        expect( codex.defaults.model ).toBe( `gpt-5.5` )
+    it( `defaults to the latest frontier model at extra-high effort`, () => {
+        expect( codex.defaults.model ).toBe( `gpt-5.6-sol` )
         expect( codex.defaults.effort ).toBe( `xhigh` )
     } )
 
@@ -520,12 +520,12 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `auto-applies Codex max-effort and latest-model defaults`, () => {
+    it( `auto-applies Codex high-effort and latest-model defaults`, () => {
 
         const cmd = build_docker_command( make_options( { agent: codex } ) )
 
-        // Spec: "always auto-selects the maximum effort and latest model"
-        expect( cmd ).toContain( `--model gpt-5.5` )
+        // Babysit pins the current frontier model and preferred effort.
+        expect( cmd ).toContain( `--model gpt-5.6-sol` )
         // model_reasoning_effort is the real codex config key (not reasoning_effort).
         // The full-quoted form is shell_quote'd into a single arg by build_docker_command.
         expect( cmd ).toContain( `'model_reasoning_effort="xhigh"'` )
@@ -550,7 +550,7 @@ describe( `build_docker_command`, () => {
             modifiers: [],
         } ) )
 
-        expect( cmd ).toContain( ` codex --sandbox danger-full-access --model gpt-5.5` )
+        expect( cmd ).toContain( ` codex --sandbox danger-full-access --model gpt-5.6-sol` )
         expect( cmd ).not.toContain( `--dangerously-bypass-approvals-and-sandbox` )
 
     } )
@@ -567,7 +567,7 @@ describe( `build_docker_command`, () => {
         expect( build_docker_command( make_options( {
             agent: codex,
             agent_args: codex.flags.resume( uuid ),
-        } ) ) ).toContain( ` codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.5 -c 'model_reasoning_effort="xhigh"' resume ${ uuid }` )
+        } ) ) ).toContain( ` codex --dangerously-bypass-approvals-and-sandbox --model gpt-5.6-sol -c 'model_reasoning_effort="xhigh"' resume ${ uuid }` )
 
         expect( build_docker_command( make_options( {
             agent: gemini,
