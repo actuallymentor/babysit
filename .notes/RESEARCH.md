@@ -1,6 +1,6 @@
 # Agent CLI Research
 
-Last verified against vendor docs: 2026-08-01.
+Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 
 ## Docker-outside-of-Docker
 - Verified against Docker docs on 2026-05-05.
@@ -30,7 +30,7 @@ Last verified against vendor docs: 2026-08-01.
 - **System prompt**: no CLI flag — codex reads `AGENTS.override.md` then `AGENTS.md` from `${CODEX_HOME}` (default `~/.codex`). The legacy `instructions.md` filename is silently ignored. Babysit pins `CODEX_HOME=/home/node/.codex` and writes the prompt to `AGENTS.md` via the entrypoint.
 - **Resume**: `codex resume <id>` for interactive (what we use), `codex exec resume <id>` for non-interactive
 - **Model**: `--model gpt-5.6-sol` (verified 2026-08-01 against OpenAI's live latest-model resolver and model guide as the frontier GPT-5.6 model for complex reasoning and coding; the `gpt-5.6` alias currently routes to it)
-- **Effort**: `-c model_reasoning_effort="xhigh"` is Babysit's preferred quality-first default (NOT bare `reasoning_effort` — that key is silently ignored). GPT-5.6 also supports `max`, but Babysit intentionally leaves that opt-in.
+- **Effort**: `-c model_reasoning_effort="xhigh"` is Babysit's preferred quality-first default (NOT bare `reasoning_effort` — that key is silently ignored). GPT-5.6 supports `none`, `low`, `medium`, `high`, `xhigh`, and `max`; Babysit intentionally leaves `max` opt-in.
 - **Creds**: `${CODEX_HOME}/auth.json` for ChatGPT-OAuth login (default flow, `~/.codex/auth.json` only when `CODEX_HOME` is unset). `CODEX_API_KEY` / `OPENAI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively on top so users can override.
 - **Home env**: `CODEX_HOME` — default `~/.codex`, controls where global AGENTS.md / config / sessions / auth.json live
 
