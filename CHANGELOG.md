@@ -6,7 +6,7 @@
 - **Claude and Codex now use the current frontier defaults.** Claude remains on
   `--model best --effort max`, selecting Fable 5 where available and otherwise
   the latest Opus. Codex now launches with `--model gpt-5.6-sol` and
-  `model_reasoning_effort="xhigh"`.
+  `model_reasoning_effort="xhigh"`; GPT-5.6's deeper `max` effort stays opt-in.
 
 ## 0.21.0 — 2026-07-08
 

@@ -92,7 +92,8 @@ export const codex = {
 
     defaults: {
         // Current frontier Codex model at the preferred extra-high reasoning
-        // level. Users can override either setting when needed.
+        // level. Pin the audited frontier slug instead of the family alias so
+        // the selected tier stays explicit. Users can override either setting.
         model: `gpt-5.6-sol`,
         effort: `xhigh`,
     },
