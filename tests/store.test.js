@@ -14,7 +14,7 @@ describe( `stored session ordering`, () => {
 
         const sessions = [
             { babysit_id: `older`, started_at: `2026-08-03T12:00:00.000Z` },
-            { babysit_id: `legacy` },
+            { babysit_id: `legacy`, started_at: null },
             { babysit_id: `invalid`, started_at: `unknown` },
             { babysit_id: `newer`, started_at: `2026-08-04T12:00:00.000Z` },
         ]

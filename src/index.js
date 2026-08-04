@@ -9,7 +9,7 @@ import { show_help } from './cli/help.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_open } from './cli/open.js'
-import { cmd_resume } from './cli/resume.js'
+import { cmd_resume, is_resume_listing } from './cli/resume.js'
 import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
 import { cmd_config } from './cli/config.js'
@@ -47,8 +47,7 @@ const main = async () => {
     // Reading the durable session registry is a local filesystem operation.
     // Keep bare `babysit resume` useful even before Docker/tmux are installed;
     // selecting a session still performs the normal dependency preflight.
-    const is_resume_listing = cmd.verb === `resume` && !cmd.session_id
-    if( DEP_CHECK_VERBS.has( cmd.verb ) && !is_resume_listing ) {
+    if( DEP_CHECK_VERBS.has( cmd.verb ) && !is_resume_listing( cmd ) ) {
         if( !check_dependencies() ) {
             log.error( `Missing dependencies. Install them and try again.` )
             process.exit( 1 )

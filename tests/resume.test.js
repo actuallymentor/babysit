@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir, homedir } from 'os'
 import {
     cmd_resume,
+    is_resume_listing,
     merge_resume_flags,
     print_resumable_sessions_table,
     resolve_resume_target,
@@ -104,6 +105,26 @@ describe( `cmd_resume session listing`, () => {
 
     } )
 
+    it( `does not mistake an explicit-agent resume for a local history listing`, () => {
+
+        expect( is_resume_listing( {
+            verb: `resume`,
+            agent: null,
+            session_id: null,
+        } ) ).toBe( true )
+        expect( is_resume_listing( {
+            verb: `resume`,
+            agent: `claude`,
+            session_id: null,
+        } ) ).toBe( false )
+        expect( is_resume_listing( {
+            verb: `resume`,
+            agent: null,
+            session_id: `baby-1`,
+        } ) ).toBe( false )
+
+    } )
+
     it( `prints canonical Babysit ids beside captured native agent ids`, async () => {
 
         const output = await capture_console( async () => {
@@ -131,6 +152,21 @@ describe( `cmd_resume session listing`, () => {
         } )
 
         expect( output ).toBe( `No resumable babysit sessions.` )
+
+    } )
+
+    it( `renders null legacy timestamps as unknown instead of the Unix epoch`, async () => {
+
+        const output = await capture_console( async () => {
+            print_resumable_sessions_table( [ {
+                babysit_id: `legacy`,
+                agent: `claude`,
+                started_at: null,
+            } ] )
+        } )
+
+        expect( output ).toContain( `unknown` )
+        expect( output ).not.toContain( `1970-01-01` )
 
     } )
 
