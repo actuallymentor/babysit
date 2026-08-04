@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.24.0 — 2026-08-04
+
+### ✨ Added
+- **Bare `babysit resume` now lists persistent session history.** The table
+  shows names, agents, workspaces, start times, Babysit IDs, and captured native
+  Codex/Claude session IDs, with the newest launches first.
+
+### 🐛 Fixed
+- **Repeated native session IDs resolve to the latest Babysit launch.** Resumed
+  conversations now restore the newest saved workspace and launch settings.
+
 ## 0.23.0 — 2026-08-04
 
 ### ✨ Added

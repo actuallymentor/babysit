@@ -3,6 +3,24 @@ import { join } from 'path'
 import { SESSIONS_DIR, ensure_dirs } from '../utils/paths.js'
 import { log } from '../utils/log.js'
 
+// Missing or malformed timestamps belong after every valid session while
+// preserving the original relative order between legacy records.
+const session_started_at_ms = ( { started_at } ) => {
+
+    const parsed = Date.parse( started_at )
+    return Number.isNaN( parsed ) ? Number.NEGATIVE_INFINITY : parsed
+
+}
+
+/**
+ * Sort session metadata by launch time without mutating the caller's array.
+ * @param {Object[]} sessions - Stored session records
+ * @returns {Object[]} Newest session records first
+ */
+export const sort_sessions_newest_first = ( sessions ) => [ ...sessions ].sort(
+    ( a, b ) => session_started_at_ms( b ) - session_started_at_ms( a )
+)
+
 /**
  * Save a session record to disk
  * @param {Object} session - Session metadata
@@ -48,6 +66,29 @@ export const update_session = ( babysit_id, updates ) => {
 }
 
 /**
+ * List all stored sessions
+ * @returns {Object[]} Array of session records, newest first
+ */
+export const list_stored_sessions = () => {
+
+    ensure_dirs()
+    const files = readdirSync( SESSIONS_DIR ).filter( f => f.endsWith( `.json` ) )
+
+    const sessions = files.map( file => {
+        try {
+            return JSON.parse( readFileSync( join( SESSIONS_DIR, file ), `utf-8` ) )
+        } catch {
+            return null
+        }
+    } ).filter( Boolean )
+
+    // Invalid or missing legacy timestamps fall to the end without making the
+    // listing fail.
+    return sort_sessions_newest_first( sessions )
+
+}
+
+/**
  * Load a session record by babysit ID or agent session ID
  * @param {string} id - Either the babysit_id or agent_session_id
  * @returns {Object|null} Session data or null
@@ -62,33 +103,10 @@ export const load_session = ( id ) => {
         return JSON.parse( readFileSync( direct, `utf-8` ) )
     }
 
-    // Search by agent_session_id
-    const files = readdirSync( SESSIONS_DIR ).filter( f => f.endsWith( `.json` ) )
-    for( const file of files ) {
-        const data = JSON.parse( readFileSync( join( SESSIONS_DIR, file ), `utf-8` ) )
-        if( data.agent_session_id === id ) return data
-    }
-
-    return null
-
-}
-
-/**
- * List all stored sessions
- * @returns {Object[]} Array of session records
- */
-export const list_stored_sessions = () => {
-
-    ensure_dirs()
-    const files = readdirSync( SESSIONS_DIR ).filter( f => f.endsWith( `.json` ) )
-
-    return files.map( file => {
-        try {
-            return JSON.parse( readFileSync( join( SESSIONS_DIR, file ), `utf-8` ) )
-        } catch {
-            return null
-        }
-    } ).filter( Boolean )
+    // Resuming a conversation creates another Babysit launch record with the
+    // same native id. Prefer the newest launch so cwd, modes, and name reflect
+    // the latest state instead of relying on filesystem iteration order.
+    return list_stored_sessions().find( session => session.agent_session_id === id ) || null
 
 }
 

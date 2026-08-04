@@ -41,6 +41,13 @@ describe( `parse_args`, () => {
         expect( cmd.flags.yolo ).toBe( true )
     } )
 
+    it( `recognises babysit resume without an id as the session listing`, () => {
+        const cmd = parse_args( [ `resume` ] )
+        expect( cmd.verb ).toBe( `resume` )
+        expect( cmd.agent ).toBeNull()
+        expect( cmd.session_id ).toBeUndefined()
+    } )
+
     it( `parses babysit <agent> as start`, () => {
         const cmd = parse_args( [ `claude`, `--yolo` ] )
         expect( cmd.verb ).toBe( `start` )

@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
-import { cmd_resume, merge_resume_flags, resolve_resume_target } from '../src/cli/resume.js'
+import {
+    cmd_resume,
+    merge_resume_flags,
+    print_resumable_sessions_table,
+    resolve_resume_target,
+} from '../src/cli/resume.js'
 import {
     resolve_agent_resume_target,
     resolve_session_display_name,
@@ -32,6 +37,104 @@ const seed_session = ( pwd ) => {
     return id
 
 }
+
+const capture_console = async ( fn ) => {
+
+    const original_log = console.log
+    const lines = []
+
+    console.log = ( line = `` ) => lines.push( String( line ) )
+
+    try {
+        await fn()
+    } finally {
+        console.log = original_log
+    }
+
+    return lines.join( `\n` )
+
+}
+
+describe( `cmd_resume session listing`, () => {
+
+    const sessions = [
+        {
+            babysit_id: `20260804-120000-c0de`,
+            name: `session registry`,
+            agent: `codex`,
+            agent_session_id: `019fcd12-c0de-7000-8000-000000000001`,
+            pwd: `/workspace/codex-project`,
+            started_at: `2026-08-04T12:00:00.000Z`,
+        },
+        {
+            babysit_id: `20260803-120000-c1a0`,
+            name: null,
+            agent: `claude`,
+            agent_session_id: `019fc7ec-c1a0-7000-8000-000000000002`,
+            pwd: `/workspace/claude-project`,
+            started_at: `2026-08-03T12:00:00.000Z`,
+        },
+        {
+            babysit_id: `20260802-120000-babe`,
+            name: null,
+            agent: `codex`,
+            agent_session_id: null,
+            pwd: `/workspace/legacy-project`,
+            started_at: `2026-08-02T12:00:00.000Z`,
+        },
+    ]
+
+    it( `lists Babysit, Codex, and Claude ids when no selector is provided`, async () => {
+
+        let rendered_sessions = null
+        let start_called = false
+
+        await cmd_resume( { session_id: null }, {
+            list_stored_sessions_fn: () => sessions,
+            print_sessions: value => {
+                rendered_sessions = value
+            },
+            start: async () => {
+                start_called = true
+            },
+        } )
+
+        expect( rendered_sessions ).toBe( sessions )
+        expect( start_called ).toBe( false )
+
+    } )
+
+    it( `prints canonical Babysit ids beside captured native agent ids`, async () => {
+
+        const output = await capture_console( async () => {
+            print_resumable_sessions_table( sessions )
+        } )
+
+        expect( output ).toContain( `Resumable babysit sessions:` )
+        expect( output ).toContain( `BABYSIT ID` )
+        expect( output ).toContain( `AGENT SESSION ID` )
+        expect( output ).toContain( `20260804-120000-c0de` )
+        expect( output ).toContain( `019fcd12-c0de-7000-8000-000000000001` )
+        expect( output ).toContain( `codex` )
+        expect( output ).toContain( `20260803-120000-c1a0` )
+        expect( output ).toContain( `019fc7ec-c1a0-7000-8000-000000000002` )
+        expect( output ).toContain( `claude` )
+        expect( output ).toContain( `20260802-120000-babe` )
+        expect( output ).toContain( `Resume one with: babysit resume <babysit_id>` )
+
+    } )
+
+    it( `prints a clear empty state`, async () => {
+
+        const output = await capture_console( async () => {
+            print_resumable_sessions_table( [] )
+        } )
+
+        expect( output ).toBe( `No resumable babysit sessions.` )
+
+    } )
+
+} )
 
 describe( `cmd_resume cwd handling`, () => {
 

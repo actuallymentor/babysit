@@ -1,9 +1,62 @@
 import { existsSync } from 'fs'
 import { log } from '../utils/log.js'
-import { load_session } from '../sessions/store.js'
+import { list_stored_sessions, load_session } from '../sessions/store.js'
 import { has_session } from '../tmux/session.js'
 import { cmd_open } from './open.js'
 import { cmd_start } from './start.js'
+
+/**
+ * Pad a value to a fixed width for the resume-history table.
+ * @param {string|number} value - Display value
+ * @param {number} width - Target width
+ * @returns {string} Padded display value
+ */
+const pad = ( value, width ) => String( value ).padEnd( width )
+
+/**
+ * Render a compact, consistently sortable session timestamp.
+ * @param {string} [started_at] - ISO session start timestamp
+ * @returns {string} Human-readable timestamp, or a fallback for legacy records
+ */
+const format_started_at = ( started_at ) => {
+
+    const timestamp = new Date( started_at )
+    if( Number.isNaN( timestamp.getTime() ) ) return `unknown`
+
+    return timestamp.toISOString().replace( `T`, ` ` ).slice( 0, 19 )
+
+}
+
+/**
+ * Print every Babysit-managed session that can be reopened. Babysit IDs stay
+ * visible as the canonical resume handle because they restore the agent,
+ * workspace, and launch modes; native IDs are shown separately for clarity.
+ * @param {Object[]} sessions - Stored Babysit session metadata, newest first
+ */
+export const print_resumable_sessions_table = ( sessions ) => {
+
+    if( sessions.length === 0 ) {
+        console.log( `No resumable babysit sessions.` )
+        return
+    }
+
+    console.log( `\nResumable babysit sessions:\n` )
+    console.log( `  ${ pad( `BABYSIT ID`, 24 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `AGENT SESSION ID`, 38 ) }  ${ pad( `STARTED`, 19 ) }  WORKSPACE` )
+    console.log( `  ${ `-`.repeat( 147 ) }` )
+
+    sessions.forEach( session => {
+
+        const name = session.name || `-`
+        const agent_session_id = session.agent_session_id || `-`
+        const started_at = format_started_at( session.started_at )
+
+        console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ session.pwd || `-` }` )
+
+    } )
+
+    console.log( `\nResume one with: babysit resume <babysit_id>\n` )
+
+}
 
 /**
  * Rebuild flags from stored session modifiers
@@ -75,20 +128,26 @@ export const resolve_resume_target = ( session ) => {
 }
 
 /**
- * Resume a previous babysit session
+ * List previous sessions when no id is provided, or resume a selected session.
  * If the tmux session is still alive, attach to it.
  * If it's exited, start a new session with the agent's resume flag.
  * @param {Object} cmd - Parsed command { session_id, flags }
  * @param {Object} [options]
  * @param {Function} [options.start=cmd_start] - Start command delegate, injectable for tests
+ * @param {Function} [options.list_stored_sessions_fn=list_stored_sessions] - Session history loader
+ * @param {Function} [options.print_sessions=print_resumable_sessions_table] - Session history renderer
  */
-export const cmd_resume = async ( cmd, { start = cmd_start } = {} ) => {
+export const cmd_resume = async ( cmd, {
+    start = cmd_start,
+    list_stored_sessions_fn = list_stored_sessions,
+    print_sessions = print_resumable_sessions_table,
+} = {} ) => {
 
     const { session_id, flags = {}, passthrough = [] } = cmd
 
     if( !session_id ) {
-        log.error( `Usage: babysit resume <session_id>` )
-        process.exit( 1 )
+        print_sessions( list_stored_sessions_fn() )
+        return
     }
 
     // Look up session metadata
