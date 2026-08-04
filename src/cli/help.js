@@ -15,7 +15,7 @@ Usage:
   babysit <agent> resume <id> [flags]  Resume a previous session
   babysit list                         List active sessions
   babysit open [id|name|number]        Attach to an active session
-  babysit resume <session_id> [flags]  Resume a previous session
+  babysit resume [session_id] [flags]  List resumable sessions or resume one
   babysit config                       Configure babysit settings
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
@@ -46,6 +46,7 @@ Examples:
   babysit opencode resume abc-123 --yolo
   babysit config --auth-check-agents codex,claude
   babysit list
+  babysit resume
   babysit open
   babysit open 2
   babysit open "feature 1"

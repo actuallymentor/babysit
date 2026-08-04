@@ -56,3 +56,9 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 
 ## Claude Code
 - **Home env**: `CLAUDE_CONFIG_DIR` — default `~/.claude`. Documented behavior is partial: claude still creates local `.claude/` directories in workspaces and `/ide` integration may misbehave when set. We pin it to `/home/node/.claude` inside the container so it matches our credential / settings / projects mounts.
+
+## Session inventory
+- Verified against the official Codex manual and Claude Code session docs on 2026-08-04.
+- `codex resume` and `claude --resume` open native interactive pickers when no id is provided. Codex has no resume-picker JSON flag; its app-server `thread/list` method is the supported programmatic inventory. Claude stores transcript filenames by session UUID but documents the JSONL entry shape as internal and unstable.
+- Host-native Codex and Claude transcripts are not automatically resumable inside Babysit. Babysit uses separate persistent Docker volumes for managed agent state, so its host-side `~/.babysit/sessions` registry is the truthful inventory for `babysit resume`.
+- Treat the Babysit ID as the canonical selector because it restores the agent, workspace, and launch context. Show a captured native agent ID separately; repeated launches of one conversation can legitimately share that native ID.

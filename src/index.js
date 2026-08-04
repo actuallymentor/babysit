@@ -44,7 +44,11 @@ const main = async () => {
     // run `babysit update` when they want to refresh the repo, docker image,
     // and host agent CLIs. Auto-pulling on every command was surprising and
     // slowed session start, especially on flaky networks.
-    if( DEP_CHECK_VERBS.has( cmd.verb ) ) {
+    // Reading the durable session registry is a local filesystem operation.
+    // Keep bare `babysit resume` useful even before Docker/tmux are installed;
+    // selecting a session still performs the normal dependency preflight.
+    const is_resume_listing = cmd.verb === `resume` && !cmd.session_id
+    if( DEP_CHECK_VERBS.has( cmd.verb ) && !is_resume_listing ) {
         if( !check_dependencies() ) {
             log.error( `Missing dependencies. Install them and try again.` )
             process.exit( 1 )
