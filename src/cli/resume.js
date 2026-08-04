@@ -16,6 +16,7 @@ const rebuild_flags = ( modifiers = [], session = {} ) => ( {
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
     loop: modifiers.includes( `loop` ),
+    name: session.name || false,
     log: false,
     ports: Array.isArray( session.ports ) ? session.ports : [],
 } )

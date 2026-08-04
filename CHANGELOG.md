@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.23.0 — 2026-08-04
+
+### ✨ Added
+- **Active sessions can have human-readable names.** Start one with
+  `babysit <agent> --name "feature 1"`; `babysit list` shows the name and
+  `babysit open "feature 1"` reattaches by exact name. Names survive resume.
+- **Current-directory session choices are numbered.** When `babysit open`
+  finds several active sessions, it prints numbered rows that can be selected
+  with `babysit open N`.
+
 ## 0.22.0 — 2026-08-01
 
 ### Changed

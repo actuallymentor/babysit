@@ -14,7 +14,7 @@ Usage:
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id> [flags]  Resume a previous session
   babysit list                         List active sessions
-  babysit open [session_id]            Attach to an active session
+  babysit open [id|name|number]        Attach to an active session
   babysit resume <session_id> [flags]  Resume a previous session
   babysit config                       Configure babysit settings
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
@@ -26,6 +26,7 @@ Flags:
   --sandbox       Ephemeral container, no workspace mount
   --mudbox        Read-only workspace mount
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
+  --name NAME     Give the session a human-readable name
   --port PORT     Publish host PORT to the same container port
   --port H:C      Publish host port H to container port C
   --auth-check-agents LIST
@@ -39,13 +40,15 @@ Any unrecognised flags are passed through to the coding agent CLI.
 
 Examples:
   babysit claude --yolo
+  babysit codex --name "feature 1"
   babysit codex --sandbox --loop
   babysit gemini --mudbox --yolo
   babysit opencode resume abc-123 --yolo
   babysit config --auth-check-agents codex,claude
   babysit list
   babysit open
-  babysit open babysit_myrepo_claude_1234567890
+  babysit open 2
+  babysit open "feature 1"
 `
 
     console.log( help.trim() )

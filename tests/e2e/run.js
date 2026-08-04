@@ -322,7 +322,9 @@ babysit:
       timeout: 1
 ` )
     const log_path = join( workspace, `e2e.babysit.log` )
-    const session = await launch_babysit( workspace, [ `--yolo`, `--docker`, `--log`, log_path ] )
+    const session = await launch_babysit( workspace, [ `--name`, `feature 1`, `--yolo`, `--docker`, `--log`, log_path ] )
+
+    ensure( session.name === `feature 1`, `session metadata did not preserve --name` )
 
     await wait_until( `initial prompt marker`, () => existsSync( join( workspace, `e2e-initial-prompt.txt` ) ) )
     await wait_until( `monitor command marker`, () => existsSync( join( workspace, `e2e-monitor-command.txt` ) ) )

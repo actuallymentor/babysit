@@ -68,6 +68,7 @@ const open_current_directory_session = async ( {
     if( matches.length > 1 ) {
         print_active_sessions_table( matches, stored, {
             title: `Active babysit sessions for ${ cwd }:`,
+            numbered: true,
         } )
         return
     }
@@ -111,27 +112,87 @@ export const cmd_open = async ( cmd, {
         return
     }
 
+    // All-digit selectors refer to the numbered current-directory table.
+    // Resolve them before fuzzy tmux matching so `babysit open 2` cannot
+    // accidentally attach to an unrelated timestamp containing the digit 2.
+    if( /^\d+$/.test( session_id ) ) {
+
+        const active = await list_sessions_fn()
+        const stored = list_stored_sessions_fn()
+        const matches = active_sessions_for_pwd( cwd, active, stored )
+        const selected = matches[ Number( session_id ) - 1 ]
+
+        if( selected ) {
+            attach( selected.name, attach_session_fn )
+            return
+        }
+
+        if( matches.length ) {
+            print_active_sessions_table( matches, stored, {
+                title: `Active babysit sessions for ${ cwd }:`,
+                numbered: true,
+            } )
+        }
+
+        log.error( `No active session ${ session_id } for current directory: ${ cwd }` )
+        exit_fn( 1 )
+        return
+
+    }
+
     // Try direct tmux session name match
     if( await has_session_fn( session_id ) ) {
         attach( session_id, attach_session_fn )
         return
     }
 
-    // Try looking up by babysit_id or agent_session_id in stored sessions
+    // Preserve the legacy exact metadata-id lookup before human-readable
+    // names so a label that happens to equal an id cannot shadow that id.
     const stored = list_stored_sessions_fn()
-    const match = stored.find( s =>
+    const id_match = stored.find( s =>
         s.babysit_id === session_id ||
-        s.agent_session_id === session_id ||
-        s.tmux_session?.includes( session_id )
+        s.agent_session_id === session_id
     )
 
-    if( match && await has_session_fn( match.tmux_session ) ) {
-        attach( match.tmux_session, attach_session_fn )
+    if( id_match && await has_session_fn( id_match.tmux_session ) ) {
+        attach( id_match.tmux_session, attach_session_fn )
+        return
+    }
+
+    // Resolve exact display names among active sessions. Duplicate names are
+    // allowed across workspaces, but never attach arbitrarily when more than
+    // one is active — show the disambiguating ids instead.
+    const active = await list_sessions_fn()
+    const named_tmux_sessions = new Set(
+        stored
+            .filter( session => session.name === session_id )
+            .map( session => session.tmux_session )
+    )
+    const named_matches = active.filter( session => named_tmux_sessions.has( session.name ) )
+
+    if( named_matches.length === 1 ) {
+        attach( named_matches[0].name, attach_session_fn )
+        return
+    }
+
+    if( named_matches.length > 1 ) {
+        print_active_sessions_table( named_matches, stored, {
+            title: `Multiple active babysit sessions are named "${ session_id }":`,
+        } )
+        log.error( `Use \`babysit open <session_id>\` to choose one.` )
+        exit_fn( 1 )
+        return
+    }
+
+    // Preserve partial stored tmux-name matching for existing workflows.
+    const tmux_match = stored.find( session => session.tmux_session?.includes( session_id ) )
+
+    if( tmux_match && await has_session_fn( tmux_match.tmux_session ) ) {
+        attach( tmux_match.tmux_session, attach_session_fn )
         return
     }
 
     // Fuzzy match against active sessions
-    const active = await list_sessions_fn()
     const fuzzy = active.find( s => s.name.includes( session_id ) )
 
     if( fuzzy ) {

@@ -7,6 +7,7 @@ import { log } from '../utils/log.js'
  * Save a session record to disk
  * @param {Object} session - Session metadata
  * @param {string} session.babysit_id - Babysit-assigned session identifier
+ * @param {string|null} [session.name] - Optional human-readable session name
  * @param {string} session.agent - Agent name
  * @param {string} [session.agent_session_id] - Agent's own session ID (captured later)
  * @param {string} session.tmux_session - Tmux session name
