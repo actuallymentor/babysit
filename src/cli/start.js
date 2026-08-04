@@ -85,6 +85,15 @@ export const resolve_stored_agent_resume_session = ( cmd = {}, agent = {}, sessi
 }
 
 /**
+ * Resolve the human-readable name for a new or resumed active session.
+ * @param {Object} flags - Parsed command flags
+ * @param {Object|null} stored_resume_session - Stored explicit-agent resume metadata
+ * @returns {string|null} Session name to persist
+ */
+export const resolve_session_display_name = ( flags = {}, stored_resume_session = null ) =>
+    flags.name || stored_resume_session?.name || null
+
+/**
  * Resolve explicit agent resume targets.
  * `babysit <agent> resume <babysit_id>` should translate the Babysit metadata
  * id before it reaches the agent CLI. If there is no stored record, treat the
@@ -397,6 +406,11 @@ export const cmd_start = async ( cmd ) => {
         log.warn( `Original session pwd no longer exists: ${ stored_resume_session.pwd }` )
     }
 
+    // A resumed session keeps its human-readable label unless the user gives
+    // it a new one explicitly. Agent-less resumes carry the stored name in
+    // flags; explicit-agent resumes reach it through stored metadata here.
+    const session_display_name = resolve_session_display_name( flags, stored_resume_session )
+
     ensure_dirs()
 
     // Build mode descriptor
@@ -590,6 +604,7 @@ export const cmd_start = async ( cmd ) => {
 
     const session_data = {
         babysit_id,
+        name: session_display_name,
         agent: agent.name,
         agent_session_id: null,
         tmux_session: session_name,

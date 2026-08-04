@@ -46,6 +46,27 @@ describe( `parse_args`, () => {
         expect( cmd.verb ).toBe( `start` )
         expect( cmd.agent ).toBe( `claude` )
         expect( cmd.flags.yolo ).toBe( true )
+        expect( cmd.flags.name ).toBe( false )
+    } )
+
+    it( `parses a human-readable session name without passing it to the agent`, () => {
+        const cmd = parse_args( [ `codex`, `--name`, `feature 1`, `--model`, `gpt-5.6-sol` ] )
+
+        expect( cmd.flags.name ).toBe( `feature 1` )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `gpt-5.6-sol` ] )
+    } )
+
+    it( `accepts equals syntax for session names`, () => {
+        const cmd = parse_args( [ `codex`, `--name=feature 1` ] )
+        expect( cmd.flags.name ).toBe( `feature 1` )
+    } )
+
+    it( `rejects unusable session names`, () => {
+        expect( () => parse_args( [ `codex`, `--name` ] ) ).toThrow( /requires a non-empty value/ )
+        expect( () => parse_args( [ `codex`, `--name=   ` ] ) ).toThrow( /requires a non-empty value/ )
+        expect( () => parse_args( [ `codex`, `--name`, `one`, `--name`, `two` ] ) ).toThrow( /only be provided once/ )
+        expect( () => parse_args( [ `codex`, `--name`, `12` ] ) ).toThrow( /numbers are reserved/ )
+        expect( () => parse_args( [ `codex`, `--name`, `feature\n1` ] ) ).toThrow( /control characters/ )
     } )
 
     it( `parses babysit <agent> resume <id> with agent`, () => {

@@ -13,6 +13,7 @@ const session_fixtures = () => {
     const stored_sessions = [
         {
             babysit_id: `baby-1`,
+            name: `feature 1`,
             agent: `codex`,
             agent_session_id: `agent-1`,
             tmux_session: `babysit_/workspace/app_codex_1`,
@@ -20,6 +21,7 @@ const session_fixtures = () => {
         },
         {
             babysit_id: `baby-2`,
+            name: `feature 2`,
             agent: `claude`,
             agent_session_id: null,
             tmux_session: `babysit_/workspace/app_claude_2`,
@@ -27,6 +29,7 @@ const session_fixtures = () => {
         },
         {
             babysit_id: `baby-3`,
+            name: `other work`,
             agent: `codex`,
             agent_session_id: `agent-3`,
             tmux_session: `babysit_/workspace/other_codex_3`,
@@ -144,10 +147,14 @@ describe( `cmd_open without a session id`, () => {
         expect( attached_session ).toBeNull()
         expect( output ).toContain( `Active babysit sessions for /workspace/app:` )
         expect( output ).toContain( `SESSION` )
+        expect( output ).toContain( `#` )
+        expect( output ).toContain( `NAME` )
         expect( output ).toContain( `AGENT` )
         expect( output ).toContain( `ID` )
+        expect( output ).toContain( `feature 1` )
         expect( output ).toContain( `agent-1` )
         expect( output ).toContain( `baby-2` )
+        expect( output ).toContain( `Open one with: babysit open <number>` )
 
     } )
 
@@ -180,6 +187,59 @@ describe( `cmd_open without a session id`, () => {
 } )
 
 describe( `cmd_open with a session id`, () => {
+
+    it( `attaches through a numbered current-directory selection`, async () => {
+
+        const { tmux_sessions, stored_sessions } = session_fixtures()
+        let attached_session = null
+
+        await cmd_open( { session_id: `2` }, {
+            cwd: `/workspace/app`,
+            has_session_fn: async () => {
+                throw new Error( `Unexpected direct lookup` )
+            },
+            list_sessions_fn: async () => tmux_sessions,
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_/workspace/app_claude_2` )
+
+    } )
+
+    it( `does not let an out-of-range number fall through to fuzzy matching`, async () => {
+
+        const { tmux_sessions, stored_sessions } = session_fixtures()
+        let attached_session = null
+        let exit_code = null
+
+        const errors = await capture_errors( async () => {
+            await capture_console( () => cmd_open( { session_id: `9` }, {
+                cwd: `/workspace/app`,
+                has_session_fn: async () => {
+                    throw new Error( `Unexpected direct lookup` )
+                },
+                list_sessions_fn: async () => tmux_sessions,
+                list_stored_sessions_fn: () => stored_sessions,
+                attach_session_fn: session_name => {
+                    attached_session = session_name
+                },
+                exit_fn: code => {
+                    exit_code = code
+                },
+            } ) )
+        } )
+
+        expect( attached_session ).toBeNull()
+        expect( exit_code ).toBe( 1 )
+        expect( errors ).toContain( `No active session 9 for current directory: /workspace/app` )
+
+    } )
 
     it( `attaches directly when the id is an active tmux session name`, async () => {
 
@@ -244,6 +304,52 @@ describe( `cmd_open with a session id`, () => {
         } )
 
         expect( attached_session ).toBe( `babysit_/workspace/app_codex_1` )
+
+    } )
+
+    it( `attaches through an exact human-readable session name`, async () => {
+
+        const { tmux_sessions, stored_sessions } = session_fixtures()
+        let attached_session = null
+
+        await cmd_open( { session_id: `feature 1` }, {
+            has_session_fn: async () => false,
+            list_sessions_fn: async () => tmux_sessions,
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( `babysit_/workspace/app_codex_1` )
+
+    } )
+
+    it( `skips stale metadata when resolving a session name`, async () => {
+
+        const active_name = `babysit_/workspace/app_codex_1`
+        const stored_sessions = [
+            { name: `feature 1`, tmux_session: `babysit_stale` },
+            { name: `feature 1`, tmux_session: active_name, babysit_id: `baby-1` },
+        ]
+        let attached_session = null
+
+        await cmd_open( { session_id: `feature 1` }, {
+            has_session_fn: async () => false,
+            list_sessions_fn: async () => [ { name: active_name, attached: false } ],
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                attached_session = session_name
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } )
+
+        expect( attached_session ).toBe( active_name )
 
     } )
 

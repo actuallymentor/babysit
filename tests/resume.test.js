@@ -3,7 +3,12 @@ import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir, homedir } from 'os'
 import { cmd_resume, merge_resume_flags, resolve_resume_target } from '../src/cli/resume.js'
-import { resolve_agent_resume_target, resolve_stored_agent_resume_session, should_send_initial_prompt } from '../src/cli/start.js'
+import {
+    resolve_agent_resume_target,
+    resolve_session_display_name,
+    resolve_stored_agent_resume_session,
+    should_send_initial_prompt,
+} from '../src/cli/start.js'
 import { generate_session_id, save_session } from '../src/sessions/store.js'
 
 // Create a session record on disk that resume.js will look up. Returns the
@@ -138,6 +143,7 @@ describe( `merge_resume_flags`, () => {
             mudbox: false,
             docker: false,
             loop: false,
+            name: false,
             log: false,
             ports: [],
         } )
@@ -188,6 +194,48 @@ describe( `merge_resume_flags`, () => {
 
         expect( flags.ports ).toEqual( [ `3000:3000` ] )
 
+    } )
+
+    it( `preserves a stored session name across resume`, () => {
+
+        const flags = merge_resume_flags(
+            [ `yolo` ],
+            { name: false },
+            { name: `feature 1` }
+        )
+
+        expect( flags.name ).toBe( `feature 1` )
+
+    } )
+
+    it( `lets an explicit resume-time name replace the stored name`, () => {
+
+        const flags = merge_resume_flags(
+            [ `yolo` ],
+            { name: `feature 2` },
+            { name: `feature 1` }
+        )
+
+        expect( flags.name ).toBe( `feature 2` )
+
+    } )
+
+} )
+
+describe( `resumed session names`, () => {
+
+    it( `keeps a stored name for explicit-agent resumes`, () => {
+        expect( resolve_session_display_name(
+            { name: false },
+            { name: `feature 1` }
+        ) ).toBe( `feature 1` )
+    } )
+
+    it( `prefers an explicit replacement name`, () => {
+        expect( resolve_session_display_name(
+            { name: `feature 2` },
+            { name: `feature 1` }
+        ) ).toBe( `feature 2` )
     } )
 
 } )

@@ -15,28 +15,35 @@ const pad = ( str, width ) => String( str ).padEnd( width )
  * @param {Object[]} stored_sessions - Stored Babysit metadata
  * @param {Object} [options]
  * @param {string} [options.title] - Table title
+ * @param {boolean} [options.numbered=false] - Show current-directory selectors
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     title = `Active babysit sessions:`,
+    numbered = false,
 } = {} ) => {
 
-    console.log( `\n${ title }\n` )
-    console.log( `  ${ pad( `SESSION`, 50 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `STATUS`, 10 ) }  ID` )
-    console.log( `  ${ `-`.repeat( 90 ) }` )
+    const number_header = numbered ? `${ pad( `#`, 3 ) }  ` : ``
 
-    for( const tmux of tmux_sessions ) {
+    console.log( `\n${ title }\n` )
+    console.log( `  ${ number_header }${ pad( `SESSION`, 50 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `STATUS`, 10 ) }  ID` )
+    console.log( `  ${ `-`.repeat( numbered ? 122 : 117 ) }` )
+
+    tmux_sessions.forEach( ( tmux, index ) => {
 
         // Cross-reference with stored session metadata
         const stored = stored_sessions.find( s => s.tmux_session === tmux.name )
+        const number = numbered ? `${ pad( index + 1, 3 ) }  ` : ``
+        const name = stored?.name || `-`
         const agent = stored?.agent || `unknown`
         const session_id = stored?.agent_session_id || stored?.babysit_id || `-`
         const status = tmux.attached ? `attached` : `detached`
 
-        console.log( `  ${ pad( tmux.name, 50 ) }  ${ pad( agent, 10 ) }  ${ pad( status, 10 ) }  ${ session_id }` )
+        console.log( `  ${ number }${ pad( tmux.name, 50 ) }  ${ pad( name, 24 ) }  ${ pad( agent, 10 ) }  ${ pad( status, 10 ) }  ${ session_id }` )
 
-    }
+    } )
 
     console.log( `` )
+    if( numbered ) console.log( `Open one with: babysit open <number>\n` )
 
 }
 

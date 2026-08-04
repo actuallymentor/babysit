@@ -11,6 +11,7 @@ const KNOWN_FLAGS = [
     `mudbox`,
     `loop`,
     `docker`,
+    `name`,
     `log`,
     `port`,
     `auth-check-agents`,
@@ -19,7 +20,7 @@ const KNOWN_FLAGS = [
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `log`, `port`, `auth-check-agents` ] )
+const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -36,7 +37,7 @@ export const parse_args = ( argv ) => {
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
         boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker` ],
-        string: [ `log`, `port`, `auth-check-agents` ],
+        string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -50,6 +51,7 @@ export const parse_args = ( argv ) => {
         mudbox: args.mudbox || false,
         loop: args.loop || false,
         docker: args.docker || false,
+        name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.
         // false (flag absent) vs string (flag present, possibly empty for default).
@@ -122,6 +124,30 @@ export const parse_args = ( argv ) => {
 
     // Default: show help
     return { verb: `help`, agent: null, flags, passthrough: [] }
+
+}
+
+/**
+ * Validate and normalize a human-readable session name.
+ * All-digit names are reserved for current-directory selectors such as
+ * `babysit open 2`, so accepting one here would make it impossible to reopen
+ * reliably by name.
+ *
+ * @param {string|string[]|undefined} value - Parsed --name value
+ * @returns {string|false} Normalized name, or false when omitted
+ */
+const normalise_session_name = ( value ) => {
+
+    if( value === undefined ) return false
+    if( Array.isArray( value ) ) throw new Error( `--name may only be provided once` )
+
+    const name = value.trim()
+
+    if( !name ) throw new Error( `--name requires a non-empty value` )
+    if( /^\d+$/.test( name ) ) throw new Error( `--name cannot contain only digits; numbers are reserved for \`babysit open N\`` )
+    if( /[\u0000-\u001f\u007f]/.test( name ) ) throw new Error( `--name cannot contain control characters` )
+
+    return name
 
 }
 
