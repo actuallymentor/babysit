@@ -20,12 +20,21 @@ const pad = ( value, width ) => String( value ).padEnd( width )
  */
 const format_started_at = ( started_at ) => {
 
-    const timestamp = new Date( started_at )
-    if( Number.isNaN( timestamp.getTime() ) ) return `unknown`
+    const timestamp_ms = Date.parse( started_at )
+    if( Number.isNaN( timestamp_ms ) ) return `unknown`
 
-    return timestamp.toISOString().replace( `T`, ` ` ).slice( 0, 19 )
+    return new Date( timestamp_ms ).toISOString().replace( `T`, ` ` ).slice( 0, 19 )
 
 }
+
+/**
+ * Identify the agent-less, selector-less resume command that lists history.
+ * Explicit-agent resumes still launch an agent and need normal dependencies.
+ * @param {Object} cmd - Parsed command descriptor
+ * @returns {boolean} Whether the command only reads the local session registry
+ */
+export const is_resume_listing = ( cmd ) => cmd.verb === `resume` && !cmd.agent && !cmd.session_id
+
 
 /**
  * Print every Babysit-managed session that can be reopened. Babysit IDs stay

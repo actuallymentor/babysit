@@ -10,6 +10,10 @@
 ### 🐛 Fixed
 - **Repeated native session IDs resolve to the latest Babysit launch.** Resumed
   conversations now restore the newest saved workspace and launch settings.
+- **Explicit-agent resumes retain dependency preflight checks.** Only the local
+  bare-resume history listing skips Docker and tmux checks.
+- **Null legacy timestamps display as unknown.** Session history no longer
+  renders missing dates as the Unix epoch.
 
 ## 0.23.0 — 2026-08-04
 
