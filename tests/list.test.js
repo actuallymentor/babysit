@@ -65,4 +65,36 @@ describe( `print_active_sessions_table`, () => {
 
     } )
 
+    it( `keeps numbered selectors aligned as the row count grows`, () => {
+
+        const tmux_sessions = Array.from( { length: 10 }, ( _, index ) => ( {
+            name: `babysit_${ index + 1 }`,
+            attached: false,
+        } ) )
+        const stored_sessions = tmux_sessions.map( ( { name: tmux_session }, index ) => ( {
+            tmux_session,
+            name: `task ${ index + 1 }`,
+            agent: `codex`,
+            babysit_id: `baby-${ index + 1 }`,
+        } ) )
+
+        const output = capture_console( () => print_active_sessions_table(
+            tmux_sessions,
+            stored_sessions,
+            { numbered: true }
+        ) )
+
+        const lines = output.split( `\n` )
+        const header = lines.find( line => line.includes( `NAME` ) )
+        const tenth_row = lines.find( line => line.includes( `babysit_10` ) )
+
+        expect( tenth_row.indexOf( `10` ) ).toBe( header.indexOf( `#` ) )
+        expect( tenth_row.indexOf( `task 10` ) ).toBe( header.indexOf( `NAME` ) )
+        expect( tenth_row.indexOf( `detached` ) ).toBe( header.indexOf( `STATUS` ) )
+        expect( tenth_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
+        expect( tenth_row.indexOf( `baby-10` ) ).toBe( header.indexOf( `ID` ) )
+        expect( tenth_row.indexOf( `babysit_10` ) ).toBe( header.indexOf( `SESSION` ) )
+
+    } )
+
 } )
