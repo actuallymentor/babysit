@@ -20,6 +20,8 @@ describe( `Watchtower compatibility`, () => {
             .toBe( `containrrr/watchtower` )
         expect( normalise_docker_image_repository( `docker.io/nickfedor/watchtower@sha256:abc` ) )
             .toBe( `nickfedor/watchtower` )
+        expect( normalise_docker_image_repository( `registry.hub.docker.com/containrrr/watchtower:1.7.1` ) )
+            .toBe( `containrrr/watchtower` )
         expect( normalise_docker_image_repository( `localhost:5000/team/watchtower:latest` ) )
             .toBe( `localhost:5000/team/watchtower` )
 
@@ -33,6 +35,8 @@ describe( `Watchtower compatibility`, () => {
         } )
 
         expect( is_compatible_watchtower_image( `index.docker.io/containrrr/watchtower:1.7.1` ) ).toBe( true )
+        expect( is_compatible_watchtower_image( `ghcr.io/beatkind/watchtower:latest-dev` ) ).toBe( true )
+        expect( is_compatible_watchtower_image( `ghcr.io/marrrrrrrrry/watchtower:latest` ) ).toBe( true )
 
     } )
 
