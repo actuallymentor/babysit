@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: docker-build
+  group: ${{ inputs.publish-version-tag && format('docker-release-{0}', github.sha) || 'docker-build' }}
   cancel-in-progress: false
 
 jobs:
@@ -54,6 +54,6 @@ jobs:
           context: src/docker/assets
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ inputs.publish-version-tag && format('actuallymentor/babysit:latest,actuallymentor/babysit:{0}', steps.version.outputs.version) || 'actuallymentor/babysit:latest' }}
+          tags: ${{ inputs.publish-version-tag && format('actuallymentor/babysit:{0}', steps.version.outputs.version) || 'actuallymentor/babysit:latest' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
