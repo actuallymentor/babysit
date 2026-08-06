@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.26.0 — 2026-08-06
+
+### ✨ Added
+- **Watchtower compatibility checks protect active sessions.** Babysit now
+  recognizes confirmed-safe Watchtower images and registry aliases, while a
+  prominent startup warning identifies unknown or unsafe legacy variants that
+  may replace the agent container.
+
 ## 0.25.1 — 2026-08-06
 
 ### 🐛 Fixed
