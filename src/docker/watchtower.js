@@ -11,9 +11,11 @@ import { docker_command_prefix } from './run.js'
 export const COMPATIBLE_WATCHTOWER_IMAGE_REPOSITORIES = Object.freeze( [
     `beatkind/watchtower`,
     `containrrr/watchtower`,
+    `ghcr.io/beatkind/watchtower`,
     `ghcr.io/containrrr/watchtower`,
     `ghcr.io/dockhippie/watchtower`,
     `ghcr.io/jauderho/watchtower`,
+    `ghcr.io/marrrrrrrrry/watchtower`,
     `ghcr.io/nicholas-fedor/watchtower`,
     `ghcr.io/openserbia/watchtower`,
     `ghcr.io/storj/watchtower`,
@@ -29,7 +31,7 @@ export const COMPATIBLE_WATCHTOWER_IMAGE_REPOSITORIES = Object.freeze( [
 ] )
 
 const COMPATIBLE_WATCHTOWER_IMAGES = new Set( COMPATIBLE_WATCHTOWER_IMAGE_REPOSITORIES )
-const DOCKER_HUB_REGISTRIES = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io)\//
+const DOCKER_HUB_REGISTRIES = /^(?:docker\.io|index\.docker\.io|registry-1\.docker\.io|registry\.hub\.docker\.com)\//
 const WATCHTOWER_NAME = /watchtower/i
 
 /**

@@ -10,7 +10,7 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 
 ## Watchtower compatibility
 - Verified against upstream repositories, image registries, and container-selection docs on 2026-08-06.
-- The maintained containrrr lineage preserves `com.centurylinklabs.watchtower.enable=false`: containrrr, Nicholas Fedor, Beatkind, OpenSerbia, Storj, Marrrrrrrrry, Torus Research, and their confirmed registry aliases. Webhippie/Dockhippie and Jauder Ho rebuild compatible upstream releases. Whefter's deprecated fork is safe through mandatory explicit target tags rather than the standard false label.
+- The maintained containrrr lineage preserves `com.centurylinklabs.watchtower.enable=false`: containrrr, Nicholas Fedor, Beatkind, OpenSerbia, Storj, Marrrrrrrrry, Torus Research, and their confirmed registry aliases (including Beatkind and Marrrrrrrrry on GHCR). Webhippie/Dockhippie and Jauder Ho rebuild compatible upstream releases. Whefter's deprecated fork is safe through mandatory explicit target tags rather than the standard false label.
 - Repository names are the trust boundary. Strip tags/digests and normalize Docker Hub aliases, but do not trust a private mirror or unrelated owner merely because the final path is `watchtower`.
 - `centurylink/watchtower` and Docker Hub's `v2tec/watchtower:latest` are unsafe assumptions: their legacy builds may watch an unlabeled or false-labeled container by default. Unknown, renamed, and legacy Watchtower-like containers should produce a conspicuous warning rather than block startup silently.
 
