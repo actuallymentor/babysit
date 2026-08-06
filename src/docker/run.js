@@ -142,7 +142,13 @@ const shell_quote = ( value ) => {
  */
 export const docker_socket_available = ( socket_path = resolve_docker_socket_path() ) => Boolean( socket_path && existsSync( socket_path ) )
 
-const get_docker_prefix = () => process.env.BABYSIT_DOCKER_USE_SUDO === `1`
+/**
+ * Resolve the executable prefix used for Docker CLI calls.
+ * @param {Object} [options]
+ * @param {Object} [options.env=process.env] - Environment to inspect
+ * @returns {string[]} Docker command prefix, optionally routed through sudo
+ */
+export const docker_command_prefix = ( { env = process.env } = {} ) => env.BABYSIT_DOCKER_USE_SUDO === `1`
     ? [ `sudo`, `docker` ]
     : [ `docker` ]
 
@@ -155,7 +161,7 @@ const get_docker_prefix = () => process.env.BABYSIT_DOCKER_USE_SUDO === `1`
  */
 export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
 
-    const [ cmd, ...prefix_args ] = get_docker_prefix()
+    const [ cmd, ...prefix_args ] = docker_command_prefix()
     let result
 
     try {
@@ -245,7 +251,7 @@ const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => 
 
 }
 
-const get_docker_run_prefix = () => [ ...get_docker_prefix(), `run` ]
+const get_docker_run_prefix = () => [ ...docker_command_prefix(), `run` ]
 
 /**
  * Build a stable Docker volume name for agent state scoped to a workspace.

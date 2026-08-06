@@ -16,6 +16,7 @@ import {
     docker_daemon_status,
     resolve_docker_socket_path,
 } from '../docker/run.js'
+import { warn_if_unrecognized_watchtower_is_running } from '../docker/watchtower.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import {
     check_host_agent_authentication,
@@ -435,6 +436,11 @@ export const cmd_start = async ( cmd ) => {
         print_error( `Start Docker and try again.` )
         process.exit( 1 )
     }
+
+    // Confirmed Watchtower releases either honor Babysit's opt-out label or
+    // require explicit targets. Warn loudly when a similarly named daemon has
+    // not been confirmed safe, before credentials or session state are created.
+    warn_if_unrecognized_watchtower_is_running()
 
     if( should_confirm_docker_restricted_mode( mode ) ) {
         const confirmed = await confirm_docker_restricted_mode( mode )

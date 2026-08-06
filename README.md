@@ -61,6 +61,27 @@ babysit config --auth-check-agents codex,claude
 7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
 8. **Resume state** — agent-native session history is kept in persistent Docker volumes, while a host-side registry keeps each Babysit ID, captured native agent ID, workspace, and launch settings. Run `babysit resume` to list that history, then resume Claude, Codex, Gemini, or OpenCode after its container exits
 
+### Watchtower protection
+
+Every Babysit agent container carries
+`com.centurylinklabs.watchtower.enable=false` so compatible Watchtower releases
+leave its stateful tmux session alone. Before starting a session, Babysit also
+inspects running container names and images for Watchtower.
+
+The compatibility list covers the established `containrrr/watchtower` image;
+maintained forks from Nick Fedor, Beatkind, OpenSerbia, Storj, Marrrrrrrrry,
+Torus Research, and Jauder Ho; Webhippie/Dockhippie builds; their confirmed
+Docker Hub, GHCR, and Quay aliases; and Whefter's explicitly opt-in legacy
+variant. Image tags, digests, and Docker Hub registry prefixes are normalized
+before exact repository matching.
+
+If a running container looks like Watchtower but its exact image repository is
+not on that list, Babysit prints a prominent warning headed
+`UNRECOGNIZED WATCHTOWER CONTAINER DETECTED` with its name and image. This
+intentionally includes old high-pull images such as `centurylink/watchtower`
+and `v2tec/watchtower`: their legacy builds may ignore the false opt-out label
+and replace an active Babysit container.
+
 ## `babysit.yaml`
 
 Created automatically on first run. Defines `on/do` rules — first match wins.

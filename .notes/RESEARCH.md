@@ -8,6 +8,12 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 - Bind mount sources are resolved on the Docker daemon host, not the client container. Nested Babysit sessions therefore need the original host workspace path (`BABYSIT_HOST_WORKSPACE`) when building `docker run -v ...:/workspace`.
 - Docker's Debian install docs support installing the client-side packages `docker-ce-cli`, `docker-buildx-plugin`, and `docker-compose-plugin` from the official Docker apt repository. Babysit's image installs those CLI/plugin packages only, not `docker-ce` or `containerd.io`.
 
+## Watchtower compatibility
+- Verified against upstream repositories, image registries, and container-selection docs on 2026-08-06.
+- The maintained containrrr lineage preserves `com.centurylinklabs.watchtower.enable=false`: containrrr, Nicholas Fedor, Beatkind, OpenSerbia, Storj, Marrrrrrrrry, Torus Research, and their confirmed registry aliases. Webhippie/Dockhippie and Jauder Ho rebuild compatible upstream releases. Whefter's deprecated fork is safe through mandatory explicit target tags rather than the standard false label.
+- Repository names are the trust boundary. Strip tags/digests and normalize Docker Hub aliases, but do not trust a private mirror or unrelated owner merely because the final path is `watchtower`.
+- `centurylink/watchtower` and Docker Hub's `v2tec/watchtower:latest` are unsafe assumptions: their legacy builds may watch an unlabeled or false-labeled container by default. Unknown, renamed, and legacy Watchtower-like containers should produce a conspicuous warning rather than block startup silently.
+
 ## GitHub CLI
 - Verified against the official GitHub CLI manual on 2026-06-08.
 - `GH_CONFIG_DIR` controls where gh reads/writes config. Without it, gh uses `$XDG_CONFIG_HOME/gh`, then platform-specific defaults, then `$HOME/.config/gh` on Unix-like systems.
