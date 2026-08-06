@@ -129,7 +129,7 @@ export const parse_args = ( argv ) => {
 
 /**
  * Validate and normalize a human-readable session name.
- * All-digit names are reserved for current-directory selectors such as
+ * All-digit names are reserved for global active-list selectors such as
  * `babysit open 2`, so accepting one here would make it impossible to reopen
  * reliably by name.
  *

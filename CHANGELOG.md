@@ -2,9 +2,10 @@
 
 ## 0.25.0 — 2026-08-06
 
-### ✨ Added
-- **Active sessions can be opened by list number.** `babysit list` numbers every
-  active row, and `babysit open N` opens that row from any directory.
+### Changed
+- **Numeric selectors now follow the active-session list.** `babysit list`
+  numbers every row, and `babysit open N` opens that global row from any
+  directory instead of using a current-directory ordinal.
 
 ## 0.24.1 — 2026-08-06
 

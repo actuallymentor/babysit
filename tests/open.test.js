@@ -263,6 +263,31 @@ describe( `cmd_open with a session id`, () => {
 
     } )
 
+    it( `reports when a numbered selector has no active sessions to choose from`, async () => {
+
+        let exit_code = null
+
+        const errors = await capture_errors( () => cmd_open( { session_id: `1` }, {
+            has_session_fn: async () => {
+                throw new Error( `Unexpected direct lookup` )
+            },
+            list_sessions_fn: async () => [],
+            list_stored_sessions_fn: () => {
+                throw new Error( `Unexpected stored lookup` )
+            },
+            attach_session_fn: session_name => {
+                throw new Error( `Unexpected attachment to ${ session_name }` )
+            },
+            exit_fn: code => {
+                exit_code = code
+            },
+        } ) )
+
+        expect( exit_code ).toBe( 1 )
+        expect( errors ).toContain( `No active babysit sessions.` )
+
+    } )
+
     it( `attaches directly when the id is an active tmux session name`, async () => {
 
         let attached_session = null
