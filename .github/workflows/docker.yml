@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       publish-version-tag:
-        description: Publish the package version alongside latest
+        description: Publish the package version instead of latest
         required: false
         type: boolean
         default: false
