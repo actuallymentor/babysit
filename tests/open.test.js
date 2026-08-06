@@ -158,6 +158,28 @@ describe( `cmd_open without a session id`, () => {
 
     } )
 
+    it( `keeps global list numbers in a filtered current-directory table`, async () => {
+
+        const { tmux_sessions, stored_sessions } = session_fixtures()
+        const globally_reordered = [ tmux_sessions[2], tmux_sessions[0], tmux_sessions[1] ]
+
+        const output = await capture_console( () => cmd_open( { session_id: null }, {
+            cwd: `/workspace/app`,
+            list_sessions_fn: async () => globally_reordered,
+            list_stored_sessions_fn: () => stored_sessions,
+            attach_session_fn: session_name => {
+                throw new Error( `Unexpected attachment to ${ session_name }` )
+            },
+            exit_fn: code => {
+                throw new Error( `Unexpected exit ${ code }` )
+            },
+        } ) )
+
+        expect( output ).toMatch( /\n  2\s+feature 1/ )
+        expect( output ).toMatch( /\n  3\s+feature 2/ )
+
+    } )
+
     it( `exits when the current directory has no active session`, async () => {
 
         const { tmux_sessions, stored_sessions } = session_fixtures()
@@ -188,12 +210,12 @@ describe( `cmd_open without a session id`, () => {
 
 describe( `cmd_open with a session id`, () => {
 
-    it( `attaches through a numbered current-directory selection`, async () => {
+    it( `attaches through a numbered active-list selection from any directory`, async () => {
 
         const { tmux_sessions, stored_sessions } = session_fixtures()
         let attached_session = null
 
-        await cmd_open( { session_id: `2` }, {
+        await cmd_open( { session_id: `3` }, {
             cwd: `/workspace/app`,
             has_session_fn: async () => {
                 throw new Error( `Unexpected direct lookup` )
@@ -208,7 +230,7 @@ describe( `cmd_open with a session id`, () => {
             },
         } )
 
-        expect( attached_session ).toBe( `babysit_/workspace/app_claude_2` )
+        expect( attached_session ).toBe( `babysit_/workspace/other_codex_3` )
 
     } )
 
@@ -237,7 +259,7 @@ describe( `cmd_open with a session id`, () => {
 
         expect( attached_session ).toBeNull()
         expect( exit_code ).toBe( 1 )
-        expect( errors ).toContain( `No active session 9 for current directory: /workspace/app` )
+        expect( errors ).toContain( `No active session numbered 9.` )
 
     } )
 

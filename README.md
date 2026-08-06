@@ -33,7 +33,7 @@ babysit resume
 # Resume a previous session by its Babysit ID
 babysit resume <session_id> --yolo
 
-# List active sessions, including their names
+# List active sessions with numbers and names
 babysit list
 
 # Attach to the only running session for the current directory
@@ -42,7 +42,7 @@ babysit open
 # Attach to a specific running session
 babysit open <session_id>
 
-# Choose a numbered session from this directory, or open one by name
+# Open row 2 from babysit list, or open one by name
 babysit open 2
 babysit open "feature 1"
 
@@ -55,7 +55,7 @@ babysit config --auth-check-agents codex,claude
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
 2. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the agents selected in `babysit config` to answer a tiny `ok` prompt inside the Babysit Docker image. Codex and Claude are checked by default. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]` and points to `babysit config`
 3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
-4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name>` from anywhere
+4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
 7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
@@ -234,14 +234,14 @@ babysit update                       Refresh babysit, ~/.agents, and the docker 
 
 Run `babysit open` without an id from a workspace directory to attach to its
 only active session. When more than one active session belongs to that
-directory, Babysit numbers the matching sessions so you can choose one with
-`babysit open <number>`. Numbers are scoped to the active sessions in the
-current directory.
+directory, Babysit shows the matching rows with the same numbers used by
+`babysit list`.
 
 Give a session a memorable label with `babysit <agent> --name "feature 1"`.
-`babysit list` shows aligned name, status, agent, ID, and tmux session columns;
-`babysit open "feature 1"` opens an active session by its exact name. Quote names
-containing spaces.
+`babysit list` numbers every active session and shows aligned name, status,
+agent, ID, and tmux session columns. Run `babysit open <number>` from any
+directory to open that numbered row, or `babysit open "feature 1"` to open an
+active session by its exact name. Quote names containing spaces.
 
 Run `babysit resume` without a session id to list persistent Babysit-managed
 history, newest first. Each row shows the canonical Babysit ID alongside the

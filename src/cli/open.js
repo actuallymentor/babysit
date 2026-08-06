@@ -66,9 +66,17 @@ const open_current_directory_session = async ( {
     }
 
     if( matches.length > 1 ) {
+
+        // A filtered table keeps the global list ordinals so every displayed
+        // number resolves to the same session through `babysit open N`.
+        const active_numbers = new Map(
+            active.map( ( session, index ) => [ session.name, index + 1 ] )
+        )
+
         print_active_sessions_table( matches, stored, {
             title: `Active babysit sessions for ${ cwd }:`,
             numbered: true,
+            numbers: matches.map( session => active_numbers.get( session.name ) ),
         } )
         return
     }
@@ -112,29 +120,25 @@ export const cmd_open = async ( cmd, {
         return
     }
 
-    // All-digit selectors refer to the numbered current-directory table.
+    // All-digit selectors refer to the complete numbered active-session list.
     // Resolve them before fuzzy tmux matching so `babysit open 2` cannot
     // accidentally attach to an unrelated timestamp containing the digit 2.
     if( /^\d+$/.test( session_id ) ) {
 
         const active = await list_sessions_fn()
-        const stored = list_stored_sessions_fn()
-        const matches = active_sessions_for_pwd( cwd, active, stored )
-        const selected = matches[ Number( session_id ) - 1 ]
+        const selected = active[ Number( session_id ) - 1 ]
 
         if( selected ) {
             attach( selected.name, attach_session_fn )
             return
         }
 
-        if( matches.length ) {
-            print_active_sessions_table( matches, stored, {
-                title: `Active babysit sessions for ${ cwd }:`,
-                numbered: true,
-            } )
+        if( active.length ) {
+            const stored = list_stored_sessions_fn()
+            print_active_sessions_table( active, stored, { numbered: true } )
         }
 
-        log.error( `No active session ${ session_id } for current directory: ${ cwd }` )
+        log.error( `No active session numbered ${ session_id }.` )
         exit_fn( 1 )
         return
 

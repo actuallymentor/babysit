@@ -44,11 +44,13 @@ const format_table = ( headers, rows ) => {
  * @param {Object[]} stored_sessions - Stored Babysit metadata
  * @param {Object} [options]
  * @param {string} [options.title] - Table title
- * @param {boolean} [options.numbered=false] - Show current-directory selectors
+ * @param {boolean} [options.numbered=false] - Show active-list selectors
+ * @param {number[]} [options.numbers] - Global selectors for a filtered table
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     title = `Active babysit sessions:`,
     numbered = false,
+    numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
 } = {} ) => {
 
     const headers = [
@@ -70,7 +72,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const status = tmux.attached ? `attached` : `detached`
 
         return [
-            ... numbered ? [ index + 1 ] : [] ,
+            ... numbered ? [ numbers[index] ] : [] ,
             name,
             status,
             agent,
@@ -94,17 +96,23 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
 
 /**
  * List all active babysit sessions
+ * @param {Object} [deps]
+ * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
+ * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  */
-export const cmd_list = async () => {
+export const cmd_list = async ( {
+    list_sessions_fn = list_sessions,
+    list_stored_sessions_fn = list_stored_sessions,
+} = {} ) => {
 
-    const tmux_sessions = await list_sessions()
-    const stored_sessions = list_stored_sessions()
+    const tmux_sessions = await list_sessions_fn()
+    const stored_sessions = list_stored_sessions_fn()
 
     if( tmux_sessions.length === 0 ) {
         console.log( `No active babysit sessions.` )
         return
     }
 
-    print_active_sessions_table( tmux_sessions, stored_sessions )
+    print_active_sessions_table( tmux_sessions, stored_sessions, { numbered: true } )
 
 }

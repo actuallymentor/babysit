@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.25.0 — 2026-08-06
+
+### ✨ Added
+- **Active sessions can be opened by list number.** `babysit list` numbers every
+  active row, and `babysit open N` opens that row from any directory.
+
 ## 0.24.1 — 2026-08-06
 
 ### Changed

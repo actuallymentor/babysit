@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test'
-import { print_active_sessions_table } from '../src/cli/list.js'
+import { cmd_list, print_active_sessions_table } from '../src/cli/list.js'
 
-const capture_console = ( fn ) => {
+const capture_console = async ( fn ) => {
 
     const original_log = console.log
     const lines = []
@@ -9,7 +9,7 @@ const capture_console = ( fn ) => {
     console.log = ( line = `` ) => lines.push( String( line ) )
 
     try {
-        fn()
+        await fn()
     } finally {
         console.log = original_log
     }
@@ -20,26 +20,33 @@ const capture_console = ( fn ) => {
 
 describe( `print_active_sessions_table`, () => {
 
-    it( `shows names while keeping legacy unnamed sessions readable`, () => {
+    it( `numbers active sessions while keeping legacy unnamed sessions readable`, async () => {
 
-        const output = capture_console( () => print_active_sessions_table( [
+        const tmux_sessions = [
             { name: `babysit_named`, attached: false },
             { name: `babysit_legacy`, attached: true },
-        ], [
+        ]
+        const stored_sessions = [
             { tmux_session: `babysit_named`, name: `feature 1`, agent: `codex`, babysit_id: `baby-1` },
             { tmux_session: `babysit_legacy`, agent: `claude`, babysit_id: `baby-2` },
-        ] ) )
+        ]
 
+        const output = await capture_console( () => cmd_list( {
+            list_sessions_fn: async () => tmux_sessions,
+            list_stored_sessions_fn: () => stored_sessions,
+        } ) )
+
+        expect( output ).toContain( `#` )
         expect( output ).toContain( `NAME` )
         expect( output ).toContain( `feature 1` )
-        expect( output ).toMatch( /-\s+attached\s+claude\s+baby-2\s+babysit_legacy/ )
-        expect( output ).not.toContain( `Open one with:` )
+        expect( output ).toMatch( /2\s+-\s+attached\s+claude\s+baby-2\s+babysit_legacy/ )
+        expect( output ).toContain( `Open one with: babysit open <number>` )
 
     } )
 
-    it( `orders and aligns the readable fields before the tmux session`, () => {
+    it( `orders and aligns the readable fields before the tmux session`, async () => {
 
-        const output = capture_console( () => print_active_sessions_table( [
+        const output = await capture_console( () => print_active_sessions_table( [
             { name: `babysit_short`, attached: false },
             { name: `babysit_much_longer_session`, attached: true },
         ], [
@@ -65,7 +72,7 @@ describe( `print_active_sessions_table`, () => {
 
     } )
 
-    it( `keeps numbered selectors aligned as the row count grows`, () => {
+    it( `keeps numbered selectors aligned as the row count grows`, async () => {
 
         const tmux_sessions = Array.from( { length: 10 }, ( _, index ) => ( {
             name: `babysit_${ index + 1 }`,
@@ -78,7 +85,7 @@ describe( `print_active_sessions_table`, () => {
             babysit_id: `baby-${ index + 1 }`,
         } ) )
 
-        const output = capture_console( () => print_active_sessions_table(
+        const output = await capture_console( () => print_active_sessions_table(
             tmux_sessions,
             stored_sessions,
             { numbered: true }
@@ -94,6 +101,24 @@ describe( `print_active_sessions_table`, () => {
         expect( tenth_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
         expect( tenth_row.indexOf( `baby-10` ) ).toBe( header.indexOf( `ID` ) )
         expect( tenth_row.indexOf( `babysit_10` ) ).toBe( header.indexOf( `SESSION` ) )
+
+    } )
+
+    it( `uses supplied global selectors for a filtered session table`, async () => {
+
+        const output = await capture_console( () => print_active_sessions_table( [
+            { name: `babysit_second`, attached: false },
+            { name: `babysit_fourth`, attached: false },
+        ], [
+            { tmux_session: `babysit_second`, name: `second` },
+            { tmux_session: `babysit_fourth`, name: `fourth` },
+        ], {
+            numbered: true,
+            numbers: [ 2, 4 ],
+        } ) )
+
+        expect( output ).toMatch( /\n  2\s+second/ )
+        expect( output ).toMatch( /\n  4\s+fourth/ )
 
     } )
 
