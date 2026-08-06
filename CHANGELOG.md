@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.24.1 — 2026-08-06
+
+### Changed
+- **Active-session tables prioritize readable metadata.** `babysit list` and
+  numbered `babysit open` tables align name, status, agent, ID, and session
+  columns in that order.
+
 ## 0.24.0 — 2026-08-04
 
 ### ✨ Added

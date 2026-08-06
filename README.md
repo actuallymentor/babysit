@@ -239,8 +239,9 @@ directory, Babysit numbers the matching sessions so you can choose one with
 current directory.
 
 Give a session a memorable label with `babysit <agent> --name "feature 1"`.
-`babysit list` shows labels in its `NAME` column, and `babysit open "feature 1"`
-opens an active session by its exact name. Quote names containing spaces.
+`babysit list` shows aligned name, status, agent, ID, and tmux session columns;
+`babysit open "feature 1"` opens an active session by its exact name. Quote names
+containing spaces.
 
 Run `babysit resume` without a session id to list persistent Babysit-managed
 history, newest first. Each row shows the canonical Babysit ID alongside the
