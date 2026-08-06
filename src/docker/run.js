@@ -15,6 +15,7 @@ export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
 export const BABYSIT_RC_CONTAINER_PATH = `/home/node/.babysitrc`
 export const BABYSIT_HOST_RC_ENV = `BABYSIT_HOST_BABYSITRC`
+export const WATCHTOWER_DISABLE_LABEL = `com.centurylinklabs.watchtower.enable=false`
 
 /**
  * Extract a Unix socket path from a Docker host URI.
@@ -406,6 +407,10 @@ export const build_docker_command_args = ( options ) => {
     flags.push( ...get_docker_run_prefix(), `--rm` )
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, `babysit-${ agent.name }-${ Date.now() }` )
+    // Agent sessions are stateful, interactive workloads. An unattended image
+    // refresh terminates their tmux panes and cannot restore that supervision
+    // when it recreates the containers, so keep Watchtower from replacing them.
+    flags.push( `--label`, WATCHTOWER_DISABLE_LABEL )
 
     if( process.env.BABYSIT_E2E_RUN_ID ) {
         flags.push( `--label`, `babysit.e2e_run=${ process.env.BABYSIT_E2E_RUN_ID }` )

@@ -6,6 +6,7 @@ import { get_image_name } from '../src/docker/update.js'
 import {
     BABYSIT_HOST_RC_ENV,
     BABYSIT_RC_CONTAINER_PATH,
+    WATCHTOWER_DISABLE_LABEL,
     build_agent_state_volume_name,
     build_docker_command,
     build_docker_command_args,
@@ -324,6 +325,16 @@ describe( `agent home env vars`, () => {
 } )
 
 describe( `build_docker_command`, () => {
+
+    it( `prevents Watchtower from replacing active agent containers`, () => {
+
+        const args = build_docker_command_args( make_options() )
+        const label_index = args.indexOf( `--label` )
+
+        expect( label_index ).toBeGreaterThan( -1 )
+        expect( args[label_index + 1] ).toBe( WATCHTOWER_DISABLE_LABEL )
+
+    } )
 
     it( `can build noninteractive argv without mounting the workspace`, () => {
 
