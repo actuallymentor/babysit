@@ -126,6 +126,13 @@ export const cmd_open = async ( cmd, {
     if( /^\d+$/.test( session_id ) ) {
 
         const active = await list_sessions_fn()
+
+        if( active.length === 0 ) {
+            log.error( `No active babysit sessions.` )
+            exit_fn( 1 )
+            return
+        }
+
         const selected = active[ Number( session_id ) - 1 ]
 
         if( selected ) {
@@ -133,10 +140,8 @@ export const cmd_open = async ( cmd, {
             return
         }
 
-        if( active.length ) {
-            const stored = list_stored_sessions_fn()
-            print_active_sessions_table( active, stored, { numbered: true } )
-        }
+        const stored = list_stored_sessions_fn()
+        print_active_sessions_table( active, stored, { numbered: true } )
 
         log.error( `No active session numbered ${ session_id }.` )
         exit_fn( 1 )
