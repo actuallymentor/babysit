@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.25.1 — 2026-08-06
+
+### 🐛 Fixed
+- **Active sessions are protected from unattended replacement.** Babysit now
+  labels agent containers so Watchtower leaves their stateful tmux sessions
+  running.
+
+### Changed
+- **Dependencies are current and vulnerability-free.** The YAML runtime was
+  updated to 2.9.0, and compatible development dependencies were refreshed to
+  resolve the outstanding audit advisories.
+
 ## 0.25.0 — 2026-08-06
 
 ### Changed
