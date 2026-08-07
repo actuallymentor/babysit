@@ -6,7 +6,7 @@
 - **Fresh configurations are inert until enabled.** Generated examples no
   longer reference a missing `IDLE.md` or run placeholder notifications.
 - **Semantic acceptance sends Enter.** `accept` no longer emits Shift+Tab, and
-  resume tests remove only the session records they create.
+  resume tests never write to the user's session registry.
 
 ### Changed
 - **Agent defaults match current CLIs.** Claude uses `xhigh`, Gemini uses

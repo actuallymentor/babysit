@@ -143,11 +143,13 @@ export const resolve_resume_target = ( session ) => {
  * @param {Object} cmd - Parsed command { session_id, flags }
  * @param {Object} [options]
  * @param {Function} [options.start=cmd_start] - Start command delegate, injectable for tests
+ * @param {Function} [options.load_session_fn=load_session] - Session metadata loader
  * @param {Function} [options.list_stored_sessions_fn=list_stored_sessions] - Session history loader
  * @param {Function} [options.print_sessions=print_resumable_sessions_table] - Session history renderer
  */
 export const cmd_resume = async ( cmd, {
     start = cmd_start,
+    load_session_fn = load_session,
     list_stored_sessions_fn = list_stored_sessions,
     print_sessions = print_resumable_sessions_table,
 } = {} ) => {
@@ -160,7 +162,7 @@ export const cmd_resume = async ( cmd, {
     }
 
     // Look up session metadata
-    const session = load_session( session_id )
+    const session = load_session_fn( session_id )
 
     if( session ) {
 
