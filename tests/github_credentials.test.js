@@ -1,18 +1,31 @@
 import { describe, it, expect } from 'bun:test'
 import { spawnSync } from 'child_process'
-import { readFileSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { parse } from 'yaml'
 
+import { cleanup_ephemeral_credential_mounts } from '../src/credentials/index.js'
 import {
     build_sanitised_host_gh_config_mounts,
     can_mount_host_gh_config_dir,
+    GH_CREDENTIALS_BOOTSTRAP_ENV,
     GH_CONFIG_CONTAINER_DIR,
+    GH_ISOLATED_CONFIG_CONTAINER_DIR,
     read_host_gh_token,
     resolve_host_gh_config_dir,
     sanitise_host_gh_auth_status,
     setup_github_cli_credentials,
 } from '../src/credentials/github.js'
+
+const read_sanitised_profile = ( env_file ) => {
+
+    const [ key, encoded_credentials ] = readFileSync( env_file, `utf-8` ).trim().split( `=` )
+
+    expect( key ).toBe( GH_CREDENTIALS_BOOTSTRAP_ENV )
+
+    return Buffer.from( encoded_credentials, `base64` ).toString( `utf-8` )
+
+}
 
 describe( `GitHub CLI credential passthrough`, () => {
 
@@ -78,18 +91,18 @@ describe( `GitHub CLI credential passthrough`, () => {
             },
         } )
 
-        const config_mount = mounts.find( mount => mount.type === `volume` )
+        const env_file_mount = mounts.find( mount => mount.type === `env_file` )
 
         try {
-            expect( config_mount.target ).toBe( GH_CONFIG_CONTAINER_DIR )
-            expect( config_mount.source ).not.toBe( `/home/alice/.config/gh` )
+            expect( statSync( env_file_mount.cleanup ).mode & 0o777 ).toBe( 0o700 )
+            expect( statSync( env_file_mount.source ).mode & 0o777 ).toBe( 0o600 )
             expect( mounts ).toContainEqual( {
                 type: `env`,
                 key: `GH_CONFIG_DIR`,
-                value: GH_CONFIG_CONTAINER_DIR,
+                value: GH_ISOLATED_CONFIG_CONTAINER_DIR,
             } )
 
-            const hosts = parse( readFileSync( join( config_mount.source, `hosts.yml` ), `utf-8` ) )
+            const hosts = parse( read_sanitised_profile( env_file_mount.source ) )
             expect( hosts ).toEqual( {
                 'github.com': {
                     user: `mentor`,
@@ -100,15 +113,20 @@ describe( `GitHub CLI credential passthrough`, () => {
                 },
             } )
         } finally {
-            rmSync( config_mount.source, { recursive: true, force: true } )
+            cleanup_ephemeral_credential_mounts( mounts )
         }
+
+        expect( existsSync( env_file_mount.cleanup ) ).toBe( false )
 
     } )
 
     it( `keeps enterprise hosts and alternate accounts in credential-only isolation`, () => {
 
         const mounts = setup_github_cli_credentials( {
-            env: { HOME: `/home/alice` },
+            env: {
+                HOME: `/home/alice`,
+                BABYSIT_HOST_WORKSPACE: `/Users/alice/project`,
+            },
             include_host_preferences: false,
             spawn_sync: ( cmd, args ) => {
                 expect( cmd ).toBe( `gh` )
@@ -124,9 +142,14 @@ describe( `GitHub CLI credential passthrough`, () => {
             },
         } )
 
-        const config_mount = mounts.find( mount => mount.type === `volume` )
+        const env_file_mount = mounts.find( mount => mount.type === `env_file` )
 
         try {
+            const config_dir = join( env_file_mount.cleanup, `config` )
+            mkdirSync( config_dir )
+            writeFileSync( join( config_dir, `config.yml` ), `version: 1\n` )
+            writeFileSync( join( config_dir, `hosts.yml` ), read_sanitised_profile( env_file_mount.source ) )
+
             const ignored_env_keys = [
                 `GH_CONFIG_DIR`,
                 `GH_TOKEN`,
@@ -139,7 +162,7 @@ describe( `GitHub CLI credential passthrough`, () => {
                     Object.entries( process.env )
                         .filter( ( [ key ] ) => !ignored_env_keys.includes( key ) )
                 ),
-                GH_CONFIG_DIR: config_mount.source,
+                GH_CONFIG_DIR: config_dir,
             }
             const active = spawnSync( `gh`, [ `auth`, `token`, `--hostname`, `github.internal` ], {
                 encoding: `utf-8`,
@@ -157,7 +180,7 @@ describe( `GitHub CLI credential passthrough`, () => {
             expect( alternate.status ).toBe( 0 )
             expect( alternate.stdout.trim() ).toBe( `alternate-token` )
         } finally {
-            rmSync( config_mount.source, { recursive: true, force: true } )
+            cleanup_ephemeral_credential_mounts( mounts )
         }
 
     } )

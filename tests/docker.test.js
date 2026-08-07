@@ -142,6 +142,17 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `materializes isolated GitHub credentials privately and drops the payload`, () => {
+
+        const entrypoint = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
+
+        expect( entrypoint ).toContain( `BABYSIT_GH_CREDENTIALS_B64` )
+        expect( entrypoint ).toContain( `base64 --decode` )
+        expect( entrypoint ).toContain( `chmod 600` )
+        expect( entrypoint ).toContain( `unset BABYSIT_GH_CREDENTIALS_B64` )
+
+    } )
+
     it( `installs just outside apt so slim-base package availability cannot break builds`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
@@ -743,6 +754,21 @@ describe( `build_docker_command`, () => {
         expect( cmd ).toContain( `/tmp/gh-config:/home/node/.config/gh:ro` )
         expect( cmd ).toContain( `GH_CONFIG_DIR=/home/node/.config/gh` )
         expect( cmd ).toContain( `GH_TOKEN=fake-token` )
+
+    } )
+
+    it( `passes private credential env files through the local Docker client`, () => {
+
+        const args = build_docker_command_args( make_options( {
+            creds_mounts: [
+                { type: `env_file`, source: `/tmp/private/credentials.env`, cleanup: `/tmp/private` },
+            ],
+        } ) )
+
+        const env_file_index = args.indexOf( `--env-file` )
+
+        expect( env_file_index ).toBeGreaterThan( -1 )
+        expect( args[ env_file_index + 1 ] ).toBe( `/tmp/private/credentials.env` )
 
     } )
 

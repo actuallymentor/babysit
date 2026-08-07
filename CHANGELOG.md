@@ -7,7 +7,8 @@
   `--ignore-host-agents-md` omits host instructions, skills, preferences, and
   global loop context while retaining credential-only state and project-local
   context, including active GitHub Enterprise authentication. The setting
-  persists across both `babysit resume` forms.
+  persists across both `babysit resume` forms. GitHub's isolated profile uses a
+  short-lived private transport that also works through nested Docker daemons.
 
 ## 0.26.2 — 2026-08-07
 
