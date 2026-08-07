@@ -270,7 +270,7 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
-    it( `stops and retains a staged container when launch is interrupted before handoff`, async () => {
+    it( `removes a static-secret container when launch is interrupted before handoff`, async () => {
 
         const { mount } = private_transport()
         const signals = fake_signals()
@@ -289,13 +289,64 @@ describe( `prepared Docker launch`, () => {
         signals.emit( `SIGTERM` )
         await new Promise( resolve => setTimeout( resolve, 0 ) )
 
-        expect( calls.filter( call => call.args.includes( `stop` ) ) ).toEqual( [ {
-            command: `docker`,
-            args: [ `stop`, `--time`, `5`, CONTAINER_ID ],
-        } ] )
-        expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
+        expect( calls.some( call => call.args.includes( `stop` ) ) ).toBe( false )
+        expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( CONTAINER_ID ) ) ).toBe( true )
         expect( kill_calls ).toEqual( [ { pid: process.pid, signal: `SIGTERM` } ] )
         expect( signals.listenerCount( `SIGTERM` ) ).toBe( 0 )
+
+    } )
+
+    it( `stops and durably retains a refreshable credential container on interruption`, async () => {
+
+        const transport = build_private_tmpfile(
+            `creds-opencode`,
+            `auth.json`,
+            `{"refresh_token":"rotated"}`,
+            { file_mode: 0o666 }
+        )
+        const options = make_options( {
+            type: `synced_file`,
+            source: transport.file,
+            target: opencode.container_paths.creds,
+        } )
+        const signals = fake_signals()
+        const calls = []
+        const recovery_records = []
+        const cleared_recoveries = []
+        const kill_calls = []
+
+        try {
+            await prepare_docker_launch( options, {
+                clear_recovery: id => cleared_recoveries.push( id ),
+                register_recovery: recovery => {
+                    recovery_records.push( recovery )
+                    return `recovery-id`
+                },
+                signal_target: signals,
+                kill_process: ( pid, signal ) => kill_calls.push( { pid, signal } ),
+                run_command: async ( command, args ) => {
+                    calls.push( { command, args: [ ...args ] } )
+                    return args.includes( `create` ) ? CONTAINER_ID : ``
+                },
+            } )
+
+            signals.emit( `SIGTERM` )
+            await new Promise( resolve => setTimeout( resolve, 0 ) )
+
+            expect( recovery_records ).toEqual( [ {
+                container_id: CONTAINER_ID,
+                sync_paths: [ transport.directory ],
+            } ] )
+            expect( calls.filter( call => call.args.includes( `stop` ) ) ).toEqual( [ {
+                command: `docker`,
+                args: [ `stop`, `--time`, `5`, CONTAINER_ID ],
+            } ] )
+            expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
+            expect( cleared_recoveries ).toEqual( [] )
+            expect( kill_calls ).toEqual( [ { pid: process.pid, signal: `SIGTERM` } ] )
+        } finally {
+            cleanup_ephemeral_credential_mounts( [ { cleanup: transport.directory } ] )
+        }
 
     } )
 

@@ -68,7 +68,7 @@ const REFRESH_INTERVAL_MS = 300_000
  * @param {string|null} [options.baseline_source_hash] - Hash of the host source when the tmpfile
  *   was captured by the foreground process
  * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the sync copy when captured
- * @returns {{ set_transport: Function, stop: Function }} Sync controller
+ * @returns {{ baseline: Function, set_transport: Function, stop: Function }} Sync controller
  */
 export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null, options = {} ) => {
 
@@ -192,6 +192,10 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
     interval.unref?.()
 
     return {
+        baseline: () => ( {
+            baseline_source_hash: last_source_hash,
+            baseline_tmpfile_hash: last_tmpfile_hash,
+        } ),
         set_transport: next_transport => {
             transport = next_transport
         },

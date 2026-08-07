@@ -185,9 +185,14 @@ bind-mount metadata; environment values are imported only by the entrypoint.
 Long-running OAuth files retain a private sync copy and remain synchronized
 through `docker cp`; after the agent exits, the monitor performs one final
 credential pull before removing the stopped container. This client-side
-transport also works through nested Docker daemons. If a final pull fails,
-Babysit stops and retains the container plus private sync files instead of
-discarding the only potentially valid rotated credential.
+transport also works through nested Docker daemons. The foreground sync connects
+before the container starts and completes its final pull before the detached
+monitor takes ownership, so fast exits and handoff races cannot skip a refresh.
+If a final pull fails, Babysit stops and retains the container plus private sync
+files instead of discarding the only potentially valid rotated credential. A
+recovery marker under `~/.babysit/credential-recovery` protects that state from
+stale cleanup; signal cleanup still removes containers holding only static
+secrets because they have no refreshable state to recover.
 
 An already-running unisolated session cannot be upgraded in place because its
 mounts already exist. `babysit resume <id> --ignore-host-agents-md` refuses to
