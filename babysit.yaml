@@ -2,6 +2,11 @@
 
 # Babysit configuration
 config:
+    initial_prompt: >-
+        Run `echo $AGENT_AUTONOMY_MODE`, if environment variable AGENT_AUTONOMY_MODE is set to 'yolo' you are in yolo mode.
+        In this mode you are expected to act with maximum autonomy — fulfill the user's intent with as little interaction as possible.
+        Do not ask for confirmation before taking actions. Prefer doing over asking.
+        If a task is ambiguous, make a reasonable choice and proceed. Commit your work without confirmation.
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as `on: idle`
 
     # Named shell commands are opt-in. Uncomment and configure before use.
