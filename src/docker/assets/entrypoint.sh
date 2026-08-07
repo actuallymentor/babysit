@@ -46,20 +46,22 @@ if [ "${BABYSIT_VENV_ISOLATED:-0}" = "1" ] && [ -d /workspace/.venv ]; then
     chown -R "$HOST_UID:$HOST_GID" /workspace/.venv 2>/dev/null || true
 fi
 
-# Materialize the credential-only GitHub profile supplied through Docker's
-# private env-file transport. The host-side file is removed after `docker run`
-# consumes it; only this in-container 0700/0600 copy remains. Unset the payload
-# before launching the agent so the encoded tokens are not inherited.
-if [ -n "${BABYSIT_GH_CREDENTIALS_B64:-}" ]; then
+# Materialize the credential-only GitHub profile uploaded into the stopped
+# container through `docker cp`. The bootstrap never appears in Config.Env or
+# bind-mount metadata, and is removed before the coding agent starts.
+GH_CREDENTIALS_BOOTSTRAP=/tmp/.babysit-gh-hosts.yml
+if [ -f "$GH_CREDENTIALS_BOOTSTRAP" ]; then
     GH_CREDENTIALS_DIR=/home/node/.config/babysit-gh
 
     install -d -m 700 -o "$HOST_UID" -g "$HOST_GID" "$GH_CREDENTIALS_DIR"
     printf 'version: 1\n' > "$GH_CREDENTIALS_DIR/config.yml"
-    printf '%s' "$BABYSIT_GH_CREDENTIALS_B64" | base64 --decode > "$GH_CREDENTIALS_DIR/hosts.yml"
+    install -m 600 -o "$HOST_UID" -g "$HOST_GID" \
+        "$GH_CREDENTIALS_BOOTSTRAP" "$GH_CREDENTIALS_DIR/hosts.yml"
     chown "$HOST_UID:$HOST_GID" "$GH_CREDENTIALS_DIR/config.yml" "$GH_CREDENTIALS_DIR/hosts.yml"
     chmod 600 "$GH_CREDENTIALS_DIR/config.yml" "$GH_CREDENTIALS_DIR/hosts.yml"
+    rm -f "$GH_CREDENTIALS_BOOTSTRAP"
 
-    unset BABYSIT_GH_CREDENTIALS_B64 GH_CREDENTIALS_DIR
+    unset GH_CREDENTIALS_BOOTSTRAP GH_CREDENTIALS_DIR
 fi
 
 # Bring claude into the cross-agent skills convention. Codex and OpenCode

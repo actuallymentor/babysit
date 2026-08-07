@@ -146,10 +146,11 @@ describe( `docker image`, () => {
 
         const entrypoint = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
 
-        expect( entrypoint ).toContain( `BABYSIT_GH_CREDENTIALS_B64` )
-        expect( entrypoint ).toContain( `base64 --decode` )
+        expect( entrypoint ).toContain( `/tmp/.babysit-gh-hosts.yml` )
+        expect( entrypoint ).toContain( `install -m 600` )
         expect( entrypoint ).toContain( `chmod 600` )
-        expect( entrypoint ).toContain( `unset BABYSIT_GH_CREDENTIALS_B64` )
+        expect( entrypoint ).toContain( `rm -f "$GH_CREDENTIALS_BOOTSTRAP"` )
+        expect( entrypoint ).not.toContain( `BABYSIT_GH_CREDENTIALS_B64` )
 
     } )
 
@@ -757,18 +758,22 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `passes private credential env files through the local Docker client`, () => {
+    it( `keeps staged credential files out of Docker create metadata`, () => {
 
         const args = build_docker_command_args( make_options( {
             creds_mounts: [
-                { type: `env_file`, source: `/tmp/private/credentials.env`, cleanup: `/tmp/private` },
+                {
+                    type: `copy`,
+                    source: `/tmp/private/hosts.yml`,
+                    target: `/tmp/.babysit-gh-hosts.yml`,
+                    cleanup: `/tmp/private`,
+                },
             ],
         } ) )
 
-        const env_file_index = args.indexOf( `--env-file` )
-
-        expect( env_file_index ).toBeGreaterThan( -1 )
-        expect( args[ env_file_index + 1 ] ).toBe( `/tmp/private/credentials.env` )
+        expect( args ).not.toContain( `--env-file` )
+        expect( args.some( arg => arg.includes( `/tmp/private` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `.babysit-gh-hosts.yml` ) ) ).toBe( false )
 
     } )
 

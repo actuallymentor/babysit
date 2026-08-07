@@ -176,7 +176,10 @@ both `babysit resume` forms. Executable host setup from `~/.babysitrc` is also
 skipped; credentials must come from the supported agent files, keychains, or
 environment variables when isolation is enabled. GitHub CLI authentication is
 injected into a private credential-only profile containing host, account, and
-token state instead of mounting aliases or other gh preferences.
+token state instead of mounting aliases or other gh preferences. Babysit
+uploads that profile to a stopped container through the Docker API, deletes the
+host copy after Docker acknowledges it, then starts the container; sanitized
+profile tokens never enter Docker environment or bind-mount metadata.
 
 `--docker` uses Docker-outside-of-Docker: Babysit mounts the host Docker socket,
 sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
