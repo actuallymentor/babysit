@@ -18,9 +18,14 @@ import { resolve_credential_file } from './paths.js'
  *   pulls reach the same credential baseline.
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
  *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
+ * @param {Function} [options.run_command=run_sync] - Host command runner
  * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }} Credential specs and sync controller
  */
-export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null, sync_baseline = null } = {} ) => {
+export const setup_darwin_credentials = async ( agent, {
+    existing_tmpfile = null,
+    sync_baseline = null,
+    run_command = run_sync,
+} = {} ) => {
 
     const cred_config = agent.credentials?.darwin
     if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null, cleanup_path: null }
@@ -40,7 +45,7 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
         // creds. Without this, a user on darwin whose keychain is empty but
         // has a fallback auth.json would get a one-way keychain sync in the
         // monitor instead of the bidirectional file sync the foreground set up.
-        const exists = run_sync(
+        const exists = run_command(
             `security find-generic-password -s "${ cred_config.keychain_service }" 2>/dev/null`
         )
 
@@ -54,10 +59,10 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
                 // refreshed by the agent itself before we capture. Without this,
                 // a stale token would ride the container until our 5-minute sync
                 // daemon catches up.
-                run_sync( `${ agent.bin } --version 2>/dev/null` )
+                run_command( `${ agent.bin } --version 2>/dev/null` )
 
                 // Phase 2: capture after pre-flight rotation
-                const creds_json = run_sync(
+                const creds_json = run_command(
                     `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
                 )
 
@@ -91,10 +96,10 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
 
             if( tmpfile ) {
 
-                const read_source = async () => run_sync(
+                const read_source = async () => run_command(
                     `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
                 )
-                sync = start_credential_sync( read_source, tmpfile )
+                sync = start_credential_sync( read_source, tmpfile, null, baseline || {} )
 
                 log.info( `Credentials loaded from macOS Keychain (${ cred_config.keychain_service })` )
 

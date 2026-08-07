@@ -9,7 +9,11 @@ import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
-import { list_credential_recoveries } from '../credentials/recovery.js'
+import {
+    clear_credential_recovery,
+    list_credential_recoveries,
+    register_credential_recovery,
+} from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
 import { private_credential_tmpdir } from '../utils/tmpfile.js'
 import {
@@ -117,12 +121,16 @@ export const should_ignore_host_agent_context = ( flags = {}, stored_resume_sess
  * @param {Object} [options]
  * @param {Object|null} [options.creds_sync] - Aggregate credential sync controller
  * @param {Object|null} [options.prepared_launch] - Prepared Docker launch owner
+ * @param {string|null} [options.recovery_id] - Pre-container credential owner
+ * @param {Function} [options.clear_recovery=clear_credential_recovery] - Recovery marker cleanup
  * @param {string} [options.context] - Human-readable failure context
  * @returns {Promise<{ cleaned: boolean, retained_container: string|null, flush_error: Error|null }>}
  */
 export const cleanup_failed_launch_credentials = async ( {
     creds_sync = null,
     prepared_launch = null,
+    recovery_id = null,
+    clear_recovery = clear_credential_recovery,
     context = `foreground launch failure`,
 } = {} ) => {
 
@@ -148,7 +156,9 @@ export const cleanup_failed_launch_credentials = async ( {
         return { cleaned: false, retained_container, flush_error }
     }
 
-    const cleaned = creds_sync ? creds_sync.cleanup() : true
+    const files_cleaned = creds_sync ? creds_sync.cleanup() : true
+    const recovery_cleared = clear_recovery( recovery_id )
+    const cleaned = files_cleaned && recovery_cleared
     if( !cleaned ) log.warn( `Could not remove private credential recovery files after ${ context }.` )
     if( prepared_launch ) await prepared_launch.abort()
 
@@ -540,6 +550,11 @@ export const cmd_start = async ( cmd ) => {
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
     } = await setup_credentials( agent )
+    const foreground_recovery_id = register_credential_recovery( {
+        sync_paths: Object.values( creds_tmpfiles ).map(
+            file => private_credential_tmpdir( file ) || file
+        ),
+    } )
     const auth_agents = select_host_auth_check_agents()
     log.info( format_host_auth_status_message( auth_agents.map( a => a.name ) ) )
 
@@ -565,6 +580,7 @@ export const cmd_start = async ( cmd ) => {
         if( !should_continue ) {
             await cleanup_failed_launch_credentials( {
                 creds_sync,
+                recovery_id: foreground_recovery_id,
                 context: `authentication abort`,
             } )
             log.error( `Aborted because host agent authentication is incomplete.` )
@@ -701,6 +717,7 @@ export const cmd_start = async ( cmd ) => {
         await cleanup_failed_launch_credentials( {
             creds_sync,
             prepared_launch,
+            recovery_id: foreground_recovery_id,
             context: `launch failure`,
         } )
         throw e
@@ -711,6 +728,7 @@ export const cmd_start = async ( cmd ) => {
         await cleanup_failed_launch_credentials( {
             creds_sync,
             prepared_launch,
+            recovery_id: foreground_recovery_id,
             context: `startup failure`,
         } )
         if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
@@ -764,6 +782,7 @@ export const cmd_start = async ( cmd ) => {
             started_at: new Date().toISOString(),
         }
         save_session( session_data )
+        clear_credential_recovery( foreground_recovery_id )
 
         await spawn_monitor_daemon( babysit_id )
         prepared_launch.handoff()
@@ -771,6 +790,7 @@ export const cmd_start = async ( cmd ) => {
         await cleanup_failed_launch_credentials( {
             creds_sync,
             prepared_launch,
+            recovery_id: foreground_recovery_id,
             context: `monitor handoff failure`,
         } )
         throw error

@@ -17,8 +17,9 @@
   recoverable containers and sync files, while serialized sync checks prevent a
   slow Docker pull from overwriting a concurrent host reauthentication. The
   foreground connects before container start and finishes its final pull before
-  the monitor takes ownership; durable recovery markers protect failed launches,
-  while signal cleanup removes containers that contain only static secrets.
+  the monitor takes ownership. Durable recovery markers protect captured files
+  even before the main container exists, macOS Keychain handoffs preserve the
+  transferred baseline, and signal cleanup removes static-secret-only containers.
 
 ## 0.26.2 — 2026-08-07
 

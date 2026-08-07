@@ -8,6 +8,7 @@ import {
     rmSync,
     writeFileSync,
 } from 'fs'
+import { randomUUID } from 'crypto'
 import { basename, join } from 'path'
 
 import { CREDENTIAL_RECOVERY_DIR } from '../utils/paths.js'
@@ -22,14 +23,16 @@ const safe_recovery_id = id => basename( String( id || `` ) ).replace( /[^a-zA-Z
  * their private 0700 transport directories and the stopped container.
  *
  * @param {Object} recovery - Recoverable launch state
- * @param {string} recovery.container_id - Docker container holding the staged credential
+ * @param {string|null} [recovery.container_id] - Docker container holding the staged credential
+ * @param {string|null} [recovery.recovery_id] - Explicit owner id for pre-container state
  * @param {string[]} recovery.sync_paths - Private credential-sync directories
  * @param {Object} [options]
  * @param {string} [options.directory=CREDENTIAL_RECOVERY_DIR] - Registry directory
  * @returns {string|null} Recovery id, or null when no sync paths need protection
  */
 export const register_credential_recovery = ( {
-    container_id,
+    container_id = null,
+    recovery_id: requested_recovery_id = null,
     sync_paths = [],
 }, {
     directory = CREDENTIAL_RECOVERY_DIR,
@@ -38,8 +41,9 @@ export const register_credential_recovery = ( {
     const protected_paths = [ ...new Set( sync_paths.filter( Boolean ) ) ]
     if( !protected_paths.length ) return null
 
-    const recovery_id = safe_recovery_id( container_id )
-    if( !recovery_id ) throw new Error( `Cannot register credential recovery without a container id` )
+    const recovery_id = safe_recovery_id(
+        requested_recovery_id || container_id || `foreground-${ randomUUID() }`
+    )
 
     mkdirSync( directory, { recursive: true, mode: 0o700 } )
     chmodSync( directory, 0o700 )
@@ -116,7 +120,7 @@ export const list_credential_recoveries = ( {
     return files.flatMap( file => {
         try {
             const record = JSON.parse( readFileSync( join( directory, file ), `utf-8` ) )
-            if( !record.container_id || !Array.isArray( record.sync_paths ) ) return []
+            if( !record.recovery_id || !Array.isArray( record.sync_paths ) ) return []
             return [ record ]
         } catch ( error ) {
             log.debug( `Could not read credential recovery marker ${ file }: ${ error.message }` )

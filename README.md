@@ -191,8 +191,11 @@ monitor takes ownership, so fast exits and handoff races cannot skip a refresh.
 If a final pull fails, Babysit stops and retains the container plus private sync
 files instead of discarding the only potentially valid rotated credential. A
 recovery marker under `~/.babysit/credential-recovery` protects that state from
-stale cleanup; signal cleanup still removes containers holding only static
-secrets because they have no refreshable state to recover.
+stale cleanup from initial credential capture onward, including auth checks
+before the main container exists. macOS Keychain-backed handoffs reuse the same
+credential baseline when the monitor takes ownership. Signal cleanup still
+removes containers holding only static secrets because they have no refreshable
+state to recover.
 
 An already-running unisolated session cannot be upgraded in place because its
 mounts already exist. `babysit resume <id> --ignore-host-agents-md` refuses to
