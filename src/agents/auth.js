@@ -5,6 +5,7 @@ import { strip_ansi } from '../babysit/matcher.js'
 import { read_babysit_config } from '../babysit/config.js'
 import { build_docker_command_args } from '../docker/run.js'
 import { prepare_docker_launch } from '../docker/launch.js'
+import { log } from '../utils/log.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
 
 export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
@@ -313,7 +314,24 @@ export const run_host_agent_auth_check = async ( agent, {
                     flush_error = error
                 }
 
+                if( flush_error ) {
+                    const retained_container = prepared_launch.retain
+                        ? await prepared_launch.retain( { stop: timed_out } )
+                        : null
+                    if( !prepared_launch.retain ) prepared_launch.handoff?.()
+
+                    log.warn(
+                        `Could not recover refreshed ${ agent.name } credentials from auth probe; retaining ${ retained_container || prepared_launch.container_id || `the probe container` } for manual recovery: ${ flush_error.message }`
+                    )
+                    return flush_error
+                }
+
                 await prepared_launch.abort()
+
+                // Direct docker-run probes have no prepared container owner.
+                // Reap their named --rm container after killing a stuck client;
+                // staged probes are removed by abort() after a successful pull.
+                if( timed_out && !prepared_launch.container_id ) cleanup_timed_out_container()
                 return flush_error
             } )()
 
@@ -334,7 +352,6 @@ export const run_host_agent_auth_check = async ( agent, {
             if( typeof child.kill === `function` ) child.kill( `SIGTERM` )
             kill_timeout = setTimeout( async () => {
                 if( typeof child.kill === `function` ) child.kill( `SIGKILL` )
-                cleanup_timed_out_container()
                 await finalise_launch()
 
                 finish( {

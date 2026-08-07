@@ -115,7 +115,7 @@ const get_credential_agents = ( active_agent ) => [
  * @param {Object[]} syncs - Individual sync controllers
  * @returns {Object|null} Aggregate sync controller or null when no sync exists
  */
-const aggregate_syncs = ( syncs ) => {
+export const aggregate_syncs = ( syncs ) => {
 
     const active_syncs = syncs.filter( Boolean )
     if( !active_syncs.length ) return null
@@ -130,7 +130,17 @@ const aggregate_syncs = ( syncs ) => {
             active_syncs.map( ( { cleanup_path } ) => ( { cleanup: cleanup_path } ) )
         ),
         stop: async () => {
-            await Promise.all( active_syncs.map( ( { controller } ) => controller.stop() ) )
+            const results = await Promise.allSettled(
+                active_syncs.map( ( { controller } ) => controller.stop() )
+            )
+            const failures = results
+                .filter( result => result.status === `rejected` )
+                .map( result => result.reason )
+
+            if( failures.length === 1 ) throw failures[0]
+            if( failures.length > 1 ) {
+                throw new AggregateError( failures, `Failed to flush ${ failures.length } credential files` )
+            }
         },
     }
 

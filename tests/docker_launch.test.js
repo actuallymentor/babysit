@@ -270,7 +270,7 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
-    it( `removes a prepared container when launch is interrupted before handoff`, async () => {
+    it( `stops and retains a staged container when launch is interrupted before handoff`, async () => {
 
         const { mount } = private_transport()
         const signals = fake_signals()
@@ -289,10 +289,11 @@ describe( `prepared Docker launch`, () => {
         signals.emit( `SIGTERM` )
         await new Promise( resolve => setTimeout( resolve, 0 ) )
 
-        expect( calls.filter( call => call.args.includes( `rm` ) ) ).toEqual( [ {
+        expect( calls.filter( call => call.args.includes( `stop` ) ) ).toEqual( [ {
             command: `docker`,
-            args: [ `rm`, `-f`, CONTAINER_ID ],
+            args: [ `stop`, `--time`, `5`, CONTAINER_ID ],
         } ] )
+        expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
         expect( kill_calls ).toEqual( [ { pid: process.pid, signal: `SIGTERM` } ] )
         expect( signals.listenerCount( `SIGTERM` ) ).toBe( 0 )
 

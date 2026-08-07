@@ -77,6 +77,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
     let last_source_hash = baseline_source_hash
     let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
     let transport = null
+    let tick_queue = Promise.resolve()
 
     // Seed both hashes from the initial tmpfile write — at start of session,
     // tmpfile content === source content, so they share a hash. The detached
@@ -122,6 +123,27 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             // bind-mount sync used, while remaining daemon-host independent.
             if( transport ) await transport.pull( tmpfile_path )
 
+            // Docker copies can take long enough for the user to reauthenticate
+            // on the host while one is in flight. Re-read after the await so
+            // the source-wins policy applies to that window too; otherwise the
+            // just-pulled, older container token could overwrite the new login.
+            const latest_source = await read_source()
+            const latest_source_hash = latest_source
+                ? hash_credential_content( latest_source )
+                : null
+
+            if( latest_source_hash !== source_hash ) {
+                if( latest_source ) {
+                    rewrite_tmpfile( tmpfile_path, latest_source )
+                    if( transport ) await transport.push( tmpfile_path )
+                    last_tmpfile_hash = latest_source_hash
+                }
+
+                last_source_hash = latest_source_hash
+                log.debug( `Credential sync: host changed during container pull; source retained` )
+                return
+            }
+
             let tmpfile_content = null
             try {
                 tmpfile_content = readFileSync( tmpfile_path, `utf-8` )
@@ -150,7 +172,18 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
 
     }
 
-    const interval = setInterval( tick, REFRESH_INTERVAL_MS )
+    // Periodic ticks and the final stop flush share mutable hash state and the
+    // same local file. Queue them so two Docker pulls cannot overlap or apply
+    // conflict decisions against stale baselines.
+    const queue_tick = ( options = {} ) => {
+        const task = tick_queue.then( () => tick( options ) )
+        tick_queue = task.catch( () => {} )
+        return task
+    }
+
+    const interval = setInterval( () => {
+        void queue_tick()
+    }, REFRESH_INTERVAL_MS )
 
     // Don't let the refresh loop hold the event loop open. The supervised tmux
     // session is what should keep babysit alive; if that exits or the user
@@ -169,7 +202,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         // refresh_token, breaking the next babysit session.
         stop: async () => {
             clearInterval( interval )
-            await tick( { throw_errors: true } )
+            await queue_tick( { throw_errors: true } )
         },
     }
 

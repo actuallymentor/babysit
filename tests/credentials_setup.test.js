@@ -4,7 +4,7 @@ import { dirname, join } from 'path'
 import { tmpdir } from 'os'
 
 import { get_agent } from '../src/agents/index.js'
-import { setup_credentials } from '../src/credentials/index.js'
+import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
 import { setup_linux_credentials } from '../src/credentials/linux.js'
 
 // Regression suite for the monitor-tmpfile fix.
@@ -19,6 +19,36 @@ import { setup_linux_credentials } from '../src/credentials/linux.js'
 // Fix: setup_credentials now accepts `{ existing_tmpfile }`, and cmd_monitor
 // passes session.creds_tmpfile and container_id so its sync watches the SAME
 // local file and Docker container.
+
+describe( `aggregate credential sync`, () => {
+
+    it( `waits for every final flush before reporting a failure`, async () => {
+
+        let slow_flush_completed = false
+        const sync = aggregate_syncs( [
+            {
+                controller: {
+                    stop: async () => {
+                        await new Promise( resolve => setTimeout( resolve, 2 ) )
+                        slow_flush_completed = true
+                    },
+                },
+            },
+            {
+                controller: {
+                    stop: async () => {
+                        throw new Error( `flush failed` )
+                    },
+                },
+            },
+        ] )
+
+        await expect( sync.stop() ).rejects.toThrow( `flush failed` )
+        expect( slow_flush_completed ).toBe( true )
+
+    } )
+
+} )
 
 describe( `setup_linux_credentials existing_tmpfile`, () => {
 

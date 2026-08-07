@@ -31,14 +31,23 @@ export const normalise_local_sync_file = async ( local_path, {
     gid = process.getgid?.() ?? null,
 } = {} ) => {
 
-    const mode = stat_sync( local_path ).mode & 0o777
-    if( ( mode & 0o006 ) === 0o006 ) return
+    const stats = stat_sync( local_path )
+    const mode = stats.mode & 0o777
+    const uses_sudo = command_prefix[0] === `sudo`
+    const owned_by_invoker = uid !== null
+        && gid !== null
+        && stats.uid === uid
+        && stats.gid === gid
+
+    // A non-sudo Docker client creates local copies as the invoking user, so
+    // world-write is sufficient there. With `sudo docker cp`, a mode-0666 file
+    // can still be root-owned; rewrite_tmpfile's later chmod would then fail.
+    if( ( mode & 0o006 ) === 0o006 && ( !uses_sudo || owned_by_invoker ) ) return
 
     try {
         chmod_sync( local_path, 0o666 )
         return
     } catch ( error ) {
-        const uses_sudo = command_prefix[0] === `sudo`
         if( !uses_sudo || uid === null || gid === null ) throw error
     }
 

@@ -189,6 +189,7 @@ const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
  *   abort: Function,
  *   await_started: Function,
  *   pull_synced_files: Function,
+ *   retain: Function,
  *   handoff: Function
  * }>} Prepared launch controller
  */
@@ -218,6 +219,7 @@ export const prepare_docker_launch = async ( options, {
             abort: async () => {},
             await_started: async () => true,
             pull_synced_files: async () => {},
+            retain: async () => null,
             handoff: () => {},
         }
     }
@@ -233,6 +235,7 @@ export const prepare_docker_launch = async ( options, {
     let create_started = false
     let interrupted = false
     let handed_off = false
+    let staging_complete = false
     let abort_task = null
 
     const run_docker = async ( args, timeout_ms ) => {
@@ -276,6 +279,28 @@ export const prepare_docker_launch = async ( options, {
         }
     }
 
+    const retain = async ( { stop = false } = {} ) => {
+        const reference = container_reference()
+
+        handed_off = true
+        remove_signal_handlers( signal_target, signal_handlers )
+
+        if( stop && reference ) {
+            try {
+                await run_command(
+                    docker_command,
+                    [ ...docker_prefix_args, `stop`, `--time`, `5`, reference ],
+                    {},
+                    DOCKER_CLEANUP_TIMEOUT_MS
+                )
+            } catch ( error ) {
+                log.warn( `Failed to stop retained Docker container ${ reference }: ${ error.message }` )
+            }
+        }
+
+        return reference
+    }
+
     const abort = async ( { include_attempted_name = false } = {} ) => {
         if( handed_off ) return
         if( abort_task ) return abort_task
@@ -303,7 +328,19 @@ export const prepare_docker_launch = async ( options, {
             interrupted = true
 
             void ( async () => {
-                await abort( { include_attempted_name: create_started } )
+                // Once staging is complete, the container may have started and
+                // rotated a credential before this process sees the signal.
+                // Stop and retain it for recovery instead of deleting the only
+                // potentially valid copy. Earlier create/copy interruptions are
+                // safe to abort because agent code has not run yet.
+                if( staging_complete ) {
+                    const retained_container = await retain( { stop: true } )
+                    log.warn(
+                        `Launch interrupted after credential staging; retained Docker container ${ retained_container } and private sync files for recovery.`
+                    )
+                } else {
+                    await abort( { include_attempted_name: create_started } )
+                }
                 kill_process( process.pid, signal )
             } )()
         }
@@ -337,6 +374,8 @@ export const prepare_docker_launch = async ( options, {
         if( !cleanup_credentials( copy_mounts ) ) {
             throw new Error( `Could not remove a private launch transport` )
         }
+
+        staging_complete = true
 
         const command_args = [ ...prefix, `start`, `-ai`, container_id ]
 
@@ -394,6 +433,7 @@ export const prepare_docker_launch = async ( options, {
             abort,
             await_started,
             pull_synced_files,
+            retain,
             handoff,
         }
     } catch ( error ) {
