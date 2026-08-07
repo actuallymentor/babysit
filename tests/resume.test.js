@@ -13,6 +13,7 @@ import {
     resolve_agent_resume_target,
     resolve_session_display_name,
     resolve_stored_agent_resume_session,
+    should_ignore_host_agent_context,
     should_send_initial_prompt,
 } from '../src/cli/start.js'
 import { generate_session_id } from '../src/sessions/store.js'
@@ -499,6 +500,34 @@ describe( `explicit agent resume target resolution`, () => {
             () => stored
         ) ).toEqual( stored )
 
+    } )
+
+    it( `keeps host-profile isolation on explicit-agent resumes`, () => {
+
+        const stored = resolve_stored_agent_resume_session(
+            { verb: `resume`, session_id: `20260505-120000-abcd` },
+            codex,
+            () => ( {
+                agent: `codex`,
+                modifiers: [ `ignore-host-agents-md` ],
+            } )
+        )
+
+        expect( should_ignore_host_agent_context(
+            { ignore_host_agents_md: false },
+            stored
+        ) ).toBe( true )
+
+    } )
+
+    it( `uses explicit host-profile isolation for native agent resumes`, () => {
+        expect( should_ignore_host_agent_context( {
+            ignore_host_agents_md: true,
+        } ) ).toBe( true )
+    } )
+
+    it( `keeps host agent context by default`, () => {
+        expect( should_ignore_host_agent_context() ).toBe( false )
     } )
 
     it( `marks stored metadata mismatches before cwd restoration`, () => {

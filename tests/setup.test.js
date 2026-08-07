@@ -432,6 +432,41 @@ describe( `gemini_extra_mounts`, () => {
 
     } )
 
+    it( `copies authentication state without host UI or installation state`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-gemini-state-` ) )
+        const generated_mounts = []
+
+        try {
+            [ `google_accounts.json`, `installation_id`, `state.json` ]
+                .forEach( file => writeFileSync( join( dir, file ), `{}` ) )
+
+            const isolated_mounts = gemini_extra_mounts( {
+                include_host_preferences: false,
+                gemini_dir: dir,
+            } )
+            generated_mounts.push( ...isolated_mounts )
+            const isolated_targets = isolated_mounts.map( mount => mount.container )
+
+            expect( isolated_targets ).toContain( `/home/node/.gemini/google_accounts.json` )
+            expect( isolated_targets ).not.toContain( `/home/node/.gemini/installation_id` )
+            expect( isolated_targets ).not.toContain( `/home/node/.gemini/state.json` )
+
+            const default_mounts = gemini_extra_mounts( { gemini_dir: dir } )
+            generated_mounts.push( ...default_mounts )
+            const default_targets = default_mounts.map( mount => mount.container )
+
+            expect( default_targets ).toContain( `/home/node/.gemini/installation_id` )
+            expect( default_targets ).toContain( `/home/node/.gemini/state.json` )
+
+        } finally {
+            [ ...new Set( generated_mounts.map( mount => mount.host ) ) ]
+                .forEach( path => rmSync( path, { force: true } ) )
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
 } )
 
 describe( `opencode_extra_mounts`, () => {

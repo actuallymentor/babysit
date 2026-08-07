@@ -103,7 +103,7 @@ Host-global coding-agent instructions, skills, and preferences are intentionally
 `--yolo` add --dangerously-skip-permissions or equivalent flag to the coding cli, also inject AGENT_AUTONOMY_MODE='yolo' into the container env. Also passes adds the following to the system prompt of the agent: `
 `--sandbox` do not mount any host directory into the container, the fs inside the container is ephermal
 `--mudbox` mount the current pwd as read only, so the coding agent can read files but not write them
-`--ignore-host-agents-md` omit host-global agent instruction files, skills, loop instructions, and preferences while retaining credentials, minimal authentication state, and project-local instructions under `/workspace`
+`--ignore-host-agents-md` omit host-global agent instruction files, skills, loop instructions, executable `~/.babysitrc` setup, and preferences while retaining credentials from supported agent files, keychains, and environment variables, minimal authentication state, and project-local instructions under `/workspace`
 `--loop` overrides the `on: idle` in the babysit.yaml to run `./LOOP.md` if it exists, otherwise `~/.agents/LOOP.md` if it exists, otherwise it types "Keep going" into the session. Example `LOOP.md`, note that === lines denote "wait for idle" within the `LOOP.md` execution:
 
 ```

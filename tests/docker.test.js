@@ -379,7 +379,7 @@ describe( `build_docker_command`, () => {
                         value: `available`,
                     },
                 ],
-                include_babysit_rc: false,
+                babysit_rc_path: `/tmp/host-profile-babysitrc`,
                 include_loop_deadline: false,
             } ) )
 
@@ -387,6 +387,8 @@ describe( `build_docker_command`, () => {
             expect( args ).toContain( `BABYSIT_TEST_CREDENTIAL=available` )
             expect( args.some( arg => arg.endsWith( `:/home/node/.agents` ) ) ).toBe( false )
             expect( args.some( arg => arg.includes( `:${ agent.container_paths.user_globals_file }` ) ) ).toBe( false )
+            expect( args.some( arg => arg.includes( BABYSIT_RC_CONTAINER_PATH ) ) ).toBe( false )
+            expect( args.some( arg => arg.startsWith( `${ BABYSIT_HOST_RC_ENV }=` ) ) ).toBe( false )
 
             if( agent.name === `codex` ) {
                 const config_mount = args.find( arg => arg.endsWith( `:/home/node/.codex` ) )
@@ -493,6 +495,39 @@ describe( `build_docker_command`, () => {
 
                 expect( args ).toContain( `${ babysit_rc_path }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
                 expect( args ).toContain( `${ BABYSIT_HOST_RC_ENV }=${ babysit_rc_path }` )
+
+            } )
+
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `does not source host ~/.babysitrc when agent profiles are isolated`, async () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-isolated-rc-` ) )
+        const babysit_rc_path = join( dir, `.babysitrc` )
+
+        try {
+            writeFileSync( babysit_rc_path, `HOST_MODEL=host-preference\n` )
+
+            await with_env( { [ BABYSIT_HOST_RC_ENV ]: undefined }, () => {
+
+                const args = build_docker_command_args( make_options( {
+                    mode: { ignore_host_agents_md: true },
+                    babysit_rc_path,
+                    include_agents_dir: false,
+                    include_user_globals: false,
+                    include_loop_deadline: false,
+                    creds_mounts: [
+                        { type: `env`, key: `OPENAI_API_KEY`, value: `credential` },
+                    ],
+                } ) )
+
+                expect( args.some( arg => arg.includes( BABYSIT_RC_CONTAINER_PATH ) ) ).toBe( false )
+                expect( args.some( arg => arg.startsWith( `${ BABYSIT_HOST_RC_ENV }=` ) ) ).toBe( false )
+                expect( args ).toContain( `OPENAI_API_KEY=credential` )
 
             } )
 

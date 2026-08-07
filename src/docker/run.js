@@ -373,7 +373,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.interactive=true] - Whether to allocate stdin + TTY
  * @param {boolean} [options.mount_workspace=true] - Whether to bind-mount the host workspace
  * @param {boolean} [options.include_agents_dir=true] - Whether to mount the shared ~/.agents directory
- * @param {boolean} [options.include_babysit_rc=true] - Whether to mount ~/.babysitrc when present
+ * @param {boolean} [options.include_babysit_rc=true] - Whether to mount ~/.babysitrc when present and host context is enabled
  * @param {boolean} [options.include_user_globals=true] - Whether to mount ~/.agents/AGENTS.md into the agent home
  * @param {boolean} [options.include_host_agent_context] - Whether to copy or mount host agent preferences
  * @param {boolean} [options.include_loop_deadline=true] - Whether to mount the statusline loop deadline file
@@ -473,7 +473,7 @@ export const build_docker_command_args = ( options ) => {
         || existsSync( babysit_rc_source )
     )
 
-    if( include_babysit_rc && babysit_rc_exists ) {
+    if( include_host_agent_context && include_babysit_rc && babysit_rc_exists ) {
         const mount_source = resolve_workspace_mount_source( babysit_rc_source )
         flags.push( `-v`, `${ mount_source }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
         flags.push( `-e`, `${ BABYSIT_HOST_RC_ENV }=${ mount_source }` )
