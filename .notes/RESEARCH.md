@@ -23,17 +23,18 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 ## Claude Code
 - **Binary**: `claude`
 - **Skip perms**: `--dangerously-skip-permissions`
-- **System prompt**: `--append-system-prompt "text"` (preferred — preserves built-in capabilities). `--system-prompt "text"` replaces the entire prompt.
+- **System prompt**: Claude supports `--append-system-prompt "text"` and `--system-prompt "text"`, but Babysit deliberately uses neither for its launch brief. It types `config.initial_prompt` into the ready TUI and mounts shared user globals at Claude's native instruction path.
 - **Resume**: `claude --resume <id>` or `claude -r <id>`
 - **Model**: `--model best` is the highest-capability default for Babysit as of 2026-08-01. Claude Code docs say `best` uses Fable 5 where the organization has access, otherwise the latest Opus. `--model fable` hard-pins Fable 5 but can be unavailable under zero-data-retention / policy constraints.
 - **Effort**: `--effort max` (other levels: low, medium, high, xhigh; available levels depend on the model)
 - **Creds**: `~/.claude/.credentials.json` (linux), Keychain service "Claude Code-credentials" (macOS)
 - **Install location**: `~/.local/bin/claude` (binary lives under `~/.local/share/claude/versions/` with a symlink in `~/.local/bin`). Container Dockerfile must add `~/.local/bin` to PATH.
+- **Home env**: `CLAUDE_CONFIG_DIR` — default `~/.claude`. Documented behavior is partial: claude still creates local `.claude/` directories in workspaces and `/ide` integration may misbehave when set. Babysit pins it to `/home/node/.claude` inside the container so it matches the credential, settings, and projects mounts.
 
 ## Codex
 - **Binary**: `codex`
 - **Skip perms**: `--dangerously-bypass-approvals-and-sandbox` (alias `--yolo`). `--full-auto` only skips approvals — it leaves codex's `workspace-write` sandbox active, which blocks real edits inside our docker container.
-- **System prompt**: no CLI flag — codex reads `AGENTS.override.md` then `AGENTS.md` from `${CODEX_HOME}` (default `~/.codex`). The legacy `instructions.md` filename is silently ignored. Babysit pins `CODEX_HOME=/home/node/.codex` and writes the prompt to `AGENTS.md` via the entrypoint.
+- **System prompt**: no CLI flag — Codex reads `AGENTS.override.md` then `AGENTS.md` from `${CODEX_HOME}` (default `~/.codex`). The legacy `instructions.md` filename is silently ignored. Babysit pins `CODEX_HOME=/home/node/.codex`, makes shared user globals available at `AGENTS.md`, and types the separate `config.initial_prompt` launch brief into the ready TUI.
 - **Resume**: `codex resume <id>` for interactive (what we use), `codex exec resume <id>` for non-interactive
 - **Model**: `--model gpt-5.6-sol` (verified 2026-08-01 against OpenAI's live latest-model resolver and model guide as the frontier GPT-5.6 model for complex reasoning and coding; the `gpt-5.6` alias currently routes to it)
 - **Effort**: `-c model_reasoning_effort="xhigh"` is Babysit's preferred quality-first default (NOT bare `reasoning_effort` — that key is silently ignored). GPT-5.6 supports `none`, `low`, `medium`, `high`, `xhigh`, and `max`; Babysit intentionally leaves `max` opt-in.
@@ -43,9 +44,9 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 ## Gemini CLI
 - **Binary**: `gemini`
 - **Skip perms**: `--yolo` or `--approval-mode=yolo`
-- **System prompt**: context file `GEMINI.md` (project-local). Babysit writes `${GEMINI_CLI_HOME}/.gemini/GEMINI.md` via entrypoint. Gemini *also* honors `GEMINI_SYSTEM_MD` (path or `1` = `~/.gemini/system.md`) to fully override the system prompt — we don't use that path because GEMINI.md additively layers on top of gemini's built-in prompt rather than replacing it.
+- **System prompt**: context file `GEMINI.md`. Babysit mounts shared user globals at `${GEMINI_CLI_HOME}/.gemini/GEMINI.md` and types the separate `config.initial_prompt` launch brief into the TUI. Gemini also honors `GEMINI_SYSTEM_MD` as a full override, which Babysit intentionally does not use.
 - **Resume**: `gemini --resume latest` or `--resume <uuid>` or `--resume <session_index>`
-- **Model**: `--model gemini-pro-latest` (alias resolves to gemini-3.1-pro as of March 2026; rolls forward automatically)
+- **Model**: no forced default. Gemini's agent router selects a model supported by the user's plan; forcing `gemini-pro-latest` breaks Code Assist for Individuals accounts.
 - **Effort**: no equivalent
 - **Creds**: `~/.gemini/oauth_creds.json` for the Google-OAuth login flow. `GEMINI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively.
 - **Home env**: `GEMINI_CLI_HOME` — default `$HOME`. Gemini creates a `.gemini/` folder *inside* this dir, so set it to the parent (we use `/home/node`). Not to be confused with `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` / `GEMINI_CLI_SYSTEM_SETTINGS_PATH`, which point at single files.
@@ -53,15 +54,12 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 ## OpenCode
 - **Binary**: `opencode`
 - **Skip perms**: `--dangerously-skip-permissions`
-- **System prompt**: `AGENTS.md` (project-local). Babysit writes `${OPENCODE_CONFIG_DIR}/AGENTS.md` via entrypoint.
+- **System prompt**: `AGENTS.md`. Babysit mounts shared user globals at `${OPENCODE_CONFIG_DIR}/AGENTS.md` and types the separate `config.initial_prompt` launch brief into the TUI.
 - **Resume**: `opencode --session <id>` (or `-c` for continue)
 - **Model**: `--model provider/model` — depends on user's auth.json provider, no sensible default to inject
 - **Creds**: `~/.local/share/opencode/auth.json` on every platform (opencode does NOT use the macOS Keychain — beware adapters that only check Keychain on darwin, they will silently drop opencode creds).
 - **Install location**: `~/.local/bin/opencode` (curl install) or `~/.opencode/bin/opencode` (alternate). Container Dockerfile puts both on PATH.
 - **Home env**: `OPENCODE_CONFIG_DIR` — points at the config dir directly (no `.opencode` suffix). Default is `~/.config/opencode`. Known bug upstream: when set, the global AGENTS.md inside it can be ignored if `~/.config/opencode/AGENTS.md` also exists (issues #7003, #11534) — we sidestep this by pinning OPENCODE_CONFIG_DIR to that same path inside the container.
-
-## Claude Code
-- **Home env**: `CLAUDE_CONFIG_DIR` — default `~/.claude`. Documented behavior is partial: claude still creates local `.claude/` directories in workspaces and `/ide` integration may misbehave when set. We pin it to `/home/node/.claude` inside the container so it matches our credential / settings / projects mounts.
 
 ## Session inventory
 - Verified against the official Codex manual and Claude Code session docs on 2026-08-04.
