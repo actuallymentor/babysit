@@ -8,14 +8,14 @@ import { log, print_error } from '../utils/log.js'
 import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
-import { cleanup_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
+import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
 import {
     DEFAULT_DOCKER_SOCKET,
-    build_docker_command,
     docker_daemon_status,
     resolve_docker_socket_path,
 } from '../docker/run.js'
+import { prepare_docker_launch } from '../docker/launch.js'
 import { warn_if_unrecognized_watchtower_is_running } from '../docker/watchtower.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import {
@@ -426,6 +426,7 @@ export const cmd_start = async ( cmd ) => {
     const session_display_name = resolve_session_display_name( flags, stored_resume_session )
 
     ensure_dirs()
+    cleanup_stale_ephemeral_credential_mounts()
 
     // Build mode descriptor
     const mode = {
@@ -572,9 +573,9 @@ export const cmd_start = async ( cmd ) => {
     const session_name = make_session_name( workspace, agent.name )
     const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
 
-    // GitHub's isolated credential profile travels through a private env file
-    // read by the local Docker client. Keep it for only the launch window, then
-    // remove it whether startup succeeds or fails.
+    // GitHub's isolated credential profile is uploaded through Docker's API to
+    // a stopped container. The host file is removed only after `docker cp`
+    // acknowledges it, before tmux starts the container.
     const github_cli_mounts = setup_github_cli_credentials( {
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
@@ -582,8 +583,11 @@ export const cmd_start = async ( cmd ) => {
 
     let pipe_started = false
 
+    let prepared_launch = null
+    let launch_handed_off = false
+
     try {
-        const docker_command = build_docker_command( {
+        prepared_launch = await prepare_docker_launch( {
             agent, workspace, mode,
             agent_args,
             creds_mounts: all_creds_mounts,
@@ -594,11 +598,13 @@ export const cmd_start = async ( cmd ) => {
             docker_socket_path,
         } )
 
-        const { pipe_started: started_pipe } = await create_session( session_name, docker_command, {
+        const { pipe_started: started_pipe } = await create_session( session_name, prepared_launch.command, {
             log_path,
             startup_log_path: log_path ? null : diagnostic_log_path,
         } )
         pipe_started = started_pipe
+        prepared_launch.handoff()
+        launch_handed_off = true
 
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
@@ -617,8 +623,9 @@ export const cmd_start = async ( cmd ) => {
         // session before we save resumable metadata. Without this, tmux attach
         // can print only "no sessions" while the Docker error disappears.
         await wait( STARTUP_EXIT_GRACE_MS )
-    } finally {
-        cleanup_ephemeral_credential_mounts( github_cli_mounts )
+    } catch ( e ) {
+        if( prepared_launch && !launch_handed_off ) await prepared_launch.abort()
+        throw e
     }
 
     if( !await has_session( session_name ) ) {

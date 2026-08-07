@@ -121,7 +121,7 @@ export const resolve_docker_socket_path = ( options = {} ) => {
  * @param {string} value - The value to escape
  * @returns {string} Shell-safe representation
  */
-const shell_quote = ( value ) => {
+export const shell_quote = ( value ) => {
 
     const str = String( value )
 
@@ -555,6 +555,10 @@ export const build_docker_command_args = ( options ) => {
                 // Docker's client reads env files locally before contacting the
                 // daemon, so these work in nested Docker without host remapping.
                 flags.push( `--env-file`, mount.source )
+            } else if( mount.type === `copy` ) {
+                // prepare_docker_launch uploads private files through the
+                // Docker API before this container starts. They are not flags.
+                continue
             } else if( mount.type === `env` ) {
                 flags.push( `-e`, `${ mount.key }=${ mount.value }` )
             }

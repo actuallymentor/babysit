@@ -1,4 +1,6 @@
-import { rmSync } from 'fs'
+import { readdirSync, rmSync, statSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 
 import { detect_platform } from '../utils/platform.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
@@ -6,24 +8,84 @@ import { log } from '../utils/log.js'
 import { setup_darwin_credentials } from './darwin.js'
 import { setup_linux_credentials } from './linux.js'
 
+const EPHEMERAL_CREDENTIAL_PREFIXES = [
+    `babysit-gh-hosts.yml-`,
+    `babysit-gh-credentials.env-`,
+]
+const STALE_EPHEMERAL_CREDENTIAL_AGE_MS = 60 * 60 * 1_000
+
 /**
  * Remove host-side credential transport files after Docker has consumed them.
  * Long-lived agent credential mounts do not carry a cleanup path and remain
  * untouched so their sync controllers can continue using them.
  * @param {Object[]} mounts - Credential mount/env descriptors
+ * @returns {boolean} True when every cleanup path was removed
  */
 export const cleanup_ephemeral_credential_mounts = ( mounts = [] ) => {
 
-    mounts
+    let cleaned = true
+
+    const cleanup_paths = [ ...new Set( mounts
         .map( mount => mount.cleanup )
         .filter( Boolean )
-        .forEach( path => {
+    ) ]
+
+    cleanup_paths.forEach( path => {
+        try {
+            rmSync( path, { recursive: true, force: true } )
+        } catch ( e ) {
+            cleaned = false
+            log.warn( `Failed to remove ephemeral credential transport ${ path }: ${ e.message }` )
+        }
+    } )
+
+    return cleaned
+
+}
+
+/**
+ * Remove abandoned private GitHub credential transports from earlier crashes.
+ * Fresh transports are left alone so concurrent Babysit launches cannot race.
+ * @param {Object} [options]
+ * @param {string} [options.directory=tmpdir()] - Temporary directory to sweep
+ * @param {number} [options.now=Date.now()] - Current epoch milliseconds
+ * @param {number} [options.max_age_ms=STALE_EPHEMERAL_CREDENTIAL_AGE_MS] - Minimum age to remove
+ * @returns {number} Number of stale directories removed
+ */
+export const cleanup_stale_ephemeral_credential_mounts = ( {
+    directory = tmpdir(),
+    now = Date.now(),
+    max_age_ms = STALE_EPHEMERAL_CREDENTIAL_AGE_MS,
+} = {} ) => {
+
+    let entries
+
+    try {
+        entries = readdirSync( directory, { withFileTypes: true } )
+    } catch ( e ) {
+        log.debug( `Could not inspect stale credential transports in ${ directory }: ${ e.message }` )
+        return 0
+    }
+
+    let removed = 0
+
+    entries
+        .filter( entry => entry.isDirectory() )
+        .filter( entry => EPHEMERAL_CREDENTIAL_PREFIXES.some( prefix => entry.name.startsWith( prefix ) ) )
+        .forEach( entry => {
+            const path = join( directory, entry.name )
+
             try {
+                if( now - statSync( path ).mtimeMs < max_age_ms ) return
+
                 rmSync( path, { recursive: true, force: true } )
+                removed += 1
             } catch ( e ) {
-                log.debug( `Failed to remove ephemeral credential transport ${ path }: ${ e.message }` )
+                log.warn( `Failed to remove stale credential transport ${ path }: ${ e.message }` )
             }
         } )
+
+    return removed
 
 }
 

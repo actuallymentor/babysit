@@ -8,7 +8,9 @@
   global loop context while retaining credential-only state and project-local
   context, including active GitHub Enterprise authentication. The setting
   persists across both `babysit resume` forms. GitHub's isolated profile uses a
-  short-lived private transport that also works through nested Docker daemons.
+  short-lived `docker create`/`docker cp` transport that works through nested
+  Docker daemons without exposing sanitized profile tokens in container
+  environment or bind-mount metadata.
 
 ## 0.26.2 — 2026-08-07
 

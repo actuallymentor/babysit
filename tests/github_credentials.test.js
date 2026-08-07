@@ -8,7 +8,7 @@ import { cleanup_ephemeral_credential_mounts } from '../src/credentials/index.js
 import {
     build_sanitised_host_gh_config_mounts,
     can_mount_host_gh_config_dir,
-    GH_CREDENTIALS_BOOTSTRAP_ENV,
+    GH_CREDENTIALS_BOOTSTRAP_PATH,
     GH_CONFIG_CONTAINER_DIR,
     GH_ISOLATED_CONFIG_CONTAINER_DIR,
     read_host_gh_token,
@@ -17,15 +17,7 @@ import {
     setup_github_cli_credentials,
 } from '../src/credentials/github.js'
 
-const read_sanitised_profile = ( env_file ) => {
-
-    const [ key, encoded_credentials ] = readFileSync( env_file, `utf-8` ).trim().split( `=` )
-
-    expect( key ).toBe( GH_CREDENTIALS_BOOTSTRAP_ENV )
-
-    return Buffer.from( encoded_credentials, `base64` ).toString( `utf-8` )
-
-}
+const read_sanitised_profile = credential_file => readFileSync( credential_file, `utf-8` )
 
 describe( `GitHub CLI credential passthrough`, () => {
 
@@ -91,18 +83,19 @@ describe( `GitHub CLI credential passthrough`, () => {
             },
         } )
 
-        const env_file_mount = mounts.find( mount => mount.type === `env_file` )
+        const copy_mount = mounts.find( mount => mount.type === `copy` )
 
         try {
-            expect( statSync( env_file_mount.cleanup ).mode & 0o777 ).toBe( 0o700 )
-            expect( statSync( env_file_mount.source ).mode & 0o777 ).toBe( 0o600 )
+            expect( statSync( copy_mount.cleanup ).mode & 0o777 ).toBe( 0o700 )
+            expect( statSync( copy_mount.source ).mode & 0o777 ).toBe( 0o600 )
+            expect( copy_mount.target ).toBe( GH_CREDENTIALS_BOOTSTRAP_PATH )
             expect( mounts ).toContainEqual( {
                 type: `env`,
                 key: `GH_CONFIG_DIR`,
                 value: GH_ISOLATED_CONFIG_CONTAINER_DIR,
             } )
 
-            const hosts = parse( read_sanitised_profile( env_file_mount.source ) )
+            const hosts = parse( read_sanitised_profile( copy_mount.source ) )
             expect( hosts ).toEqual( {
                 'github.com': {
                     user: `mentor`,
@@ -116,7 +109,7 @@ describe( `GitHub CLI credential passthrough`, () => {
             cleanup_ephemeral_credential_mounts( mounts )
         }
 
-        expect( existsSync( env_file_mount.cleanup ) ).toBe( false )
+        expect( existsSync( copy_mount.cleanup ) ).toBe( false )
 
     } )
 
@@ -142,13 +135,13 @@ describe( `GitHub CLI credential passthrough`, () => {
             },
         } )
 
-        const env_file_mount = mounts.find( mount => mount.type === `env_file` )
+        const copy_mount = mounts.find( mount => mount.type === `copy` )
 
         try {
-            const config_dir = join( env_file_mount.cleanup, `config` )
+            const config_dir = join( copy_mount.cleanup, `config` )
             mkdirSync( config_dir )
             writeFileSync( join( config_dir, `config.yml` ), `version: 1\n` )
-            writeFileSync( join( config_dir, `hosts.yml` ), read_sanitised_profile( env_file_mount.source ) )
+            writeFileSync( join( config_dir, `hosts.yml` ), read_sanitised_profile( copy_mount.source ) )
 
             const ignored_env_keys = [
                 `GH_CONFIG_DIR`,
@@ -179,6 +172,38 @@ describe( `GitHub CLI credential passthrough`, () => {
             expect( active.stdout.trim() ).toBe( `enterprise-token` )
             expect( alternate.status ).toBe( 0 )
             expect( alternate.stdout.trim() ).toBe( `alternate-token` )
+        } finally {
+            cleanup_ephemeral_credential_mounts( mounts )
+        }
+
+    } )
+
+    it( `keeps direct GitHub tokens out of Docker metadata when a sanitized profile is available`, () => {
+
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                HOME: `/home/alice`,
+                GH_TOKEN: `direct-secret`,
+            },
+            include_host_preferences: false,
+            spawn_sync: () => ( {
+                status: 0,
+                stdout: JSON.stringify( {
+                    hosts: {
+                        'github.com': [ {
+                            active: true,
+                            login: `mentor`,
+                            token: `direct-secret`,
+                        } ],
+                    },
+                } ),
+            } ),
+        } )
+
+        try {
+            expect( mounts.some( mount => mount.type === `copy` ) ).toBe( true )
+            expect( mounts.some( mount => mount.key === `GH_TOKEN` ) ).toBe( false )
+            expect( mounts.some( mount => mount.value === `direct-secret` ) ).toBe( false )
         } finally {
             cleanup_ephemeral_credential_mounts( mounts )
         }

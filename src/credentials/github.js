@@ -9,7 +9,7 @@ import { build_private_tmpfile } from '../utils/tmpfile.js'
 
 export const GH_CONFIG_CONTAINER_DIR = `/home/node/.config/gh`
 export const GH_ISOLATED_CONFIG_CONTAINER_DIR = `/home/node/.config/babysit-gh`
-export const GH_CREDENTIALS_BOOTSTRAP_ENV = `BABYSIT_GH_CREDENTIALS_B64`
+export const GH_CREDENTIALS_BOOTSTRAP_PATH = `/tmp/.babysit-gh-hosts.yml`
 const GH_AUTH_STATUS_TIMEOUT_MS = 10_000
 
 /**
@@ -142,14 +142,14 @@ export const sanitise_host_gh_auth_status = ( status_json ) => {
 }
 
 /**
- * Capture host gh authentication into a short-lived, private Docker env file.
- * The container entrypoint expands the encoded credential profile into its own
- * private filesystem, avoiding both a host-visible token bind and daemon-host
- * path problems in nested Docker sessions.
+ * Capture host gh authentication into a short-lived private file. Docker's
+ * client uploads the file into a stopped container before launch, avoiding
+ * host-visible binds, container environment metadata, and nested-daemon path
+ * problems.
  * @param {Object} [options]
  * @param {Object} [options.env=process.env] - Environment to inspect
  * @param {Function} [options.spawn_sync=spawnSync] - Test seam for gh invocation
- * @param {Function} [options.build_tmpfile=build_private_tmpfile] - Test seam for private env file
+ * @param {Function} [options.build_tmpfile=build_private_tmpfile] - Test seam for private file
  * @returns {Array} Docker credential specs for a sanitized gh config
  */
 export const build_sanitised_host_gh_config_mounts = ( {
@@ -172,19 +172,19 @@ export const build_sanitised_host_gh_config_mounts = ( {
     const hosts_yml = sanitise_host_gh_auth_status( result.stdout )
     if( !hosts_yml ) return []
 
-    const encoded_credentials = Buffer.from( hosts_yml, `utf-8` ).toString( `base64` )
-    const env_file = build_tmpfile(
+    const credential_file = build_tmpfile(
         `gh`,
-        `credentials.env`,
-        `${ GH_CREDENTIALS_BOOTSTRAP_ENV }=${ encoded_credentials }\n`
+        `hosts.yml`,
+        hosts_yml
     )
-    if( !env_file ) return []
+    if( !credential_file ) return []
 
     return [
         {
-            type: `env_file`,
-            source: env_file.file,
-            cleanup: env_file.directory,
+            type: `copy`,
+            source: credential_file.file,
+            target: GH_CREDENTIALS_BOOTSTRAP_PATH,
+            cleanup: credential_file.directory,
         },
         { type: `env`, key: `GH_CONFIG_DIR`, value: GH_ISOLATED_CONFIG_CONTAINER_DIR },
     ]
@@ -200,7 +200,7 @@ export const build_sanitised_host_gh_config_mounts = ( {
  * @param {boolean} [options.include_host_preferences=true] - Mount the host gh config directory
  * @param {Function} [options.exists_sync=existsSync] - Test seam for config dir
  * @param {Function} [options.spawn_sync=spawnSync] - Test seam for gh token lookup
- * @param {Function} [options.build_tmpfile=build_private_tmpfile] - Test seam for private env file
+ * @param {Function} [options.build_tmpfile=build_private_tmpfile] - Test seam for private file
  * @returns {Array} Docker credential mount/env specs
  */
 export const setup_github_cli_credentials = ( {
@@ -231,16 +231,16 @@ export const setup_github_cli_credentials = ( {
 
     if( env.GH_HOST ) mounts.push( { type: `env`, key: `GH_HOST`, value: env.GH_HOST } )
 
+    const has_sanitised_config = sanitised_profile_mounts.length > 0
+    if( !include_host_preferences && has_sanitised_config ) {
+        log.info( `GitHub CLI authentication loaded from host gh` )
+        return mounts
+    }
+
     const direct_token_mounts = env_token_mounts( env )
     const expected_token_key = token_key_for_host( env.GH_HOST )
     const has_direct_token_for_host = direct_token_mounts.some( ( { key } ) => key === expected_token_key )
     if( has_direct_token_for_host ) return [ ...mounts, ...direct_token_mounts ]
-
-    const has_sanitised_config = sanitised_profile_mounts.length > 0
-    if( !include_host_preferences && has_sanitised_config ) {
-        log.info( `GitHub CLI authentication loaded from host gh` )
-        return [ ...mounts, ...direct_token_mounts ]
-    }
 
     const token_mount = read_host_gh_token( { env, spawn_sync } )
     if( token_mount ) {
