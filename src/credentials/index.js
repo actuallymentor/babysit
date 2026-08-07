@@ -1,7 +1,31 @@
+import { rmSync } from 'fs'
+
 import { detect_platform } from '../utils/platform.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
+import { log } from '../utils/log.js'
 import { setup_darwin_credentials } from './darwin.js'
 import { setup_linux_credentials } from './linux.js'
+
+/**
+ * Remove host-side credential transport files after Docker has consumed them.
+ * Long-lived agent credential mounts do not carry a cleanup path and remain
+ * untouched so their sync controllers can continue using them.
+ * @param {Object[]} mounts - Credential mount/env descriptors
+ */
+export const cleanup_ephemeral_credential_mounts = ( mounts = [] ) => {
+
+    mounts
+        .map( mount => mount.cleanup )
+        .filter( Boolean )
+        .forEach( path => {
+            try {
+                rmSync( path, { recursive: true, force: true } )
+            } catch ( e ) {
+                log.debug( `Failed to remove ephemeral credential transport ${ path }: ${ e.message }` )
+            }
+        } )
+
+}
 
 /**
  * Return all credential-bearing agents, with the active agent first so legacy

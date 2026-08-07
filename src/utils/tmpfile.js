@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, chmodSync, mkdtempSync } from 'fs'
+import { existsSync, readFileSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join, basename } from 'path'
 
@@ -69,6 +69,39 @@ export const build_tmpfile = ( tag, hint, content ) => {
 
     } catch ( e ) {
         log.debug( `Failed to build tmpfile (${ hint }): ${ e.message }` )
+        return null
+    }
+
+}
+
+/**
+ * Build a private tmpfile inside a private temporary directory. Unlike agent
+ * state tmpfiles, this is suitable for secrets that only the host-side Docker
+ * client needs to read and never needs to expose through a bind mount.
+ *
+ * @param {string} tag - Short identifier baked into the tmpdir name
+ * @param {string} hint - Filename hint used for the file inside the directory
+ * @param {string} content - File content to write
+ * @returns {{ directory: string, file: string }|null} Private paths, or null on error
+ */
+export const build_private_tmpfile = ( tag, hint, content ) => {
+
+    let directory = null
+
+    try {
+
+        directory = mkdtempSync( join( tmpdir(), `babysit-${ tag }-${ hint }-` ) )
+        const file = join( directory, hint )
+
+        chmodSync( directory, 0o700 )
+        writeFileSync( file, content, { mode: 0o600 } )
+        chmodSync( file, 0o600 )
+
+        return { directory, file }
+
+    } catch ( e ) {
+        if( directory ) rmSync( directory, { recursive: true, force: true } )
+        log.debug( `Failed to build private tmpfile (${ hint }): ${ e.message }` )
         return null
     }
 

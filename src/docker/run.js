@@ -551,6 +551,10 @@ export const build_docker_command_args = ( options ) => {
                 prepare_nested_file_mountpoint( extra_mounts, mount.target )
                 const target = mount.ro ? `${ mount.target }:ro` : mount.target
                 flags.push( `-v`, `${ resolve_workspace_mount_source( mount.source ) }:${ target }` )
+            } else if( mount.type === `env_file` ) {
+                // Docker's client reads env files locally before contacting the
+                // daemon, so these work in nested Docker without host remapping.
+                flags.push( `--env-file`, mount.source )
             } else if( mount.type === `env` ) {
                 flags.push( `-e`, `${ mount.key }=${ mount.value }` )
             }

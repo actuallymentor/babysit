@@ -5,9 +5,11 @@ import { join } from 'path'
 import { stringify } from 'yaml'
 
 import { log } from '../utils/log.js'
-import { build_tmpdir_with_files } from '../utils/tmpfile.js'
+import { build_private_tmpfile } from '../utils/tmpfile.js'
 
 export const GH_CONFIG_CONTAINER_DIR = `/home/node/.config/gh`
+export const GH_ISOLATED_CONFIG_CONTAINER_DIR = `/home/node/.config/babysit-gh`
+export const GH_CREDENTIALS_BOOTSTRAP_ENV = `BABYSIT_GH_CREDENTIALS_B64`
 const GH_AUTH_STATUS_TIMEOUT_MS = 10_000
 
 /**
@@ -140,17 +142,20 @@ export const sanitise_host_gh_auth_status = ( status_json ) => {
 }
 
 /**
- * Capture host gh authentication into a temporary credential-only config dir.
+ * Capture host gh authentication into a short-lived, private Docker env file.
+ * The container entrypoint expands the encoded credential profile into its own
+ * private filesystem, avoiding both a host-visible token bind and daemon-host
+ * path problems in nested Docker sessions.
  * @param {Object} [options]
  * @param {Object} [options.env=process.env] - Environment to inspect
  * @param {Function} [options.spawn_sync=spawnSync] - Test seam for gh invocation
- * @param {Function} [options.build_tmpdir=build_tmpdir_with_files] - Test seam for temporary config
- * @returns {Array} Docker mount/env specs for a sanitized gh config
+ * @param {Function} [options.build_tmpfile=build_private_tmpfile] - Test seam for private env file
+ * @returns {Array} Docker credential specs for a sanitized gh config
  */
 export const build_sanitised_host_gh_config_mounts = ( {
     env = process.env,
     spawn_sync = spawnSync,
-    build_tmpdir = build_tmpdir_with_files,
+    build_tmpfile = build_private_tmpfile,
 } = {} ) => {
 
     const result = spawn_sync( `gh`, [
@@ -167,20 +172,21 @@ export const build_sanitised_host_gh_config_mounts = ( {
     const hosts_yml = sanitise_host_gh_auth_status( result.stdout )
     if( !hosts_yml ) return []
 
-    const config_dir = build_tmpdir( `gh`, `credentials`, {
-        'config.yml': `version: 1\n`,
-        'hosts.yml': hosts_yml,
-    } )
-    if( !config_dir ) return []
+    const encoded_credentials = Buffer.from( hosts_yml, `utf-8` ).toString( `base64` )
+    const env_file = build_tmpfile(
+        `gh`,
+        `credentials.env`,
+        `${ GH_CREDENTIALS_BOOTSTRAP_ENV }=${ encoded_credentials }\n`
+    )
+    if( !env_file ) return []
 
     return [
         {
-            type: `volume`,
-            source: config_dir,
-            target: GH_CONFIG_CONTAINER_DIR,
-            ro: true,
+            type: `env_file`,
+            source: env_file.file,
+            cleanup: env_file.directory,
         },
-        { type: `env`, key: `GH_CONFIG_DIR`, value: GH_CONFIG_CONTAINER_DIR },
+        { type: `env`, key: `GH_CONFIG_DIR`, value: GH_ISOLATED_CONFIG_CONTAINER_DIR },
     ]
 
 }
@@ -194,7 +200,7 @@ export const build_sanitised_host_gh_config_mounts = ( {
  * @param {boolean} [options.include_host_preferences=true] - Mount the host gh config directory
  * @param {Function} [options.exists_sync=existsSync] - Test seam for config dir
  * @param {Function} [options.spawn_sync=spawnSync] - Test seam for gh token lookup
- * @param {Function} [options.build_tmpdir=build_tmpdir_with_files] - Test seam for temporary config
+ * @param {Function} [options.build_tmpfile=build_private_tmpfile] - Test seam for private env file
  * @returns {Array} Docker credential mount/env specs
  */
 export const setup_github_cli_credentials = ( {
@@ -202,11 +208,14 @@ export const setup_github_cli_credentials = ( {
     include_host_preferences = true,
     exists_sync = existsSync,
     spawn_sync = spawnSync,
-    build_tmpdir = build_tmpdir_with_files,
+    build_tmpfile = build_private_tmpfile,
 } = {} ) => {
 
     const mounts = []
     const config_dir = resolve_host_gh_config_dir( env )
+    const sanitised_profile_mounts = !include_host_preferences
+        ? build_sanitised_host_gh_config_mounts( { env, spawn_sync, build_tmpfile } )
+        : []
 
     if( include_host_preferences
         && exists_sync( config_dir )
@@ -218,13 +227,7 @@ export const setup_github_cli_credentials = ( {
             ro: true,
         } )
         mounts.push( { type: `env`, key: `GH_CONFIG_DIR`, value: GH_CONFIG_CONTAINER_DIR } )
-    } else if( !include_host_preferences ) {
-        mounts.push( ...build_sanitised_host_gh_config_mounts( {
-            env,
-            spawn_sync,
-            build_tmpdir,
-        } ) )
-    }
+    } else mounts.push( ...sanitised_profile_mounts )
 
     if( env.GH_HOST ) mounts.push( { type: `env`, key: `GH_HOST`, value: env.GH_HOST } )
 
@@ -233,9 +236,7 @@ export const setup_github_cli_credentials = ( {
     const has_direct_token_for_host = direct_token_mounts.some( ( { key } ) => key === expected_token_key )
     if( has_direct_token_for_host ) return [ ...mounts, ...direct_token_mounts ]
 
-    const has_sanitised_config = mounts.some(
-        mount => mount.type === `volume` && mount.target === GH_CONFIG_CONTAINER_DIR
-    )
+    const has_sanitised_config = sanitised_profile_mounts.length > 0
     if( !include_host_preferences && has_sanitised_config ) {
         log.info( `GitHub CLI authentication loaded from host gh` )
         return [ ...mounts, ...direct_token_mounts ]

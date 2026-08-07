@@ -8,7 +8,7 @@ import { log, print_error } from '../utils/log.js'
 import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
-import { setup_credentials } from '../credentials/index.js'
+import { cleanup_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
 import {
     DEFAULT_DOCKER_SOCKET,
@@ -476,11 +476,6 @@ export const cmd_start = async ( cmd ) => {
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
     } = await setup_credentials( agent )
-    const github_cli_mounts = setup_github_cli_credentials( {
-        include_host_preferences: !mode.ignore_host_agents_md,
-    } )
-    const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts ]
-
     const auth_agents = select_host_auth_check_agents()
     log.info( format_host_auth_status_message( auth_agents.map( a => a.name ) ) )
 
@@ -562,18 +557,6 @@ export const cmd_start = async ( cmd ) => {
         }
     }
 
-    // Build the docker command
-    const docker_command = build_docker_command( {
-        agent, workspace, mode,
-        agent_args,
-        creds_mounts: all_creds_mounts,
-        config,
-        extra_env,
-        modifiers,
-        ports: flags.ports || [],
-        docker_socket_path,
-    } )
-
     // Start tmux output logging if --log was passed. The header goes in BEFORE
     // the pane command runs, so each session block opens with a clean
     // "Babysit session start: ..." line.
@@ -588,27 +571,55 @@ export const cmd_start = async ( cmd ) => {
     // Create tmux session (detached — we'll attach the foreground in a moment)
     const session_name = make_session_name( workspace, agent.name )
     const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
-    const { pipe_started } = await create_session( session_name, docker_command, {
-        log_path,
-        startup_log_path: log_path ? null : diagnostic_log_path,
+
+    // GitHub's isolated credential profile travels through a private env file
+    // read by the local Docker client. Keep it for only the launch window, then
+    // remove it whether startup succeeds or fails.
+    const github_cli_mounts = setup_github_cli_credentials( {
+        include_host_preferences: !mode.ignore_host_agents_md,
     } )
-    if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
-    else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
+    const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts ]
 
-    if( initial_prompt ) {
-        const prompt_ready = await wait_for_initial_prompt_ready( session_name, agent )
-        if( prompt_ready ) {
-            log.info( `Sending initial prompt` )
-            await send_text( session_name, initial_prompt )
-        } else {
-            log.warn( `Skipped initial prompt because ${ agent.name } did not reach its ready screen.` )
+    let pipe_started = false
+
+    try {
+        const docker_command = build_docker_command( {
+            agent, workspace, mode,
+            agent_args,
+            creds_mounts: all_creds_mounts,
+            config,
+            extra_env,
+            modifiers,
+            ports: flags.ports || [],
+            docker_socket_path,
+        } )
+
+        const { pipe_started: started_pipe } = await create_session( session_name, docker_command, {
+            log_path,
+            startup_log_path: log_path ? null : diagnostic_log_path,
+        } )
+        pipe_started = started_pipe
+
+        if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
+        else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
+
+        if( initial_prompt ) {
+            const prompt_ready = await wait_for_initial_prompt_ready( session_name, agent )
+            if( prompt_ready ) {
+                log.info( `Sending initial prompt` )
+                await send_text( session_name, initial_prompt )
+            } else {
+                log.warn( `Skipped initial prompt because ${ agent.name } did not reach its ready screen.` )
+            }
         }
-    }
 
-    // Give very fast Docker/container failures a chance to close the tmux
-    // session before we save resumable metadata. Without this, tmux attach can
-    // print only "no sessions" while the actual Docker error disappears.
-    await wait( STARTUP_EXIT_GRACE_MS )
+        // Give very fast Docker/container failures a chance to close the tmux
+        // session before we save resumable metadata. Without this, tmux attach
+        // can print only "no sessions" while the Docker error disappears.
+        await wait( STARTUP_EXIT_GRACE_MS )
+    } finally {
+        cleanup_ephemeral_credential_mounts( github_cli_mounts )
+    }
 
     if( !await has_session( session_name ) ) {
         report_startup_failure( agent, diagnostic_log_path )
