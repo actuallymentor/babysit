@@ -187,6 +187,63 @@ describe( `start_credential_sync`, () => {
 
     } )
 
+    it( `preserves a host reauthentication that happens during a Docker pull`, async () => {
+
+        writeFileSync( host_path, `{"token":"X"}` )
+        writeFileSync( tmpfile_path, `{"token":"X"}` )
+
+        const pushes = []
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path,
+            async content => writeFileSync( host_path, content )
+        )
+
+        sync.set_transport( {
+            pull: async path => {
+                writeFileSync( host_path, `{"token":"Z"}` )
+                await Promise.resolve()
+                writeFileSync( path, `{"token":"Y"}` )
+            },
+            push: async path => pushes.push( readFileSync( path, `utf-8` ) ),
+        } )
+
+        await sync.stop()
+
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"Z"}` )
+        expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( `{"token":"Z"}` )
+        expect( pushes ).toEqual( [ `{"token":"Z"}` ] )
+
+    } )
+
+    it( `serializes overlapping final sync requests`, async () => {
+
+        writeFileSync( host_path, `{"token":"X"}` )
+        writeFileSync( tmpfile_path, `{"token":"X"}` )
+
+        let active_pulls = 0
+        let max_active_pulls = 0
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path
+        )
+
+        sync.set_transport( {
+            pull: async () => {
+                active_pulls += 1
+                max_active_pulls = Math.max( max_active_pulls, active_pulls )
+                await new Promise( resolve => setTimeout( resolve, 2 ) )
+                active_pulls -= 1
+            },
+            push: async () => {},
+        } )
+
+        await Promise.all( [ sync.stop(), sync.stop() ] )
+
+        expect( max_active_pulls ).toBe( 1 )
+
+    } )
+
     it( `propagates a failed final Docker pull so recovery copies can be retained`, async () => {
 
         writeFileSync( host_path, `{"token":"X"}` )

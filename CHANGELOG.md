@@ -13,7 +13,9 @@
   Docker daemons without exposing secrets in Docker `Config.Env`/inspect or
   bind-mount metadata, keeps refreshed OAuth files synchronized, refuses unsafe
   live-session isolation upgrades, and removes stopped containers only after
-  the monitor's final credential flush.
+  the monitor's final credential flush. Failed probe/startup flushes now retain
+  recoverable containers and sync files, while serialized sync checks prevent a
+  slow Docker pull from overwriting a concurrent host reauthentication.
 
 ## 0.26.2 — 2026-08-07
 

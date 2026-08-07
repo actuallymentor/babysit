@@ -109,6 +109,53 @@ export const should_ignore_host_agent_context = ( flags = {}, stored_resume_sess
     )
 
 /**
+ * Tear down a failed foreground launch without destroying the only copy of a
+ * credential that may have rotated inside Docker. A failed final flush keeps
+ * both the stopped container and private local sync files for recovery.
+ *
+ * @param {Object} [options]
+ * @param {Object|null} [options.creds_sync] - Aggregate credential sync controller
+ * @param {Object|null} [options.prepared_launch] - Prepared Docker launch owner
+ * @param {string} [options.context] - Human-readable failure context
+ * @returns {Promise<{ cleaned: boolean, retained_container: string|null, flush_error: Error|null }>}
+ */
+export const cleanup_failed_launch_credentials = async ( {
+    creds_sync = null,
+    prepared_launch = null,
+    context = `foreground launch failure`,
+} = {} ) => {
+
+    let flush_error = null
+
+    if( creds_sync ) {
+        try {
+            await creds_sync.stop()
+        } catch ( error ) {
+            flush_error = error
+        }
+    }
+
+    if( flush_error ) {
+        const retained_container = prepared_launch?.retain
+            ? await prepared_launch.retain( { stop: true } )
+            : null
+        if( prepared_launch && !prepared_launch.retain ) prepared_launch.handoff?.()
+
+        log.warn(
+            `Could not flush credentials after ${ context }; retaining ${ retained_container || `private recovery files` } for manual recovery: ${ flush_error.message }`
+        )
+        return { cleaned: false, retained_container, flush_error }
+    }
+
+    const cleaned = creds_sync ? creds_sync.cleanup() : true
+    if( !cleaned ) log.warn( `Could not remove private credential recovery files after ${ context }.` )
+    if( prepared_launch ) await prepared_launch.abort()
+
+    return { cleaned, retained_container: null, flush_error: null }
+
+}
+
+/**
  * Resolve explicit agent resume targets.
  * `babysit <agent> resume <babysit_id>` should translate the Babysit metadata
  * id before it reaches the agent CLI. If there is no stored record, treat the
@@ -510,8 +557,10 @@ export const cmd_start = async ( cmd ) => {
         const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents )
 
         if( !should_continue ) {
-            if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after auth abort: ${ e.message }` ) )
-            if( creds_sync ) creds_sync.cleanup()
+            await cleanup_failed_launch_credentials( {
+                creds_sync,
+                context: `authentication abort`,
+            } )
             log.error( `Aborted because host agent authentication is incomplete.` )
             process.exit( 1 )
         }
@@ -640,17 +689,21 @@ export const cmd_start = async ( cmd ) => {
         // can print only "no sessions" while the Docker error disappears.
         await wait( STARTUP_EXIT_GRACE_MS )
     } catch ( e ) {
-        if( creds_sync ) await creds_sync.stop().catch( error => log.debug( `Credential sync stop after launch failure: ${ error.message }` ) )
-        if( prepared_launch ) await prepared_launch.abort()
-        if( creds_sync ) creds_sync.cleanup()
+        await cleanup_failed_launch_credentials( {
+            creds_sync,
+            prepared_launch,
+            context: `launch failure`,
+        } )
         throw e
     }
 
     if( !await has_session( session_name ) ) {
         report_startup_failure( agent, diagnostic_log_path )
-        if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after startup failure: ${ e.message }` ) )
-        await prepared_launch.abort()
-        if( creds_sync ) creds_sync.cleanup()
+        await cleanup_failed_launch_credentials( {
+            creds_sync,
+            prepared_launch,
+            context: `startup failure`,
+        } )
         if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
         process.exit( 1 )
     }
@@ -690,9 +743,11 @@ export const cmd_start = async ( cmd ) => {
         await spawn_monitor_daemon( babysit_id )
         prepared_launch.handoff()
     } catch ( error ) {
-        if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after monitor handoff failure: ${ e.message }` ) )
-        await prepared_launch.abort()
-        if( creds_sync ) creds_sync.cleanup()
+        await cleanup_failed_launch_credentials( {
+            creds_sync,
+            prepared_launch,
+            context: `monitor handoff failure`,
+        } )
         throw error
     }
 

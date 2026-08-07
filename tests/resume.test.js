@@ -10,6 +10,7 @@ import {
     resolve_resume_target,
 } from '../src/cli/resume.js'
 import {
+    cleanup_failed_launch_credentials,
     resolve_agent_resume_target,
     resolve_session_display_name,
     resolve_stored_agent_resume_session,
@@ -601,6 +602,66 @@ describe( `resume prompt handling`, () => {
 
     it( `still types the startup prompt into fresh sessions`, () => {
         expect( should_send_initial_prompt( { verb: `start` } ) ).toBe( true )
+    } )
+
+} )
+
+describe( `failed launch credential cleanup`, () => {
+
+    it( `retains recovery state when the final credential flush fails`, async () => {
+
+        const calls = []
+        const result = await cleanup_failed_launch_credentials( {
+            creds_sync: {
+                stop: async () => {
+                    calls.push( `stop` )
+                    throw new Error( `docker copy unavailable` )
+                },
+                cleanup: () => calls.push( `cleanup` ),
+            },
+            prepared_launch: {
+                retain: async options => {
+                    calls.push( [ `retain`, options ] )
+                    return `container-id`
+                },
+                abort: async () => calls.push( `abort` ),
+            },
+            context: `test failure`,
+        } )
+
+        expect( result.cleaned ).toBe( false )
+        expect( result.retained_container ).toBe( `container-id` )
+        expect( result.flush_error.message ).toBe( `docker copy unavailable` )
+        expect( calls ).toEqual( [
+            `stop`,
+            [ `retain`, { stop: true } ],
+        ] )
+
+    } )
+
+    it( `removes recovery state only after a successful final flush`, async () => {
+
+        const calls = []
+        const result = await cleanup_failed_launch_credentials( {
+            creds_sync: {
+                stop: async () => calls.push( `stop` ),
+                cleanup: () => {
+                    calls.push( `cleanup` )
+                    return true
+                },
+            },
+            prepared_launch: {
+                abort: async () => calls.push( `abort` ),
+            },
+        } )
+
+        expect( result ).toEqual( {
+            cleaned: true,
+            retained_container: null,
+            flush_error: null,
+        } )
+        expect( calls ).toEqual( [ `stop`, `cleanup`, `abort` ] )
+
     } )
 
 } )

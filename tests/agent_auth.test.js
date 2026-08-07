@@ -244,6 +244,38 @@ describe( `host agent auth checks`, () => {
 
     } )
 
+    it( `retains a staged auth container when the final credential pull fails`, async () => {
+
+        const calls = []
+        const result = await run_host_agent_auth_check( get_agent( `codex` ), {
+            prompt: `hello`,
+            spawn_fn: fake_spawn(),
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                container_id: `probe-id`,
+                pull_synced_files: async () => {
+                    calls.push( [ `pull` ] )
+                    throw new Error( `docker copy unavailable` )
+                },
+                abort: async () => calls.push( [ `abort` ] ),
+                retain: async options => {
+                    calls.push( [ `retain`, options ] )
+                    return `probe-id`
+                },
+                handoff: () => calls.push( [ `handoff` ] ),
+            } ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.authenticated ).toBe( false )
+        expect( result.reason ).toBe( `docker copy unavailable` )
+        expect( calls ).toEqual( [
+            [ `pull` ],
+            [ `retain`, { stop: false } ],
+        ] )
+
+    } )
+
     it( `requires the prompt response to include ok`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
             prompt: `hello`,

@@ -34,14 +34,14 @@ describe( `Docker credential file transport`, () => {
 
     } )
 
-    it( `repairs sudo-owned pull results before the next container push`, async () => {
+    it( `repairs sudo-owned mode-0666 pulls before the next container push`, async () => {
 
         const calls = []
         const chmod_calls = []
 
         await normalise_local_sync_file( `/tmp/codex-auth.json`, {
             command_prefix: [ `sudo`, `docker` ],
-            stat_sync: () => ( { mode: 0o100600 } ),
+            stat_sync: () => ( { mode: 0o100666, uid: 0, gid: 0 } ),
             chmod_sync: ( path, mode ) => {
                 chmod_calls.push( { path, mode } )
                 if( chmod_calls.length === 1 ) {
