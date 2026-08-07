@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 
 import { get_agent } from '../src/agents/index.js'
 import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
+import { setup_darwin_credentials } from '../src/credentials/darwin.js'
 import { setup_linux_credentials } from '../src/credentials/linux.js'
 import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
 
@@ -91,6 +92,49 @@ describe( `aggregate credential sync`, () => {
 
         await expect( sync.stop() ).rejects.toThrow( `flush failed` )
         expect( slow_flush_completed ).toBe( true )
+
+    } )
+
+} )
+
+describe( `setup_darwin_credentials Keychain handoff`, () => {
+
+    it( `uses the foreground baseline instead of overwriting a refreshed container credential`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-keychain-handoff-test-` ) )
+        const tmpfile = join( directory, `auth.json` )
+        const keychain_credential = `{"refresh_token":"keychain-original"}`
+        const container_credential = `{"refresh_token":"container-refreshed"}`
+        const initial_hash = hash_credential_content( keychain_credential )
+        const fake_agent = {
+            name: `claude`,
+            bin: `claude`,
+            credentials: {
+                darwin: { keychain_service: `Claude Code-credentials` },
+            },
+            container_paths: { creds: `/home/node/.claude/.credentials.json` },
+        }
+
+        try {
+            writeFileSync( tmpfile, container_credential )
+
+            const result = await setup_darwin_credentials( fake_agent, {
+                existing_tmpfile: tmpfile,
+                sync_baseline: {
+                    baseline_source_hash: initial_hash,
+                    baseline_tmpfile_hash: initial_hash,
+                },
+                run_command: command => command.includes( ` -w ` )
+                    ? keychain_credential
+                    : `credential exists`,
+            } )
+
+            await result.sync.stop()
+
+            expect( readFileSync( tmpfile, `utf-8` ) ).toBe( container_credential )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
 
     } )
 

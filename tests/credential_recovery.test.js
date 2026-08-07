@@ -45,4 +45,27 @@ describe( `credential recovery registry`, () => {
 
     } )
 
+    it( `registers foreground sync files before a Docker container exists`, () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-foreground-recovery-test-` ) )
+        const sync_path = join( tmpdir(), `babysit-creds-codex-foreground` )
+
+        try {
+            const recovery_id = register_credential_recovery( {
+                sync_paths: [ sync_path ],
+            }, { directory } )
+            const [ recovery ] = list_credential_recoveries( { directory } )
+
+            expect( recovery_id.startsWith( `foreground-` ) ).toBe( true )
+            expect( recovery ).toEqual( expect.objectContaining( {
+                recovery_id,
+                container_id: null,
+                sync_paths: [ sync_path ],
+            } ) )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
 } )

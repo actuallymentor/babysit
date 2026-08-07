@@ -653,6 +653,11 @@ describe( `failed launch credential cleanup`, () => {
             prepared_launch: {
                 abort: async () => calls.push( `abort` ),
             },
+            recovery_id: `foreground-recovery`,
+            clear_recovery: id => {
+                calls.push( [ `clear`, id ] )
+                return true
+            },
         } )
 
         expect( result ).toEqual( {
@@ -660,7 +665,33 @@ describe( `failed launch credential cleanup`, () => {
             retained_container: null,
             flush_error: null,
         } )
-        expect( calls ).toEqual( [ `stop`, `cleanup`, `abort` ] )
+        expect( calls ).toEqual( [
+            `stop`,
+            `cleanup`,
+            [ `clear`, `foreground-recovery` ],
+            `abort`,
+        ] )
+
+    } )
+
+    it( `keeps foreground recovery ownership when a pre-container flush fails`, async () => {
+
+        const calls = []
+        const result = await cleanup_failed_launch_credentials( {
+            creds_sync: {
+                stop: async () => {
+                    throw new Error( `host credential write failed` )
+                },
+            },
+            recovery_id: `foreground-recovery`,
+            clear_recovery: id => calls.push( [ `clear`, id ] ),
+            context: `authentication abort`,
+        } )
+
+        expect( result.cleaned ).toBe( false )
+        expect( result.retained_container ).toBeNull()
+        expect( result.flush_error.message ).toBe( `host credential write failed` )
+        expect( calls ).toEqual( [] )
 
     } )
 
