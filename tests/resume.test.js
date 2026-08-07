@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
 import { join } from 'path'
-import { tmpdir, homedir } from 'os'
+import { tmpdir } from 'os'
 import {
     cmd_resume,
     is_resume_listing,
@@ -15,16 +15,13 @@ import {
     resolve_stored_agent_resume_session,
     should_send_initial_prompt,
 } from '../src/cli/start.js'
-import { generate_session_id, save_session } from '../src/sessions/store.js'
+import { generate_session_id } from '../src/sessions/store.js'
 
-const seeded_session_paths = new Set()
-
-// Create a session record on disk that resume.js will look up. Returns the id
-// and records its exact path so teardown cannot touch real session history.
-const seed_session = ( pwd ) => {
+// Build realistic metadata without touching the developer's session registry.
+const make_session = ( pwd ) => {
 
     const id = generate_session_id()
-    save_session( {
+    return {
         babysit_id: id,
         agent: `claude`,
         agent_session_id: null,
@@ -36,9 +33,7 @@ const seed_session = ( pwd ) => {
         modifiers: [ `yolo` ],
         creds_tmpfile: null,
         started_at: new Date().toISOString(),
-    } )
-    seeded_session_paths.add( join( homedir(), `.babysit`, `sessions`, `${ id }.json` ) )
-    return id
+    }
 
 }
 
@@ -191,13 +186,6 @@ describe( `cmd_resume cwd handling`, () => {
             process.chdir( original_cwd )
         } catch { /* best effort */ }
         rmSync( temp_workspace, { recursive: true, force: true } )
-
-        // Remove only records created by this test process. A wildcard here
-        // could erase real Babysit session history from the developer's home.
-        for ( const session_path of seeded_session_paths ) {
-            rmSync( session_path, { force: true } )
-        }
-        seeded_session_paths.clear()
     } )
 
     it( `chdirs to session.pwd before delegating to cmd_start`, async () => {
@@ -205,7 +193,7 @@ describe( `cmd_resume cwd handling`, () => {
         // Seed a session whose pwd is the temp workspace; we run cmd_resume
         // from a different cwd and assert it ends up in temp_workspace before
         // cmd_start picks up babysit.yaml.
-        const id = seed_session( temp_workspace )
+        const session = make_session( temp_workspace )
 
         // Place a marker babysit.yaml in temp_workspace so we can verify that
         // load_config inside cmd_start would find it (cmd_start uses cwd).
@@ -218,10 +206,11 @@ describe( `cmd_resume cwd handling`, () => {
         let start_cwd = null
 
         await cmd_resume( {
-            session_id: id,
+            session_id: session.babysit_id,
             flags: { yolo: false, sandbox: false, mudbox: false, loop: false },
             passthrough: [],
         }, {
+            load_session_fn: id => id === session.babysit_id ? session : null,
             start: async () => {
                 start_cwd = process.cwd()
             },
@@ -249,14 +238,15 @@ describe( `cmd_resume cwd handling`, () => {
         // Seed a session pointing at a since-deleted directory
         const ghost_pwd = join( tmpdir(), `babysit-ghost-${ Date.now() }` )
         mkdirSync( ghost_pwd )
-        const id = seed_session( ghost_pwd )
+        const session = make_session( ghost_pwd )
         rmSync( ghost_pwd, { recursive: true, force: true } )
 
         await cmd_resume( {
-            session_id: id,
+            session_id: session.babysit_id,
             flags: { yolo: false, sandbox: false, mudbox: false, loop: false },
             passthrough: [],
         }, {
+            load_session_fn: id => id === session.babysit_id ? session : null,
             start: async () => {},
         } )
 

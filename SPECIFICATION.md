@@ -17,18 +17,23 @@ The core functionality is that when run, `babysit` will:
 - The `babysit.yaml` file has `config` and `babysit` sections. The `config` section contains configutations about behavior. The `babysit` section contains the actions that `babysit` takes depending on the output (or idle) of the tmux session with the coding agent. The `babysit:` section contains `on/do` pairs where `on` can be a keyword, a literal string, or a regex. The `do` can be a command defined in the `config:` section, a literal string, or a markdown file. In both string and markdown cases, sections may be defined using `===` segments, which instructs `babysit` to wait for idle after executing each segment. This allows the user to create complex instructions that are executed step by step when the agent is idle in between.
 - The `on:` keyword options are: idle, plan, choice, literal string, and regex. Idle means "no new output in the tmux session for longer than the timeout". Plan means the agent is asking the user to accept a plan, this is detected through a matching table (like a patterns.js kind of file with agent>regex pairings) that `babysit` keeps per coding agent. Choice means the agent is waiting for user input other than accepting a plan, this is also detected through a matching table. Literal string matching works on the latest output going back N lines (this is a config variable set to 10 by default). Regex matching also works on the latest output with a separate lines config.
 
-Default `babysit.yaml` instructions created when there is no `babysit.yaml` in the current directory:
+The generated `babysit.yaml` has the following shape. The full mode-aware launch prompt replaces the abbreviated `initial_prompt` content below. Commands and supervision rules are examples only; users explicitly uncomment and configure the ones they want.
 
 ```yaml
 # babysit.yaml
 
-# Babysit configuragion
+# Babysit configuration
 config:
+    initial_prompt: |-
+        You are running inside a Docker container — an isolated sandbox built for coding agents.
+        ...
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as `on: idle`
-    commands:
-        notify_command: >
-            curl -f -X POST -d \
-                "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input&url=&priority=0" https://api.pushover.net/1/messages.json
+
+    # Named shell commands are opt-in. Uncomment and configure before use.
+    # commands:
+    #     notify_command: >
+    #         curl -f -X POST -d \
+    #             "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input&url=&priority=0" https://api.pushover.net/1/messages.json
 
 # Babysit instructions
 babysit:
@@ -37,25 +42,26 @@ babysit:
     # - on: <event> # unquoted words are special keywords, quotes words are literal matches, regex is supported with /regex/flags. Note that the `on:` only triggers if the match is the latest seen output for longer than the timeout
     #   do: <action> # unquoted words are special keywords or commands specified in config.commands, quoted words are literal input followed by and enter keystroke
 
-    # This instructs babysit to type and submit "check for bugs" into the tmux session when the coding agent is idle for the timout period (including sub agents)
-    - on: idle # this means no new output in the thux session
-      do: ./IDLE.md # this may point to any markdown file on the host, either as a relative or absolute path
-      timeout: 30:00 # overrides idle_timeout_s, format can be: SS, MM:SS, or HH:MM:SS
-    
+    # Examples are disabled until you uncomment and configure them.
+
+    # Send a markdown workflow when the coding agent is idle.
+    # - on: idle # this means no new output in the tmux session
+    #   do: ./IDLE.md # create this file first; relative and absolute paths work
+    #   timeout: 30:00 # overrides idle_timeout_s; SS, MM:SS, or HH:MM:SS
+
     # This instructs babysit to accept any plan that the coding agent submits by pressing "enter" when it encounters a plan acceptance step
     # - on: plan # this means the coding agent is asking the user to accept a plan
     #   do: enter
     #   timeout: 10 # waits 10 seconds
-    
-    # Instructs babysit to run the notify_command when the coding agent is waiting for user input, so that the user gets a push notification on their phone to check the session
-    - on: choice # this is a generic option for any scenario the coding agent is waiting for user input
-      do: notify_command
-      timeout: 1:00:00 # Waits 1 hour
 
-    - on: /error/i # regex match on the tmux session output, case insensitive
-      do: notify_command
-      timeout: 05:00
+    # Run the configured notification command when the agent needs input.
+    # - on: choice
+    #   do: notify_command
+    #   timeout: 1:00:00
 
+    # - on: /error/i
+    #   do: notify_command
+    #   timeout: 05:00
 ```
 
 ## Coding agent configuration
