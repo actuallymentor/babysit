@@ -17,8 +17,10 @@ import {
 } from '../src/cli/start.js'
 import { generate_session_id, save_session } from '../src/sessions/store.js'
 
-// Create a session record on disk that resume.js will look up. Returns the
-// id we can resume by, plus the temp pwd we expect the resume to chdir into.
+const seeded_session_paths = new Set()
+
+// Create a session record on disk that resume.js will look up. Returns the id
+// and records its exact path so teardown cannot touch real session history.
 const seed_session = ( pwd ) => {
 
     const id = generate_session_id()
@@ -35,6 +37,7 @@ const seed_session = ( pwd ) => {
         creds_tmpfile: null,
         started_at: new Date().toISOString(),
     } )
+    seeded_session_paths.add( join( homedir(), `.babysit`, `sessions`, `${ id }.json` ) )
     return id
 
 }
@@ -189,13 +192,12 @@ describe( `cmd_resume cwd handling`, () => {
         } catch { /* best effort */ }
         rmSync( temp_workspace, { recursive: true, force: true } )
 
-        // Clean up the seeded session record
-        try {
-            const sessions_dir = join( homedir(), `.babysit`, `sessions` )
-            const id_file = join( sessions_dir, `*.json` )
-            // Best-effort cleanup — a stray test session won't break later tests.
-            void id_file
-        } catch { /* ignore */ }
+        // Remove only records created by this test process. A wildcard here
+        // could erase real Babysit session history from the developer's home.
+        for ( const session_path of seeded_session_paths ) {
+            rmSync( session_path, { force: true } )
+        }
+        seeded_session_paths.clear()
     } )
 
     it( `chdirs to session.pwd before delegating to cmd_start`, async () => {

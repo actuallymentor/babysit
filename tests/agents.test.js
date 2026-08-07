@@ -159,28 +159,20 @@ describe( `credential coverage`, () => {
 
 describe( `model defaults`, () => {
 
-    // Wrong defaults silently break sessions for the most common auth path:
-    //   - opencode default `gpt-5.5-pro` is rejected by ChatGPT-account auth
-    //     ("model not supported when using Codex with a ChatGPT account") —
-    //     the ChatGPT subscription is the most common opencode auth path,
-    //     so the safer default is `openai/gpt-5.5` which works for both
-    //     OAuth and API-key flows.
-    //   - gemini's `gemini-pro-latest` 404s for users on Gemini Code Assist
-    //     for Individuals (the free tier — Pro routing was restricted to
-    //     paid plans). Empty defaults let gemini's internal agent router
-    //     pick whatever the user's plan supports.
+    // OpenCode gets a current, concrete OpenAI catalog model. Gemini remains
+    // unpinned so its own router can choose a model supported by the account.
 
-    it( `opencode pins openai/gpt-5.5 (works for both OAuth and API-key auth)`, () => {
-        expect( get_agent( `opencode` ).defaults.model ).toBe( `openai/gpt-5.5` )
+    it( `opencode pins the current OpenAI frontier model`, () => {
+        expect( get_agent( `opencode` ).defaults.model ).toBe( `openai/gpt-5.6-sol` )
     } )
 
-    it( `gemini does NOT force a model (would break free-tier users)`, () => {
+    it( `gemini does not force a model`, () => {
         expect( get_agent( `gemini` ).defaults.model ).toBeUndefined()
     } )
 
     it( `claude and codex force their preferred frontier defaults`, () => {
         expect( get_agent( `claude` ).defaults.model ).toBe( `best` )
-        expect( get_agent( `claude` ).defaults.effort ).toBe( `max` )
+        expect( get_agent( `claude` ).defaults.effort ).toBe( `xhigh` )
         expect( get_agent( `codex` ).defaults.model ).toBe( `gpt-5.6-sol` )
         expect( get_agent( `codex` ).defaults.effort ).toBe( `xhigh` )
     } )

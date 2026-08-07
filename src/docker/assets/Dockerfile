@@ -68,35 +68,36 @@ RUN install -m 0755 -d /etc/apt/keyrings \
 RUN set -eux; \
     ARCH="$(dpkg --print-architecture)"; \
     # fd-find
-    FD_VERSION="10.2.0"; \
+    FD_VERSION="10.4.2"; \
     curl -fsSL "https://github.com/sharkdp/fd/releases/download/v${FD_VERSION}/fd_${FD_VERSION}_${ARCH}.deb" -o /tmp/fd.deb \
     && dpkg -i /tmp/fd.deb && rm /tmp/fd.deb; \
     # bat
-    BAT_VERSION="0.24.0"; \
+    BAT_VERSION="0.26.1"; \
     curl -fsSL "https://github.com/sharkdp/bat/releases/download/v${BAT_VERSION}/bat_${BAT_VERSION}_${ARCH}.deb" -o /tmp/bat.deb \
     && dpkg -i /tmp/bat.deb && rm /tmp/bat.deb; \
     # fzf
-    FZF_VERSION="0.57.0"; \
+    FZF_VERSION="0.74.1"; \
     if [ "$ARCH" = "amd64" ]; then FZF_ARCH="amd64"; else FZF_ARCH="arm64"; fi; \
     curl -fsSL "https://github.com/junegunn/fzf/releases/download/v${FZF_VERSION}/fzf-${FZF_VERSION}-linux_${FZF_ARCH}.tar.gz" \
     | tar xz -C /usr/local/bin; \
     # yq
-    YQ_VERSION="4.44.6"; \
+    YQ_VERSION="4.53.3"; \
     if [ "$ARCH" = "amd64" ]; then YQ_ARCH="amd64"; else YQ_ARCH="arm64"; fi; \
     curl -fsSL "https://github.com/mikefarah/yq/releases/download/v${YQ_VERSION}/yq_linux_${YQ_ARCH}" -o /usr/local/bin/yq \
     && chmod +x /usr/local/bin/yq; \
     # scc — fast LOC counter (sir-claudius parity, frequently used by agents to size codebases)
+    SCC_VERSION="3.7.0"; \
     if [ "$ARCH" = "amd64" ]; then SCC_ARCH="x86_64"; else SCC_ARCH="arm64"; fi; \
-    curl -fsSL "https://github.com/boyter/scc/releases/latest/download/scc_Linux_${SCC_ARCH}.tar.gz" \
+    curl -fsSL "https://github.com/boyter/scc/releases/download/v${SCC_VERSION}/scc_Linux_${SCC_ARCH}.tar.gz" \
     | tar xz -C /usr/local/bin scc; \
     # just — install the upstream multi-arch musl build instead of relying on
     # apt availability in the slim base image.
-    JUST_VERSION="1.50.0"; \
+    JUST_VERSION="1.58.0"; \
     if [ "$ARCH" = "amd64" ]; then JUST_ARCH="x86_64"; else JUST_ARCH="aarch64"; fi; \
     curl -fsSL "https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-${JUST_ARCH}-unknown-linux-musl.tar.gz" \
     | tar xz -C /usr/local/bin just; \
     # bun — common JS runtime/package manager/test runner used by modern repos
-    BUN_VERSION="1.3.13"; \
+    BUN_VERSION="1.3.14"; \
     if [ "$ARCH" = "amd64" ]; then BUN_ARCH="x64"; else BUN_ARCH="aarch64"; fi; \
     curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-${BUN_ARCH}.zip" -o /tmp/bun.zip; \
     unzip -q /tmp/bun.zip -d /tmp; \
@@ -157,7 +158,7 @@ ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:/home/node/.opencode/
 
 # nvm — user-scoped Node version switching for repos that pin versions in .nvmrc.
 RUN set -eux; \
-    NVM_VERSION="v0.40.4"; \
+    NVM_VERSION="v0.40.6"; \
     git clone --depth 1 --branch "$NVM_VERSION" https://github.com/nvm-sh/nvm.git "$NVM_DIR"; \
     printf '%s\n' \
         'export NVM_DIR="$HOME/.nvm"' \

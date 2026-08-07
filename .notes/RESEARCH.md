@@ -1,6 +1,11 @@
-# Agent CLI Research
+# Operational Research
 
-Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
+Agent model defaults and container tool pins last verified against primary sources: 2026-08-07.
+
+## Container toolchain
+- Current pinned releases: fd 10.4.2, bat 0.26.1, fzf 0.74.1, yq 4.53.3, scc 3.7.0, just 1.58.0, Bun 1.3.14, and nvm 0.40.6.
+- Both amd64 and arm64 artifact URLs were checked before updating the Dockerfile. Pin scc to a versioned release URL rather than the floating `latest/download` path so builds remain reproducible.
+- The release workflow uses actions/cache v6 and the same Bun 1.3.14 version as the image build.
 
 ## Docker-outside-of-Docker
 - Verified against Docker docs on 2026-05-05.
@@ -25,8 +30,8 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 - **Skip perms**: `--dangerously-skip-permissions`
 - **System prompt**: Claude supports `--append-system-prompt "text"` and `--system-prompt "text"`, but Babysit deliberately uses neither for its launch brief. It types `config.initial_prompt` into the ready TUI and mounts shared user globals at Claude's native instruction path.
 - **Resume**: `claude --resume <id>` or `claude -r <id>`
-- **Model**: `--model best` is the highest-capability default for Babysit as of 2026-08-01. Claude Code docs say `best` uses Fable 5 where the organization has access, otherwise the latest Opus. `--model fable` hard-pins Fable 5 but can be unavailable under zero-data-retention / policy constraints.
-- **Effort**: `--effort max` (other levels: low, medium, high, xhigh; available levels depend on the model)
+- **Model**: `--model best` tracks Claude Code's highest-capability generally available model and currently resolves equivalently to Opus.
+- **Effort**: `--effort xhigh` is Babysit's quality-first default. Claude Code recommends it for most coding work; `max` remains opt-in because it can overthink and use substantially more tokens.
 - **Creds**: `~/.claude/.credentials.json` (linux), Keychain service "Claude Code-credentials" (macOS)
 - **Install location**: `~/.local/bin/claude` (binary lives under `~/.local/share/claude/versions/` with a symlink in `~/.local/bin`). Container Dockerfile must add `~/.local/bin` to PATH.
 - **Home env**: `CLAUDE_CONFIG_DIR` — default `~/.claude`. Documented behavior is partial: claude still creates local `.claude/` directories in workspaces and `/ide` integration may misbehave when set. Babysit pins it to `/home/node/.claude` inside the container so it matches the credential, settings, and projects mounts.
@@ -43,20 +48,21 @@ Claude and Codex model defaults last verified against vendor docs: 2026-08-01.
 
 ## Gemini CLI
 - **Binary**: `gemini`
-- **Skip perms**: `--yolo` or `--approval-mode=yolo`
+- **Skip perms**: `--approval-mode=yolo`; the older `--yolo` alias is deprecated.
 - **System prompt**: context file `GEMINI.md`. Babysit mounts shared user globals at `${GEMINI_CLI_HOME}/.gemini/GEMINI.md` and types the separate `config.initial_prompt` launch brief into the TUI. Gemini also honors `GEMINI_SYSTEM_MD` as a full override, which Babysit intentionally does not use.
 - **Resume**: `gemini --resume latest` or `--resume <uuid>` or `--resume <session_index>`
-- **Model**: no forced default. Gemini's agent router selects a model supported by the user's plan; forcing `gemini-pro-latest` breaks Code Assist for Individuals accounts.
+- **Model**: no forced default. Gemini's agent router selects a model supported by the configured enterprise or API-key account.
 - **Effort**: no equivalent
 - **Creds**: `~/.gemini/oauth_creds.json` for the Google-OAuth login flow. `GEMINI_API_KEY` env var as fallback for API-key auth. babysit forwards both — file first, env additively.
 - **Home env**: `GEMINI_CLI_HOME` — default `$HOME`. Gemini creates a `.gemini/` folder *inside* this dir, so set it to the parent (we use `/home/node`). Not to be confused with `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` / `GEMINI_CLI_SYSTEM_SETTINGS_PATH`, which point at single files.
+- **Account boundary**: individual Google-login support ended on 2026-06-18 and moved to Antigravity. Enterprise Code Assist and API-key access remain supported by Gemini CLI.
 
 ## OpenCode
 - **Binary**: `opencode`
 - **Skip perms**: `--dangerously-skip-permissions`
 - **System prompt**: `AGENTS.md`. Babysit mounts shared user globals at `${OPENCODE_CONFIG_DIR}/AGENTS.md` and types the separate `config.initial_prompt` launch brief into the TUI.
 - **Resume**: `opencode --session <id>` (or `-c` for continue)
-- **Model**: `--model provider/model` — depends on user's auth.json provider, no sensible default to inject
+- **Model**: `--model provider/model`; `openai/gpt-5.6-sol` is the current Babysit default and appears in OpenCode's OpenAI catalog.
 - **Creds**: `~/.local/share/opencode/auth.json` on every platform (opencode does NOT use the macOS Keychain — beware adapters that only check Keychain on darwin, they will silently drop opencode creds).
 - **Install location**: `~/.local/bin/opencode` (curl install) or `~/.opencode/bin/opencode` (alternate). Container Dockerfile puts both on PATH.
 - **Home env**: `OPENCODE_CONFIG_DIR` — points at the config dir directly (no `.opencode` suffix). Default is `~/.config/opencode`. Known bug upstream: when set, the global AGENTS.md inside it can be ignored if `~/.config/opencode/AGENTS.md` also exists (issues #7003, #11534) — we sidestep this by pinning OPENCODE_CONFIG_DIR to that same path inside the container.

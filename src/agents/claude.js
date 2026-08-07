@@ -51,11 +51,11 @@ export const claude = {
     },
 
     defaults: {
-        // `best` resolves to Fable 5 when the user's organization has access,
-        // otherwise the latest Opus. That keeps the default at the most capable
-        // Claude model available to the current account.
+        // `best` tracks Claude Code's strongest generally available model.
+        // `xhigh` is the documented quality-first default; `max` remains an
+        // explicit opt-in for unusually difficult work because it can overthink.
         model: `best`,
-        effort: `max`,
+        effort: `xhigh`,
     },
 
     // Pattern to capture the session ID from claude's output. The TUI can show

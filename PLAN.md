@@ -1,5 +1,9 @@
 # Babysit — Implementation Plan
 
+> **Historical document.** This records the initial implementation plan and is
+> not current operating guidance. Use README.md, SPEC.md, the test suite, and
+> the implementation itself for the present behavior.
+
 ## Context
 
 `babysit` is a CLI supervisor for LLM coding agent CLIs (`claude`, `codex`, `gemini`, `opencode`). It is the JS-based, multi-agent successor to [sir-claudius](https://github.com/actuallymentor/sir-claudius), which was a bash + Python tool wrapping only Claude Code. The new tool addresses three gaps in sir-claudius:

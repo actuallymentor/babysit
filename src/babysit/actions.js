@@ -16,22 +16,26 @@ const SEGMENT_POLL_INTERVAL_MS = 2_000
  * @param {string} session_name - The tmux session name
  * @param {*} action - The do: value from the rule
  * @param {Object} config - The babysit config section
+ * @param {Object} [key_senders] - Injectable key senders for tests
  * @returns {Promise<void>}
  */
-export const execute_action = async ( session_name, action, config ) => {
+export const execute_action = async ( session_name, action, config, {
+    send_enter_fn = send_enter,
+    send_shift_tab_fn = send_shift_tab,
+} = {} ) => {
 
     const action_str = String( action ).trim()
 
     // Special keywords
-    if( action_str === `enter` ) {
+    if( action_str === `enter` || action_str === `accept` ) {
         log.info( `Action: pressing Enter` )
-        await send_enter( session_name )
+        await send_enter_fn( session_name )
         return
     }
 
-    if( action_str === `shift_tab` || action_str === `accept` ) {
-        log.info( `Action: pressing Shift+Tab (accept)` )
-        await send_shift_tab( session_name )
+    if( action_str === `shift_tab` ) {
+        log.info( `Action: pressing Shift+Tab` )
+        await send_shift_tab_fn( session_name )
         return
     }
 

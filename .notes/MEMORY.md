@@ -4,6 +4,6 @@
 |------|-----------|-------------|
 | [MEMORY.md](MEMORY.md) | Index of persistent notes and load guidance | Read on every run |
 | [GOTCHAS.md](GOTCHAS.md) | Active implementation pitfalls and invariants | Always on implementation changes |
-| [HUMAN.md](HUMAN.md) | External release blockers requiring human action | Before deploying a release |
-| [RESEARCH.md](RESEARCH.md) | Current external Docker and agent CLI research | When modifying Docker integration or agent adapters |
-| [TIMELINE.md](TIMELINE.md) | Recent decisions not yet obvious from release history | When reviewing recent history |
+| [HUMAN.md](HUMAN.md) | Decisions or blockers that require human review | Before releases or when work is blocked |
+| [RESEARCH.md](RESEARCH.md) | Current external platform, toolchain, and agent CLI research | When updating integrations, defaults, or dependencies |
+| [TIMELINE.md](TIMELINE.md) | Major recent decisions, changes, and release outcomes | When reviewing recent history |
