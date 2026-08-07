@@ -6,7 +6,8 @@
 - **Host agent profiles can be isolated per session.**
   `--ignore-host-agents-md` omits host instructions, skills, preferences, and
   global loop context while retaining credential-only state and project-local
-  context. The setting persists across both `babysit resume` forms.
+  context, including active GitHub Enterprise authentication. The setting
+  persists across both `babysit resume` forms.
 
 ## 0.26.2 — 2026-08-07
 

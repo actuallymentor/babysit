@@ -174,7 +174,9 @@ and first-run state needed by each CLI, and keeps project-local files under
 `/workspace` available. The setting is saved with the session and restored by
 both `babysit resume` forms. Executable host setup from `~/.babysitrc` is also
 skipped; credentials must come from the supported agent files, keychains, or
-environment variables when isolation is enabled.
+environment variables when isolation is enabled. GitHub CLI authentication is
+copied into a credential-only profile containing host, account, and token state
+instead of mounting aliases or other gh preferences.
 
 `--docker` uses Docker-outside-of-Docker: Babysit mounts the host Docker socket,
 sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
