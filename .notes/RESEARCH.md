@@ -72,3 +72,9 @@ Agent model defaults and container tool pins last verified against primary sourc
 - `codex resume` and `claude --resume` open native interactive pickers when no id is provided. Codex has no resume-picker JSON flag; its app-server `thread/list` method is the supported programmatic inventory. Claude stores transcript filenames by session UUID but documents the JSONL entry shape as internal and unstable.
 - Host-native Codex and Claude transcripts are not automatically resumable inside Babysit. Babysit uses separate persistent Docker volumes for managed agent state, so its host-side `~/.babysit/sessions` registry is the truthful inventory for `babysit resume`.
 - Treat the Babysit ID as the canonical selector because it restores the agent, workspace, and launch context. Show a captured native agent ID separately; repeated launches of one conversation can legitimately share that native ID.
+
+## Host agent profile isolation
+- Verified against official agent documentation on 2026-08-07.
+- Gemini loads global instructions from `~/.gemini/GEMINI.md`, permits custom context filenames through `context.fileName`, and stores the selected login lane at `security.auth.selectedType`. Isolation must retain only the `security.auth` subtree from host settings so OAuth/API-key selection works without importing context, MCP, tool, model, or UI preferences.
+- OpenCode discovers global rules at `~/.config/opencode/AGENTS.md` and global skills from its own, Claude-compatible, and `~/.agents/skills` locations. Removing the shared `~/.agents` bind and dedicated native globals bind prevents those host definitions from reaching an OpenCode container.
+- Gemini and OpenCode both continue to discover project-local instructions/skills under `/workspace`; `--ignore-host-agents-md` is intentionally host-global isolation, not repository instruction isolation.

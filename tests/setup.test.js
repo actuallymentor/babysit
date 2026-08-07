@@ -7,6 +7,7 @@ import {
     build_claude_settings_tmpfile,
     build_claude_json_tmpfile,
     build_codex_config_tmpdir,
+    build_gemini_settings_tmpfile,
     claude_extra_mounts,
     codex_extra_mounts,
     gemini_extra_mounts,
@@ -66,6 +67,25 @@ describe( `build_claude_settings_tmpfile`, () => {
         expect( settings.statusLine.command ).toBe( `bash /usr/local/bin/statusline.sh` )
 
         rmSync( tmpfile )
+
+    } )
+
+    it( `builds a clean settings file when host preferences are isolated`, () => {
+
+        const host_path = join( dir, `settings.json` )
+        writeFileSync( host_path, JSON.stringify( {
+            model: `opus`,
+            hooks: { PreToolUse: [ { command: `host-hook` } ] },
+        } ) )
+
+        const tmpfile = build_claude_settings_tmpfile( host_path, {
+            include_host_preferences: false,
+        } )
+        const settings = JSON.parse( readFileSync( tmpfile, `utf-8` ) )
+
+        expect( settings.model ).toBeUndefined()
+        expect( settings.hooks ).toBeUndefined()
+        expect( settings.statusLine.command ).toBe( `bash /usr/local/bin/statusline.sh` )
 
     } )
 
@@ -171,6 +191,25 @@ describe( `build_claude_json_tmpfile`, () => {
 
     } )
 
+    it( `builds clean onboarding state when host preferences are isolated`, () => {
+
+        const host_path = join( dir, `.claude.json` )
+        writeFileSync( host_path, JSON.stringify( {
+            oauthAccount: { email: `host@example.com` },
+            projects: { '/workspace': { allowedTools: [ `Bash` ] } },
+        } ) )
+
+        const tmpfile = build_claude_json_tmpfile( host_path, {
+            include_host_preferences: false,
+        } )
+        const parsed = JSON.parse( readFileSync( tmpfile, `utf-8` ) )
+
+        expect( parsed.oauthAccount ).toBeUndefined()
+        expect( parsed.projects[ `/workspace` ].allowedTools ).toEqual( [] )
+        expect( parsed.projects[ `/workspace` ].hasTrustDialogAccepted ).toBe( true )
+
+    } )
+
     it( `does not mutate the host file`, () => {
 
         const host_path = join( dir, `.claude.json` )
@@ -240,6 +279,28 @@ describe( `codex_extra_mounts`, () => {
         expect( provides_user_globals ).toBe( false )
         expect( existsSync( join( codex_home, `AGENTS.md` ) ) ).toBe( false )
 
+        rmSync( codex_home, { recursive: true, force: true } )
+
+    } )
+
+    it( `omits host config and AGENTS.md when preferences are isolated`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-codex-isolated-` ) )
+        const user_globals_path = join( dir, `AGENTS.md` )
+        writeFileSync( user_globals_path, `Use host instructions.\n` )
+
+        const { tmpdir: codex_home, provides_user_globals } = build_codex_config_tmpdir(
+            `[mcp_servers.host]\ncommand = "host-tool"\n`,
+            { user_globals_path, include_host_preferences: false }
+        )
+
+        const config = readFileSync( join( codex_home, `config.toml` ), `utf-8` )
+        expect( provides_user_globals ).toBe( false )
+        expect( existsSync( join( codex_home, `AGENTS.md` ) ) ).toBe( false )
+        expect( config ).not.toContain( `mcp_servers.host` )
+        expect( config ).toContain( `[projects."/workspace"]` )
+
+        rmSync( dir, { recursive: true, force: true } )
         rmSync( codex_home, { recursive: true, force: true } )
 
     } )
@@ -334,6 +395,31 @@ describe( `codex_extra_mounts`, () => {
 } )
 
 describe( `gemini_extra_mounts`, () => {
+
+    it( `retains authentication selection but drops host preferences`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-gemini-settings-` ) )
+        const host_path = join( dir, `settings.json` )
+        writeFileSync( host_path, JSON.stringify( {
+            security: { auth: { selectedType: `oauth-personal` } },
+            context: { fileName: [ `HOST.md` ] },
+            mcpServers: { host: { command: `host-tool` } },
+            ui: { theme: `host-theme` },
+        } ) )
+
+        const tmpfile = build_gemini_settings_tmpfile( host_path, {
+            include_host_preferences: false,
+        } )
+        const parsed = JSON.parse( readFileSync( tmpfile, `utf-8` ) )
+
+        expect( parsed ).toEqual( {
+            security: { auth: { selectedType: `oauth-personal` } },
+        } )
+
+        rmSync( dir, { recursive: true, force: true } )
+        rmSync( tmpfile, { force: true } )
+
+    } )
 
     it( `synthesises a trustedFolders.json with /workspace trusted`, () => {
 

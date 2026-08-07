@@ -158,11 +158,21 @@ Supports `SS`, `MM:SS`, or `HH:MM:SS`. Overrides `idle_timeout_s` per rule.
 | `--sandbox` | no mount | Ephemeral container, no host files |
 | `--mudbox` | read-only mount | Agent can read but not modify files |
 | `--docker` | *(additive)* | Mount the host Docker socket so Docker commands can run from inside the Babysit container |
+| `--ignore-host-agents-md` | *(additive)* | Keep host-global agent instructions, skills, and preferences out of the container; credentials remain available |
 | `--port PORT` | *(additive)* | Publish a host port to the same container port |
 | `--port HOST:CONTAINER` | *(additive)* | Publish a host port to a different container port |
 | `--loop` | *(additive)* | Override `on: idle` with `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" |
 
 Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. The exception is `--sandbox` and `--mudbox` together — they describe contradictory mount strategies, so babysit rejects the combination.
+
+Use `--ignore-host-agents-md` when a session should see the repository's own
+instructions without inheriting your host coding-agent profile. It omits the
+host `~/.agents` directory, native global instruction files such as
+`CLAUDE.md`, global skills, and host model/tool/MCP preferences. Babysit still
+mounts agent and GitHub credentials, retains only the minimal authentication
+and first-run state needed by each CLI, and keeps project-local files under
+`/workspace` available. The setting is saved with the session and restored by
+`babysit resume`.
 
 `--docker` uses Docker-outside-of-Docker: Babysit mounts the host Docker socket,
 sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
@@ -190,6 +200,9 @@ With `--loop`, the idle action is overridden. Babysit looks for instructions in 
 1. `./LOOP.md` in the current directory
 2. `~/.agents/LOOP.md` global fallback
 3. `"Keep going"` hardcoded default
+
+With `--ignore-host-agents-md`, step 2 is intentionally skipped; a project
+`./LOOP.md` still works, otherwise Babysit uses `"Keep going"`.
 
 Use `===` lines in LOOP.md to split into segments executed between idle periods:
 

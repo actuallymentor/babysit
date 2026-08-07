@@ -136,6 +136,27 @@ describe( `host agent auth checks`, () => {
         ] )
     } )
 
+    it( `keeps credentials but isolates host context when the flag is active`, () => {
+        const args = build_docker_auth_check_command_args( get_agent( `claude` ), {
+            prompt: `hello`,
+            workspace: `/tmp/project`,
+            mode: {
+                yolo: true,
+                ignore_host_agents_md: true,
+            },
+            creds_mounts: [ {
+                type: `env`,
+                key: `ANTHROPIC_API_KEY`,
+                value: `test-token`,
+            } ],
+        } )
+
+        expect( args ).toContain( `ANTHROPIC_API_KEY=test-token` )
+        expect( args.some( arg => arg.endsWith( `:/home/node/.agents` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `:/home/node/.claude/CLAUDE.md` ) ) ).toBe( false )
+        expect( args.some( arg => arg.includes( `:/home/node/.claude/skills` ) ) ).toBe( false )
+    } )
+
     it( `builds cleanup commands for Dockerized auth-check containers`, () => {
         const command_args = [
             `sudo`,

@@ -52,6 +52,12 @@ describe( `build_system_prompt`, () => {
         expect( prompt ).toContain( `BABYSIT_HOST_WORKSPACE` )
     } )
 
+    it( `describes host-profile isolation when requested`, () => {
+        const prompt = build_system_prompt( { ignore_host_agents_md: true } )
+        expect( prompt ).toContain( `Host-global coding-agent instructions` )
+        expect( prompt ).toContain( `host credentials are still available` )
+    } )
+
     it( `does not embed sandbox text when sandbox is false`, () => {
         const prompt = build_system_prompt( { yolo: true } )
         expect( prompt ).not.toContain( `AGENT_AUTONOMY_MODE=sandbox` )
@@ -76,11 +82,12 @@ babysit:
 
             const { config } = load_monitor_config( {
                 pwd: dir,
-                modifiers: [ `yolo`, `docker`, `loop` ],
+                modifiers: [ `yolo`, `docker`, `loop`, `ignore-host-agents-md` ],
             } )
 
             expect( config.initial_prompt ).toContain( `AGENT_AUTONOMY_MODE=yolo` )
             expect( config.initial_prompt ).toContain( `Docker-outside-of-Docker is enabled` )
+            expect( config.initial_prompt ).toContain( `Host-global coding-agent instructions` )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
         }

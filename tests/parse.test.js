@@ -116,6 +116,18 @@ describe( `parse_args`, () => {
         expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
     } )
 
+    it( `recognises --ignore-host-agents-md without passing it to the agent`, () => {
+        const cmd = parse_args( [
+            `codex`,
+            `--ignore-host-agents-md`,
+            `--model`,
+            `gpt-5.6-sol`,
+        ] )
+
+        expect( cmd.flags.ignore_host_agents_md ).toBe( true )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `gpt-5.6-sol` ] )
+    } )
+
     it( `normalises --port PORT to a same-port Docker mapping`, () => {
         const cmd = parse_args( [ `codex`, `--port`, `80` ] )
         expect( cmd.flags.ports ).toEqual( [ `80:80` ] )

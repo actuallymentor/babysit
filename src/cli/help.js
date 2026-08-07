@@ -26,6 +26,8 @@ Flags:
   --sandbox       Ephemeral container, no workspace mount
   --mudbox        Read-only workspace mount
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
+  --ignore-host-agents-md
+                  Keep host agent instructions, skills, and preferences out of the container
   --name NAME     Give the session a human-readable name
   --port PORT     Publish host PORT to the same container port
   --port H:C      Publish host port H to container port C
@@ -42,6 +44,7 @@ Examples:
   babysit claude --yolo
   babysit codex --name "feature 1"
   babysit codex --sandbox --loop
+  babysit codex --ignore-host-agents-md
   babysit gemini --mudbox --yolo
   babysit opencode resume abc-123 --yolo
   babysit config --auth-check-agents codex,claude

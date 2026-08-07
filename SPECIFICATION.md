@@ -8,7 +8,7 @@ The core functionality is that when run, `babysit` will:
 - The babysit tmux sessions have their own -L, have history set to 10000, have `set -g mouse on`, and are named `babysit_$(pwd)_<agent_name>_<timestamp>` for easy identification
 - Start a `babysit` docker container that will contain the LLM coding agent cli
 - The container mounts the current PWD in /workspace, so the LLM coding agent cli can read/write files in the current directory
-- Mounts the host ~/.agents to the container ~/.agents in read only
+- By default, mounts the host ~/.agents to the container ~/.agents. With `--ignore-host-agents-md`, host-global agent instructions, skills, loop instructions, and preferences are omitted while credentials remain available.
 - The container installs the dependencies that sir-claudius has in the image as well (look at that dockerfile), you may also add common clis that coding agents like using like fzf
 - Start the coding agent in the container
 - Importantly, the container has passwordlless sudo, and has all coding clis preinstalled, with the host credentials for these agents passed through in a platform-specific manner (we support OSX and Ubuntu Linux)
@@ -69,7 +69,7 @@ babysit:
 The coding agent is provided this system prompt:
 
 ```
-You are running inside a Docker container — an isolated sandbox built for coding agents. You have passwordless sudo for any operation that needs root, this is safe for you to use at will. Your workspace is /workspace (bind-mounted from the host).
+You are running inside a Docker container — an isolated sandbox built for coding agents. You have passwordless sudo for any operation that needs root, this is safe for you to use at will. Your workspace is /workspace (bind-mounted from the host). Always read ~/.agents/AGENTS.md if it exists.
 
 Do NOT add Co-Authored-By lines to git commit messages. The git author identity is already configured via environment variables.
 ```
@@ -92,11 +92,18 @@ In yolo mode this is APPENDED:
 You are running in YOLO mode (AGENT_AUTONOMY_MODE=yolo). The environment variable AGENT_AUTONOMY_MODE is set to 'yolo'. In this mode you are expected to act with maximum autonomy — fulfill the user's intent with as little interaction as possible. Do not ask for confirmation before taking actions. Prefer doing over asking. If a task is ambiguous, make a reasonable choice and proceed. Commit your work without confirmation.
 ```
 
+With `--ignore-host-agents-md` this is APPENDED:
+
+```
+Host-global coding-agent instructions, skills, and preferences are intentionally unavailable in this session. Project-local instructions inside /workspace still apply, and host credentials are still available for authentication.
+```
+
 ## Feature flags:
 
 `--yolo` add --dangerously-skip-permissions or equivalent flag to the coding cli, also inject AGENT_AUTONOMY_MODE='yolo' into the container env. Also passes adds the following to the system prompt of the agent: `
 `--sandbox` do not mount any host directory into the container, the fs inside the container is ephermal
 `--mudbox` mount the current pwd as read only, so the coding agent can read files but not write them
+`--ignore-host-agents-md` omit host-global agent instruction files, skills, loop instructions, and preferences while retaining credentials, minimal authentication state, and project-local instructions under `/workspace`
 `--loop` overrides the `on: idle` in the babysit.yaml to run `./LOOP.md` if it exists, otherwise `~/.agents/LOOP.md` if it exists, otherwise it types "Keep going" into the session. Example `LOOP.md`, note that === lines denote "wait for idle" within the `LOOP.md` execution:
 
 ```
@@ -112,6 +119,7 @@ Check if the specification is fully implemented
 `babysit claude --yolo` - starts a claude session, sets AGENT_AUTONOMY_MODE to yolo, and configures the system prompt and sets "dangerously skip permissions" or equivalent for maximum agent autonomy.
 `babysit codex --sandbox --loop` - starts a codex session in sandbox mode, so no host files are mounted and the agent is fully isolated, adds mudbox info to the system prompt. Also configures the babysit instructions to run either `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" every time the agent is idle.
 `babysit codex --name "feature 1"` - starts a named session. The name is shown by `babysit list` and can be used with `babysit open "feature 1"`.
+`babysit codex --ignore-host-agents-md` - starts a codex session without host-global agent instructions, skills, or preferences. Host credentials remain mounted, and project-local instructions inside `/workspace` still apply.
 `babysit gemini --mudbox --yolo` - starts a gemini session in mudbox mode, so the current directory is mounted read-only and the agent can explore files but not modify them. Also sets AGENT_AUTONOMY_MODE to yolo, sets system prompt accordingly, and sets dangerourly skip permissions or equivalent for maximum agent autonomy.
 `babysit opencode resume xxxx-xxxx-xxxx-xxxx --yolo` - resumes a opencode session with the given id, in yolo mode (AGENT_AUTONOMY_MODE=yolo, system prompt configured accordingly, and maximum agent autonomy permissions enabled).
 
