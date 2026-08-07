@@ -9,6 +9,7 @@ import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
+import { list_credential_recoveries } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
 import { private_credential_tmpdir } from '../utils/tmpfile.js'
 import {
@@ -474,15 +475,20 @@ export const cmd_start = async ( cmd ) => {
     const session_display_name = resolve_session_display_name( flags, stored_resume_session )
 
     ensure_dirs()
-    const protected_credential_paths = list_stored_sessions()
+    const protected_session_credential_paths = list_stored_sessions()
         .flatMap( session => [
             session.creds_tmpfile,
             ...Object.values( session.creds_tmpfiles || {} ),
         ] )
         .map( private_credential_tmpdir )
         .filter( Boolean )
+    const protected_recovery_paths = list_credential_recoveries()
+        .flatMap( recovery => recovery.sync_paths )
     cleanup_stale_ephemeral_credential_mounts( {
-        protected_paths: protected_credential_paths,
+        protected_paths: [
+            ...protected_session_credential_paths,
+            ...protected_recovery_paths,
+        ],
     } )
 
     // Build mode descriptor
@@ -657,6 +663,13 @@ export const cmd_start = async ( cmd ) => {
             docker_socket_path,
         } )
 
+        // Connect before the tmux pane can start Docker. A very fast agent may
+        // refresh and exit before await_started() observes a running state; the
+        // failure cleanup still needs a transport for its final credential pull.
+        if( creds_sync && prepared_launch.container_id ) {
+            creds_sync.connect( prepared_launch.container_id )
+        }
+
         const { pipe_started: started_pipe } = await create_session( session_name, prepared_launch.command, {
             log_path,
             startup_log_path: log_path ? null : diagnostic_log_path,
@@ -665,10 +678,6 @@ export const cmd_start = async ( cmd ) => {
 
         if( !await prepared_launch.await_started() ) {
             throw new Error( `Docker container did not reach a running state after launch` )
-        }
-
-        if( creds_sync && prepared_launch.container_id ) {
-            creds_sync.connect( prepared_launch.container_id )
         }
 
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
@@ -718,6 +727,22 @@ export const cmd_start = async ( cmd ) => {
             diagnostic_log_path,
         } )
 
+        // End the foreground controller before the monitor starts. Awaiting its
+        // final pull gives the two processes an exclusive handoff instead of
+        // letting independent Docker-copy queues race on the same sync files.
+        // Persist the resulting hashes so the monitor recognises the refreshed
+        // host/tmpfile pair as its starting point.
+        let monitor_sync_baselines = creds_sync_baselines
+        if( creds_sync ) {
+            await creds_sync.stop()
+            monitor_sync_baselines = {
+                ...creds_sync_baselines,
+                ...creds_sync.baselines(),
+            }
+        }
+        const monitor_sync_baseline = monitor_sync_baselines[ agent.name ]
+            || creds_sync_baseline
+
         // Save durable ownership metadata before spawning the monitor. The
         // prepared launch keeps its signal/error cleanup until the detached
         // monitor process has acknowledged that it spawned successfully.
@@ -733,8 +758,8 @@ export const cmd_start = async ( cmd ) => {
             ports: flags.ports || [],
             creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
             creds_tmpfiles,
-            creds_sync_baseline,
-            creds_sync_baselines,
+            creds_sync_baseline: monitor_sync_baseline,
+            creds_sync_baselines: monitor_sync_baselines,
             container_id: prepared_launch.container_id,
             started_at: new Date().toISOString(),
         }
@@ -752,15 +777,6 @@ export const cmd_start = async ( cmd ) => {
     }
 
     log.info( `Session started: ${ agent.name } (${ babysit_id })` )
-
-    // Hand the foreground's credential sync over to the detached monitor.
-    // Both sync intervals would race on the same tmpfile if we left this one
-    // running; the monitor's sync started inside the daemon a moment ago.
-    // stop() runs one final async flush. It is deliberately fire-and-forget:
-    // if a fast-starting agent already refreshed the tmpfile, either this
-    // flush or the monitor's baseline-aware sync will push it back to host.
-    // Awaiting here would only delay attaching the user's terminal.
-    if( creds_sync ) creds_sync.stop().catch( e => log.debug( `Foreground sync stop: ${ e.message }` ) )
 
     // Hand the user's terminal over to tmux. Blocks until they detach
     // (Ctrl+B d) or the agent exits and the session terminates.

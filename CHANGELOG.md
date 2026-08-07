@@ -15,7 +15,10 @@
   live-session isolation upgrades, and removes stopped containers only after
   the monitor's final credential flush. Failed probe/startup flushes now retain
   recoverable containers and sync files, while serialized sync checks prevent a
-  slow Docker pull from overwriting a concurrent host reauthentication.
+  slow Docker pull from overwriting a concurrent host reauthentication. The
+  foreground connects before container start and finishes its final pull before
+  the monitor takes ownership; durable recovery markers protect failed launches,
+  while signal cleanup removes containers that contain only static secrets.
 
 ## 0.26.2 — 2026-08-07
 

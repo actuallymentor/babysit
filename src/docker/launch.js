@@ -3,8 +3,12 @@ import { tmpdir } from 'os'
 import { resolve, sep } from 'path'
 
 import { cleanup_ephemeral_credential_mounts } from '../credentials/index.js'
+import {
+    clear_credential_recovery,
+    register_credential_recovery,
+} from '../credentials/recovery.js'
 import { get_extra_mounts } from '../agents/setup.js'
-import { build_private_tmpfile } from '../utils/tmpfile.js'
+import { build_private_tmpfile, private_credential_tmpdir } from '../utils/tmpfile.js'
 import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { normalise_local_sync_file } from './file_transport.js'
@@ -196,6 +200,8 @@ const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
 export const prepare_docker_launch = async ( options, {
     run_command = run,
     cleanup_credentials = cleanup_ephemeral_credential_mounts,
+    clear_recovery = clear_credential_recovery,
+    register_recovery = register_credential_recovery,
     signal_target = process,
     kill_process = process.kill.bind( process ),
     build_private_file = build_private_tmpfile,
@@ -237,6 +243,12 @@ export const prepare_docker_launch = async ( options, {
     let handed_off = false
     let staging_complete = false
     let abort_task = null
+    let recovery_id = null
+
+    const synced_files = planned_options.creds_mounts.filter( mount => mount.type === `synced_file` )
+    const recoverable_sync_paths = synced_files.map(
+        mount => private_credential_tmpdir( mount.source ) || mount.source
+    )
 
     const run_docker = async ( args, timeout_ms ) => {
         const task = Promise.resolve( run_command(
@@ -265,7 +277,7 @@ export const prepare_docker_launch = async ( options, {
 
     const discard_container = async ( options = {} ) => {
         const reference = container_reference( options )
-        if( !reference ) return
+        if( !reference ) return true
 
         try {
             await run_command(
@@ -274,8 +286,10 @@ export const prepare_docker_launch = async ( options, {
                 {},
                 DOCKER_CLEANUP_TIMEOUT_MS
             )
+            return true
         } catch ( error ) {
             log.warn( `Failed to remove prepared Docker container ${ reference }: ${ error.message }` )
+            return false
         }
     }
 
@@ -311,7 +325,8 @@ export const prepare_docker_launch = async ( options, {
 
             remove_signal_handlers( signal_target, signal_handlers )
             cleanup_credentials( copy_mounts )
-            await discard_container( { include_attempted_name } )
+            const discarded = await discard_container( { include_attempted_name } )
+            if( discarded ) clear_recovery( recovery_id )
         } )()
 
         return abort_task
@@ -320,6 +335,7 @@ export const prepare_docker_launch = async ( options, {
     const handoff = () => {
         handed_off = true
         remove_signal_handlers( signal_target, signal_handlers )
+        clear_recovery( recovery_id )
     }
 
     for( const signal of LAUNCH_SIGNALS ) {
@@ -333,7 +349,7 @@ export const prepare_docker_launch = async ( options, {
                 // Stop and retain it for recovery instead of deleting the only
                 // potentially valid copy. Earlier create/copy interruptions are
                 // safe to abort because agent code has not run yet.
-                if( staging_complete ) {
+                if( staging_complete && synced_files.length ) {
                     const retained_container = await retain( { stop: true } )
                     log.warn(
                         `Launch interrupted after credential staging; retained Docker container ${ retained_container } and private sync files for recovery.`
@@ -375,18 +391,21 @@ export const prepare_docker_launch = async ( options, {
             throw new Error( `Could not remove a private launch transport` )
         }
 
+        recovery_id = register_recovery( {
+            container_id,
+            sync_paths: recoverable_sync_paths,
+        } )
         staging_complete = true
 
         const command_args = [ ...prefix, `start`, `-ai`, container_id ]
 
         const pull_synced_files = async ( { target = null } = {} ) => {
-            const synced_files = planned_options.creds_mounts
-                .filter( mount => mount.type === `synced_file` )
+            const selected_synced_files = synced_files
                 .filter( mount => !target || mount.target === target )
 
             // Pull sequentially so active_command always identifies the one
             // Docker client that abort() must await before cleanup.
-            for( const mount of synced_files ) {
+            for( const mount of selected_synced_files ) {
                 await run_docker(
                     [ ...docker_prefix_args, `cp`, `${ container_id }:${ mount.target }`, mount.source ],
                     DOCKER_COPY_TIMEOUT_MS

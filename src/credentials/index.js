@@ -113,17 +113,26 @@ const get_credential_agents = ( active_agent ) => [
 /**
  * Stop every active credential sync controller.
  * @param {Object[]} syncs - Individual sync controllers
+ * @param {Object} [options]
+ * @param {Function} [options.create_transport=create_docker_file_transport] - Docker transport factory
  * @returns {Object|null} Aggregate sync controller or null when no sync exists
  */
-export const aggregate_syncs = ( syncs ) => {
+export const aggregate_syncs = ( syncs, {
+    create_transport = create_docker_file_transport,
+} = {} ) => {
 
     const active_syncs = syncs.filter( Boolean )
     if( !active_syncs.length ) return null
 
     return {
+        baselines: () => Object.fromEntries(
+            active_syncs
+                .filter( ( { controller, name } ) => name && controller.baseline )
+                .map( ( { controller, name } ) => [ name, controller.baseline() ] )
+        ),
         connect: container_id => {
             active_syncs.forEach( ( { controller, target } ) => {
-                controller.set_transport( create_docker_file_transport( container_id, target ) )
+                controller.set_transport( create_transport( container_id, target ) )
             } )
         },
         cleanup: () => cleanup_ephemeral_credential_mounts(
@@ -206,6 +215,7 @@ export const setup_credentials = async ( agent, options = {} ) => {
         if( result.sync ) {
             syncs.push( {
                 controller: result.sync,
+                name: credential_agent.name,
                 target: credential_agent.container_paths.creds,
                 cleanup_path: result.cleanup_path,
             } )

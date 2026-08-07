@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { get_agent } from '../src/agents/index.js'
 import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
 import { setup_linux_credentials } from '../src/credentials/linux.js'
+import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
 
 // Regression suite for the monitor-tmpfile fix.
 //
@@ -21,6 +22,51 @@ import { setup_linux_credentials } from '../src/credentials/linux.js'
 // local file and Docker container.
 
 describe( `aggregate credential sync`, () => {
+
+    it( `pulls a fast-exit rotation after the launch transport connects`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-fast-exit-sync-test-` ) )
+        const source = join( directory, `host-auth.json` )
+        const tmpfile = join( directory, `sync-auth.json` )
+        const initial = `{"refresh_token":"initial"}`
+        const rotated = `{"refresh_token":"rotated-before-running"}`
+
+        try {
+            writeFileSync( source, initial )
+            writeFileSync( tmpfile, initial )
+
+            const controller = start_credential_sync(
+                async () => readFileSync( source, `utf-8` ),
+                tmpfile,
+                async content => writeFileSync( source, content )
+            )
+            const sync = aggregate_syncs( [ {
+                controller,
+                name: `codex`,
+                target: `/home/node/.codex/auth.json`,
+            } ], {
+                create_transport: () => ( {
+                    pull: async path => writeFileSync( path, rotated ),
+                    push: async () => {},
+                } ),
+            } )
+
+            // cmd_start performs this connection before it starts the tmux
+            // pane, so stop() can still pull from a container that exits too
+            // quickly for await_started() to observe it running.
+            sync.connect( `container-id` )
+            await sync.stop()
+
+            expect( readFileSync( source, `utf-8` ) ).toBe( rotated )
+            expect( sync.baselines().codex ).toEqual( {
+                baseline_source_hash: hash_credential_content( rotated ),
+                baseline_tmpfile_hash: hash_credential_content( rotated ),
+            } )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
 
     it( `waits for every final flush before reporting a failure`, async () => {
 
@@ -278,15 +324,14 @@ describe( `setup_credentials multi-agent capture`, () => {
     it( `monitor handoff reuses every foreground tmpfile without creating new mounts`, async () => {
 
         const foreground = await setup_credentials( get_agent( `codex` ) )
+        await foreground.sync.stop()
         const monitor = await setup_credentials( get_agent( `codex` ), {
             existing_tmpfiles: foreground.tmpfiles,
-            sync_baselines: foreground.sync_baselines,
+            sync_baselines: foreground.sync.baselines(),
         } )
 
         expect( monitor.mounts.find( mount => mount.type === `synced_file` ) ).toBeUndefined()
         expect( monitor.tmpfiles ).toEqual( foreground.tmpfiles )
-
-        await foreground.sync.stop()
 
         writeFileSync( foreground.tmpfiles.claude, `{"agent":"claude","refresh_token":"rotated"}` )
         await monitor.sync.stop()
