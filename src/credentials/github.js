@@ -100,12 +100,14 @@ export const read_host_gh_token = ( {
  *
  * @param {Object} [options]
  * @param {Object} [options.env=process.env] - Environment to inspect
+ * @param {boolean} [options.include_host_preferences=true] - Mount the host gh config directory
  * @param {Function} [options.exists_sync=existsSync] - Test seam for config dir
  * @param {Function} [options.spawn_sync=spawnSync] - Test seam for gh token lookup
  * @returns {Array} Docker credential mount/env specs
  */
 export const setup_github_cli_credentials = ( {
     env = process.env,
+    include_host_preferences = true,
     exists_sync = existsSync,
     spawn_sync = spawnSync,
 } = {} ) => {
@@ -113,7 +115,9 @@ export const setup_github_cli_credentials = ( {
     const mounts = []
     const config_dir = resolve_host_gh_config_dir( env )
 
-    if( exists_sync( config_dir ) && can_mount_host_gh_config_dir( config_dir, env ) ) {
+    if( include_host_preferences
+        && exists_sync( config_dir )
+        && can_mount_host_gh_config_dir( config_dir, env ) ) {
         mounts.push( {
             type: `volume`,
             source: config_dir,

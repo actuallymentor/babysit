@@ -172,7 +172,9 @@ host `~/.agents` directory, native global instruction files such as
 mounts agent and GitHub credentials, retains only the minimal authentication
 and first-run state needed by each CLI, and keeps project-local files under
 `/workspace` available. The setting is saved with the session and restored by
-`babysit resume`.
+both `babysit resume` forms. Executable host setup from `~/.babysitrc` is also
+skipped; credentials must come from the supported agent files, keychains, or
+environment variables when isolation is enabled.
 
 `--docker` uses Docker-outside-of-Docker: Babysit mounts the host Docker socket,
 sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
@@ -248,7 +250,9 @@ babysit config --auth-check-agents none
 
 If `~/.babysitrc` exists, Babysit bind-mounts it read-only into the container
 and sources it as the `node` user immediately before launching the coding
-agent. Use it for host-local environment setup:
+agent. Isolated sessions started with `--ignore-host-agents-md` skip this file
+because arbitrary shell setup cannot be separated safely into credentials and
+preferences. Use it for host-local environment setup:
 
 ```bash
 OPENAI_API_KEY=...

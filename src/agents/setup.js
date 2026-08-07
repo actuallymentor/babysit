@@ -326,18 +326,24 @@ export const codex_extra_mounts = ( {
  * launch, ignoring the OAuth tokens it has on disk. trustedFolders.json
  * needs /workspace to skip the trust dialog.
  *
+ * @param {Object} [options]
+ * @param {boolean} [options.include_host_preferences=true] - Copy non-authentication host state
+ * @param {string} [options.gemini_dir] - Host Gemini directory, injectable for tests
  * @returns {{ host: string, container: string }[]}
  */
 export const gemini_extra_mounts = ( {
     include_host_preferences = true,
+    gemini_dir = join( home, `.gemini` ),
 } = {} ) => {
 
     const mounts = []
-    const gemini_dir = join( home, `.gemini` )
 
-    // Account and installation state are part of Gemini's login handshake.
-    // Keep them with credentials even when user preferences are isolated.
-    const passthrough = [ `google_accounts.json`, `installation_id`, `state.json` ]
+    // The account cache participates in OAuth account selection. Installation
+    // identity and persistent UI state are host preferences, so only copy them
+    // when the user has not requested profile isolation.
+    const passthrough = include_host_preferences
+        ? [ `google_accounts.json`, `installation_id`, `state.json` ]
+        : [ `google_accounts.json` ]
     for( const file of passthrough ) {
         const tmp = copy_host_file_to_tmpfile( join( gemini_dir, file ), `gemini` )
         if( tmp ) mounts.push( { host: tmp, container: `/home/node/.gemini/${ file }` } )

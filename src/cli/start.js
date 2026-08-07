@@ -95,6 +95,19 @@ export const resolve_session_display_name = ( flags = {}, stored_resume_session 
     flags.name || stored_resume_session?.name || null
 
 /**
+ * Keep host-profile isolation sticky when an explicit-agent resume resolves
+ * to Babysit metadata. Fresh command-line flags still work for native ids.
+ * @param {Object} flags - Parsed command flags
+ * @param {Object|null} stored_resume_session - Stored explicit-agent resume metadata
+ * @returns {boolean} Whether host agent context must stay isolated
+ */
+export const should_ignore_host_agent_context = ( flags = {}, stored_resume_session = null ) =>
+    Boolean(
+        flags.ignore_host_agents_md
+        || stored_resume_session?.modifiers?.includes( `ignore-host-agents-md` )
+    )
+
+/**
  * Resolve explicit agent resume targets.
  * `babysit <agent> resume <babysit_id>` should translate the Babysit metadata
  * id before it reaches the agent CLI. If there is no stored record, treat the
@@ -420,7 +433,7 @@ export const cmd_start = async ( cmd ) => {
         sandbox: flags.sandbox,
         mudbox: flags.mudbox,
         docker: flags.docker,
-        ignore_host_agents_md: flags.ignore_host_agents_md,
+        ignore_host_agents_md: should_ignore_host_agent_context( flags, stored_resume_session ),
     }
 
     const docker_socket_path = mode.docker ? resolve_docker_socket_path() : null
@@ -463,7 +476,9 @@ export const cmd_start = async ( cmd ) => {
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
     } = await setup_credentials( agent )
-    const github_cli_mounts = setup_github_cli_credentials()
+    const github_cli_mounts = setup_github_cli_credentials( {
+        include_host_preferences: !mode.ignore_host_agents_md,
+    } )
     const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts ]
 
     const auth_agents = select_host_auth_check_agents()
@@ -516,7 +531,7 @@ export const cmd_start = async ( cmd ) => {
     // re-apply this when it boots, but doing it here too is harmless and
     // keeps the rules object internally consistent during the foreground.
     if( flags.loop ) apply_loop( rules, workspace, {
-        include_global_loop: !flags.ignore_host_agents_md,
+        include_global_loop: !mode.ignore_host_agents_md,
     } )
 
     // Build the launch prompt that babysit types into the agent's TUI.

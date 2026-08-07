@@ -49,6 +49,21 @@ describe( `GitHub CLI credential passthrough`, () => {
 
     } )
 
+    it( `extracts only the token when host preferences are isolated`, () => {
+
+        const mounts = setup_github_cli_credentials( {
+            env: { HOME: `/home/alice` },
+            include_host_preferences: false,
+            exists_sync: path => path === `/home/alice/.config/gh`,
+            spawn_sync: () => ( { status: 0, stdout: `host-token\n` } ),
+        } )
+
+        expect( mounts ).toEqual( [
+            { type: `env`, key: `GH_TOKEN`, value: `host-token` },
+        ] )
+
+    } )
+
     it( `detects gh config dirs that nested Docker can safely bind`, () => {
 
         expect( can_mount_host_gh_config_dir( `/home/alice/.config/gh`, {} ) ).toBe( true )
