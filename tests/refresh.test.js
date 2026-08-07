@@ -140,4 +140,74 @@ describe( `start_credential_sync`, () => {
 
     } )
 
+    it( `pulls Docker-staged credential rotations before writing the host`, async () => {
+
+        writeFileSync( host_path, `{"token":"X"}` )
+        writeFileSync( tmpfile_path, `{"token":"X"}` )
+
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path,
+            async content => writeFileSync( host_path, content )
+        )
+
+        sync.set_transport( {
+            pull: async path => writeFileSync( path, `{"token":"Y"}` ),
+            push: async () => {
+                throw new Error( `unexpected push` )
+            },
+        } )
+
+        await sync.stop()
+
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"Y"}` )
+
+    } )
+
+    it( `pushes a deliberate host reauthentication before pulling container state`, async () => {
+
+        writeFileSync( host_path, `{"token":"X"}` )
+        writeFileSync( tmpfile_path, `{"token":"X"}` )
+
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path
+        )
+        const calls = []
+
+        sync.set_transport( {
+            pull: async () => calls.push( `pull` ),
+            push: async path => calls.push( `push:${ readFileSync( path, `utf-8` ) }` ),
+        } )
+
+        writeFileSync( host_path, `{"token":"Z"}` )
+        await sync.stop()
+
+        expect( calls ).toEqual( [ `push:{"token":"Z"}` ] )
+
+    } )
+
+    it( `propagates a failed final Docker pull so recovery copies can be retained`, async () => {
+
+        writeFileSync( host_path, `{"token":"X"}` )
+        writeFileSync( tmpfile_path, `{"token":"X"}` )
+
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path,
+            async content => writeFileSync( host_path, content )
+        )
+        sync.set_transport( {
+            pull: async () => {
+                throw new Error( `temporary docker failure` )
+            },
+            push: async () => {},
+        } )
+
+        await expect( sync.stop() ).rejects.toThrow( `temporary docker failure` )
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"X"}` )
+        expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( `{"token":"X"}` )
+
+    } )
+
 } )

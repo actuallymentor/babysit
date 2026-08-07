@@ -222,6 +222,28 @@ describe( `host agent auth checks`, () => {
         expect( result.reason ).toBe( `login required` )
     } )
 
+    it( `pulls the probed agent credential before removing a staged auth container`, async () => {
+
+        const calls = []
+        const result = await run_host_agent_auth_check( get_agent( `codex` ), {
+            prompt: `hello`,
+            spawn_fn: fake_spawn(),
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                pull_synced_files: async options => calls.push( [ `pull`, options ] ),
+                abort: async () => calls.push( [ `abort` ] ),
+            } ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.authenticated ).toBe( true )
+        expect( calls ).toEqual( [
+            [ `pull`, { target: `/home/node/.codex/auth.json` } ],
+            [ `abort` ],
+        ] )
+
+    } )
+
     it( `requires the prompt response to include ok`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
             prompt: `hello`,

@@ -147,12 +147,16 @@ export const resolve_resume_target = ( session ) => {
  * @param {Function} [options.load_session_fn=load_session] - Session metadata loader
  * @param {Function} [options.list_stored_sessions_fn=list_stored_sessions] - Session history loader
  * @param {Function} [options.print_sessions=print_resumable_sessions_table] - Session history renderer
+ * @param {Function} [options.has_session_fn=has_session] - Active tmux session check
+ * @param {Function} [options.open_session=cmd_open] - Active session attach delegate
  */
 export const cmd_resume = async ( cmd, {
     start = cmd_start,
     load_session_fn = load_session,
     list_stored_sessions_fn = list_stored_sessions,
     print_sessions = print_resumable_sessions_table,
+    has_session_fn = has_session,
+    open_session = cmd_open,
 } = {} ) => {
 
     const { session_id, flags = {}, passthrough = [] } = cmd
@@ -167,10 +171,21 @@ export const cmd_resume = async ( cmd, {
 
     if( session ) {
 
-        // If tmux session is still alive, just attach
-        if( await has_session( session.tmux_session ) ) {
+        const merged_flags = merge_resume_flags( session.modifiers, flags, session )
+
+        // A live container cannot gain a stricter mount boundary after it has
+        // started. Refuse the attach instead of silently ignoring an isolation
+        // upgrade that the user explicitly requested.
+        if( await has_session_fn( session.tmux_session ) ) {
+            const was_isolated = session.modifiers?.includes( `ignore-host-agents-md` )
+            if( merged_flags.ignore_host_agents_md && !was_isolated ) {
+                throw new Error(
+                    `--ignore-host-agents-md cannot be applied to an already-running session; exit it first, then resume it.`
+                )
+            }
+
             log.info( `Session still active, attaching...` )
-            await cmd_open( { session_id: session.tmux_session } )
+            await open_session( { session_id: session.tmux_session } )
             return
         }
 
@@ -178,8 +193,6 @@ export const cmd_resume = async ( cmd, {
         // Start from the stored modifiers, then layer on any explicit user flags
         // so the user can add --loop or --yolo when resuming an older session.
         log.info( `Resuming ${ session.agent } session: ${ session_id }` )
-
-        const merged_flags = merge_resume_flags( session.modifiers, flags, session )
 
         // chdir to the session's original working directory so cmd_start picks up
         // the right babysit.yaml and resolves cwd-relative paths (./IDLE.md,

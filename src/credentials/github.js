@@ -232,12 +232,34 @@ export const setup_github_cli_credentials = ( {
     if( env.GH_HOST ) mounts.push( { type: `env`, key: `GH_HOST`, value: env.GH_HOST } )
 
     const has_sanitised_config = sanitised_profile_mounts.length > 0
-    if( !include_host_preferences && has_sanitised_config ) {
-        log.info( `GitHub CLI authentication loaded from host gh` )
-        return mounts
+    const direct_token_mounts = env_token_mounts( env )
+
+    if( !include_host_preferences ) {
+        const private_token_mounts = direct_token_mounts.map( mount => ( {
+            ...mount,
+            type: `secret_env`,
+        } ) )
+
+        if( has_sanitised_config ) {
+            log.info( `GitHub CLI authentication loaded from host gh` )
+            return [ ...mounts, ...private_token_mounts ]
+        }
+
+        const expected_token_key = token_key_for_host( env.GH_HOST )
+        const has_direct_token_for_host = private_token_mounts.some(
+            ( { key } ) => key === expected_token_key
+        )
+        if( has_direct_token_for_host ) return [ ...mounts, ...private_token_mounts ]
+
+        const fallback_token = read_host_gh_token( { env, spawn_sync } )
+        if( fallback_token ) {
+            log.info( `GitHub CLI authentication loaded from host gh` )
+            mounts.push( { ...fallback_token, type: `secret_env` } )
+        }
+
+        return [ ...mounts, ...private_token_mounts ]
     }
 
-    const direct_token_mounts = env_token_mounts( env )
     const expected_token_key = token_key_for_host( env.GH_HOST )
     const has_direct_token_for_host = direct_token_mounts.some( ( { key } ) => key === expected_token_key )
     if( has_direct_token_for_host ) return [ ...mounts, ...direct_token_mounts ]

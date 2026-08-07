@@ -4,6 +4,7 @@ import { createInterface } from 'readline/promises'
 import { strip_ansi } from '../babysit/matcher.js'
 import { read_babysit_config } from '../babysit/config.js'
 import { build_docker_command_args } from '../docker/run.js'
+import { prepare_docker_launch } from '../docker/launch.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
 
 export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
@@ -99,9 +100,9 @@ export const answered_ok = ( output = `` ) => /^ok$/i.test( last_nonempty_line( 
  * @param {Object[]} [options.creds_mounts=[]] - Credential mounts/env from setup_credentials
  * @param {Object} [options.config={ isolate_dependencies: false }] - Babysit config
  * @param {Object} [options.extra_env={}] - Extra environment variables
- * @returns {string[]|null} Docker argv, or null when the adapter cannot be checked
+ * @returns {Object|null} Docker launch options, or null when the adapter cannot be checked
  */
-export const build_docker_auth_check_command_args = ( agent, {
+const build_docker_auth_check_options = ( agent, {
     prompt = build_host_auth_prompt(),
     workspace = process.cwd(),
     mode = {},
@@ -121,7 +122,7 @@ export const build_docker_auth_check_command_args = ( agent, {
         docker: false,
     }
 
-    return build_docker_command_args( {
+    return {
         agent,
         workspace,
         mode: auth_mode,
@@ -145,7 +146,21 @@ export const build_docker_auth_check_command_args = ( agent, {
         include_loop_deadline: false,
         include_agent_state: false,
         agent_command: [ agent.bin, ...auth_args ],
-    } )
+    }
+
+}
+
+/**
+ * Build a direct Docker auth-check argv. The real runner routes the same
+ * options through prepare_docker_launch so staged credentials are available.
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options] - Auth-check launch options
+ * @returns {string[]|null} Docker argv, or null when no check is declared
+ */
+export const build_docker_auth_check_command_args = ( agent, options = {} ) => {
+
+    const docker_options = build_docker_auth_check_options( agent, options )
+    return docker_options ? build_docker_command_args( docker_options ) : null
 
 }
 
@@ -195,6 +210,7 @@ export const build_docker_auth_check_cleanup_command_args = ( command_args = [] 
  * @param {Object} [options.extra_env={}] - Extra environment variables
  * @param {Function} [options.spawn_fn=spawn] - Spawn helper for tests
  * @param {Function} [options.cleanup_spawn_fn=spawn] - Spawn helper for timeout cleanup
+ * @param {Function} [options.prepare_launch=prepare_docker_launch] - Staged launch builder
  * @param {number} [options.timeout_ms=90000] - Max wait before treating the agent as unauthenticated
  * @param {number} [options.kill_grace_ms=1500] - Delay between SIGTERM and SIGKILL on timeout
  * @returns {Promise<{ name: string, authenticated: boolean, reason?: string }>}
@@ -210,9 +226,10 @@ export const run_host_agent_auth_check = async ( agent, {
     cleanup_spawn_fn = spawn,
     timeout_ms = HOST_AUTH_CHECK_TIMEOUT_MS,
     kill_grace_ms = HOST_AUTH_CHECK_KILL_GRACE_MS,
-} = {} ) => new Promise( resolve => {
+    prepare_launch = prepare_docker_launch,
+} = {} ) => {
 
-    const command_args = build_docker_auth_check_command_args( agent, {
+    const docker_options = build_docker_auth_check_options( agent, {
         prompt,
         workspace,
         mode,
@@ -220,109 +237,156 @@ export const run_host_agent_auth_check = async ( agent, {
         config,
         extra_env,
     } )
-    if( !command_args ) {
-        resolve( {
+    if( !docker_options ) {
+        return {
             name: agent?.name || `unknown`,
             authenticated: false,
             reason: `missing auth check command`,
-        } )
-        return
+        }
     }
 
-    const [ cmd, ...args ] = command_args
-    const cleanup_command_args = build_docker_auth_check_cleanup_command_args( command_args )
-    const child = spawn_fn( cmd, args, {
-        stdio: [ `ignore`, `pipe`, `pipe` ],
-        env: {
-            ...process.env,
-            NO_COLOR: `1`,
-        },
-    } )
+    let prepared_launch
+    try {
+        prepared_launch = await prepare_launch( docker_options )
+    } catch ( error ) {
+        return {
+            name: agent?.name || `unknown`,
+            authenticated: false,
+            reason: error.message,
+        }
+    }
 
-    let stdout = ``
-    let stderr = ``
-    let settled = false
-    let timeout
-    let kill_timeout
+    const { command_args } = prepared_launch
 
-    const current_output = () => strip_ansi( stdout ).trim()
-    const clear_kill_timeout = () => clearTimeout( kill_timeout )
+    return new Promise( resolve => {
 
-    const cleanup_timed_out_container = () => {
-
-        if( !cleanup_command_args ) return
-
-        const [ cleanup_cmd, ...cleanup_args ] = cleanup_command_args
-        const cleanup_child = cleanup_spawn_fn( cleanup_cmd, cleanup_args, {
-            stdio: `ignore`,
+        const [ cmd, ...args ] = command_args
+        const cleanup_command_args = build_docker_auth_check_cleanup_command_args( command_args )
+        const child = spawn_fn( cmd, args, {
+            stdio: [ `ignore`, `pipe`, `pipe` ],
             env: {
                 ...process.env,
                 NO_COLOR: `1`,
             },
         } )
 
-        cleanup_child?.on?.( `error`, () => {} )
-        cleanup_child?.unref?.()
+        let stdout = ``
+        let stderr = ``
+        let settled = false
+        let timeout
+        let kill_timeout
+        let timed_out = false
+        let finalise_task = null
 
-    }
+        const current_output = () => strip_ansi( stdout ).trim()
+        const clear_kill_timeout = () => clearTimeout( kill_timeout )
 
-    const finish = ( result, { keep_kill_timeout = false } = {} ) => {
-        if( settled ) return
+        const cleanup_timed_out_container = () => {
 
-        settled = true
-        clearTimeout( timeout )
-        if( !keep_kill_timeout ) clear_kill_timeout()
-        resolve( result )
-    }
+            if( !cleanup_command_args ) return
 
-    timeout = setTimeout( () => {
-        if( typeof child.kill === `function` ) child.kill( `SIGTERM` )
-        kill_timeout = setTimeout( () => {
-            if( typeof child.kill === `function` ) child.kill( `SIGKILL` )
-            cleanup_timed_out_container()
-        }, kill_grace_ms )
+            const [ cleanup_cmd, ...cleanup_args ] = cleanup_command_args
+            const cleanup_child = cleanup_spawn_fn( cleanup_cmd, cleanup_args, {
+                stdio: `ignore`,
+                env: {
+                    ...process.env,
+                    NO_COLOR: `1`,
+                },
+            } )
 
-        finish( {
-            name: agent.name,
-            authenticated: false,
-            reason: `timed out`,
-            output: current_output(),
-        }, { keep_kill_timeout: true } )
-    }, timeout_ms )
+            cleanup_child?.on?.( `error`, () => {} )
+            cleanup_child?.unref?.()
 
-    child.stdout?.on( `data`, chunk => {
-        stdout += chunk.toString()
-    } )
+        }
 
-    child.stderr?.on( `data`, chunk => {
-        stderr += chunk.toString()
-    } )
+        const finalise_launch = () => {
+            if( finalise_task ) return finalise_task
 
-    child.on( `error`, error => {
-        clear_kill_timeout()
-        finish( {
-            name: agent.name,
-            authenticated: false,
-            reason: error.message,
-            output: current_output(),
+            finalise_task = ( async () => {
+                let flush_error = null
+
+                try {
+                    await prepared_launch.pull_synced_files?.( {
+                        target: agent.container_paths?.creds || null,
+                    } )
+                } catch ( error ) {
+                    flush_error = error
+                }
+
+                await prepared_launch.abort()
+                return flush_error
+            } )()
+
+            return finalise_task
+        }
+
+        const finish = result => {
+            if( settled ) return
+
+            settled = true
+            clearTimeout( timeout )
+            clear_kill_timeout()
+            resolve( result )
+        }
+
+        timeout = setTimeout( () => {
+            timed_out = true
+            if( typeof child.kill === `function` ) child.kill( `SIGTERM` )
+            kill_timeout = setTimeout( async () => {
+                if( typeof child.kill === `function` ) child.kill( `SIGKILL` )
+                cleanup_timed_out_container()
+                await finalise_launch()
+
+                finish( {
+                    name: agent.name,
+                    authenticated: false,
+                    reason: `timed out`,
+                    output: current_output(),
+                } )
+            }, kill_grace_ms )
+        }, timeout_ms )
+
+        child.stdout?.on( `data`, chunk => {
+            stdout += chunk.toString()
         } )
-    } )
 
-    child.on( `close`, code => {
-        clear_kill_timeout()
-        const output = current_output()
-        const diagnostic = strip_ansi( stderr || stdout ).trim()
-        const is_authenticated = code === 0 && answered_ok( output )
-
-        finish( {
-            name: agent.name,
-            authenticated: is_authenticated,
-            reason: is_authenticated ? undefined : diagnostic || `exited with code ${ code }`,
-            output,
+        child.stderr?.on( `data`, chunk => {
+            stderr += chunk.toString()
         } )
+
+        child.on( `error`, async error => {
+            clear_kill_timeout()
+            await finalise_launch()
+            finish( {
+                name: agent.name,
+                authenticated: false,
+                reason: error.message,
+                output: current_output(),
+            } )
+        } )
+
+        child.on( `close`, async code => {
+            clear_kill_timeout()
+            const flush_error = await finalise_launch()
+
+            const output = current_output()
+            const diagnostic = strip_ansi( stderr || stdout ).trim()
+            const is_authenticated = !timed_out && !flush_error && code === 0 && answered_ok( output )
+            const failure_reason = timed_out
+                ? `timed out`
+                : flush_error?.message || diagnostic || `exited with code ${ code }`
+
+            finish( {
+                name: agent.name,
+                authenticated: is_authenticated,
+                reason: is_authenticated ? undefined : failure_reason,
+                output,
+            } )
+        } )
+
     } )
 
-} )
+}
 
 /**
  * Check prompt-level host authentication for configured supported agents.

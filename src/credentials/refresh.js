@@ -12,7 +12,7 @@ import { rewrite_tmpfile } from '../utils/tmpfile.js'
 export const hash_credential_content = ( content ) => createHash( `sha256` ).update( content ).digest( `hex` )
 
 /**
- * Build the hash baseline for a host credential file and its mounted tmpfile.
+ * Build the hash baseline for a host credential file and its staged sync copy.
  * The values are safe to store in session metadata because they contain no
  * credential material.
  *
@@ -43,10 +43,10 @@ const REFRESH_INTERVAL_MS = 300_000
 
 /**
  * Start a bidirectional credential sync loop. Periodically:
- *   1. If the host source changed (rare: user re-authed externally), write its
- *      new content into the bind-mounted tmpfile so the container picks it up.
- *   2. If the tmpfile changed (common: in-container OAuth refresh rotated the
- *      token), call `write_destination` so the host source catches up.
+ *   1. If the host source changed, write its new content into the local sync
+ *      copy and push it into the container through the connected transport.
+ *   2. Otherwise pull container state into the local sync copy. If that copy
+ *      changed, call `write_destination` so the host source catches up.
  *
  * Direction (2) is what prevents the "refresh token already used" error on the
  * NEXT babysit session: without it, each session ends with fresh tokens in the
@@ -57,19 +57,18 @@ const REFRESH_INTERVAL_MS = 300_000
  * is reliable (claude on darwin) and round-tripping to the keychain has a
  * different shape than a file write.
  *
- * IMPORTANT: writes to the tmpfile in-place via writeFileSync, never mv/rename.
- * Docker bind mounts track inodes — mv creates a new inode and breaks the mount.
- * The host source can be written either way; we use writeFileSync to match.
+ * Writes to the local sync copy stay in-place so the foreground and detached
+ * monitor always observe the same path from session metadata.
  *
  * @param {Function} read_source - Async function that returns current host credential string
- * @param {string} tmpfile_path - Path to the tmpfile mounted into docker
+ * @param {string} tmpfile_path - Client-local credential sync path
  * @param {Function|null} [write_destination=null] - Async function that receives the tmpfile's
  *   updated content and writes it back to the host source. Pass null to keep sync one-way.
  * @param {Object} [options]
  * @param {string|null} [options.baseline_source_hash] - Hash of the host source when the tmpfile
  *   was captured by the foreground process
- * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the tmpfile when it was mounted
- * @returns {{ stop: Function }} Controller with stop method
+ * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the sync copy when captured
+ * @returns {{ set_transport: Function, stop: Function }} Sync controller
  */
 export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null, options = {} ) => {
 
@@ -77,11 +76,12 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
 
     let last_source_hash = baseline_source_hash
     let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
+    let transport = null
 
     // Seed both hashes from the initial tmpfile write — at start of session,
     // tmpfile content === source content, so they share a hash. The detached
     // monitor passes explicit foreground-capture hashes because codex can
-    // refresh the mounted tmpfile before the monitor starts; in that case,
+    // refresh the staged credential before the monitor starts; in that case,
     // seeding from the current tmpfile would make the stale host file look
     // like a deliberate re-auth and overwrite the fresh token.
     if( !last_source_hash || !last_tmpfile_hash ) {
@@ -95,11 +95,32 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         }
     }
 
-    const tick = async () => {
+    const tick = async ( { throw_errors = false } = {} ) => {
 
         try {
 
             const source = await read_source()
+            const source_hash = source ? hash_credential_content( source ) : null
+
+            // A deliberate host-side reauthentication wins. Push it through
+            // Docker's API before reading container state so a stale container
+            // credential cannot overwrite the newly selected host account.
+            if( source && source_hash !== last_source_hash ) {
+
+                rewrite_tmpfile( tmpfile_path, source )
+                if( transport ) await transport.push( tmpfile_path )
+
+                last_source_hash = source_hash
+                last_tmpfile_hash = source_hash
+                log.debug( `Credential sync: host → container at ${ tmpfile_path }` )
+                return
+
+            }
+
+            // Pull first when the credential was staged with docker cp. This
+            // makes the local tmpfile the same observation point the legacy
+            // bind-mount sync used, while remaining daemon-host independent.
+            if( transport ) await transport.pull( tmpfile_path )
 
             let tmpfile_content = null
             try {
@@ -108,24 +129,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
                 // tmpfile may have been removed (cleanup, etc.) — fall through
             }
 
-            const source_hash = source ? hash_credential_content( source ) : null
             const tmpfile_hash = tmpfile_content ? hash_credential_content( tmpfile_content ) : null
-
-            // Direction 1: host source changed (rare — user re-authed on host
-            // while babysit was running). Push to tmpfile so the container's
-            // next request uses the newer credentials. Source wins on conflict
-            // because a fresh re-auth is a deliberate user action.
-            // `rewrite_tmpfile` re-asserts chmod 666 so the container's
-            // `node` user can keep updating in place — see GOTCHAS.md #29.
-            if( source && source_hash !== last_source_hash ) {
-
-                rewrite_tmpfile( tmpfile_path, source )
-                last_source_hash = source_hash
-                last_tmpfile_hash = source_hash
-                log.debug( `Credential sync: host → tmpfile at ${ tmpfile_path }` )
-                return
-
-            }
 
             // Direction 2: tmpfile changed (common — in-container OAuth refresh).
             // Write back to the host source so the next babysit run starts with
@@ -141,6 +145,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
 
         } catch ( e ) {
             log.debug( `Credential sync failed: ${ e.message }` )
+            if( throw_errors ) throw e
         }
 
     }
@@ -154,6 +159,9 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
     interval.unref?.()
 
     return {
+        set_transport: next_transport => {
+            transport = next_transport
+        },
         // Stop the periodic loop and run one last tick. The final flush is
         // load-bearing: if the in-container agent refreshed its OAuth token
         // less than REFRESH_INTERVAL_MS before session end, that refresh would
@@ -161,7 +169,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         // refresh_token, breaking the next babysit session.
         stop: async () => {
             clearInterval( interval )
-            await tick()
+            await tick( { throw_errors: true } )
         },
     }
 

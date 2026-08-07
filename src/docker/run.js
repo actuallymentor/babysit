@@ -1,4 +1,4 @@
-import { createHash } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
 import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
@@ -378,6 +378,8 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.include_host_agent_context] - Whether to copy or mount host agent preferences
  * @param {boolean} [options.include_loop_deadline=true] - Whether to mount the statusline loop deadline file
  * @param {boolean} [options.include_agent_state=true] - Whether to mount persistent native resume state
+ * @param {Object[]|null} [options.extra_mounts=null] - Precomputed agent config mounts
+ * @param {string|null} [options.container_name=null] - Stable launch-scoped container name
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
  * @returns {string[]} Docker argv
@@ -402,6 +404,8 @@ export const build_docker_command_args = ( options ) => {
         include_host_agent_context = !mode.ignore_host_agents_md,
         include_loop_deadline = true,
         include_agent_state = true,
+        extra_mounts: supplied_extra_mounts = null,
+        container_name = null,
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
         agent_command = null,
     } = options
@@ -414,7 +418,7 @@ export const build_docker_command_args = ( options ) => {
     // Base docker run flags
     flags.push( ...get_docker_run_prefix(), `--rm` )
     if( interactive ) flags.push( `-it` )
-    flags.push( `--name`, `babysit-${ agent.name }-${ Date.now() }` )
+    flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
     // Agent sessions are stateful, interactive workloads. An unattended image
     // refresh terminates their tmux panes and cannot restore that supervision
     // when it recreates the containers, so keep Watchtower from replacing them.
@@ -525,11 +529,13 @@ export const build_docker_command_args = ( options ) => {
     // user-global files so a whole-dir mount (Codex needs this for atomic
     // config.toml persists) can act as the base config home, then narrower
     // file mounts layer into it.
-    const extra_mounts = get_extra_mounts( agent.name )( {
+    const extra_mounts = supplied_extra_mounts || get_extra_mounts( agent.name )( {
         yolo: mode.yolo,
         include_host_preferences: include_host_agent_context,
     } )
     for( const m of extra_mounts ) {
+        if( m.type === `copy` || m.type === `seed_file` ) continue
+
         const target = m.ro ? `${ m.container }:ro` : m.container
         flags.push( `-v`, `${ resolve_workspace_mount_source( m.host ) }:${ target }` )
     }
@@ -558,6 +564,10 @@ export const build_docker_command_args = ( options ) => {
             } else if( mount.type === `copy` ) {
                 // prepare_docker_launch uploads private files through the
                 // Docker API before this container starts. They are not flags.
+                continue
+            } else if( mount.type === `synced_file` || mount.type === `secret_env` ) {
+                // Staged credential files and secret environment bootstraps are
+                // materialized before container start, never in Docker metadata.
                 continue
             } else if( mount.type === `env` ) {
                 flags.push( `-e`, `${ mount.key }=${ mount.value }` )

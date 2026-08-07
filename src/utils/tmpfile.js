@@ -1,19 +1,16 @@
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
-import { join, basename } from 'path'
+import { join, basename, dirname } from 'path'
 
 import { log } from './log.js'
 
-// Why every tmpfile we bind into the container needs an explicit chmod 666:
+// Why every writable tmpfile we stage or bind needs an explicit chmod 666:
 // Node's `fs.writeFileSync(path, data, { mode: 0o666 })` is masked by the
 // host user's umask (typically 0o022 → 0o644 or 0o002 → 0o664). The
-// container runs as `node` (uid 1000); the host file is owned by whatever
-// the host user is (uid 1001 in our case). `node` matches neither the
-// owner nor any of the file's groups, so it lands in "other" — and "other"
-// has no write bit when the file is 0o664. Several agents (claude,
-// codex, gemini) update their state file in place during init; that
-// silent EACCES leaves the TUI hanging mid-render. See
-// .notes/GOTCHAS.md gotcha #29 for the full story.
+// container may initially see a root-owned docker-cp destination before uid
+// remapping. Several agents update their state file in place during init; a
+// silent EACCES leaves the TUI hanging mid-render. Credential copies live
+// inside a 0700 host directory even though their inner sync file is 0666.
 
 /**
  * Copy a host file to a fresh chmod-666 tmpfile so the container's `node`
@@ -82,9 +79,13 @@ export const build_tmpfile = ( tag, hint, content ) => {
  * @param {string} tag - Short identifier baked into the tmpdir name
  * @param {string} hint - Filename hint used for the file inside the directory
  * @param {string} content - File content to write
+ * @param {Object} [options]
+ * @param {number} [options.file_mode=0o600] - File permissions inside the private directory
  * @returns {{ directory: string, file: string }|null} Private paths, or null on error
  */
-export const build_private_tmpfile = ( tag, hint, content ) => {
+export const build_private_tmpfile = ( tag, hint, content, {
+    file_mode = 0o600,
+} = {} ) => {
 
     let directory = null
 
@@ -94,8 +95,8 @@ export const build_private_tmpfile = ( tag, hint, content ) => {
         const file = join( directory, hint )
 
         chmodSync( directory, 0o700 )
-        writeFileSync( file, content, { mode: 0o600 } )
-        chmodSync( file, 0o600 )
+        writeFileSync( file, content, { mode: file_mode } )
+        chmodSync( file, file_mode )
 
         return { directory, file }
 
@@ -104,6 +105,53 @@ export const build_private_tmpfile = ( tag, hint, content ) => {
         log.debug( `Failed to build private tmpfile (${ hint }): ${ e.message }` )
         return null
     }
+
+}
+
+/**
+ * Copy a host credential into a private sync directory. The file is writable
+ * after Docker copies it as root, while the 0700 parent keeps other host users
+ * from traversing to it.
+ *
+ * @param {string} host_path - Credential source path
+ * @param {string} tag - Agent identifier used in the private directory name
+ * @returns {{ directory: string, file: string }|null} Private sync paths
+ */
+export const copy_host_file_to_private_tmpfile = ( host_path, tag ) => {
+
+    try {
+        if( !existsSync( host_path ) ) return null
+
+        return build_private_tmpfile(
+            `creds-${ tag }`,
+            basename( host_path ),
+            readFileSync( host_path, `utf-8` ),
+            { file_mode: 0o666 }
+        )
+    } catch ( error ) {
+        log.debug( `Failed to copy ${ host_path } to a private sync file: ${ error.message }` )
+        return null
+    }
+
+}
+
+/**
+ * Identify private credential-sync directories without ever treating the
+ * broad system temp directory as a cleanup target. Legacy flat tmpfiles return
+ * null and remain compatible with older session metadata.
+ *
+ * @param {string|null} file - Stored credential sync file
+ * @returns {string|null} Safe private directory cleanup target
+ */
+export const private_credential_tmpdir = ( file ) => {
+
+    if( !file ) return null
+
+    const directory = dirname( file )
+    const is_direct_tmp_child = dirname( directory ) === tmpdir()
+    const has_private_prefix = basename( directory ).startsWith( `babysit-creds-` )
+
+    return is_direct_tmp_child && has_private_prefix ? directory : null
 
 }
 

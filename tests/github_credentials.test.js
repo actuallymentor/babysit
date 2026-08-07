@@ -202,8 +202,12 @@ describe( `GitHub CLI credential passthrough`, () => {
 
         try {
             expect( mounts.some( mount => mount.type === `copy` ) ).toBe( true )
-            expect( mounts.some( mount => mount.key === `GH_TOKEN` ) ).toBe( false )
-            expect( mounts.some( mount => mount.value === `direct-secret` ) ).toBe( false )
+            expect( mounts.some( mount => mount.type === `env` && mount.key === `GH_TOKEN` ) ).toBe( false )
+            expect( mounts ).toContainEqual( {
+                type: `secret_env`,
+                key: `GH_TOKEN`,
+                value: `direct-secret`,
+            } )
         } finally {
             cleanup_ephemeral_credential_mounts( mounts )
         }
@@ -417,7 +421,36 @@ describe( `GitHub CLI credential passthrough`, () => {
 
         expect( calls ).toBe( 2 )
         expect( mounts ).toEqual( [
-            { type: `env`, key: `GH_TOKEN`, value: `fallback-token` },
+            { type: `secret_env`, key: `GH_TOKEN`, value: `fallback-token` },
+        ] )
+
+    } )
+
+    it( `uses stored enterprise auth when strict mode only has a public token`, () => {
+
+        const calls = []
+        const mounts = setup_github_cli_credentials( {
+            env: {
+                HOME: `/home/alice`,
+                GH_HOST: `github.internal`,
+                GH_TOKEN: `public-token`,
+            },
+            include_host_preferences: false,
+            spawn_sync: ( cmd, args ) => {
+                calls.push( args )
+                if( args[ 1 ] === `status` ) return { status: 0, stdout: `not-json` }
+                return { status: 0, stdout: `enterprise-token\n` }
+            },
+        } )
+
+        expect( calls ).toEqual( [
+            [ `auth`, `status`, `--json`, `hosts`, `--show-token` ],
+            [ `auth`, `token`, `--hostname`, `github.internal` ],
+        ] )
+        expect( mounts ).toEqual( [
+            { type: `env`, key: `GH_HOST`, value: `github.internal` },
+            { type: `secret_env`, key: `GH_ENTERPRISE_TOKEN`, value: `enterprise-token` },
+            { type: `secret_env`, key: `GH_TOKEN`, value: `public-token` },
         ] )
 
     } )

@@ -1,7 +1,11 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { run_sync } from '../utils/exec.js'
 import { log } from '../utils/log.js'
-import { build_tmpfile, copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
+import {
+    build_private_tmpfile,
+    copy_host_file_to_private_tmpfile,
+    private_credential_tmpdir,
+} from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
 
@@ -10,22 +14,21 @@ import { resolve_credential_file } from './paths.js'
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
  * @param {string} [options.existing_tmpfile] - Re-use this tmpfile instead of creating a new
- *   one. Used by the monitor daemon, which must watch the SAME tmpfile the container is
- *   already mounting (created by the foreground). Without this, the monitor's sync would
- *   watch its own brand-new tmpfile and the container's OAuth refreshes would never make
- *   it back to the host file. See GOTCHAS.md.
+ *   one. The monitor must watch the foreground's client-local sync copy so Docker API
+ *   pulls reach the same credential baseline.
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
  *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
- * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null }} Credential mounts and sync controller
+ * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }} Credential specs and sync controller
  */
 export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null, sync_baseline = null } = {} ) => {
 
     const cred_config = agent.credentials?.darwin
-    if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null }
+    if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null, cleanup_path: null }
 
     const mounts = []
     let sync = null
     let baseline = sync_baseline
+    let cleanup_path = private_credential_tmpdir( existing_tmpfile )
 
     // Keychain-based credentials (e.g. Claude on macOS)
     if( cred_config.keychain_service ) {
@@ -62,14 +65,22 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
 
                     // Materialise the keychain blob into a chmod-666 tmpfile so
                     // the container's `node` user can both read AND write it.
-                    tmpfile = build_tmpfile( `creds-${ agent.name }`, `auth`, creds_json )
-                    if( !tmpfile ) {
+                    const transport = build_private_tmpfile(
+                        `creds-${ agent.name }`,
+                        `auth`,
+                        creds_json,
+                        { file_mode: 0o666 }
+                    )
+                    if( !transport ) {
                         log.warn( `Failed to materialise ${ agent.name } keychain creds to tmpfile` )
-                        return { mounts, sync, sync_baseline: baseline }
+                        return { mounts, sync, sync_baseline: baseline, cleanup_path }
                     }
 
+                    tmpfile = transport.file
+                    cleanup_path = transport.directory
+
                     mounts.push( {
-                        type: `volume`,
+                        type: `synced_file`,
                         source: tmpfile,
                         target: agent.container_paths.creds,
                     } )
@@ -93,12 +104,13 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
 
         // Keychain miss → fallback to a file path if the agent declared one
         if( !mounts.length && !sync && cred_config.fallback_file ) {
-            const file_mount = mount_credential_file( agent, cred_config.fallback_file, existing_tmpfile, baseline )
+            const file_mount = stage_credential_file( agent, cred_config.fallback_file, existing_tmpfile, baseline )
             if( file_mount ) {
-                const { mount, sync: file_sync, sync_baseline: file_baseline } = file_mount
+                const { mount, sync: file_sync, sync_baseline: file_baseline, cleanup_path: file_cleanup } = file_mount
                 if( mount ) mounts.push( mount )
                 sync = file_sync
                 baseline = file_baseline
+                cleanup_path = file_cleanup
             }
         }
 
@@ -108,12 +120,13 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
     // opencode does NOT use Keychain, it stores tokens in
     // ~/.local/share/opencode/auth.json on every platform).
     if( !mounts.length && !sync && cred_config.file ) {
-        const file_mount = mount_credential_file( agent, cred_config.file, existing_tmpfile, baseline )
+        const file_mount = stage_credential_file( agent, cred_config.file, existing_tmpfile, baseline )
         if( file_mount ) {
-            const { mount, sync: file_sync, sync_baseline: file_baseline } = file_mount
+            const { mount, sync: file_sync, sync_baseline: file_baseline, cleanup_path: file_cleanup } = file_mount
             if( mount ) mounts.push( mount )
             sync = file_sync
             baseline = file_baseline
+            cleanup_path = file_cleanup
         }
     }
 
@@ -131,7 +144,7 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
         log.info( `Credentials loaded from env fallback: ${ cred_config.fallback_env }` )
     }
 
-    return { mounts, sync, sync_baseline: baseline }
+    return { mounts, sync, sync_baseline: baseline, cleanup_path }
 
 }
 
@@ -143,15 +156,16 @@ export const setup_darwin_credentials = async ( agent, { existing_tmpfile = null
  *   creating a new one. When provided, no mount is returned (the foreground already
  *   wired up the docker mount) — only the sync.
  * @param {Object|null} [sync_baseline] - Foreground-capture hashes for monitor handoff
- * @returns {{ mount: Object|null, sync: Object, sync_baseline: Object|null } | null}
+ * @returns {{ mount: Object|null, sync: Object, sync_baseline: Object|null, cleanup_path: string|null } | null}
  */
-const mount_credential_file = ( agent, file_pattern, existing_tmpfile = null, sync_baseline = null ) => {
+const stage_credential_file = ( agent, file_pattern, existing_tmpfile = null, sync_baseline = null ) => {
 
     const expanded = resolve_credential_file( file_pattern )
 
-    // copy_host_file_to_tmpfile returns null when the source is missing;
-    // no need to existsSync first.
-    const tmpfile = existing_tmpfile || copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
+    const transport = existing_tmpfile
+        ? null
+        : copy_host_file_to_private_tmpfile( expanded, agent.name )
+    const tmpfile = existing_tmpfile || transport?.file
     if( !tmpfile ) return null
 
     const baseline = sync_baseline || build_credential_sync_baseline( expanded, tmpfile )
@@ -174,6 +188,7 @@ const mount_credential_file = ( agent, file_pattern, existing_tmpfile = null, sy
             writeFileSync( expanded, content )
         } catch ( e ) {
             log.debug( `Failed to write back to host creds at ${ expanded }: ${ e.message }` )
+            throw e
         }
     }
 
@@ -186,9 +201,10 @@ const mount_credential_file = ( agent, file_pattern, existing_tmpfile = null, sy
         // the same path). The monitor only needs the sync.
         mount: existing_tmpfile
             ? null
-            : { type: `volume`, source: tmpfile, target: agent.container_paths.creds },
+            : { type: `synced_file`, source: tmpfile, target: agent.container_paths.creds },
         sync,
         sync_baseline: baseline,
+        cleanup_path: transport?.directory || private_credential_tmpdir( existing_tmpfile ),
     }
 
 }

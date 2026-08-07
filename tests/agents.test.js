@@ -139,8 +139,8 @@ describe( `credential coverage`, () => {
     } )
 
     it( `each agent declares a container target for its credential file`, () => {
-        // The darwin/linux setup_credentials code mounts the host tmpfile to
-        // agent.container_paths.creds — null targets silently drop the mount.
+        // The darwin/linux setup_credentials code stages the host tmpfile at
+        // agent.container_paths.creds — null targets silently drop the file.
         expect( claude.container_paths.creds ).toBe( `/home/node/.claude/.credentials.json` )
         expect( codex.container_paths.creds ).toBe( `/home/node/.codex/auth.json` )
         expect( gemini.container_paths.creds ).toBe( `/home/node/.gemini/oauth_creds.json` )

@@ -64,6 +64,19 @@ if [ -f "$GH_CREDENTIALS_BOOTSTRAP" ]; then
     unset GH_CREDENTIALS_BOOTSTRAP GH_CREDENTIALS_DIR
 fi
 
+# Import credential environment values uploaded into the stopped container.
+# Reading literal KEY=value lines avoids evaluating shell syntax while keeping
+# secrets out of Docker's inspectable Config.Env metadata.
+CREDENTIAL_ENV_BOOTSTRAP=/tmp/.babysit-credentials.env
+if [ -f "$CREDENTIAL_ENV_BOOTSTRAP" ]; then
+    while IFS= read -r credential_line || [ -n "$credential_line" ]; do
+        [ -n "$credential_line" ] && export "${credential_line?}"
+    done < "$CREDENTIAL_ENV_BOOTSTRAP"
+
+    rm -f "$CREDENTIAL_ENV_BOOTSTRAP"
+    unset credential_line CREDENTIAL_ENV_BOOTSTRAP
+fi
+
 # Bring claude into the cross-agent skills convention. Codex and OpenCode
 # already discover ~/.agents/skills/ natively; claude only looks at
 # ~/.claude/skills/, so symlink the cross-agent path into place when the

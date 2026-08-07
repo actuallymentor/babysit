@@ -1,5 +1,4 @@
 import { spawn, execSync } from 'child_process'
-import { promise_timeout } from 'mentie'
 import { log } from './log.js'
 
 /**
@@ -12,29 +11,89 @@ import { log } from './log.js'
  */
 export const run = ( cmd, args = [], options = {}, timeout_ms = 30_000 ) => {
 
-    const task = new Promise( ( resolve, reject ) => {
+    return new Promise( ( resolve, reject ) => {
 
         const child = spawn( cmd, args, { stdio: [ `ignore`, `pipe`, `pipe` ], ...options } )
         let stdout = ``
         let stderr = ``
+        let settled = false
+        let timed_out = false
+        let spawn_error = null
+        let timeout = null
+        let kill_timeout = null
+        const abort_signal = options.signal
+
+        const terminate_child = signal => {
+            if( options.detached && child.pid && process.platform !== `win32` ) {
+                try {
+                    process.kill( -child.pid, signal )
+                    return
+                } catch {
+                    // The process may already have left its group; fall back.
+                }
+            }
+
+            child.kill( signal )
+        }
+
+        const schedule_kill = () => {
+            clearTimeout( kill_timeout )
+            kill_timeout = setTimeout( () => terminate_child( `SIGKILL` ), 1_500 )
+            kill_timeout.unref?.()
+        }
+
+        const handle_abort = () => {
+            terminate_child( `SIGTERM` )
+            schedule_kill()
+        }
+
+        const settle = callback => {
+            if( settled ) return
+
+            settled = true
+            clearTimeout( timeout )
+            clearTimeout( kill_timeout )
+            abort_signal?.removeEventListener( `abort`, handle_abort )
+            callback()
+        }
+
+        timeout = setTimeout( () => {
+            timed_out = true
+            terminate_child( `SIGTERM` )
+            schedule_kill()
+        }, timeout_ms )
+        timeout.unref?.()
+
+        abort_signal?.addEventListener( `abort`, handle_abort, { once: true } )
+        if( abort_signal?.aborted ) handle_abort()
 
         child.stdout.on( `data`, chunk => {
-            stdout += chunk.toString() 
+            stdout += chunk.toString()
         } )
         child.stderr.on( `data`, chunk => {
-            stderr += chunk.toString() 
+            stderr += chunk.toString()
         } )
 
         child.on( `close`, code => {
-            if( code === 0 ) resolve( stdout.trim() )
-            else reject( new Error( `${ cmd } exited with code ${ code }: ${ stderr.trim() }` ) )
+            settle( () => {
+                if( timed_out ) {
+                    const error = new Error( `${ cmd } timed out after ${ timeout_ms }ms` )
+                    error.code = `ETIMEDOUT`
+                    reject( error )
+                } else if( spawn_error ) reject( spawn_error )
+                else if( code === 0 ) resolve( stdout.trim() )
+                else reject( new Error( `${ cmd } exited with code ${ code }: ${ stderr.trim() }` ) )
+            } )
         } )
 
-        child.on( `error`, reject )
+        // `AbortSignal` emits `error` before the child has necessarily closed.
+        // Record it and settle on `close` so launch cleanup cannot race a still-
+        // running Docker client. Spawn failures also emit `close` afterward.
+        child.on( `error`, error => {
+            spawn_error = error
+        } )
 
     } )
-
-    return promise_timeout( task, timeout_ms )
 
 }
 

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { run_sync } from '../utils/exec.js'
-import { copy_host_file_to_tmpfile } from '../utils/tmpfile.js'
+import { copy_host_file_to_private_tmpfile, private_credential_tmpdir } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
 
@@ -10,22 +10,21 @@ import { resolve_credential_file } from './paths.js'
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
  * @param {string} [options.existing_tmpfile] - Re-use this tmpfile instead of creating a new
- *   one. Used by the monitor daemon, which must watch the SAME tmpfile the container is
- *   already mounting (created by the foreground). Without this, the monitor's sync would
- *   watch its own brand-new tmpfile and the container's OAuth refreshes would never make
- *   it back to the host file. See GOTCHAS.md.
+ *   one. The monitor must watch the foreground's client-local sync copy so Docker API
+ *   pulls reach the same credential baseline.
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
  *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
- * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null }} Credential mounts and sync controller
+ * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }} Credential specs and sync controller
  */
 export const setup_linux_credentials = async ( agent, { existing_tmpfile = null, sync_baseline = null } = {} ) => {
 
     const cred_config = agent.credentials?.linux
-    if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null }
+    if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null, cleanup_path: null }
 
     const mounts = []
     let sync = null
     let baseline = sync_baseline
+    let cleanup_path = private_credential_tmpdir( existing_tmpfile )
 
     // File-based credentials (Claude, OpenCode, Codex OAuth, Gemini OAuth)
     if( cred_config.file ) {
@@ -46,15 +45,16 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null,
                 // that capture.
                 run_sync( `${ agent.bin } --version 2>/dev/null` )
 
-                // Copy host file into a chmod-666 tmpfile so the container's
-                // `node` user can both read AND write it (agents like codex /
-                // gemini refresh tokens in place). See utils/tmpfile.js for why
-                // chmod is needed beyond writeFileSync's `mode` option.
-                tmpfile = copy_host_file_to_tmpfile( expanded, `creds-${ agent.name }` )
-                if( !tmpfile ) return { mounts, sync, sync_baseline: baseline }
+                // Copy into a chmod-666 client-side sync file. Docker stages it
+                // before start and later pulls refreshed credentials back here.
+                const transport = copy_host_file_to_private_tmpfile( expanded, agent.name )
+                if( !transport ) return { mounts, sync, sync_baseline: baseline, cleanup_path }
+
+                tmpfile = transport.file
+                cleanup_path = transport.directory
 
                 mounts.push( {
-                    type: `volume`,
+                    type: `synced_file`,
                     source: tmpfile,
                     target: agent.container_paths.creds,
                 } )
@@ -82,6 +82,7 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null,
                     writeFileSync( expanded, content )
                 } catch ( e ) {
                     log.debug( `Failed to write back to host creds at ${ expanded }: ${ e.message }` )
+                    throw e
                 }
             }
 
@@ -106,6 +107,6 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null,
         log.info( `Credentials loaded from env fallback: ${ cred_config.fallback_env }` )
     }
 
-    return { mounts, sync, sync_baseline: baseline }
+    return { mounts, sync, sync_baseline: baseline, cleanup_path }
 
 }
