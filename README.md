@@ -1,6 +1,8 @@
 # babysit
 
-A supervisor for LLM coding agent CLIs. Runs [Claude](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Gemini](https://github.com/google-gemini/gemini-cli), and [opencode](https://github.com/sst/opencode) inside Docker containers with tmux session management and declarative supervision rules.
+A supervisor for LLM coding agent CLIs. Runs [Claude](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [Gemini](https://github.com/google-gemini/gemini-cli), and [OpenCode](https://github.com/anomalyco/opencode) inside Docker containers with tmux session management and declarative supervision rules.
+
+Gemini CLI supports enterprise Code Assist and API-key accounts. Individual Google-login accounts moved to Antigravity, whose CLI Babysit does not yet adapt.
 
 Spiritual successor to [sir-claudius](https://github.com/actuallymentor/sir-claudius) — rebuilt from scratch with multi-agent support, configurable supervision via `babysit.yaml`, and a single static binary.
 
@@ -85,6 +87,7 @@ and replace an active Babysit container.
 ## `babysit.yaml`
 
 Created automatically on first run. Defines `on/do` rules — first match wins.
+Generated examples are commented out until you configure and enable them.
 
 ```yaml
 config:
@@ -92,28 +95,28 @@ config:
         You are running inside a Docker container — an isolated sandbox built for coding agents.
         ...
     idle_timeout_s: 300
-    commands:
-        notify_command: >
-            curl -f -X POST -d \
-                "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input" \
-                https://api.pushover.net/1/messages.json
+    # commands:
+    #     notify_command: >
+    #         curl -f -X POST -d \
+    #             "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input" \
+    #             https://api.pushover.net/1/messages.json
 
 babysit:
 
-    # Send IDLE.md contents when the agent goes idle
-    - on: idle
-      do: ./IDLE.md
-      timeout: 30:00
+    # Send IDLE.md contents when the agent goes idle (create it first)
+    # - on: idle
+    #   do: ./IDLE.md
+    #   timeout: 30:00
 
     # Notify when the agent asks for input
-    - on: choice
-      do: notify_command
-      timeout: 1:00:00
+    # - on: choice
+    #   do: notify_command
+    #   timeout: 1:00:00
 
     # Notify on errors
-    - on: /error/i
-      do: notify_command
-      timeout: 05:00
+    # - on: /error/i
+    #   do: notify_command
+    #   timeout: 05:00
 ```
 
 `config.initial_prompt` is typed into the agent screen once the session starts.
@@ -136,7 +139,8 @@ to disable startup prompt typing.
 | Action | Description |
 |---|---|
 | `enter` | Press Enter |
-| `shift_tab` | Press Shift+Tab (plan acceptance in Claude) |
+| `accept` | Press Enter (semantic alias for accepting a choice) |
+| `shift_tab` | Press Shift+Tab |
 | `command_name` | Run a named command from `config.commands` |
 | `"text"` | Type text and press Enter |
 | `./file.md` | Send markdown file contents, splitting on `===` lines (waits for idle between segments) |
@@ -277,8 +281,9 @@ Unrecognised flags are passed through to the coding agent CLI:
 babysit claude --yolo --model sonnet --effort high
 ```
 
-By default, Babysit starts Claude with `--model best --effort max` and Codex
-with `--model gpt-5.6-sol -c model_reasoning_effort="xhigh"`.
+By default, Babysit starts Claude with `--model best --effort xhigh`, Codex
+with `--model gpt-5.6-sol -c model_reasoning_effort="xhigh"`, and OpenCode
+with `--model openai/gpt-5.6-sol`.
 
 ## Logging tmux output
 
@@ -335,4 +340,4 @@ npm run test:e2e
 
 ## License
 
-ISC
+MIT

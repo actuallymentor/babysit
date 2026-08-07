@@ -43,7 +43,7 @@ export const gemini = {
     },
 
     flags: {
-        skip_permissions: () => `--yolo`,
+        skip_permissions: () => `--approval-mode=yolo`,
         resume: ( id ) => [ `--resume`, id ],
         resume_latest: () => [ `--resume`, `latest` ],
         model: ( m ) => [ `--model`, m ],
@@ -59,11 +59,9 @@ export const gemini = {
     // override it with --skip-trust.
     extra_args: ( mode ) => mode?.yolo ? [ `--skip-trust` ] : [],
 
-    // Don't force a model. Gemini's internal "agent router" picks the best
-    // available model for the user's plan; forcing `gemini-pro-latest` here
-    // breaks for users on Code Assist for Individuals (the free tier),
-    // because Pro routing was restricted to paid plans. Letting the user's
-    // own plan select the model is more portable than guessing.
+    // Don't force a model. Gemini's internal router picks one supported by
+    // the configured enterprise or API-key account. Individual Google-login
+    // accounts moved to Antigravity and are no longer served by Gemini CLI.
     defaults: {},
 
     // Gemini supports `gemini --resume <uuid>` and also surfaces session ids in

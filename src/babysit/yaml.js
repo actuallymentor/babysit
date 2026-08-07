@@ -24,10 +24,12 @@ config:
     # Prompt typed into the agent screen on launch. Set to null or "" to disable.
     initial_prompt: ${ format_initial_prompt( initial_prompt ) }
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as \`on: idle\`
-    commands:
-        notify_command: >
-            curl -f -X POST -d \\
-                "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input&url=&priority=0" https://api.pushover.net/1/messages.json
+
+    # Named shell commands are opt-in. Uncomment and configure before use.
+    # commands:
+    #     notify_command: >
+    #         curl -f -X POST -d \\
+    #             "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input&url=&priority=0" https://api.pushover.net/1/messages.json
 
 # Babysit instructions
 babysit:
@@ -36,24 +38,26 @@ babysit:
     # - on: <event> # unquoted words are special keywords, quotes words are literal matches, regex is supported with /regex/flags. Note that the \`on:\` only triggers if the match is the latest seen output for longer than the timeout
     #   do: <action> # unquoted words are special keywords or commands specified in config.commands, quoted words are literal input followed by and enter keystroke
 
-    # This instructs babysit to type and submit "check for bugs" into the tmux session when the coding agent is idle for the timeout period (including sub agents)
-    - on: idle # this means no new output in the tmux session
-      do: ./IDLE.md # this may point to any markdown file on the host, either as a relative or absolute path
-      timeout: 30:00 # overrides idle_timeout_s, format can be: SS, MM:SS, or HH:MM:SS
+    # Examples are disabled until you uncomment and configure them.
+
+    # Send a markdown workflow when the coding agent is idle.
+    # - on: idle # this means no new output in the tmux session
+    #   do: ./IDLE.md # create this file first; relative and absolute paths work
+    #   timeout: 30:00 # overrides idle_timeout_s; SS, MM:SS, or HH:MM:SS
 
     # This instructs babysit to accept any plan that the coding agent submits by pressing "enter" when it encounters a plan acceptance step
     # - on: plan # this means the coding agent is asking the user to accept a plan
     #   do: enter
     #   timeout: 10 # waits 10 seconds
 
-    # Instructs babysit to run the notify_command when the coding agent is waiting for user input, so that the user gets a push notification on their phone to check the session
-    - on: choice # this is a generic option for any scenario the coding agent is waiting for user input
-      do: notify_command
-      timeout: 1:00:00 # Waits 1 hour
+    # Run the configured notification command when the agent needs input.
+    # - on: choice
+    #   do: notify_command
+    #   timeout: 1:00:00
 
-    - on: /error/i # regex match on the tmux session output, case insensitive
-      do: notify_command
-      timeout: 05:00
+    # - on: /error/i
+    #   do: notify_command
+    #   timeout: 05:00
 `
 
 /**

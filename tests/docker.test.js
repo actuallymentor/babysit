@@ -158,7 +158,7 @@ describe( `docker image`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
 
-        expect( dockerfile ).toContain( `NVM_VERSION="v0.40.4"` )
+        expect( dockerfile ).toContain( `NVM_VERSION="v0.40.6"` )
         expect( dockerfile ).toContain( `https://github.com/nvm-sh/nvm.git` )
         expect( dockerfile ).toContain( `source "$NVM_DIR/nvm.sh" && command -v nvm` )
 
@@ -543,13 +543,13 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `auto-applies Claude's strongest available model and max effort`, () => {
+    it( `auto-applies Claude's strongest available model and recommended effort`, () => {
 
         const cmd = build_docker_command( make_options( { agent: claude } ) )
 
-        // Claude Code's `best` alias uses Fable 5 when available, otherwise
-        // the latest Opus. `max` is the deepest supported --effort level.
-        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model best --effort max` )
+        // `best` follows Claude Code's strongest generally available model;
+        // `xhigh` is the quality-first recommendation without max overthinking.
+        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model best --effort xhigh` )
 
     } )
 
@@ -573,7 +573,7 @@ describe( `build_docker_command`, () => {
         expect( build_docker_command( make_options( {
             agent: claude,
             agent_args: claude.flags.resume( uuid ),
-        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model best --effort max --resume ${ uuid }` )
+        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model best --effort xhigh --resume ${ uuid }` )
 
         expect( build_docker_command( make_options( {
             agent: codex,
@@ -583,12 +583,12 @@ describe( `build_docker_command`, () => {
         expect( build_docker_command( make_options( {
             agent: gemini,
             agent_args: gemini.flags.resume( uuid ),
-        } ) ) ).toContain( ` gemini --yolo --skip-trust --resume ${ uuid }` )
+        } ) ) ).toContain( ` gemini --approval-mode=yolo --skip-trust --resume ${ uuid }` )
 
         expect( build_docker_command( make_options( {
             agent: opencode,
             agent_args: opencode.flags.resume( `ses_66a71b6f4ffeq796jvvOpJQ04m` ),
-        } ) ) ).toContain( ` opencode --dangerously-skip-permissions --model openai/gpt-5.5 --session ses_66a71b6f4ffeq796jvvOpJQ04m` )
+        } ) ) ).toContain( ` opencode --dangerously-skip-permissions --model openai/gpt-5.6-sol --session ses_66a71b6f4ffeq796jvvOpJQ04m` )
 
     } )
 

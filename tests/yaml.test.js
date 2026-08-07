@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { parse } from 'yaml'
 import { load_config, get_default_yaml } from '../src/babysit/yaml.js'
 
 describe( `babysit.yaml`, () => {
@@ -34,30 +35,9 @@ describe( `babysit.yaml`, () => {
         expect( config.initial_prompt ).toBe( `custom default prompt` )
     } )
 
-    it( `parses rules from default yaml`, () => {
+    it( `keeps default supervision examples disabled`, () => {
         const { rules } = load_config( tmpdir_path )
-        expect( rules.length ).toBeGreaterThanOrEqual( 3 )
-        expect( rules[0].on.type ).toBe( `idle` )
-    } )
-
-    it( `parses idle rule with timeout override`, () => {
-        const { rules } = load_config( tmpdir_path )
-        const idle_rule = rules.find( r => r.on.type === `idle` )
-        expect( idle_rule ).toBeDefined()
-        expect( idle_rule.timeout_s ).toBe( 1800 ) // 30:00
-    } )
-
-    it( `parses choice rule`, () => {
-        const { rules } = load_config( tmpdir_path )
-        const choice_rule = rules.find( r => r.on.type === `choice` )
-        expect( choice_rule ).toBeDefined()
-    } )
-
-    it( `parses regex rule`, () => {
-        const { rules } = load_config( tmpdir_path )
-        const regex_rule = rules.find( r => r.on.type === `regex` )
-        expect( regex_rule ).toBeDefined()
-        expect( regex_rule.on.value ).toBeInstanceOf( RegExp )
+        expect( rules ).toEqual( [] )
     } )
 
     it( `parses custom config`, () => {
@@ -129,6 +109,8 @@ babysit:
         expect( yaml ).toContain( `initial_prompt` )
         expect( yaml ).toContain( `running inside a Docker container` )
         expect( yaml ).toContain( `babysit:` )
+        expect( parse( yaml ).babysit ).toBeNull()
+        expect( parse( yaml ).config.commands ).toBeUndefined()
     } )
 
     it( `returns default yaml with a caller-supplied prompt`, () => {

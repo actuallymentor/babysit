@@ -12,8 +12,8 @@ import { get_image_name } from '../docker/update.js'
 import { SUPPORTED_AGENTS, get_agent } from '../agents/index.js'
 import { build_update_strategies } from '../deps/agent_update.js'
 
-// Same budget per step as the pre-flight self-update — keeps a hung remote
-// from holding the user hostage. See src/deps/selfupdate.js.
+// Keep each remote operation bounded so a hung update cannot hold the user
+// hostage indefinitely.
 const STEP_TIMEOUT_MS = 15_000
 const BINARY_DOWNLOAD_TIMEOUT_MS = 120_000
 const DOCKER_PULL_TIMEOUT_MS = 120_000

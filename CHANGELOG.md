@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.26.2 — 2026-08-07
+
+### 🐛 Fixed
+- **Fresh configurations are inert until enabled.** Generated examples no
+  longer reference a missing `IDLE.md` or run placeholder notifications.
+- **Semantic acceptance sends Enter.** `accept` no longer emits Shift+Tab, and
+  resume tests remove only the session records they create.
+
+### Changed
+- **Agent defaults match current CLIs.** Claude uses `xhigh`, Gemini uses
+  `--approval-mode=yolo`, and OpenCode uses `openai/gpt-5.6-sol`.
+- **Pinned build tools are current.** Container utilities, Bun, nvm,
+  actions/cache, and the transitive browser database helper were refreshed.
+
+### Removed
+- **Obsolete project scaffolding is gone.** Removed the superseded self-update
+  module and unused Babel preset.
+
 ## 0.26.1 — 2026-08-07
 
 ### 🐛 Fixed
