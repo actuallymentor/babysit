@@ -397,12 +397,16 @@ export const build_gemini_settings_tmpfile = ( host_settings_path, {
     }
 
     if( !include_host_preferences ) {
-        const auth = parsed.security?.auth
-        const legacy_auth = parsed.auth
+        const selected_type = parsed.security?.auth?.selectedType
+        const legacy_selected_type = parsed.auth?.selectedType
 
         parsed = {
-            ... auth ? { security: { auth } } : {} ,
-            ... legacy_auth ? { auth: legacy_auth } : {} ,
+            ... typeof selected_type === `string` && selected_type
+                ? { security: { auth: { selectedType: selected_type } } }
+                : {},
+            ... typeof legacy_selected_type === `string` && legacy_selected_type
+                ? { auth: { selectedType: legacy_selected_type } }
+                : {},
         }
     }
 

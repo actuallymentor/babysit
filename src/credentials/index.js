@@ -7,17 +7,20 @@ import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import { log } from '../utils/log.js'
 import { setup_darwin_credentials } from './darwin.js'
 import { setup_linux_credentials } from './linux.js'
+import { create_docker_file_transport } from '../docker/file_transport.js'
 
 const EPHEMERAL_CREDENTIAL_PREFIXES = [
     `babysit-gh-hosts.yml-`,
     `babysit-gh-credentials.env-`,
+    `babysit-credentials-env-`,
+    `babysit-creds-`,
 ]
 const STALE_EPHEMERAL_CREDENTIAL_AGE_MS = 60 * 60 * 1_000
 
 /**
  * Remove host-side credential transport files after Docker has consumed them.
- * Long-lived agent credential mounts do not carry a cleanup path and remain
- * untouched so their sync controllers can continue using them.
+ * Long-lived agent credential sync files do not carry a cleanup path and
+ * remain untouched so their controllers can continue using them.
  * @param {Object[]} mounts - Credential mount/env descriptors
  * @returns {boolean} True when every cleanup path was removed
  */
@@ -50,12 +53,14 @@ export const cleanup_ephemeral_credential_mounts = ( mounts = [] ) => {
  * @param {string} [options.directory=tmpdir()] - Temporary directory to sweep
  * @param {number} [options.now=Date.now()] - Current epoch milliseconds
  * @param {number} [options.max_age_ms=STALE_EPHEMERAL_CREDENTIAL_AGE_MS] - Minimum age to remove
+ * @param {string[]} [options.protected_paths=[]] - Active/recoverable transport directories
  * @returns {number} Number of stale directories removed
  */
 export const cleanup_stale_ephemeral_credential_mounts = ( {
     directory = tmpdir(),
     now = Date.now(),
     max_age_ms = STALE_EPHEMERAL_CREDENTIAL_AGE_MS,
+    protected_paths = [],
 } = {} ) => {
 
     let entries
@@ -68,6 +73,7 @@ export const cleanup_stale_ephemeral_credential_mounts = ( {
     }
 
     let removed = 0
+    const protected_set = new Set( protected_paths )
 
     entries
         .filter( entry => entry.isDirectory() )
@@ -76,6 +82,7 @@ export const cleanup_stale_ephemeral_credential_mounts = ( {
             const path = join( directory, entry.name )
 
             try {
+                if( protected_set.has( path ) ) return
                 if( now - statSync( path ).mtimeMs < max_age_ms ) return
 
                 rmSync( path, { recursive: true, force: true } )
@@ -114,8 +121,16 @@ const aggregate_syncs = ( syncs ) => {
     if( !active_syncs.length ) return null
 
     return {
+        connect: container_id => {
+            active_syncs.forEach( ( { controller, target } ) => {
+                controller.set_transport( create_docker_file_transport( container_id, target ) )
+            } )
+        },
+        cleanup: () => cleanup_ephemeral_credential_mounts(
+            active_syncs.map( ( { cleanup_path } ) => ( { cleanup: cleanup_path } ) )
+        ),
         stop: async () => {
-            await Promise.all( active_syncs.map( sync => sync.stop() ) )
+            await Promise.all( active_syncs.map( ( { controller } ) => controller.stop() ) )
         },
     }
 
@@ -165,8 +180,8 @@ export const setup_credentials = async ( agent, options = {} ) => {
         const existing_tmpfile = existing_tmpfiles[ credential_agent.name ]
             || ( is_active_agent ? options.existing_tmpfile : null )
 
-        // Monitor processes cannot add mounts to an already-running container.
-        // Only reattach sync to tmpfiles the foreground actually mounted.
+        // Monitor processes cannot stage new files into an unrelated launch.
+        // Only reattach sync to tmpfiles captured by the foreground.
         if( is_monitor_reuse && !existing_tmpfile ) continue
 
         const sync_baseline = sync_baselines[ credential_agent.name ]
@@ -178,9 +193,15 @@ export const setup_credentials = async ( agent, options = {} ) => {
         } )
 
         mounts.push( ...result.mounts )
-        if( result.sync ) syncs.push( result.sync )
+        if( result.sync ) {
+            syncs.push( {
+                controller: result.sync,
+                target: credential_agent.container_paths.creds,
+                cleanup_path: result.cleanup_path,
+            } )
+        }
 
-        const mounted_tmpfile = result.mounts.find( m => m.type === `volume` )?.source
+        const mounted_tmpfile = result.mounts.find( m => m.type === `synced_file` )?.source
         const tmpfile = existing_tmpfile || mounted_tmpfile
         if( tmpfile ) tmpfiles[ credential_agent.name ] = tmpfile
         if( result.sync_baseline ) next_sync_baselines[ credential_agent.name ] = result.sync_baseline

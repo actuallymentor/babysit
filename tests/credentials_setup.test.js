@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from 'fs'
-import { join } from 'path'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, statSync } from 'fs'
+import { dirname, join } from 'path'
 import { tmpdir } from 'os'
 
 import { get_agent } from '../src/agents/index.js'
@@ -10,16 +10,15 @@ import { setup_linux_credentials } from '../src/credentials/linux.js'
 // Regression suite for the monitor-tmpfile fix.
 //
 // The bug: cmd_monitor was calling `setup_credentials(agent)` with no options,
-// which made `copy_host_file_to_tmpfile` mint a brand-new tmpfile (the path
-// includes Date.now()). The container had been started by the foreground with
-// the foreground's tmpfile bind-mounted, so the monitor's sync watched the
-// wrong file. Container-side OAuth refreshes never made it back to the host
+// which minted a brand-new sync file. The container had been staged from the
+// foreground's file, so the monitor watched the wrong local observation point.
+// Container-side OAuth refreshes never made it back to the host
 // auth.json, and the next babysit session failed with "refresh token already
 // used" the moment the agent started.
 //
 // Fix: setup_credentials now accepts `{ existing_tmpfile }`, and cmd_monitor
-// passes session.creds_tmpfile so its sync watches the SAME tmpfile the
-// container is mounting.
+// passes session.creds_tmpfile and container_id so its sync watches the SAME
+// local file and Docker container.
 
 describe( `setup_linux_credentials existing_tmpfile`, () => {
 
@@ -52,16 +51,20 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `creates a fresh tmpfile + mount on the foreground call`, async () => {
 
-        const { mounts, sync } = await setup_linux_credentials( fake_agent )
+        const { mounts, sync, cleanup_path } = await setup_linux_credentials( fake_agent )
 
-        const volume = mounts.find( m => m.type === `volume` )
+        const volume = mounts.find( m => m.type === `synced_file` )
 
         expect( volume ).toBeDefined()
         expect( volume.target ).toBe( `/home/node/.codex/auth.json` )
         expect( existsSync( volume.source ) ).toBe( true )
         expect( readFileSync( volume.source, `utf-8` ) ).toBe( `{"refresh_token":"original"}` )
+        expect( statSync( dirname( volume.source ) ).mode & 0o777 ).toBe( 0o700 )
+        expect( statSync( volume.source ).mode & 0o777 ).toBe( 0o666 )
 
         await sync.stop()
+        rmSync( cleanup_path, { recursive: true, force: true } )
+        expect( existsSync( cleanup_path ) ).toBe( false )
 
     } )
 
@@ -69,7 +72,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
         // Foreground path
         const fg = await setup_linux_credentials( fake_agent )
-        const fg_tmpfile = fg.mounts.find( m => m.type === `volume` ).source
+        const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         // Monitor path: same agent, but pass the foreground's tmpfile
         const mon = await setup_linux_credentials( fake_agent, { existing_tmpfile: fg_tmpfile } )
@@ -90,13 +93,14 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
             .toBe( `{"refresh_token":"rotated"}` )
 
         await fg.sync.stop()
+        rmSync( fg.cleanup_path, { recursive: true, force: true } )
 
     } )
 
     it( `preserves a tmpfile rotation that happened before the monitor starts`, async () => {
 
         const fg = await setup_linux_credentials( fake_agent )
-        const fg_tmpfile = fg.mounts.find( m => m.type === `volume` ).source
+        const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         // Simulate codex refreshing during startup before the detached monitor
         // has established its credential sync. The monitor receives the
@@ -117,13 +121,14 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
             .toBe( `{"refresh_token":"startup-rotated"}` )
 
         await fg.sync.stop()
+        rmSync( fg.cleanup_path, { recursive: true, force: true } )
 
     } )
 
     it( `with existing_tmpfile, host-file changes still flow to the tmpfile (direction 1)`, async () => {
 
         const fg = await setup_linux_credentials( fake_agent )
-        const fg_tmpfile = fg.mounts.find( m => m.type === `volume` ).source
+        const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         const mon = await setup_linux_credentials( fake_agent, { existing_tmpfile: fg_tmpfile } )
 
@@ -138,6 +143,8 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         await mon.sync.stop()
 
         expect( readFileSync( fg_tmpfile, `utf-8` ) ).toBe( `{"refresh_token":"reauthed"}` )
+
+        rmSync( fg.cleanup_path, { recursive: true, force: true } )
 
     } )
 
@@ -224,7 +231,7 @@ describe( `setup_credentials multi-agent capture`, () => {
 
         const result = await setup_credentials( get_agent( `codex` ) )
         const volume_targets = result.mounts
-            .filter( mount => mount.type === `volume` )
+            .filter( mount => mount.type === `synced_file` )
             .map( mount => mount.target )
 
         expect( volume_targets ).toEqual( expect.arrayContaining( Object.values( container_targets ) ) )
@@ -233,6 +240,8 @@ describe( `setup_credentials multi-agent capture`, () => {
         expect( result.creds_tmpfile ).toBeUndefined()
 
         await result.sync.stop()
+        result.sync.cleanup()
+        expect( Object.values( result.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
 
     } )
 
@@ -244,13 +253,15 @@ describe( `setup_credentials multi-agent capture`, () => {
             sync_baselines: foreground.sync_baselines,
         } )
 
-        expect( monitor.mounts.find( mount => mount.type === `volume` ) ).toBeUndefined()
+        expect( monitor.mounts.find( mount => mount.type === `synced_file` ) ).toBeUndefined()
         expect( monitor.tmpfiles ).toEqual( foreground.tmpfiles )
 
         await foreground.sync.stop()
 
         writeFileSync( foreground.tmpfiles.claude, `{"agent":"claude","refresh_token":"rotated"}` )
         await monitor.sync.stop()
+        monitor.sync.cleanup()
+        expect( Object.values( foreground.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
 
         expect( readFileSync( host_credential_path( `claude` ), `utf-8` ) )
             .toBe( `{"agent":"claude","refresh_token":"rotated"}` )
@@ -265,13 +276,16 @@ describe( `setup_credentials multi-agent capture`, () => {
             sync_baseline: foreground.sync_baselines.codex,
         } )
 
-        expect( legacy_monitor.mounts.find( mount => mount.type === `volume` ) ).toBeUndefined()
+        expect( legacy_monitor.mounts.find( mount => mount.type === `synced_file` ) ).toBeUndefined()
         expect( Object.keys( legacy_monitor.tmpfiles ) ).toEqual( [ `codex` ] )
 
         await foreground.sync.stop()
 
         writeFileSync( foreground.tmpfiles.codex, `{"agent":"codex","refresh_token":"legacy-rotated"}` )
         await legacy_monitor.sync.stop()
+        legacy_monitor.sync.cleanup()
+        foreground.sync.cleanup()
+        expect( Object.values( foreground.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
 
         expect( readFileSync( host_credential_path( `codex` ), `utf-8` ) )
             .toBe( `{"agent":"codex","refresh_token":"legacy-rotated"}` )

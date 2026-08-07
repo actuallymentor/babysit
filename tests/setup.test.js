@@ -401,7 +401,13 @@ describe( `gemini_extra_mounts`, () => {
         const dir = mkdtempSync( join( tmpdir(), `babysit-gemini-settings-` ) )
         const host_path = join( dir, `settings.json` )
         writeFileSync( host_path, JSON.stringify( {
-            security: { auth: { selectedType: `oauth-personal` } },
+            security: {
+                auth: {
+                    selectedType: `oauth-personal`,
+                    enforcedType: `api-key`,
+                    useExternal: true,
+                },
+            },
             context: { fileName: [ `HOST.md` ] },
             mcpServers: { host: { command: `host-tool` } },
             ui: { theme: `host-theme` },
@@ -414,6 +420,31 @@ describe( `gemini_extra_mounts`, () => {
 
         expect( parsed ).toEqual( {
             security: { auth: { selectedType: `oauth-personal` } },
+        } )
+
+        rmSync( dir, { recursive: true, force: true } )
+        rmSync( tmpfile, { force: true } )
+
+    } )
+
+    it( `keeps only the legacy credential lane from legacy auth settings`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-gemini-legacy-auth-` ) )
+        const host_path = join( dir, `settings.json` )
+        writeFileSync( host_path, JSON.stringify( {
+            auth: {
+                selectedType: `oauth-personal`,
+                enforcedType: `api-key`,
+                useExternal: true,
+            },
+        } ) )
+
+        const tmpfile = build_gemini_settings_tmpfile( host_path, {
+            include_host_preferences: false,
+        } )
+
+        expect( JSON.parse( readFileSync( tmpfile, `utf-8` ) ) ).toEqual( {
+            auth: { selectedType: `oauth-personal` },
         } )
 
         rmSync( dir, { recursive: true, force: true } )

@@ -10,6 +10,7 @@ import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
+import { remove_docker_container } from '../docker/file_transport.js'
 
 /**
  * Rebuild the launch mode from stored session modifiers.
@@ -70,32 +71,7 @@ export const cmd_monitor = async ( cmd ) => {
         }
     }
 
-    const { config, rules } = load_monitor_config( session )
-
-    // Re-apply --loop if it was active in the original session — the rule
-    // override mutates `rules` in place, so the monitor will see the LOOP.md
-    // action wired up to the idle rule.
-    if( session.modifiers?.includes( `loop` ) ) {
-        apply_loop( rules, session.pwd, {
-            include_global_loop: !session.modifiers.includes( `ignore-host-agents-md` ),
-        } )
-    }
-
     const agent = get_agent( session.agent )
-    const agent_patterns = get_patterns( session.agent )
-
-    // Set up our own credential sync. The foreground process owns the initial
-    // capture and the docker mount, but its setInterval dies with it — without
-    // this, tokens would stop refreshing the moment the user detaches.
-    //
-    // CRITICAL: pass the foreground tmpfiles so the monitor watches the SAME
-    // files the container is already mounting. `copy_host_file_to_tmpfile`
-    // bakes Date.now() into each path, so a fresh setup_credentials call would
-    // mint brand-new tmpfiles that nobody writes to — and in-container OAuth
-    // refreshes (the whole reason for bidirectional sync) would never make it
-    // back to the host files. Symptom: "Your access token could not be
-    // refreshed because your refresh token was already used" on the NEXT
-    // babysit session, every time.
     const existing_tmpfiles = session.creds_tmpfiles || (
         session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {}
     )
@@ -103,16 +79,88 @@ export const cmd_monitor = async ( cmd ) => {
         session.creds_sync_baseline ? { [ session.agent ]: session.creds_sync_baseline } : {}
     )
 
-    const { sync: creds_sync } = await setup_credentials( agent, {
-        existing_tmpfiles,
-        sync_baselines,
-    } )
+    let creds_sync = null
+    let credential_setup_complete = false
+    let caffeinate = null
+    let container_cleaned = false
+    let credentials_cleaned = false
+    let credential_cleanup_task = null
 
-    log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
+    const cleanup_credentials = async () => {
+        if( credentials_cleaned ) return true
+        if( !credential_setup_complete ) {
+            const has_recovery_files = Object.keys( existing_tmpfiles ).length > 0
+            if( has_recovery_files ) {
+                log.warn( `Credential recovery could not start; retaining container and private recovery files.` )
+                return false
+            }
 
-    const caffeinate = start_caffeinate()
+            return true
+        }
+        if( !creds_sync ) return true
+        if( credential_cleanup_task ) return credential_cleanup_task
+
+        credential_cleanup_task = ( async () => {
+            try {
+                await creds_sync.stop()
+                if( !creds_sync.cleanup() ) {
+                    log.warn( `Could not remove private credential recovery files; retaining the stopped container for retry.` )
+                    return false
+                }
+                credentials_cleaned = true
+                return true
+            } catch ( error ) {
+                log.warn(
+                    `Could not flush completed session credentials; retaining container and private recovery files: ${ error.message }`
+                )
+                return false
+            } finally {
+                credential_cleanup_task = null
+            }
+        } )()
+
+        return credential_cleanup_task
+    }
+
+    const cleanup_container = async () => {
+        if( container_cleaned || !session.container_id ) return
+
+        try {
+            await remove_docker_container( session.container_id )
+            container_cleaned = true
+        } catch ( error ) {
+            log.debug( `Could not remove completed Docker container ${ session.container_id }: ${ error.message }` )
+        }
+    }
 
     try {
+
+        // Set up our own credential sync before loading monitor configuration.
+        // If config parsing then fails, the outer teardown can still perform a
+        // final Docker pull instead of deleting the only refreshed copy.
+        const credential_setup = await setup_credentials( agent, {
+            existing_tmpfiles,
+            sync_baselines,
+        } )
+        creds_sync = credential_setup.sync
+        credential_setup_complete = true
+        if( creds_sync && session.container_id ) creds_sync.connect( session.container_id )
+
+        const { config, rules } = load_monitor_config( session )
+
+        // Re-apply --loop if it was active in the original session — the rule
+        // override mutates `rules` in place, so the monitor sees the same
+        // LOOP.md action as the foreground process.
+        if( session.modifiers?.includes( `loop` ) ) {
+            apply_loop( rules, session.pwd, {
+                include_global_loop: !session.modifiers.includes( `ignore-host-agents-md` ),
+            } )
+        }
+
+        const agent_patterns = get_patterns( session.agent )
+
+        log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
+        caffeinate = start_caffeinate()
 
         await start_monitor( {
             session_name: session.tmux_session,
@@ -127,11 +175,12 @@ export const cmd_monitor = async ( cmd ) => {
                 // Await so the sync's final flush completes before the process
                 // exits — otherwise a token refresh that happened in the last
                 // REFRESH_INTERVAL_MS window never makes it back to the host file.
-                if( creds_sync ) await creds_sync.stop()
+                if( await cleanup_credentials() ) await cleanup_container()
             },
         } )
 
     } finally {
+        if( await cleanup_credentials() ) await cleanup_container()
         stop_caffeinate( caffeinate )
     }
 

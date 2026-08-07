@@ -37,6 +37,7 @@ export const sort_sessions_newest_first = ( sessions ) => [ ...sessions ].sort(
  *   legacy active-agent credential capture handoff
  * @param {Object|null} [session.creds_sync_baselines] - Per-agent safe hashes
  *   from the credential capture handoff
+ * @param {string|null} [session.container_id] - Docker container used for API credential sync
  * @param {number} [session.creds_sync_pid] - PID of credential sync daemon
  * @param {string} session.started_at - ISO timestamp
  */

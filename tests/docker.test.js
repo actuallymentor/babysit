@@ -154,6 +154,18 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `imports staged credential environment values without evaluating shell code`, () => {
+
+        const entrypoint = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
+
+        expect( entrypoint ).toContain( `/tmp/.babysit-credentials.env` )
+        expect( entrypoint ).toContain( `IFS= read -r credential_line` )
+        expect( entrypoint ).toContain( `export "\${credential_line?}"` )
+        expect( entrypoint ).toContain( `rm -f "$CREDENTIAL_ENV_BOOTSTRAP"` )
+        expect( entrypoint ).not.toContain( `source "$CREDENTIAL_ENV_BOOTSTRAP"` )
+
+    } )
+
     it( `installs just outside apt so slim-base package availability cannot break builds`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
@@ -366,6 +378,18 @@ describe( `build_docker_command`, () => {
         expect( args.some( arg => arg.includes( `/home/node/.agents` ) ) ).toBe( false )
         expect( args.some( arg => arg.includes( `/home/node/.codex/sessions` ) ) ).toBe( false )
         expect( args.slice( -3 ) ).toEqual( [ `codex`, `exec`, `hello` ] )
+
+    } )
+
+    it( `uses collision-resistant container names for concurrent launches`, () => {
+
+        const names = [ 1, 2 ].map( () => {
+            const args = build_docker_command_args( make_options() )
+            return args[ args.indexOf( `--name` ) + 1 ]
+        } )
+
+        expect( names[0] ).not.toBe( names[1] )
+        expect( names.every( name => name.startsWith( `babysit-codex-` ) ) ).toBe( true )
 
     } )
 

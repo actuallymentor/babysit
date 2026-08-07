@@ -10,6 +10,7 @@ import { get_agent } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
+import { private_credential_tmpdir } from '../utils/tmpfile.js'
 import {
     DEFAULT_DOCKER_SOCKET,
     docker_daemon_status,
@@ -30,7 +31,7 @@ import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
 import { capture_pane, stop_pipe_pane } from '../tmux/capture.js'
-import { save_session, load_session, generate_session_id } from '../sessions/store.js'
+import { save_session, load_session, list_stored_sessions, generate_session_id } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { strip_ansi } from '../babysit/matcher.js'
@@ -426,7 +427,16 @@ export const cmd_start = async ( cmd ) => {
     const session_display_name = resolve_session_display_name( flags, stored_resume_session )
 
     ensure_dirs()
-    cleanup_stale_ephemeral_credential_mounts()
+    const protected_credential_paths = list_stored_sessions()
+        .flatMap( session => [
+            session.creds_tmpfile,
+            ...Object.values( session.creds_tmpfiles || {} ),
+        ] )
+        .map( private_credential_tmpdir )
+        .filter( Boolean )
+    cleanup_stale_ephemeral_credential_mounts( {
+        protected_paths: protected_credential_paths,
+    } )
 
     // Build mode descriptor
     const mode = {
@@ -501,6 +511,7 @@ export const cmd_start = async ( cmd ) => {
 
         if( !should_continue ) {
             if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after auth abort: ${ e.message }` ) )
+            if( creds_sync ) creds_sync.cleanup()
             log.error( `Aborted because host agent authentication is incomplete.` )
             process.exit( 1 )
         }
@@ -584,7 +595,6 @@ export const cmd_start = async ( cmd ) => {
     let pipe_started = false
 
     let prepared_launch = null
-    let launch_handed_off = false
 
     try {
         prepared_launch = await prepare_docker_launch( {
@@ -603,8 +613,14 @@ export const cmd_start = async ( cmd ) => {
             startup_log_path: log_path ? null : diagnostic_log_path,
         } )
         pipe_started = started_pipe
-        prepared_launch.handoff()
-        launch_handed_off = true
+
+        if( !await prepared_launch.await_started() ) {
+            throw new Error( `Docker container did not reach a running state after launch` )
+        }
+
+        if( creds_sync && prepared_launch.container_id ) {
+            creds_sync.connect( prepared_launch.container_id )
+        }
 
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
@@ -624,52 +640,63 @@ export const cmd_start = async ( cmd ) => {
         // can print only "no sessions" while the Docker error disappears.
         await wait( STARTUP_EXIT_GRACE_MS )
     } catch ( e ) {
-        if( prepared_launch && !launch_handed_off ) await prepared_launch.abort()
+        if( creds_sync ) await creds_sync.stop().catch( error => log.debug( `Credential sync stop after launch failure: ${ error.message }` ) )
+        if( prepared_launch ) await prepared_launch.abort()
+        if( creds_sync ) creds_sync.cleanup()
         throw e
     }
 
     if( !await has_session( session_name ) ) {
         report_startup_failure( agent, diagnostic_log_path )
         if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after startup failure: ${ e.message }` ) )
+        await prepared_launch.abort()
+        if( creds_sync ) creds_sync.cleanup()
         if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
         process.exit( 1 )
     }
 
-    await stop_startup_diagnostics( session_name, {
-        uses_user_log: Boolean( log_path ),
-        pipe_started,
-        diagnostic_log_path,
-    } )
+    let babysit_id
+    let session_data
 
-    // Generate and save session metadata before spawning the monitor — the
-    // monitor reads this file to reconstruct config, agent, and tmux session
-    // name, so it must exist before the spawn.
-    const babysit_id = generate_session_id()
+    try {
+        await stop_startup_diagnostics( session_name, {
+            uses_user_log: Boolean( log_path ),
+            pipe_started,
+            diagnostic_log_path,
+        } )
 
-    const session_data = {
-        babysit_id,
-        name: session_display_name,
-        agent: agent.name,
-        agent_session_id: null,
-        tmux_session: session_name,
-        pwd: workspace,
-        modifiers,
-        ports: flags.ports || [],
-        creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
-        creds_tmpfiles,
-        creds_sync_baseline,
-        creds_sync_baselines,
-        started_at: new Date().toISOString(),
+        // Save durable ownership metadata before spawning the monitor. The
+        // prepared launch keeps its signal/error cleanup until the detached
+        // monitor process has acknowledged that it spawned successfully.
+        babysit_id = generate_session_id()
+        session_data = {
+            babysit_id,
+            name: session_display_name,
+            agent: agent.name,
+            agent_session_id: null,
+            tmux_session: session_name,
+            pwd: workspace,
+            modifiers,
+            ports: flags.ports || [],
+            creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
+            creds_tmpfiles,
+            creds_sync_baseline,
+            creds_sync_baselines,
+            container_id: prepared_launch.container_id,
+            started_at: new Date().toISOString(),
+        }
+        save_session( session_data )
+
+        await spawn_monitor_daemon( babysit_id )
+        prepared_launch.handoff()
+    } catch ( error ) {
+        if( creds_sync ) await creds_sync.stop().catch( e => log.debug( `Credential sync stop after monitor handoff failure: ${ e.message }` ) )
+        await prepared_launch.abort()
+        if( creds_sync ) creds_sync.cleanup()
+        throw error
     }
-    save_session( session_data )
 
     log.info( `Session started: ${ agent.name } (${ babysit_id })` )
-
-    // Spawn the supervision loop as a detached background process. It re-loads
-    // config + agent state from session metadata and runs `start_monitor`
-    // independently, so it survives the foreground process exiting (which
-    // happens as soon as the user detaches from tmux below).
-    spawn_monitor_daemon( babysit_id )
 
     // Hand the foreground's credential sync over to the detached monitor.
     // Both sync intervals would race on the same tmpfile if we left this one
@@ -717,7 +744,7 @@ export const cmd_start = async ( cmd ) => {
  * which one is running and re-spawning accordingly.
  * @param {string} babysit_id - The session id to monitor
  */
-const spawn_monitor_daemon = ( babysit_id ) => {
+const spawn_monitor_daemon = ( babysit_id ) => new Promise( ( resolve_spawn, reject_spawn ) => {
 
     // Bun-compiled binaries set process.argv[1] to a synthetic /$bunfs path;
     // a real node script puts the .js file there. process.execPath points at
@@ -737,7 +764,14 @@ const spawn_monitor_daemon = ( babysit_id ) => {
         env: { ...process.env },
     } )
 
-    child.unref()
-    log.debug( `Monitor daemon spawned (pid ${ child.pid })` )
+    const handle_error = error => reject_spawn( error )
+    child.once( `error`, handle_error )
+    child.once( `spawn`, () => {
+        child.removeListener( `error`, handle_error )
+        child.on( `error`, error => log.debug( `Monitor daemon error: ${ error.message }` ) )
+        child.unref()
+        log.debug( `Monitor daemon spawned (pid ${ child.pid })` )
+        resolve_spawn( child.pid )
+    } )
 
-}
+} )

@@ -3,7 +3,9 @@ import { EventEmitter } from 'events'
 import { existsSync, readFileSync } from 'fs'
 
 import { opencode } from '../src/agents/opencode.js'
-import { prepare_docker_launch } from '../src/docker/launch.js'
+import { build_docker_launch_plan, prepare_docker_launch } from '../src/docker/launch.js'
+import { build_docker_command_args } from '../src/docker/run.js'
+import { cleanup_ephemeral_credential_mounts } from '../src/credentials/index.js'
 import { build_private_tmpfile } from '../src/utils/tmpfile.js'
 
 const CONTAINER_ID = `a`.repeat( 64 )
@@ -55,6 +57,51 @@ const fake_signals = () => new EventEmitter()
 
 describe( `prepared Docker launch`, () => {
 
+    it( `keeps isolated generated config and credentials out of bind metadata`, () => {
+
+        const config = build_private_tmpfile( `config`, `settings.json`, `{}` )
+        const credential = build_private_tmpfile( `credential`, `auth.json`, `secret-file` )
+        const options = make_options( {
+            type: `synced_file`,
+            source: credential.file,
+            target: `/home/node/.local/share/opencode/auth.json`,
+        } )
+        options.extra_mounts = [ {
+            host: config.file,
+            container: `/home/node/.config/opencode/settings.json`,
+        } ]
+        options.creds_mounts.push( {
+            type: `env`,
+            key: `OPENCODE_API_KEY`,
+            value: `secret-env`,
+        } )
+
+        const plan = build_docker_launch_plan( options )
+        const args = build_docker_command_args( plan )
+
+        try {
+            expect( args.join( ` ` ) ).not.toContain( config.file )
+            expect( args.join( ` ` ) ).not.toContain( credential.file )
+            expect( args.join( ` ` ) ).not.toContain( `secret-env` )
+            expect( plan.extra_mounts[0].type ).toBe( `seed_file` )
+            expect( plan.creds_mounts ).toContainEqual( expect.objectContaining( {
+                type: `synced_file`,
+                source: credential.file,
+            } ) )
+            expect( plan.creds_mounts ).toContainEqual( expect.objectContaining( {
+                type: `copy`,
+                target: `/tmp/.babysit-credentials.env`,
+            } ) )
+        } finally {
+            cleanup_ephemeral_credential_mounts( [ ...plan.extra_mounts, ...plan.creds_mounts ] )
+            cleanup_ephemeral_credential_mounts( [
+                { cleanup: config.directory },
+                { cleanup: credential.directory },
+            ] )
+        }
+
+    } )
+
     it( `uploads credentials before cleanup without exposing tokens in create metadata`, async () => {
 
         const { transport, mount } = private_transport()
@@ -83,6 +130,7 @@ describe( `prepared Docker launch`, () => {
 
         expect( create_call.command ).toBe( `docker` )
         expect( create_call.args ).not.toContain( `run` )
+        expect( create_call.args ).not.toContain( `--rm` )
         expect( create_call.args.join( ` ` ) ).not.toContain( `fake-token` )
         expect( create_call.args.join( ` ` ) ).not.toContain( transport.file )
         expect( copy_call.args ).toContain( transport.file )
@@ -115,6 +163,52 @@ describe( `prepared Docker launch`, () => {
         expect( existsSync( transport.directory ) ).toBe( false )
         expect( calls.some( call => call.args.includes( `start` ) ) ).toBe( false )
         expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( CONTAINER_ID ) ) ).toBe( true )
+
+    } )
+
+    it( `does not remove an unowned name when docker create is rejected`, async () => {
+
+        const { transport, mount } = private_transport()
+        const calls = []
+
+        await expect( prepare_docker_launch( make_options( mount ), {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) throw new Error( `name conflict` )
+                return ``
+            },
+        } ) ).rejects.toThrow( `name conflict` )
+
+        expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
+        expect( existsSync( transport.directory ) ).toBe( false )
+
+    } )
+
+    it( `removes a generated name when docker create times out`, async () => {
+
+        const { transport, mount } = private_transport()
+        const calls = []
+
+        await expect( prepare_docker_launch( make_options( mount ), {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) {
+                    const error = new Error( `docker timed out` )
+                    error.code = `ETIMEDOUT`
+                    throw error
+                }
+                return ``
+            },
+        } ) ).rejects.toThrow( `docker timed out` )
+
+        const create_call = calls.find( call => call.args.includes( `create` ) )
+        const name_index = create_call.args.indexOf( `--name` )
+        const generated_name = create_call.args[ name_index + 1 ]
+
+        expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( generated_name ) ) ).toBe( true )
+        expect( existsSync( transport.directory ) ).toBe( false )
 
     } )
 
@@ -180,27 +274,145 @@ describe( `prepared Docker launch`, () => {
 
         const { mount } = private_transport()
         const signals = fake_signals()
-        const synchronous_calls = []
+        const calls = []
         const kill_calls = []
 
         await prepare_docker_launch( make_options( mount ), {
             signal_target: signals,
             kill_process: ( pid, signal ) => kill_calls.push( { pid, signal } ),
-            spawn_sync: ( command, args ) => {
-                synchronous_calls.push( { command, args: [ ...args ] } )
-                return { status: 0 }
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                return args.includes( `create` ) ? CONTAINER_ID : ``
             },
-            run_command: async ( command, args ) => args.includes( `create` ) ? CONTAINER_ID : ``,
         } )
 
         signals.emit( `SIGTERM` )
+        await new Promise( resolve => setTimeout( resolve, 0 ) )
 
-        expect( synchronous_calls ).toEqual( [ {
+        expect( calls.filter( call => call.args.includes( `rm` ) ) ).toEqual( [ {
             command: `docker`,
             args: [ `rm`, `-f`, CONTAINER_ID ],
         } ] )
         expect( kill_calls ).toEqual( [ { pid: process.pid, signal: `SIGTERM` } ] )
         expect( signals.listenerCount( `SIGTERM` ) ).toBe( 0 )
+
+    } )
+
+    it( `cancels an in-flight copy before removing its source and container`, async () => {
+
+        const { transport, mount } = private_transport()
+        const signals = fake_signals()
+        const calls = []
+        const kill_calls = []
+        let copy_started
+        const copying = new Promise( resolve => {
+            copy_started = resolve
+        } )
+
+        const launch_task = prepare_docker_launch( make_options( mount ), {
+            signal_target: signals,
+            kill_process: ( pid, signal ) => kill_calls.push( { pid, signal } ),
+            run_command: async ( command, args, options ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `cp` ) ) {
+                    copy_started()
+                    return new Promise( ( resolve, reject ) => {
+                        options.signal.addEventListener( `abort`, () => reject( new Error( `copy aborted` ) ) )
+                    } )
+                }
+                return ``
+            },
+        } )
+
+        await copying
+        expect( existsSync( transport.file ) ).toBe( true )
+
+        signals.emit( `SIGINT` )
+        await expect( launch_task ).rejects.toThrow( `copy aborted` )
+        await new Promise( resolve => setTimeout( resolve, 0 ) )
+
+        expect( existsSync( transport.directory ) ).toBe( false )
+        expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( CONTAINER_ID ) ) ).toBe( true )
+        expect( kill_calls ).toEqual( [ { pid: process.pid, signal: `SIGINT` } ] )
+
+    } )
+
+    it( `keeps ownership until Docker acknowledges the started container`, async () => {
+
+        const { mount } = private_transport()
+        const signals = fake_signals()
+        const statuses = [ `created`, `created`, `running` ]
+
+        const launch = await prepare_docker_launch( make_options( mount ), {
+            signal_target: signals,
+            run_command: async ( command, args ) => {
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `inspect` ) ) return statuses.shift()
+                return ``
+            },
+        } )
+
+        expect( signals.listenerCount( `SIGTERM` ) ).toBe( 1 )
+        expect( await launch.await_started( { timeout_ms: 1_000, poll_ms: 1 } ) ).toBe( true )
+        expect( signals.listenerCount( `SIGTERM` ) ).toBe( 1 )
+
+        launch.handoff()
+        expect( signals.listenerCount( `SIGTERM` ) ).toBe( 0 )
+
+    } )
+
+    it( `removes a container that never leaves the created state`, async () => {
+
+        const { mount } = private_transport()
+        const calls = []
+        const launch = await prepare_docker_launch( make_options( mount ), {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `inspect` ) ) return `created`
+                return ``
+            },
+        } )
+
+        expect( await launch.await_started( { timeout_ms: 2, poll_ms: 1 } ) ).toBe( false )
+        await launch.abort()
+
+        expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( CONTAINER_ID ) ) ).toBe( true )
+
+    } )
+
+    it( `stages isolated secret environment values outside Docker metadata`, async () => {
+
+        const options = make_options( {
+            type: `secret_env`,
+            key: `GH_TOKEN`,
+            value: `private-token`,
+        } )
+        options.creds_mounts = [ options.creds_mounts[0] ]
+
+        let staged_environment = ``
+        const calls = []
+        const launch = await prepare_docker_launch( options, {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `cp` ) ) {
+                    staged_environment = readFileSync( args.at( -2 ), `utf-8` )
+                    return ``
+                }
+                return ``
+            },
+        } )
+
+        const create_args = calls.find( call => call.args.includes( `create` ) ).args
+
+        expect( create_args.join( ` ` ) ).not.toContain( `private-token` )
+        expect( staged_environment ).toBe( `GH_TOKEN=private-token\n` )
+
+        await launch.abort()
 
     } )
 

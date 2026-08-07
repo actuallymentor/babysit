@@ -260,6 +260,55 @@ describe( `cmd_resume cwd handling`, () => {
 
 } )
 
+describe( `cmd_resume live isolation`, () => {
+
+    const live_session = modifiers => ( {
+        babysit_id: `20260807-120000-live`,
+        agent: `claude`,
+        tmux_session: `babysit-live`,
+        modifiers,
+    } )
+
+    it( `refuses to attach when isolation is newly requested for a live session`, async () => {
+
+        let opened = false
+
+        await expect( cmd_resume( {
+            session_id: `20260807-120000-live`,
+            flags: { ignore_host_agents_md: true },
+        }, {
+            load_session_fn: () => live_session( [] ),
+            has_session_fn: async () => true,
+            open_session: async () => {
+                opened = true
+            },
+        } ) ).rejects.toThrow( `cannot be applied to an already-running session` )
+
+        expect( opened ).toBe( false )
+
+    } )
+
+    it( `attaches when the live session was already isolated`, async () => {
+
+        let opened_session = null
+
+        await cmd_resume( {
+            session_id: `20260807-120000-live`,
+            flags: { ignore_host_agents_md: true },
+        }, {
+            load_session_fn: () => live_session( [ `ignore-host-agents-md` ] ),
+            has_session_fn: async () => true,
+            open_session: async command => {
+                opened_session = command.session_id
+            },
+        } )
+
+        expect( opened_session ).toBe( `babysit-live` )
+
+    } )
+
+} )
+
 describe( `merge_resume_flags`, () => {
 
     it( `keeps logging disabled when resume did not pass --log`, () => {

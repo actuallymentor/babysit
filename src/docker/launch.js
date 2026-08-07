@@ -1,10 +1,14 @@
-import { spawnSync } from 'child_process'
+import { statSync } from 'fs'
+import { tmpdir } from 'os'
+import { resolve, sep } from 'path'
 
 import { cleanup_ephemeral_credential_mounts } from '../credentials/index.js'
+import { get_extra_mounts } from '../agents/setup.js'
+import { build_private_tmpfile } from '../utils/tmpfile.js'
 import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
+import { normalise_local_sync_file } from './file_transport.js'
 import {
-    build_docker_command,
     build_docker_command_args,
     docker_command_prefix,
     shell_quote,
@@ -13,10 +17,18 @@ import {
 const DOCKER_CREATE_TIMEOUT_MS = 5 * 60 * 1_000
 const DOCKER_COPY_TIMEOUT_MS = 60_000
 const DOCKER_CLEANUP_TIMEOUT_MS = 30_000
+const DOCKER_INSPECT_TIMEOUT_MS = 5_000
+const DOCKER_START_TIMEOUT_MS = 10_000
+const DOCKER_START_POLL_MS = 100
 const DOCKER_CONTAINER_ID_PATTERN = /^[0-9a-f]{12,64}$/
 const LAUNCH_SIGNALS = [ `SIGHUP`, `SIGINT`, `SIGTERM` ]
+const SECRET_ENV_BOOTSTRAP_PATH = `/tmp/.babysit-credentials.env`
+const NON_SECRET_CREDENTIAL_ENV = new Set( [ `GH_CONFIG_DIR`, `GH_HOST` ] )
 
-const copy_mounts_from = ( mounts = [] ) => mounts.filter( mount => mount.type === `copy` )
+const copy_mounts_from = ( extra_mounts = [], credential_mounts = [] ) => [
+    ...extra_mounts.filter( mount => mount.type === `copy` || mount.type === `seed_file` ),
+    ...credential_mounts.filter( mount => mount.type === `copy` || mount.type === `synced_file` ),
+]
 
 const container_name_from = ( args = [] ) => {
 
@@ -34,6 +46,9 @@ const docker_action_args = ( args, action, prefix = docker_command_prefix() ) =>
 
     const next_args = [ ...args ]
     next_args[ action_index ] = action
+    if( action === `create` && next_args[ action_index + 1 ] === `--rm` ) {
+        next_args.splice( action_index + 1, 1 )
+    }
 
     return next_args
 
@@ -51,29 +66,158 @@ const remove_signal_handlers = ( signal_target, handlers ) => {
 
 }
 
+const is_ephemeral_path = path => {
+
+    const temporary_root = `${ resolve( tmpdir() ) }${ sep }`
+    return resolve( path ).startsWith( temporary_root )
+
+}
+
+const copy_source_from = path => {
+
+    try {
+        return statSync( path ).isDirectory() ? `${ path.replace( /\/$/, `` ) }/.` : path
+    } catch {
+        return path
+    }
+
+}
+
+const build_secret_env_copy = ( mounts, build_private_file ) => {
+
+    if( !mounts.length ) return null
+
+    const lines = mounts.map( mount => {
+        const value = String( mount.value )
+        if( value.includes( `\n` ) || value.includes( `\0` ) ) {
+            throw new Error( `Credential environment value for ${ mount.key } contains an unsupported newline or NUL` )
+        }
+
+        return `${ mount.key }=${ value }`
+    } )
+    const transport = build_private_file( `credentials`, `env`, `${ lines.join( `\n` ) }\n` )
+    if( !transport ) throw new Error( `Could not build the private credential environment transport` )
+
+    return {
+        type: `copy`,
+        source: transport.file,
+        target: SECRET_ENV_BOOTSTRAP_PATH,
+        cleanup: transport.directory,
+    }
+
+}
+
 /**
- * Build a launch command, uploading private credential files to a stopped
- * container when required. `docker cp` is the acknowledgment boundary: only
- * after the daemon accepts every file do we remove the host transport and let
- * tmux start the container.
+ * Resolve generated agent config and credential descriptors exactly once.
+ * Isolated config is copied into the stopped container, while secrets become
+ * either copied files or a private environment bootstrap consumed at entry.
+ *
+ * @param {Object} options - Raw Docker launch options
+ * @param {Function} [build_private_file=build_private_tmpfile] - Private file builder
+ * @returns {Object} Launch options with a precomputed typed mount plan
+ */
+export const build_docker_launch_plan = ( options, {
+    build_private_file = build_private_tmpfile,
+} = {} ) => {
+
+    const mode = options.mode || {}
+    const include_host_agent_context = options.include_host_agent_context ?? !mode.ignore_host_agents_md
+    const generated_extra_mounts = options.extra_mounts || get_extra_mounts( options.agent.name )( {
+        yolo: mode.yolo,
+        include_host_preferences: include_host_agent_context,
+    } )
+    const raw_credential_mounts = options.creds_mounts || []
+    const has_staged_agent_credentials = raw_credential_mounts.some( mount => mount.type === `synced_file` )
+
+    const extra_mounts = generated_extra_mounts.map( mount => {
+        const should_stage = mode.ignore_host_agents_md
+            ? true
+            : has_staged_agent_credentials && is_ephemeral_path( mount.host )
+
+        if( !should_stage ) return mount
+
+        return {
+            ...mount,
+            type: `seed_file`,
+            source: copy_source_from( mount.host ),
+            target: mount.container,
+            cleanup: is_ephemeral_path( mount.host ) ? mount.host : null,
+        }
+    } )
+
+    const is_secret_environment = mount => {
+        if( mount.type === `secret_env` ) return true
+        return mount.type === `env` && !NON_SECRET_CREDENTIAL_ENV.has( mount.key )
+    }
+
+    const secret_env_mounts = mode.ignore_host_agents_md
+        ? raw_credential_mounts.filter( is_secret_environment )
+        : raw_credential_mounts.filter( mount => mount.type === `secret_env` )
+    const secret_env_set = new Set( secret_env_mounts )
+    const creds_mounts = raw_credential_mounts.filter( mount => !secret_env_set.has( mount ) )
+    let secret_env_copy
+    try {
+        secret_env_copy = build_secret_env_copy( secret_env_mounts, build_private_file )
+    } catch ( error ) {
+        cleanup_ephemeral_credential_mounts( [ ...extra_mounts, ...raw_credential_mounts ] )
+        throw error
+    }
+
+    if( secret_env_copy ) creds_mounts.push( secret_env_copy )
+
+    return {
+        ...options,
+        extra_mounts,
+        creds_mounts,
+    }
+
+}
+
+const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
+
+/**
+ * Build a launch command, uploading private and daemon-invisible files to a
+ * stopped container. `docker cp` is the acknowledgment boundary: only after
+ * the daemon accepts every file do we remove short-lived host transports.
+ *
  * @param {Object} options - Options accepted by build_docker_command_args
  * @param {Object} [dependencies] - Injectable process seams for tests
- * @returns {Promise<{command: string, container_id: string|null, abort: Function, handoff: Function}>}
+ * @returns {Promise<{
+ *   command: string,
+ *   command_args: string[],
+ *   container_id: string|null,
+ *   abort: Function,
+ *   await_started: Function,
+ *   pull_synced_files: Function,
+ *   handoff: Function
+ * }>} Prepared launch controller
  */
 export const prepare_docker_launch = async ( options, {
     run_command = run,
-    spawn_sync = spawnSync,
     cleanup_credentials = cleanup_ephemeral_credential_mounts,
     signal_target = process,
     kill_process = process.kill.bind( process ),
+    build_private_file = build_private_tmpfile,
 } = {} ) => {
 
-    const copy_mounts = copy_mounts_from( options.creds_mounts )
+    let planned_options
+    try {
+        planned_options = build_docker_launch_plan( options, { build_private_file } )
+    } catch ( error ) {
+        cleanup_credentials( options.creds_mounts || [] )
+        throw error
+    }
+
+    const copy_mounts = copy_mounts_from( planned_options.extra_mounts, planned_options.creds_mounts )
     if( !copy_mounts.length ) {
+        const command_args = build_docker_command_args( planned_options )
         return {
-            command: build_docker_command( options ),
+            command: render_command( command_args ),
+            command_args,
             container_id: null,
             abort: async () => {},
+            await_started: async () => true,
+            pull_synced_files: async () => {},
             handoff: () => {},
         }
     }
@@ -81,13 +225,43 @@ export const prepare_docker_launch = async ( options, {
     const prefix = docker_command_prefix()
     const [ docker_command, ...docker_prefix_args ] = prefix
     const signal_handlers = new Map()
+    const abort_controller = new AbortController()
+    let active_command = null
     let container_name = null
     let container_id = null
+    let container_owned = false
+    let create_started = false
+    let interrupted = false
+    let handed_off = false
+    let abort_task = null
 
-    const container_reference = () => container_id || container_name
+    const run_docker = async ( args, timeout_ms ) => {
+        const task = Promise.resolve( run_command(
+            docker_command,
+            args,
+            {
+                signal: abort_controller.signal,
+                detached: process.platform !== `win32`,
+            },
+            timeout_ms
+        ) )
+        active_command = task
 
-    const discard_container = async () => {
-        const reference = container_reference()
+        try {
+            return await task
+        } finally {
+            if( active_command === task ) active_command = null
+        }
+    }
+
+    const container_reference = ( { include_attempted_name = false } = {} ) => {
+        if( container_id ) return container_id
+        if( container_owned || include_attempted_name ) return container_name
+        return null
+    }
+
+    const discard_container = async ( options = {} ) => {
+        const reference = container_reference( options )
         if( !reference ) return
 
         try {
@@ -97,40 +271,41 @@ export const prepare_docker_launch = async ( options, {
                 {},
                 DOCKER_CLEANUP_TIMEOUT_MS
             )
-        } catch ( e ) {
-            log.warn( `Failed to remove prepared Docker container ${ reference }: ${ e.message }` )
+        } catch ( error ) {
+            log.warn( `Failed to remove prepared Docker container ${ reference }: ${ error.message }` )
         }
     }
 
-    const discard_container_sync = () => {
-        const reference = container_reference()
-        if( !reference ) return
+    const abort = async ( { include_attempted_name = false } = {} ) => {
+        if( handed_off ) return
+        if( abort_task ) return abort_task
 
-        const result = spawn_sync(
-            docker_command,
-            [ ...docker_prefix_args, `rm`, `-f`, reference ],
-            { stdio: `ignore`, timeout: DOCKER_CLEANUP_TIMEOUT_MS }
-        )
+        abort_task = ( async () => {
+            abort_controller.abort()
+            if( active_command ) await active_command.catch( () => {} )
 
-        if( result.error || result.status !== 0 ) {
-            log.warn( `Failed to remove interrupted Docker container ${ reference }` )
-        }
+            remove_signal_handlers( signal_target, signal_handlers )
+            cleanup_credentials( copy_mounts )
+            await discard_container( { include_attempted_name } )
+        } )()
+
+        return abort_task
     }
 
-    const abort = async () => {
+    const handoff = () => {
+        handed_off = true
         remove_signal_handlers( signal_target, signal_handlers )
-        cleanup_credentials( copy_mounts )
-        await discard_container()
     }
-
-    const handoff = () => remove_signal_handlers( signal_target, signal_handlers )
 
     for( const signal of LAUNCH_SIGNALS ) {
         const handler = () => {
-            cleanup_credentials( copy_mounts )
-            discard_container_sync()
-            remove_signal_handlers( signal_target, signal_handlers )
-            kill_process( process.pid, signal )
+            if( interrupted ) return
+            interrupted = true
+
+            void ( async () => {
+                await abort( { include_attempted_name: create_started } )
+                kill_process( process.pid, signal )
+            } )()
         }
 
         signal_handlers.set( signal, handler )
@@ -138,16 +313,13 @@ export const prepare_docker_launch = async ( options, {
     }
 
     try {
-        const run_args = build_docker_command_args( options )
+        const run_args = build_docker_command_args( planned_options )
         const create_args = docker_action_args( run_args, `create`, prefix )
         container_name = container_name_from( create_args )
+        create_started = true
 
-        const output = await run_command(
-            docker_command,
-            create_args.slice( 1 ),
-            {},
-            DOCKER_CREATE_TIMEOUT_MS
-        )
+        const output = await run_docker( create_args.slice( 1 ), DOCKER_CREATE_TIMEOUT_MS )
+        container_owned = true
 
         const created_container_id = String( output ).trim()
         if( !DOCKER_CONTAINER_ID_PATTERN.test( created_container_id ) ) {
@@ -156,27 +328,80 @@ export const prepare_docker_launch = async ( options, {
         container_id = created_container_id
 
         for( const mount of copy_mounts ) {
-            await run_command(
-                docker_command,
+            await run_docker(
                 [ ...docker_prefix_args, `cp`, mount.source, `${ container_id }:${ mount.target }` ],
-                {},
                 DOCKER_COPY_TIMEOUT_MS
             )
         }
 
         if( !cleanup_credentials( copy_mounts ) ) {
-            throw new Error( `Could not remove the private GitHub credential transport` )
+            throw new Error( `Could not remove a private launch transport` )
+        }
+
+        const command_args = [ ...prefix, `start`, `-ai`, container_id ]
+
+        const pull_synced_files = async ( { target = null } = {} ) => {
+            const synced_files = planned_options.creds_mounts
+                .filter( mount => mount.type === `synced_file` )
+                .filter( mount => !target || mount.target === target )
+
+            // Pull sequentially so active_command always identifies the one
+            // Docker client that abort() must await before cleanup.
+            for( const mount of synced_files ) {
+                await run_docker(
+                    [ ...docker_prefix_args, `cp`, `${ container_id }:${ mount.target }`, mount.source ],
+                    DOCKER_COPY_TIMEOUT_MS
+                )
+                await normalise_local_sync_file( mount.source, { run_command } )
+            }
+        }
+
+        const await_started = async ( {
+            timeout_ms = DOCKER_START_TIMEOUT_MS,
+            poll_ms = DOCKER_START_POLL_MS,
+        } = {} ) => {
+            if( handed_off ) return true
+
+            const deadline = Date.now() + timeout_ms
+            while( Date.now() < deadline ) {
+                let status
+
+                try {
+                    status = await run_docker( [
+                        ...docker_prefix_args,
+                        `inspect`,
+                        `--format`,
+                        `{{.State.Status}}`,
+                        container_id,
+                    ], DOCKER_INSPECT_TIMEOUT_MS )
+                } catch {
+                    return false
+                }
+
+                if( [ `running`, `paused`, `restarting` ].includes( status ) ) return true
+                if( [ `exited`, `dead`, `removing` ].includes( status ) ) return false
+
+                await wait( poll_ms )
+            }
+
+            return false
         }
 
         return {
-            command: render_command( [ ...prefix, `start`, `-ai`, container_id ] ),
+            command: render_command( command_args ),
+            command_args,
             container_id,
             abort,
+            await_started,
+            pull_synced_files,
             handoff,
         }
-    } catch ( e ) {
-        await abort()
-        throw e
+    } catch ( error ) {
+        const create_may_have_completed = create_started
+            && ( interrupted || error.code === `ETIMEDOUT` )
+
+        await abort( { include_attempted_name: create_may_have_completed } )
+        throw error
     }
 
 }

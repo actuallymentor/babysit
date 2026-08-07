@@ -169,7 +169,7 @@ Use `--ignore-host-agents-md` when a session should see the repository's own
 instructions without inheriting your host coding-agent profile. It omits the
 host `~/.agents` directory, native global instruction files such as
 `CLAUDE.md`, global skills, and host model/tool/MCP preferences. Babysit still
-mounts agent and GitHub credentials, retains only the minimal authentication
+supplies agent and GitHub credentials, retains only the minimal authentication
 and first-run state needed by each CLI, and keeps project-local files under
 `/workspace` available. The setting is saved with the session and restored by
 both `babysit resume` forms. Executable host setup from `~/.babysitrc` is also
@@ -177,9 +177,20 @@ skipped; credentials must come from the supported agent files, keychains, or
 environment variables when isolation is enabled. GitHub CLI authentication is
 injected into a private credential-only profile containing host, account, and
 token state instead of mounting aliases or other gh preferences. Babysit
-uploads that profile to a stopped container through the Docker API, deletes the
-host copy after Docker acknowledges it, then starts the container; sanitized
-profile tokens never enter Docker environment or bind-mount metadata.
+uploads that profile, generated agent configuration, credential files, and a
+literal credential-environment bootstrap to a stopped container through the
+Docker API. Short-lived config/bootstrap copies are deleted after Docker
+acknowledges them. Secret values stay out of Docker `Config.Env`/inspect and
+bind-mount metadata; environment values are imported only by the entrypoint.
+Long-running OAuth files retain a private sync copy and remain synchronized
+through `docker cp`; after the agent exits, the monitor performs one final
+credential pull before removing the stopped container. This client-side
+transport also works through nested Docker daemons.
+
+An already-running unisolated session cannot be upgraded in place because its
+mounts already exist. `babysit resume <id> --ignore-host-agents-md` refuses to
+attach in that case; exit the running session and resume it again to apply the
+isolation boundary.
 
 `--docker` uses Docker-outside-of-Docker: Babysit mounts the host Docker socket,
 sets `DOCKER_HOST`, and installs the Docker CLI in the agent image. Docker
