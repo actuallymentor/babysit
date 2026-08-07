@@ -1,8 +1,8 @@
 # Gotchas
 
-Keep only pitfalls that remain relevant to the current implementation.
+Keep only pitfalls that remain relevant to the current implementation. Numbers are stable references, so removed entries leave intentional gaps.
 
-1. **Two-phase OAuth** — detect creds existence *before* pre-flight auth check. Pre-flight can rotate tokens. Capture *after* pre-flight.
+1. **Two-phase Claude Keychain OAuth** — detect credential existence *before* the Claude `--version` pre-flight. Claude can rotate its token during that check, so capture the Keychain value *after* pre-flight. Codex, Gemini, and OpenCode do not rotate tokens on `--version`; see gotcha 41.
 2. **Docker inode tracking** — never `mv` a bind-mounted credential file. Docker tracks the original inode. Use `writeFileSync` (in-place) instead.
 3. **ANSI cursor-forward** — `\x1b[nC` is used as visual whitespace by TUI agents. Replace with real space *before* stripping ANSI, or pattern matching breaks.
 4. **Tmux session name limit** — ~256 chars max. Hash long paths (>200 chars) using SHA-256 truncated to 16 chars.
