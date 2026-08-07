@@ -141,6 +141,7 @@ export const build_docker_auth_check_command_args = ( agent, {
         mount_workspace: false,
         include_agents_dir: false,
         include_user_globals: false,
+        include_host_agent_context: !mode.ignore_host_agents_md,
         include_loop_deadline: false,
         include_agent_state: false,
         agent_command: [ agent.bin, ...auth_args ],

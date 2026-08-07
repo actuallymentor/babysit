@@ -11,8 +11,12 @@ const DEFAULT_LOOP_TEXT = `Keep going`
  * Priority: ./LOOP.md > ~/.agents/LOOP.md > "Keep going"
  * @param {Array} rules - The parsed babysit rules array (mutated in place)
  * @param {string} [workspace=process.cwd()] - Current working directory
+ * @param {Object} [options]
+ * @param {boolean} [options.include_global_loop=true] - Allow the host ~/.agents fallback
  */
-export const apply_loop = ( rules, workspace = process.cwd() ) => {
+export const apply_loop = ( rules, workspace = process.cwd(), {
+    include_global_loop = true,
+} = {} ) => {
 
     // Find the loop source
     const local_loop = resolve( workspace, `LOOP.md` )
@@ -23,7 +27,7 @@ export const apply_loop = ( rules, workspace = process.cwd() ) => {
     if( existsSync( local_loop ) ) {
         loop_action = local_loop
         log.info( `Loop mode: using ${ local_loop }` )
-    } else if( existsSync( global_loop ) ) {
+    } else if( include_global_loop && existsSync( global_loop ) ) {
         loop_action = global_loop
         log.info( `Loop mode: using ${ global_loop }` )
     } else {

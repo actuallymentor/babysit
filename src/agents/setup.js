@@ -28,18 +28,27 @@ const AGENTS_DIR = join( home, `.agents` )
  * @param {boolean} [options.yolo=false] - Persist `skipDangerousModePermissionPrompt: true`
  *   in the merged settings tmpfile so claude doesn't show the "Bypass Permissions
  *   mode" warning at every `--dangerously-skip-permissions` launch.
+ * @param {boolean} [options.include_host_preferences=true] - Copy host agent preferences
  * @returns {{ host: string, container: string, ro?: boolean }[]}
  */
-export const claude_extra_mounts = ( { yolo = false } = {} ) => {
+export const claude_extra_mounts = ( {
+    yolo = false,
+    include_host_preferences = true,
+} = {} ) => {
 
     const mounts = []
 
-    const settings_tmpfile = build_claude_settings_tmpfile( join( home, `.claude`, `settings.json` ), { yolo } )
+    const settings_tmpfile = build_claude_settings_tmpfile(
+        join( home, `.claude`, `settings.json` ),
+        { yolo, include_host_preferences }
+    )
     if( settings_tmpfile ) {
         mounts.push( { host: settings_tmpfile, container: `/home/node/.claude/settings.json` } )
     }
 
-    const claude_json_tmpfile = build_claude_json_tmpfile( join( home, `.claude.json` ) )
+    const claude_json_tmpfile = build_claude_json_tmpfile( join( home, `.claude.json` ), {
+        include_host_preferences,
+    } )
     if( claude_json_tmpfile ) {
         mounts.push( { host: claude_json_tmpfile, container: `/home/node/.claude/.claude.json` } )
     }
@@ -51,7 +60,7 @@ export const claude_extra_mounts = ( { yolo = false } = {} ) => {
     // Same logic for skills/ — ~/.agents/skills/ is the cross-agent
     // convention; the entrypoint symlinks it into place when present.
     const shared_agents_md = join( AGENTS_DIR, `AGENTS.md` )
-    if( !existsSync( shared_agents_md ) ) {
+    if( include_host_preferences && !existsSync( shared_agents_md ) ) {
         const claude_md = join( home, `.claude`, `CLAUDE.md` )
         if( existsSync( claude_md ) ) {
             mounts.push( { host: claude_md, container: `/home/node/.claude/CLAUDE.md`, ro: true } )
@@ -59,7 +68,7 @@ export const claude_extra_mounts = ( { yolo = false } = {} ) => {
     }
 
     const shared_skills = join( AGENTS_DIR, `skills` )
-    if( !existsSync( shared_skills ) ) {
+    if( include_host_preferences && !existsSync( shared_skills ) ) {
         const skills_dir = join( home, `.claude`, `skills` )
         if( existsSync( skills_dir ) ) {
             mounts.push( { host: skills_dir, container: `/home/node/.claude/skills`, ro: true } )
@@ -85,12 +94,16 @@ export const claude_extra_mounts = ( { yolo = false } = {} ) => {
  * @param {string} host_settings_path - Path to the host's settings.json (may not exist)
  * @param {Object} [options]
  * @param {boolean} [options.yolo=false] - When true, suppress the bypass-permissions warning
+ * @param {boolean} [options.include_host_preferences=true] - Merge the host settings file
  * @returns {string|null} Tmpfile path that should be bind-mounted, or null on error
  */
-export const build_claude_settings_tmpfile = ( host_settings_path, { yolo = false } = {} ) => {
+export const build_claude_settings_tmpfile = ( host_settings_path, {
+    yolo = false,
+    include_host_preferences = true,
+} = {} ) => {
 
     let settings = {}
-    if( existsSync( host_settings_path ) ) {
+    if( include_host_preferences && existsSync( host_settings_path ) ) {
         try {
             settings = JSON.parse( readFileSync( host_settings_path, `utf-8` ) )
         } catch { /* malformed → start fresh */ }
@@ -135,12 +148,16 @@ export const ONBOARDING_VERSION_SENTINEL = `9999.0.0`
  *
  * Exported for direct testing — the round-trip happens via `claude_extra_mounts`.
  * @param {string} host_claude_json_path - Path to host .claude.json (may not exist)
+ * @param {Object} [options]
+ * @param {boolean} [options.include_host_preferences=true] - Merge host onboarding and project state
  * @returns {string|null} Tmpfile path that should be bind-mounted, or null
  */
-export const build_claude_json_tmpfile = ( host_claude_json_path ) => {
+export const build_claude_json_tmpfile = ( host_claude_json_path, {
+    include_host_preferences = true,
+} = {} ) => {
 
     let parsed = {}
-    if( existsSync( host_claude_json_path ) ) {
+    if( include_host_preferences && existsSync( host_claude_json_path ) ) {
         try {
             parsed = JSON.parse( readFileSync( host_claude_json_path, `utf-8` ) )
         } catch { /* malformed → start fresh */ }
@@ -236,17 +253,19 @@ const inject_codex_first_run_bypass = ( raw ) => {
  * @param {string} raw_config - Host config.toml content, or empty string
  * @param {Object} [options]
  * @param {string} [options.user_globals_path] - Host ~/.agents/AGENTS.md path
+ * @param {boolean} [options.include_host_preferences=true] - Copy host config and globals
  * @returns {{ tmpdir: string|null, provides_user_globals: boolean }}
  */
 export const build_codex_config_tmpdir = ( raw_config, {
     user_globals_path = join( AGENTS_DIR, `AGENTS.md` ),
+    include_host_preferences = true,
 } = {} ) => {
 
     const files = {
-        [`config.toml`]: inject_codex_first_run_bypass( raw_config ),
+        [`config.toml`]: inject_codex_first_run_bypass( include_host_preferences ? raw_config : `` ),
     }
 
-    const provides_user_globals = existsSync( user_globals_path )
+    const provides_user_globals = include_host_preferences && existsSync( user_globals_path )
     if( provides_user_globals ) files[`AGENTS.md`] = readFileSync( user_globals_path, `utf-8` )
 
     return {
@@ -272,13 +291,21 @@ export const build_codex_config_tmpdir = ( raw_config, {
  * instead of mounted as a second nested bind. Docker Desktop rejects creating
  * a nested file mount inside the tmpdir-backed CODEX_HOME mount.
  *
+ * @param {Object} [options]
+ * @param {boolean} [options.include_host_preferences=true] - Copy host Codex config and globals
  * @returns {{ host: string, container: string, provides_user_globals?: boolean }[]}
  */
-export const codex_extra_mounts = () => {
+export const codex_extra_mounts = ( {
+    include_host_preferences = true,
+} = {} ) => {
 
     const host_config = join( expand_home_path( get_host_codex_home() ), `config.toml` )
-    const raw = existsSync( host_config ) ? readFileSync( host_config, `utf-8` ) : ``
-    const { tmpdir, provides_user_globals } = build_codex_config_tmpdir( raw )
+    const raw = include_host_preferences && existsSync( host_config )
+        ? readFileSync( host_config, `utf-8` )
+        : ``
+    const { tmpdir, provides_user_globals } = build_codex_config_tmpdir( raw, {
+        include_host_preferences,
+    } )
 
     const mounts = []
     if( tmpdir ) mounts.push( { host: tmpdir, container: `/home/node/.codex`, provides_user_globals } )
@@ -301,16 +328,27 @@ export const codex_extra_mounts = () => {
  *
  * @returns {{ host: string, container: string }[]}
  */
-export const gemini_extra_mounts = () => {
+export const gemini_extra_mounts = ( {
+    include_host_preferences = true,
+} = {} ) => {
 
     const mounts = []
     const gemini_dir = join( home, `.gemini` )
 
-    // Files we copy 1:1 (with chmod 666 so gemini can update them in-container).
-    const passthrough = [ `settings.json`, `google_accounts.json`, `installation_id`, `state.json` ]
+    // Account and installation state are part of Gemini's login handshake.
+    // Keep them with credentials even when user preferences are isolated.
+    const passthrough = [ `google_accounts.json`, `installation_id`, `state.json` ]
     for( const file of passthrough ) {
         const tmp = copy_host_file_to_tmpfile( join( gemini_dir, file ), `gemini` )
         if( tmp ) mounts.push( { host: tmp, container: `/home/node/.gemini/${ file }` } )
+    }
+
+    const settings_tmpfile = build_gemini_settings_tmpfile(
+        join( gemini_dir, `settings.json` ),
+        { include_host_preferences }
+    )
+    if( settings_tmpfile ) {
+        mounts.push( { host: settings_tmpfile, container: `/home/node/.gemini/settings.json` } )
     }
 
     // trustedFolders.json — merge /workspace into whatever the host has, or
@@ -319,7 +357,7 @@ export const gemini_extra_mounts = () => {
     // is the only path the container actually sees.
     const host_trust = join( gemini_dir, `trustedFolders.json` )
     let trust_obj = {}
-    if( existsSync( host_trust ) ) {
+    if( include_host_preferences && existsSync( host_trust ) ) {
         try {
             trust_obj = JSON.parse( readFileSync( host_trust, `utf-8` ) ) 
         } catch { /* malformed → start fresh */ }
@@ -329,6 +367,40 @@ export const gemini_extra_mounts = () => {
     if( trust_tmpfile ) mounts.push( { host: trust_tmpfile, container: `/home/node/.gemini/trustedFolders.json` } )
 
     return mounts
+
+}
+
+/**
+ * Build Gemini settings while retaining only authentication selection when
+ * host preferences are isolated. Gemini requires `security.auth` beside its
+ * OAuth files to choose the already-authenticated login lane without prompting.
+ * @param {string} host_settings_path - Host ~/.gemini/settings.json path
+ * @param {Object} [options]
+ * @param {boolean} [options.include_host_preferences=true] - Copy all host settings
+ * @returns {string|null} Writable tmpfile for the container
+ */
+export const build_gemini_settings_tmpfile = ( host_settings_path, {
+    include_host_preferences = true,
+} = {} ) => {
+
+    let parsed = {}
+    if( existsSync( host_settings_path ) ) {
+        try {
+            parsed = JSON.parse( readFileSync( host_settings_path, `utf-8` ) )
+        } catch { /* malformed → start fresh */ }
+    }
+
+    if( !include_host_preferences ) {
+        const auth = parsed.security?.auth
+        const legacy_auth = parsed.auth
+
+        parsed = {
+            ... auth ? { security: { auth } } : {} ,
+            ... legacy_auth ? { auth: legacy_auth } : {} ,
+        }
+    }
+
+    return build_tmpfile( `gemini`, `settings.json`, JSON.stringify( parsed, null, 2 ) )
 
 }
 
@@ -354,9 +426,10 @@ const EXTRA_MOUNTS_BY_AGENT = {
 /**
  * Look up the extra mounts builder for a given agent. The returned function
  * accepts an options object that adapters can use for mode-dependent behaviour
- * (currently: claude reads `yolo` to suppress the bypass-permissions warning).
+ * (currently: claude reads `yolo` to suppress the bypass-permissions warning,
+ * and all builders honor `include_host_preferences`).
  * Adapters that don't care about options ignore them.
  * @param {string} agent_name
- * @returns {(options?: { yolo?: boolean }) => { host: string, container: string, ro?: boolean }[]}
+ * @returns {(options?: { yolo?: boolean, include_host_preferences?: boolean }) => { host: string, container: string, ro?: boolean }[]}
  */
 export const get_extra_mounts = ( agent_name ) => EXTRA_MOUNTS_BY_AGENT[ agent_name ] || NO_EXTRA_MOUNTS

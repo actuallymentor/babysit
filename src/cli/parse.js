@@ -11,6 +11,7 @@ const KNOWN_FLAGS = [
     `mudbox`,
     `loop`,
     `docker`,
+    `ignore-host-agents-md`,
     `name`,
     `log`,
     `port`,
@@ -36,7 +37,7 @@ export const parse_args = ( argv ) => {
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `ignore-host-agents-md` ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -51,6 +52,7 @@ export const parse_args = ( argv ) => {
         mudbox: args.mudbox || false,
         loop: args.loop || false,
         docker: args.docker || false,
+        ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
         name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.

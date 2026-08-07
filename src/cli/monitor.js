@@ -21,6 +21,7 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
+    ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
 } )
 
 /**
@@ -74,7 +75,11 @@ export const cmd_monitor = async ( cmd ) => {
     // Re-apply --loop if it was active in the original session — the rule
     // override mutates `rules` in place, so the monitor will see the LOOP.md
     // action wired up to the idle rule.
-    if( session.modifiers?.includes( `loop` ) ) apply_loop( rules, session.pwd )
+    if( session.modifiers?.includes( `loop` ) ) {
+        apply_loop( rules, session.pwd, {
+            include_global_loop: !session.modifiers.includes( `ignore-host-agents-md` ),
+        } )
+    }
 
     const agent = get_agent( session.agent )
     const agent_patterns = get_patterns( session.agent )

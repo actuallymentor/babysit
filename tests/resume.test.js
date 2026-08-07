@@ -274,6 +274,7 @@ describe( `merge_resume_flags`, () => {
             mudbox: false,
             docker: false,
             loop: false,
+            ignore_host_agents_md: false,
             name: false,
             log: false,
             ports: [],
@@ -336,6 +337,17 @@ describe( `merge_resume_flags`, () => {
         )
 
         expect( flags.name ).toBe( `feature 1` )
+
+    } )
+
+    it( `preserves host-profile isolation across resume`, () => {
+
+        const flags = merge_resume_flags(
+            [ `yolo`, `ignore-host-agents-md` ],
+            { ignore_host_agents_md: false }
+        )
+
+        expect( flags.ignore_host_agents_md ).toBe( true )
 
     } )
 

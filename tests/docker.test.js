@@ -357,6 +357,49 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `isolates host agent profiles while preserving credential mounts`, () => {
+
+        for ( const agent of [ claude, codex, gemini, opencode ] ) {
+            const credential_source = `/tmp/${ agent.name }-credential`
+            const args = build_docker_command_args( make_options( {
+                agent,
+                mode: {
+                    yolo: true,
+                    ignore_host_agents_md: true,
+                },
+                creds_mounts: [
+                    {
+                        type: `volume`,
+                        source: credential_source,
+                        target: agent.container_paths.creds,
+                    },
+                    {
+                        type: `env`,
+                        key: `BABYSIT_TEST_CREDENTIAL`,
+                        value: `available`,
+                    },
+                ],
+                include_babysit_rc: false,
+                include_loop_deadline: false,
+            } ) )
+
+            expect( args ).toContain( `${ credential_source }:${ agent.container_paths.creds }` )
+            expect( args ).toContain( `BABYSIT_TEST_CREDENTIAL=available` )
+            expect( args.some( arg => arg.endsWith( `:/home/node/.agents` ) ) ).toBe( false )
+            expect( args.some( arg => arg.includes( `:${ agent.container_paths.user_globals_file }` ) ) ).toBe( false )
+
+            if( agent.name === `codex` ) {
+                const config_mount = args.find( arg => arg.endsWith( `:/home/node/.codex` ) )
+                const codex_home = config_mount.slice( 0, -`:/home/node/.codex`.length )
+                const config = readFileSync( join( codex_home, `config.toml` ), `utf-8` )
+
+                expect( existsSync( join( codex_home, `AGENTS.md` ) ) ).toBe( false )
+                expect( config ).toContain( `[projects."/workspace"]` )
+            }
+        }
+
+    } )
+
     it( `pre-creates nested file mountpoints inside tmpdir-backed config homes`, () => {
 
         const dir = mkdtempSync( join( tmpdir(), `babysit-nested-mount-` ) )

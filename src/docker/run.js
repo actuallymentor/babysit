@@ -375,6 +375,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.include_agents_dir=true] - Whether to mount the shared ~/.agents directory
  * @param {boolean} [options.include_babysit_rc=true] - Whether to mount ~/.babysitrc when present
  * @param {boolean} [options.include_user_globals=true] - Whether to mount ~/.agents/AGENTS.md into the agent home
+ * @param {boolean} [options.include_host_agent_context] - Whether to copy or mount host agent preferences
  * @param {boolean} [options.include_loop_deadline=true] - Whether to mount the statusline loop deadline file
  * @param {boolean} [options.include_agent_state=true] - Whether to mount persistent native resume state
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
@@ -398,6 +399,7 @@ export const build_docker_command_args = ( options ) => {
         include_agents_dir = true,
         include_babysit_rc = true,
         include_user_globals = true,
+        include_host_agent_context = !mode.ignore_host_agents_md,
         include_loop_deadline = true,
         include_agent_state = true,
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
@@ -448,7 +450,7 @@ export const build_docker_command_args = ( options ) => {
     // then grant access, and SGID (when set on the host dir) keeps files the
     // agent writes back inheriting the host group so the host user can still
     // edit them. Per-file read-only is preserved via host file perms.
-    if( include_agents_dir && existsSync( AGENTS_DIR ) ) {
+    if( include_host_agent_context && include_agents_dir && existsSync( AGENTS_DIR ) ) {
         flags.push( `-v`, `${ resolve_workspace_mount_source( AGENTS_DIR ) }:/home/node/.agents` )
         try {
             const { gid } = statSync( AGENTS_DIR )
@@ -523,7 +525,10 @@ export const build_docker_command_args = ( options ) => {
     // user-global files so a whole-dir mount (Codex needs this for atomic
     // config.toml persists) can act as the base config home, then narrower
     // file mounts layer into it.
-    const extra_mounts = get_extra_mounts( agent.name )( { yolo: mode.yolo } )
+    const extra_mounts = get_extra_mounts( agent.name )( {
+        yolo: mode.yolo,
+        include_host_preferences: include_host_agent_context,
+    } )
     for( const m of extra_mounts ) {
         const target = m.ro ? `${ m.container }:ro` : m.container
         flags.push( `-v`, `${ resolve_workspace_mount_source( m.host ) }:${ target }` )
@@ -565,7 +570,9 @@ export const build_docker_command_args = ( options ) => {
     // file existing so a missing ~/.agents/AGENTS.md leaves the agent in
     // its vanilla state.
     const user_agents_md = join( AGENTS_DIR, `AGENTS.md` )
-    if( include_user_globals && should_mount_user_globals( agent, extra_mounts, existsSync( user_agents_md ) ) ) {
+    if( include_host_agent_context
+        && include_user_globals
+        && should_mount_user_globals( agent, extra_mounts, existsSync( user_agents_md ) ) ) {
         prepare_nested_file_mountpoint( extra_mounts, agent.container_paths.user_globals_file )
         flags.push( `-v`, `${ resolve_workspace_mount_source( user_agents_md ) }:${ agent.container_paths.user_globals_file }:ro` )
     }

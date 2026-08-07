@@ -420,6 +420,7 @@ export const cmd_start = async ( cmd ) => {
         sandbox: flags.sandbox,
         mudbox: flags.mudbox,
         docker: flags.docker,
+        ignore_host_agents_md: flags.ignore_host_agents_md,
     }
 
     const docker_socket_path = mode.docker ? resolve_docker_socket_path() : null
@@ -502,7 +503,9 @@ export const cmd_start = async ( cmd ) => {
     } )
 
     // Compute the modifier list for the statusline + session metadata
-    const modifiers = Object.entries( mode ).filter( ( [ , v ] ) => v ).map( ( [ k ] ) => k )
+    const modifiers = Object.entries( mode )
+        .filter( ( [ , value ] ) => value )
+        .map( ( [ key ] ) => key === `ignore_host_agents_md` ? `ignore-host-agents-md` : key )
     if( flags.loop ) modifiers.push( `loop` )
 
     // Initialize the loop deadline file before docker mounts it.
@@ -512,7 +515,9 @@ export const cmd_start = async ( cmd ) => {
     // Apply loop override if --loop flag is set. The detached monitor will
     // re-apply this when it boots, but doing it here too is harmless and
     // keeps the rules object internally consistent during the foreground.
-    if( flags.loop ) apply_loop( rules, workspace )
+    if( flags.loop ) apply_loop( rules, workspace, {
+        include_global_loop: !flags.ignore_host_agents_md,
+    } )
 
     // Build the launch prompt that babysit types into the agent's TUI.
     // Null or an empty string intentionally disables startup typing.
