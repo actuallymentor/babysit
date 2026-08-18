@@ -5,6 +5,7 @@ import {
     should_fire_rule,
     DEBOUNCE_MS,
 } from '../src/babysit/monitor.js'
+import { IdleTracker } from '../src/babysit/matcher.js'
 
 const make_rule = ( overrides = {} ) => ( {
     on: { type: `regex`, value: /error/i },
@@ -177,10 +178,14 @@ describe( `should_fire_rule`, () => {
 
 describe( `agent_status_for_idle`, () => {
 
-    it( `uses the same configured threshold as idle supervision`, () => {
-        expect( agent_status_for_idle( 299, 300 ) ).toBe( `running` )
-        expect( agent_status_for_idle( 300, 300 ) ).toBe( `idle` )
-        expect( agent_status_for_idle( 301, 300 ) ).toBe( `idle` )
+    it( `reports viewport changes as running and a stable viewport as idle`, () => {
+        const tracker = new IdleTracker()
+
+        expect( agent_status_for_idle( tracker.update( `working frame one` ) ) ).toBe( `running` )
+
+        tracker.unchanged_since = Date.now() - 1_000
+        expect( agent_status_for_idle( tracker.update( `working frame one` ) ) ).toBe( `idle` )
+        expect( agent_status_for_idle( tracker.update( `working frame two` ) ) ).toBe( `running` )
     } )
 
 } )

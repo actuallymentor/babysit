@@ -23,6 +23,14 @@ keeping diagnostics available through `babysit list --all`.
    specification, changelog, and focused tests. Verify lint, focused tests,
    full tests, build, and real CLI output before committing.
 
+### 2026-08-18 correction — viewport activity
+
+`STATUS` describes visible tmux activity, not the timeout used by idle
+supervision rules. Keep the existing pane-output hash tracker, report `running`
+whenever the captured viewport changes, then report `idle` after one complete
+one-second monitor interval without a change. Leave `idle_timeout_s` and
+per-rule timeouts untouched for automation and the statusline deadline.
+
 ## Context
 
 `babysit` is a CLI supervisor for LLM coding agent CLIs (`claude`, `codex`, `gemini`, `opencode`). It is the JS-based, multi-agent successor to [sir-claudius](https://github.com/actuallymentor/sir-claudius), which was a bash + Python tool wrapping only Claude Code. The new tool addresses three gaps in sir-claudius:

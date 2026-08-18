@@ -9,19 +9,21 @@ import { write_loop_deadline } from '../statusline/render.js'
 
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
+const ACTIVITY_IDLE_SECONDS = 1
 
 // Debounce between consecutive fires of the same rule (sir-claudius lesson: redraw flicker)
 export const DEBOUNCE_MS = 3_000
 
 /**
- * Convert the monitor's canonical idle duration into a list status.
+ * Convert pane stability into a list status.
  * @param {number} idle_seconds - Seconds since pane output last changed
- * @param {number} idle_timeout_s - Configured threshold for agent idleness
  * @returns {'idle'|'running'} Current coding-agent activity
  */
-export const agent_status_for_idle = ( idle_seconds, idle_timeout_s ) => {
+export const agent_status_for_idle = ( idle_seconds ) => {
 
-    return idle_seconds >= idle_timeout_s ? `idle` : `running`
+    // One complete unchanged poll means the viewport has stopped moving.
+    // Supervision timeouts remain separate: they decide when rules fire.
+    return idle_seconds >= ACTIVITY_IDLE_SECONDS ? `idle` : `running`
 
 }
 
@@ -150,7 +152,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
 
         // Track idle state
         const idle_seconds = idle_tracker.update( clean_output )
-        const agent_status = agent_status_for_idle( idle_seconds, idle_timeout_s )
+        const agent_status = agent_status_for_idle( idle_seconds )
 
         // Store activity with the tmux session itself. Only transitions issue
         // a command, keeping the one-second monitor poll cheap. Failed writes
