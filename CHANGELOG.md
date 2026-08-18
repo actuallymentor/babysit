@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.28.1 — 2026-08-18
+
+### 🐛 Fixed
+- **Active session status follows viewport activity.** `STATUS` now switches
+  from `running` to `idle` after one unchanged monitor interval instead of
+  waiting for the idle-supervision timeout.
+
 ## 0.28.0 — 2026-08-18
 
 ### ✨ Added

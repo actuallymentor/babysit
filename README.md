@@ -311,11 +311,13 @@ directory, Babysit shows the matching rows with the same numbers used by
 Give a session a memorable label with `babysit <agent> --name "feature 1"`.
 `babysit list` numbers every active session and shows its name (or ID when
 unnamed), agent `running`/`idle` status, tmux attachment status, coding agent,
-and the deepest two levels of its working directory. Agent idleness uses the
-same timeout configured for Babysit's idle supervision. Add `--all` to include
-the separate ID and full tmux session name. Run `babysit open <number>` from
-any directory to open that numbered row, or `babysit open "feature 1"` to open
-an active session by its exact name. Quote names containing spaces.
+and the deepest two levels of its working directory. Activity comes from the
+captured tmux viewport: changes show `running`, while one complete monitor
+interval without a change shows `idle`. This is independent from Babysit's
+idle supervision timeout. Add `--all` to include the separate ID and full tmux
+session name. Run `babysit open <number>` from any directory to open that
+numbered row, or `babysit open "feature 1"` to open an active session by its
+exact name. Quote names containing spaces.
 
 Run `babysit resume` without a session id to list persistent Babysit-managed
 history, newest first. Each row shows the canonical Babysit ID alongside the
