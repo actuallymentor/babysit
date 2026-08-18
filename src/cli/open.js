@@ -187,6 +187,7 @@ export const cmd_open = async ( cmd, {
     if( named_matches.length > 1 ) {
         print_active_sessions_table( named_matches, stored, {
             title: `Multiple active babysit sessions are named "${ session_id }":`,
+            all: true,
         } )
         log.error( `Use \`babysit open <session_id>\` to choose one.` )
         exit_fn( 1 )

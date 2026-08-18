@@ -5,6 +5,8 @@ import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
 import { start_pipe_pane } from './capture.js'
 
+const AGENT_STATUS_OPTION = `@babysit_agent_status`
+
 /**
  * Generate a tmux session name following the babysit convention
  * @param {string} pwd - Current working directory
@@ -63,6 +65,7 @@ export const create_session = async ( session_name, command, { log_path = null, 
     await Promise.all( [
         run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `history-limit`, `10000` ] ),
         run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `mouse`, `on` ] ),
+        run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, AGENT_STATUS_OPTION, `running` ] ),
     ] )
 
     let pipe_started = false
@@ -135,8 +138,26 @@ export const attach_session = ( session_name ) => {
 }
 
 /**
+ * Publish coding-agent activity on its tmux session for `babysit list`.
+ * @param {string} session_name - Babysit tmux session name
+ * @param {'idle'|'running'} status - Current coding-agent activity
+ * @returns {Promise<boolean>} Whether tmux accepted the update
+ */
+export const set_agent_status = async ( session_name, status ) => {
+
+    try {
+        await run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, AGENT_STATUS_OPTION, status ] )
+        return true
+    } catch ( error ) {
+        log.debug( `Could not publish ${ session_name } agent status: ${ error.message }` )
+        return false
+    }
+
+}
+
+/**
  * List all babysit tmux sessions
- * @returns {Promise<Array<{ name: string, attached: boolean, created: string }>>}
+ * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string }>>}
  */
 export const list_sessions = async () => {
 
@@ -144,14 +165,15 @@ export const list_sessions = async () => {
         const output = await run( `tmux`, [
             `-L`, TMUX_SOCKET,
             `list-sessions`, `-F`,
-            `#{session_name}\t#{?session_attached,attached,detached}\t#{session_created}`,
+            `#{session_name}\t#{?session_attached,attached,detached}\t#{session_created}\t#{${ AGENT_STATUS_OPTION }}`,
         ] )
 
         return output.split( `\n` )
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
-                const [ name, status, created ] = line.split( `\t` )
-                return { name, attached: status === `attached`, created }
+                const [ name, tmux_status, created, stored_agent_status ] = line.split( `\t` )
+                const agent_status = stored_agent_status === `idle` ? `idle` : `running`
+                return { name, attached: tmux_status === `attached`, created, agent_status }
             } )
 
     } catch {

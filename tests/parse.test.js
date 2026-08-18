@@ -8,6 +8,16 @@ describe( `parse_args`, () => {
         expect( cmd.verb ).toBe( `list` )
     } )
 
+    it( `recognises --all only as a list display flag`, () => {
+        const list_cmd = parse_args( [ `list`, `--all` ] )
+        const agent_cmd = parse_args( [ `codex`, `--all` ] )
+
+        expect( list_cmd.flags.all ).toBe( true )
+        expect( list_cmd.passthrough ).toEqual( [] )
+        expect( agent_cmd.flags.all ).toBe( false )
+        expect( agent_cmd.passthrough ).toContain( `--all` )
+    } )
+
     it( `recognises babysit update`, () => {
         const cmd = parse_args( [ `update` ] )
         expect( cmd.verb ).toBe( `update` )

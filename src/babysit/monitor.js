@@ -1,7 +1,7 @@
 import { wait } from 'mentie'
 import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
-import { has_session } from '../tmux/session.js'
+import { has_session, set_agent_status } from '../tmux/session.js'
 import { IdleTracker, strip_ansi, evaluate_rule } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
@@ -12,6 +12,19 @@ const POLL_INTERVAL_MS = 1_000
 
 // Debounce between consecutive fires of the same rule (sir-claudius lesson: redraw flicker)
 export const DEBOUNCE_MS = 3_000
+
+/**
+ * Convert the monitor's canonical idle duration into a list status.
+ * @param {number} idle_seconds - Seconds since pane output last changed
+ * @param {number} idle_timeout_s - Configured threshold for agent idleness
+ * @returns {'idle'|'running'} Current coding-agent activity
+ */
+export const agent_status_for_idle = ( idle_seconds, idle_timeout_s ) => {
+
+    return idle_seconds >= idle_timeout_s ? `idle` : `running`
+
+}
+
 
 /**
  * Decide whether a rule should fire on this tick. Mutates `rule.first_matched_at`
@@ -78,6 +91,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
     const idle_tracker = new IdleTracker()
     let session_id_captured = false
     let last_written_deadline = null
+    let last_agent_status = null
 
     // Find the idle rule once — used to publish the countdown for the statusline
     const idle_rule = rules.find( r => r.on.type === `idle` )
@@ -112,6 +126,15 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
 
         // Track idle state
         const idle_seconds = idle_tracker.update( clean_output )
+        const agent_status = agent_status_for_idle( idle_seconds, idle_timeout_s )
+
+        // Store activity with the tmux session itself. Only transitions issue
+        // a command, keeping the one-second monitor poll cheap. Failed writes
+        // stay pending so a transient tmux error is retried on the next tick.
+        if( agent_status !== last_agent_status ) {
+            const published = await set_agent_status( session_name, agent_status )
+            if( published ) last_agent_status = agent_status
+        }
 
         // Publish the idle countdown deadline for the statusline (only when it changes)
         if( idle_rule ) {
