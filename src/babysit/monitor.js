@@ -25,6 +25,30 @@ export const agent_status_for_idle = ( idle_seconds, idle_timeout_s ) => {
 
 }
 
+/**
+ * Publish an activity transition, retaining the previous state on failure so
+ * the monitor retries next tick.
+ * @param {Object} options
+ * @param {string} options.session_name - Babysit tmux session name
+ * @param {'idle'|'running'} options.agent_status - Newly observed activity
+ * @param {'idle'|'running'|null} options.last_agent_status - Last published activity
+ * @param {Function} [options.publish=set_agent_status] - Tmux publisher seam
+ * @returns {Promise<'idle'|'running'|null>} Last successfully published activity
+ */
+export const publish_agent_status = async ( {
+    session_name,
+    agent_status,
+    last_agent_status,
+    publish = set_agent_status,
+} ) => {
+
+    if( agent_status === last_agent_status ) return last_agent_status
+
+    const published = await publish( session_name, agent_status )
+    return published ? agent_status : last_agent_status
+
+}
+
 
 /**
  * Decide whether a rule should fire on this tick. Mutates `rule.first_matched_at`
@@ -131,10 +155,11 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
         // Store activity with the tmux session itself. Only transitions issue
         // a command, keeping the one-second monitor poll cheap. Failed writes
         // stay pending so a transient tmux error is retried on the next tick.
-        if( agent_status !== last_agent_status ) {
-            const published = await set_agent_status( session_name, agent_status )
-            if( published ) last_agent_status = agent_status
-        }
+        last_agent_status = await publish_agent_status( {
+            session_name,
+            agent_status,
+            last_agent_status,
+        } )
 
         // Publish the idle countdown deadline for the statusline (only when it changes)
         if( idle_rule ) {

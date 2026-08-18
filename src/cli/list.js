@@ -86,7 +86,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         // Cross-reference with stored session metadata
         const stored = stored_sessions.find( session => session.tmux_session === tmux.name )
         const agent = stored?.agent || `unknown`
-        const session_id = stored?.agent_session_id || stored?.babysit_id || `-`
+        const session_id = stored?.agent_session_id || stored?.babysit_id || tmux.name
         const name = stored?.name || session_id
         const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `running`
         const tmux_status = tmux.attached ? `attached` : `detached`

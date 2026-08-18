@@ -420,7 +420,7 @@ describe( `cmd_open with a session id`, () => {
         expect( output ).toContain( `SESSION` )
         expect( output ).toContain( `native-1` )
         expect( output ).toContain( `baby-2` )
-        expect( errors ).toContain( `Use \`babysit open <session_id>\` to choose one.` )
+        expect( errors ).toContain( `Use one of the IDs above with \`babysit open <id>\`.` )
 
     } )
 

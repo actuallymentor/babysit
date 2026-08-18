@@ -189,7 +189,7 @@ export const cmd_open = async ( cmd, {
             title: `Multiple active babysit sessions are named "${ session_id }":`,
             all: true,
         } )
-        log.error( `Use \`babysit open <session_id>\` to choose one.` )
+        log.error( `Use one of the IDs above with \`babysit open <id>\`.` )
         exit_fn( 1 )
         return
     }
