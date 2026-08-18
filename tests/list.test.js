@@ -181,6 +181,17 @@ describe( `print_active_sessions_table`, () => {
 
     } )
 
+    it( `falls back to the raw tmux ID when stored metadata is unavailable`, async () => {
+
+        const output = await capture_console( () => print_active_sessions_table( [ {
+            name: `babysit_/workspace/legacy_codex_123`,
+            attached: false,
+        } ], [] ) )
+
+        expect( output ).toMatch( /babysit_\/workspace\/legacy_codex_123\s+running\s+detached\s+unknown\s+-/ )
+
+    } )
+
 } )
 
 describe( `format_session_directory`, () => {

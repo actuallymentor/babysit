@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'bun:test'
-import { agent_status_for_idle, should_fire_rule, DEBOUNCE_MS } from '../src/babysit/monitor.js'
+import {
+    agent_status_for_idle,
+    publish_agent_status,
+    should_fire_rule,
+    DEBOUNCE_MS,
+} from '../src/babysit/monitor.js'
 
 const make_rule = ( overrides = {} ) => ( {
     on: { type: `regex`, value: /error/i },
@@ -176,6 +181,68 @@ describe( `agent_status_for_idle`, () => {
         expect( agent_status_for_idle( 299, 300 ) ).toBe( `running` )
         expect( agent_status_for_idle( 300, 300 ) ).toBe( `idle` )
         expect( agent_status_for_idle( 301, 300 ) ).toBe( `idle` )
+    } )
+
+} )
+
+describe( `publish_agent_status`, () => {
+
+    it( `publishes transitions but skips unchanged activity`, async () => {
+
+        const published = []
+        const publish = async ( session_name, status ) => {
+            published.push( [ session_name, status ] )
+            return true
+        }
+
+        const running = await publish_agent_status( {
+            session_name: `babysit_one`,
+            agent_status: `running`,
+            last_agent_status: null,
+            publish,
+        } )
+        const unchanged = await publish_agent_status( {
+            session_name: `babysit_one`,
+            agent_status: `running`,
+            last_agent_status: running,
+            publish,
+        } )
+        const idle = await publish_agent_status( {
+            session_name: `babysit_one`,
+            agent_status: `idle`,
+            last_agent_status: unchanged,
+            publish,
+        } )
+
+        expect( published ).toEqual( [
+            [ `babysit_one`, `running` ],
+            [ `babysit_one`, `idle` ],
+        ] )
+        expect( idle ).toBe( `idle` )
+
+    } )
+
+    it( `retains the previous state so failed transitions are retried`, async () => {
+
+        let attempts = 0
+        const publish = async () => ++attempts > 1
+        const failed = await publish_agent_status( {
+            session_name: `babysit_one`,
+            agent_status: `idle`,
+            last_agent_status: `running`,
+            publish,
+        } )
+        const retried = await publish_agent_status( {
+            session_name: `babysit_one`,
+            agent_status: `idle`,
+            last_agent_status: failed,
+            publish,
+        } )
+
+        expect( failed ).toBe( `running` )
+        expect( retried ).toBe( `idle` )
+        expect( attempts ).toBe( 2 )
+
     } )
 
 } )
