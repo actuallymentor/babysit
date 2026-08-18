@@ -146,14 +146,15 @@ describe( `cmd_open without a session id`, () => {
 
         expect( attached_session ).toBeNull()
         expect( output ).toContain( `Active babysit sessions for /workspace/app:` )
-        expect( output ).toContain( `SESSION` )
+        expect( output ).toContain( `DIRECTORY` )
         expect( output ).toContain( `#` )
         expect( output ).toContain( `NAME` )
         expect( output ).toContain( `AGENT` )
-        expect( output ).toContain( `ID` )
+        expect( output ).not.toContain( `SESSION` )
+        expect( output ).not.toContain( `ID` )
         expect( output ).toContain( `feature 1` )
-        expect( output ).toContain( `agent-1` )
-        expect( output ).toContain( `baby-2` )
+        expect( output ).not.toContain( `agent-1` )
+        expect( output ).not.toContain( `baby-2` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
 
     } )
@@ -372,6 +373,54 @@ describe( `cmd_open with a session id`, () => {
         } )
 
         expect( attached_session ).toBe( `babysit_/workspace/app_codex_1` )
+
+    } )
+
+    it( `shows expanded IDs when an exact session name is ambiguous`, async () => {
+
+        const active = [
+            { name: `babysit_first`, attached: false, agent_status: `running` },
+            { name: `babysit_second`, attached: false, agent_status: `idle` },
+        ]
+        const stored = [
+            {
+                name: `shared name`,
+                agent: `codex`,
+                agent_session_id: `native-1`,
+                tmux_session: `babysit_first`,
+                pwd: `/workspace/first`,
+            },
+            {
+                name: `shared name`,
+                agent: `claude`,
+                babysit_id: `baby-2`,
+                tmux_session: `babysit_second`,
+                pwd: `/workspace/second`,
+            },
+        ]
+        let exit_code = null
+        let output = ``
+
+        const errors = await capture_errors( async () => {
+            output = await capture_console( () => cmd_open( { session_id: `shared name` }, {
+                has_session_fn: async () => false,
+                list_sessions_fn: async () => active,
+                list_stored_sessions_fn: () => stored,
+                attach_session_fn: session_name => {
+                    throw new Error( `Unexpected attachment to ${ session_name }` )
+                },
+                exit_fn: code => {
+                    exit_code = code
+                },
+            } ) )
+        } )
+
+        expect( exit_code ).toBe( 1 )
+        expect( output ).toContain( `ID` )
+        expect( output ).toContain( `SESSION` )
+        expect( output ).toContain( `native-1` )
+        expect( output ).toContain( `baby-2` )
+        expect( errors ).toContain( `Use \`babysit open <session_id>\` to choose one.` )
 
     } )
 

@@ -4,6 +4,25 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-08-18 — Active-session list format refresh
+
+Intent: make the default active-session table compact and human-readable while
+keeping diagnostics available through `babysit list --all`.
+
+1. Parse `--all` as a list-only display flag and pass the parsed command into
+   `cmd_list`. Preserve `--all` as agent passthrough outside the list command.
+2. Render compact rows as `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, and
+   `DIRECTORY`. Fall back from an absent name to the native/canonical session
+   ID, and shorten the stored working directory to its deepest two levels.
+3. Add `ID` and full `SESSION` columns in verbose mode. Keep shared tables used
+   by `babysit open` compact except where duplicate names require IDs.
+4. Publish `running`/`idle` transitions from the existing monitor
+   `IdleTracker` into a per-session tmux user option. Initialize new sessions
+   as `running`; treat legacy sessions without the option as `running`.
+5. Update parser, renderer, monitor, tmux integration, help, README,
+   specification, changelog, and focused tests. Verify lint, focused tests,
+   full tests, build, and real CLI output before committing.
+
 ## Context
 
 `babysit` is a CLI supervisor for LLM coding agent CLIs (`claude`, `codex`, `gemini`, `opencode`). It is the JS-based, multi-agent successor to [sir-claudius](https://github.com/actuallymentor/sir-claudius), which was a bash + Python tool wrapping only Claude Code. The new tool addresses three gaps in sir-claudius:

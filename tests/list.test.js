@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test'
-import { cmd_list, print_active_sessions_table } from '../src/cli/list.js'
+import {
+    cmd_list,
+    format_session_directory,
+    print_active_sessions_table,
+} from '../src/cli/list.js'
 
 const capture_console = async ( fn ) => {
 
@@ -20,15 +24,34 @@ const capture_console = async ( fn ) => {
 
 describe( `print_active_sessions_table`, () => {
 
-    it( `numbers active sessions while keeping legacy unnamed sessions readable`, async () => {
+    it( `shows compact rows and collapses unnamed session IDs into NAME`, async () => {
 
         const tmux_sessions = [
-            { name: `babysit_named`, attached: false },
-            { name: `babysit_legacy`, attached: true },
+            { name: `babysit_named`, attached: false, agent_status: `running` },
+            { name: `babysit_legacy`, attached: true, agent_status: `idle` },
+            { name: `babysit_canonical`, attached: false, agent_status: `running` },
         ]
         const stored_sessions = [
-            { tmux_session: `babysit_named`, name: `feature 1`, agent: `codex`, babysit_id: `baby-1` },
-            { tmux_session: `babysit_legacy`, agent: `claude`, babysit_id: `baby-2` },
+            {
+                tmux_session: `babysit_named`,
+                name: `feature 1`,
+                agent: `codex`,
+                babysit_id: `baby-1`,
+                pwd: `/workspace/ping/pong`,
+            },
+            {
+                tmux_session: `babysit_legacy`,
+                agent: `claude`,
+                agent_session_id: `native-2`,
+                babysit_id: `baby-2`,
+                pwd: `/workspace/ding/dong`,
+            },
+            {
+                tmux_session: `babysit_canonical`,
+                agent: `gemini`,
+                babysit_id: `baby-3`,
+                pwd: `/workspace/solo`,
+            },
         ]
 
         const output = await capture_console( () => cmd_list( {
@@ -36,39 +59,45 @@ describe( `print_active_sessions_table`, () => {
             list_stored_sessions_fn: () => stored_sessions,
         } ) )
 
-        expect( output ).toContain( `#` )
-        expect( output ).toContain( `NAME` )
-        expect( output ).toContain( `feature 1` )
-        expect( output ).toMatch( /2\s+-\s+attached\s+claude\s+baby-2\s+babysit_legacy/ )
+        const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
+
+        expect( header.trim().split( /\s+/ ) ).toEqual(
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY` ]
+        )
+        expect( output ).toMatch( /1\s+feature 1\s+running\s+detached\s+codex\s+ping\/pong/ )
+        expect( output ).toMatch( /2\s+native-2\s+idle\s+attached\s+claude\s+ding\/dong/ )
+        expect( output ).toMatch( /3\s+baby-3\s+running\s+detached\s+gemini\s+workspace\/solo/ )
+        expect( output ).not.toContain( `babysit_named` )
+        expect( output ).not.toContain( `babysit_legacy` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
 
     } )
 
-    it( `orders and aligns the readable fields before the tmux session`, async () => {
+    it( `orders and aligns agent status directly after the readable name`, async () => {
 
         const output = await capture_console( () => print_active_sessions_table( [
-            { name: `babysit_short`, attached: false },
-            { name: `babysit_much_longer_session`, attached: true },
+            { name: `babysit_short`, attached: false, agent_status: `running` },
+            { name: `babysit_much_longer_session`, attached: true, agent_status: `idle` },
         ], [
-            { tmux_session: `babysit_short`, name: `fix`, agent: `codex`, agent_session_id: `agent-1` },
-            { tmux_session: `babysit_much_longer_session`, name: `feature with a longer name`, agent: `claude`, babysit_id: `baby-2` },
+            { tmux_session: `babysit_short`, name: `fix`, agent: `codex`, agent_session_id: `agent-1`, pwd: `/work/short` },
+            { tmux_session: `babysit_much_longer_session`, name: `feature with a longer name`, agent: `claude`, babysit_id: `baby-2`, pwd: `/work/long` },
         ] ) )
 
         const lines = output.split( `\n` )
         const header = lines.find( line => line.includes( `NAME` ) )
-        const first_row = lines.find( line => line.includes( `babysit_short` ) )
-        const second_row = lines.find( line => line.includes( `babysit_much_longer_session` ) )
+        const first_row = lines.find( line => line.includes( `fix` ) )
+        const second_row = lines.find( line => line.includes( `feature with a longer name` ) )
 
-        const column_starts = [ `NAME`, `STATUS`, `AGENT`, `ID`, `SESSION` ]
+        const column_starts = [ `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY` ]
             .map( column => header.indexOf( column ) )
 
         expect( column_starts ).toEqual( [ ...column_starts ].sort( ( left, right ) => left - right ) )
         expect( first_row.indexOf( `fix` ) ).toBe( header.indexOf( `NAME` ) )
-        expect( first_row.indexOf( `detached` ) ).toBe( header.indexOf( `STATUS` ) )
+        expect( first_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
+        expect( first_row.indexOf( `detached` ) ).toBe( header.indexOf( `TMUX` ) )
         expect( first_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
-        expect( first_row.indexOf( `agent-1` ) ).toBe( header.indexOf( `ID` ) )
-        expect( first_row.indexOf( `babysit_short` ) ).toBe( header.indexOf( `SESSION` ) )
-        expect( second_row.indexOf( `babysit_much_longer_session` ) ).toBe( header.indexOf( `SESSION` ) )
+        expect( first_row.indexOf( `work/short` ) ).toBe( header.indexOf( `DIRECTORY` ) )
+        expect( second_row.indexOf( `idle` ) ).toBe( header.indexOf( `STATUS` ) )
 
     } )
 
@@ -77,12 +106,14 @@ describe( `print_active_sessions_table`, () => {
         const tmux_sessions = Array.from( { length: 10 }, ( _, index ) => ( {
             name: `babysit_${ index + 1 }`,
             attached: false,
+            agent_status: `running`,
         } ) )
         const stored_sessions = tmux_sessions.map( ( { name: tmux_session }, index ) => ( {
             tmux_session,
             name: `task ${ index + 1 }`,
             agent: `codex`,
             babysit_id: `baby-${ index + 1 }`,
+            pwd: `/workspace/task-${ index + 1 }`,
         } ) )
 
         const output = await capture_console( () => print_active_sessions_table(
@@ -93,14 +124,42 @@ describe( `print_active_sessions_table`, () => {
 
         const lines = output.split( `\n` )
         const header = lines.find( line => line.includes( `NAME` ) )
-        const tenth_row = lines.find( line => line.includes( `babysit_10` ) )
+        const tenth_row = lines.find( line => line.includes( `task 10` ) )
 
         expect( tenth_row.indexOf( `10` ) ).toBe( header.indexOf( `#` ) )
         expect( tenth_row.indexOf( `task 10` ) ).toBe( header.indexOf( `NAME` ) )
-        expect( tenth_row.indexOf( `detached` ) ).toBe( header.indexOf( `STATUS` ) )
+        expect( tenth_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
+        expect( tenth_row.indexOf( `detached` ) ).toBe( header.indexOf( `TMUX` ) )
         expect( tenth_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
-        expect( tenth_row.indexOf( `baby-10` ) ).toBe( header.indexOf( `ID` ) )
-        expect( tenth_row.indexOf( `babysit_10` ) ).toBe( header.indexOf( `SESSION` ) )
+        expect( tenth_row.indexOf( `workspace/task-10` ) ).toBe( header.indexOf( `DIRECTORY` ) )
+
+    } )
+
+    it( `adds IDs and full tmux session names with --all`, async () => {
+
+        const output = await capture_console( () => cmd_list( {
+            flags: { all: true },
+            list_sessions_fn: async () => [ {
+                name: `babysit_/ping/pong/ding/dong_codex_123`,
+                attached: false,
+                agent_status: `idle`,
+            } ],
+            list_stored_sessions_fn: () => [ {
+                tmux_session: `babysit_/ping/pong/ding/dong_codex_123`,
+                name: `feature`,
+                agent: `codex`,
+                agent_session_id: `native-1`,
+                pwd: `/ping/pong/ding/dong`,
+            } ],
+        } ) )
+
+        const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
+
+        expect( header.trim().split( /\s+/ ) ).toEqual(
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY`, `ID`, `SESSION` ]
+        )
+        expect( output ).toContain( `native-1` )
+        expect( output ).toContain( `babysit_/ping/pong/ding/dong_codex_123` )
 
     } )
 
@@ -120,6 +179,22 @@ describe( `print_active_sessions_table`, () => {
         expect( output ).toMatch( /\n  2\s+second/ )
         expect( output ).toMatch( /\n  4\s+fourth/ )
 
+    } )
+
+} )
+
+describe( `format_session_directory`, () => {
+
+    it( `keeps the deepest two directory levels`, () => {
+        expect( format_session_directory( `/ping/pong/ding/dong` ) ).toBe( `ding/dong` )
+        expect( format_session_directory( `/ping/pong/ding/dong/` ) ).toBe( `ding/dong` )
+        expect( format_session_directory( `/one level/two levels` ) ).toBe( `one level/two levels` )
+    } )
+
+    it( `keeps short and missing paths readable`, () => {
+        expect( format_session_directory( `/workspace` ) ).toBe( `workspace` )
+        expect( format_session_directory( `/` ) ).toBe( `/` )
+        expect( format_session_directory() ).toBe( `-` )
     } )
 
 } )

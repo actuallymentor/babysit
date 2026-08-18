@@ -1,6 +1,8 @@
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
 
+const AGENT_STATUSES = new Set( [ `idle`, `running` ] )
+
 /**
  * Pad a string to a fixed width
  * @param {string} str - Input string
@@ -8,6 +10,20 @@ import { list_stored_sessions } from '../sessions/store.js'
  * @returns {string}
  */
 const pad = ( str, width ) => String( str ).padEnd( width )
+
+/**
+ * Keep only the deepest two levels of a session working directory.
+ * @param {string} pwd - Full session working directory
+ * @returns {string} Compact directory, or "-" when unavailable
+ */
+export const format_session_directory = ( pwd ) => {
+
+    if( !pwd ) return `-`
+
+    const levels = String( pwd ).split( /[\\/]+/ ).filter( Boolean )
+    return levels.slice( -2 ).join( `/` ) || String( pwd )
+
+}
 
 /**
  * Format rows with widths derived from the visible table values.
@@ -46,38 +62,44 @@ const format_table = ( headers, rows ) => {
  * @param {string} [options.title] - Table title
  * @param {boolean} [options.numbered=false] - Show active-list selectors
  * @param {number[]} [options.numbers] - Global selectors for a filtered table
+ * @param {boolean} [options.all=false] - Include diagnostic IDs and raw tmux names
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     title = `Active babysit sessions:`,
     numbered = false,
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
+    all = false,
 } = {} ) => {
 
     const headers = [
         ... numbered ? [ `#` ] : [] ,
         `NAME`,
         `STATUS`,
+        `TMUX`,
         `AGENT`,
-        `ID`,
-        `SESSION`,
+        `DIRECTORY`,
+        ... all ? [ `ID`, `SESSION` ] : [],
     ]
 
     const rows = tmux_sessions.map( ( tmux, index ) => {
 
         // Cross-reference with stored session metadata
         const stored = stored_sessions.find( session => session.tmux_session === tmux.name )
-        const name = stored?.name || `-`
         const agent = stored?.agent || `unknown`
         const session_id = stored?.agent_session_id || stored?.babysit_id || `-`
-        const status = tmux.attached ? `attached` : `detached`
+        const name = stored?.name || session_id
+        const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `running`
+        const tmux_status = tmux.attached ? `attached` : `detached`
+        const directory = format_session_directory( stored?.pwd )
 
         return [
             ... numbered ? [ numbers[index] ] : [] ,
             name,
             status,
+            tmux_status,
             agent,
-            session_id,
-            tmux.name,
+            directory,
+            ... all ? [ session_id, tmux.name ] : [],
         ]
 
     } )
@@ -97,10 +119,12 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
 /**
  * List all active babysit sessions
  * @param {Object} [deps]
+ * @param {Object} [deps.flags] - Parsed list display flags
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  */
 export const cmd_list = async ( {
+    flags = {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
 } = {} ) => {
@@ -113,6 +137,9 @@ export const cmd_list = async ( {
         return
     }
 
-    print_active_sessions_table( tmux_sessions, stored_sessions, { numbered: true } )
+    print_active_sessions_table( tmux_sessions, stored_sessions, {
+        numbered: true,
+        all: flags.all,
+    } )
 
 }

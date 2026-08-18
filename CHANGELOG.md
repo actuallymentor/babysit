@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.28.0 — 2026-08-18
+
+### ✨ Added
+- **Active sessions report coding-agent activity.** `STATUS` shows `running`
+  or `idle` using the same timeout as Babysit's idle supervision.
+- **Verbose active-session diagnostics are opt-in.** `babysit list --all`
+  restores the separate ID and full tmux session-name columns.
+
+### Changed
+- **The default active-session table is compact.** `NAME` falls back to the
+  session ID, tmux attachment state lives under `TMUX`, and the raw session
+  name is replaced by the deepest two working-directory levels.
+
 ## 0.27.0 — 2026-08-07
 
 ### ✨ Added

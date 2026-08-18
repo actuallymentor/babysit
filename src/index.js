@@ -69,7 +69,7 @@ const main = async () => {
         break
 
     case `list`:
-        await cmd_list()
+        await cmd_list( cmd )
         break
 
     case `open`:
