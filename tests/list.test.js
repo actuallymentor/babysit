@@ -93,6 +93,7 @@ describe( `print_active_sessions_table`, () => {
         const column_starts = [ `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY` ]
             .map( column => header.indexOf( column ) )
 
+        expect( header ).not.toContain( `FLAGS` )
         expect( column_starts ).toEqual( [ ...column_starts ].sort( ( left, right ) => left - right ) )
         expect( first_row.indexOf( `fix` ) ).toBe( header.indexOf( `NAME` ) )
         expect( first_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
