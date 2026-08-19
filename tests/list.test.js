@@ -37,6 +37,7 @@ describe( `print_active_sessions_table`, () => {
                 name: `feature 1`,
                 agent: `codex`,
                 babysit_id: `baby-1`,
+                modifiers: [ `yolo`, `docker` ],
                 pwd: `/workspace/ping/pong`,
             },
             {
@@ -50,6 +51,7 @@ describe( `print_active_sessions_table`, () => {
                 tmux_session: `babysit_canonical`,
                 agent: `gemini`,
                 babysit_id: `baby-3`,
+                modifiers: [],
                 pwd: `/workspace/solo`,
             },
         ]
@@ -62,11 +64,11 @@ describe( `print_active_sessions_table`, () => {
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY` ]
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS`, `DIRECTORY` ]
         )
-        expect( output ).toMatch( /1\s+feature 1\s+running\s+detached\s+codex\s+ping\/pong/ )
-        expect( output ).toMatch( /2\s+native-2\s+idle\s+attached\s+claude\s+ding\/dong/ )
-        expect( output ).toMatch( /3\s+baby-3\s+running\s+detached\s+gemini\s+workspace\/solo/ )
+        expect( output ).toMatch( /1\s+feature 1\s+running\s+detached\s+codex\s+yolo,docker\s+ping\/pong/ )
+        expect( output ).toMatch( /2\s+native-2\s+idle\s+attached\s+claude\s+-\s+ding\/dong/ )
+        expect( output ).toMatch( /3\s+baby-3\s+running\s+detached\s+gemini\s+-\s+workspace\/solo/ )
         expect( output ).not.toContain( `babysit_named` )
         expect( output ).not.toContain( `babysit_legacy` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
@@ -149,6 +151,7 @@ describe( `print_active_sessions_table`, () => {
                 name: `feature`,
                 agent: `codex`,
                 agent_session_id: `native-1`,
+                modifiers: [ `sandbox`, `docker` ],
                 pwd: `/ping/pong/ding/dong`,
             } ],
         } ) )
@@ -156,8 +159,9 @@ describe( `print_active_sessions_table`, () => {
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY`, `ID`, `SESSION` ]
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS`, `DIRECTORY`, `ID`, `SESSION` ]
         )
+        expect( output ).toContain( `sandbox,docker` )
         expect( output ).toContain( `native-1` )
         expect( output ).toContain( `babysit_/ping/pong/ding/dong_codex_123` )
 
