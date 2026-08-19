@@ -4,6 +4,22 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-08-19 — Active-session flags column
+
+Intent: make each active session's launch mode immediately visible in both
+`babysit list` and `babysit list --all`.
+
+1. Format stored session modifiers as a compact comma-separated value, with
+   `-` for sessions that have no recorded flags or no stored metadata.
+2. Add an opt-in renderer column after `AGENT`; enable it for `babysit list`
+   with and without `--all`, while keeping shared `babysit open` tables compact.
+   `--all` remains responsible only for diagnostic ID and raw tmux columns.
+3. Cover default, verbose, unflagged, legacy, and shared compact rows in
+   focused tests, updating existing header and alignment assertions.
+4. Update help text, README.md, SPECIFICATION.md, CHANGELOG.md, package version
+   (v0.29.0), lockfiles, and persistent notes.
+5. Verify lint, focused and full tests, build output, and the real CLI table.
+
 ## 2026-08-18 — Active-session list format refresh
 
 Intent: make the default active-session table compact and human-readable while

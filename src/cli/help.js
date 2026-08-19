@@ -13,7 +13,7 @@ babysit — supervisor for LLM coding agent CLIs
 Usage:
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id> [flags]  Resume a previous session
-  babysit list [--all]                 List active sessions
+  babysit list [--all]                 List active sessions and launch flags
   babysit open [id|name|number]        Attach to an active session
   babysit resume [session_id] [flags]  List resumable sessions or resume one
   babysit config                       Configure babysit settings

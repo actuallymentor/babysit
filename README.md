@@ -35,7 +35,7 @@ babysit resume
 # Resume a previous session by its Babysit ID
 babysit resume <session_id> --yolo
 
-# List active sessions with numbers and names
+# List active sessions with numbers, names, and launch flags
 babysit list
 
 # Include IDs and full tmux session names
@@ -296,7 +296,7 @@ in the coding agent's environment.
 ```
 babysit <agent> [flags]              Start a new session
 babysit <agent> resume <id> [flags]  Resume a previous session
-babysit list [--all]                 List active sessions
+babysit list [--all]                 List active sessions and launch flags
 babysit open [id|name|number]        Attach to an active session
 babysit resume [session_id] [flags]  List resumable sessions or resume one
 babysit config                       Configure babysit settings
@@ -311,13 +311,14 @@ directory, Babysit shows the matching rows with the same numbers used by
 Give a session a memorable label with `babysit <agent> --name "feature 1"`.
 `babysit list` numbers every active session and shows its name (or ID when
 unnamed), agent `running`/`idle` status, tmux attachment status, coding agent,
-and the deepest two levels of its working directory. Activity comes from the
-captured tmux viewport: changes show `running`, while one complete monitor
-interval without a change shows `idle`. This is independent from Babysit's
-idle supervision timeout. Add `--all` to include the separate ID and full tmux
-session name. Run `babysit open <number>` from any directory to open that
-numbered row, or `babysit open "feature 1"` to open an active session by its
-exact name. Quote names containing spaces.
+launch flags (for example `yolo,docker`), and the deepest two levels of its
+working directory. Sessions without recorded flags show `-`. Activity comes
+from the captured tmux viewport: changes show `running`, while one complete
+monitor interval without a change shows `idle`. This is independent from
+Babysit's idle supervision timeout. Add `--all` to include the separate ID and
+full tmux session name. Run `babysit open <number>` from any directory to open
+that numbered row, or `babysit open "feature 1"` to open an active session by
+its exact name. Quote names containing spaces.
 
 Run `babysit resume` without a session id to list persistent Babysit-managed
 history, newest first. Each row shows the canonical Babysit ID alongside the

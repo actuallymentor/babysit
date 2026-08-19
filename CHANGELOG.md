@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.0 — 2026-08-19
+
+### ✨ Added
+- **Active session launch flags are always visible.** `babysit list` now shows
+  comma-separated `FLAGS` such as `yolo,docker` without requiring `--all`;
+  sessions without recorded flags show `-`.
+
 ## 0.28.1 — 2026-08-18
 
 ### 🐛 Fixed

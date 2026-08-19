@@ -26,6 +26,14 @@ export const format_session_directory = ( pwd ) => {
 }
 
 /**
+ * Format stored launch modifiers for the active-session table.
+ * @param {string[]} modifiers - Session launch modifiers
+ * @returns {string} Comma-separated flags, or "-" when none were recorded
+ */
+export const format_session_flags = ( modifiers ) =>
+    Array.isArray( modifiers ) && modifiers.length ? modifiers.join( `,` ) : `-`
+
+/**
  * Format rows with widths derived from the visible table values.
  * @param {string[]} headers - Column labels
  * @param {Array<Array<string|number>>} rows - Values to display
@@ -62,12 +70,14 @@ const format_table = ( headers, rows ) => {
  * @param {string} [options.title] - Table title
  * @param {boolean} [options.numbered=false] - Show active-list selectors
  * @param {number[]} [options.numbers] - Global selectors for a filtered table
+ * @param {boolean} [options.show_flags=false] - Show stored launch modifiers
  * @param {boolean} [options.all=false] - Include diagnostic IDs and raw tmux names
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     title = `Active babysit sessions:`,
     numbered = false,
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
+    show_flags = false,
     all = false,
 } = {} ) => {
 
@@ -77,6 +87,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         `STATUS`,
         `TMUX`,
         `AGENT`,
+        ... show_flags ? [ `FLAGS` ] : [],
         `DIRECTORY`,
         ... all ? [ `ID`, `SESSION` ] : [],
     ]
@@ -90,6 +101,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const name = stored?.name || session_id
         const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `running`
         const tmux_status = tmux.attached ? `attached` : `detached`
+        const flags = format_session_flags( stored?.modifiers )
         const directory = format_session_directory( stored?.pwd )
 
         return [
@@ -98,6 +110,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
             status,
             tmux_status,
             agent,
+            ... show_flags ? [ flags ] : [],
             directory,
             ... all ? [ session_id, tmux.name ] : [],
         ]
@@ -139,6 +152,7 @@ export const cmd_list = async ( {
 
     print_active_sessions_table( tmux_sessions, stored_sessions, {
         numbered: true,
+        show_flags: true,
         all: flags.all,
     } )
 
