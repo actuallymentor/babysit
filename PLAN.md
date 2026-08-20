@@ -507,3 +507,266 @@ CI matrix (in `.github/workflows/test.yml`): ubuntu-latest + macos-latest, node 
 - Worktree-style branch isolation (no spec ask)
 
 These each become a separate phase if/when requested.
+
+---
+
+## 2026-08-20 — Reliable OpenCode initial prompt and fast/skippable startup
+
+Status: implementation authorized on 2026-08-20. Implement the selected A/A/A policy below and commit after verification.
+
+### Intent
+
+1. Make Babysit's configured `initial_prompt` arrive in a real OpenCode session exactly once, after the TUI can accept input.
+2. Measure and reduce the time between invoking `babysit <agent>` and reaching the main agent TUI.
+3. Let an interactive user skip slow authentication probes without leaking credentials, leaving probe containers behind, or turning a skip into an authentication failure.
+4. Find the measured cause of the recurring 10–30 second delay when closing a Babysit session, then remove avoidable shutdown latency without weakening credential recovery or container cleanup.
+
+Scope boundary: Gemini currently has the same missing-ready-pattern risk, but this task targets OpenCode as requested. Reuse the capture/fixture workflow for Gemini in a separate follow-up rather than silently expanding this implementation.
+
+### Current evidence
+
+- Babysit does not pass `initial_prompt` to OpenCode's command. It starts the container, then pastes the prompt into the tmux pane and presses Enter.
+- Codex and Claude declare ready-screen patterns. OpenCode declares none, so `wait_for_initial_prompt_ready()` returns immediately after Docker reports the container running. That is a real startup race.
+- Resumes deliberately do not send the initial prompt again. Preserve this behavior.
+- Startup does not auto-update or auto-pull anymore. Normal startup latency is therefore elsewhere.
+- Credential setup stages credentials for every supported agent. Linux file credentials and the macOS Claude Keychain path currently execute host `<agent> --version` preflights serially; macOS file-backed credentials do not. Existing research says the preflight is useful for Claude but a no-op for Codex, Gemini, and OpenCode.
+- Startup authentication checks default to Codex and Claude, regardless of the agent being launched. They run concurrently, but each check creates a separate Docker container, stages credentials, makes a real model request, flushes any rotated credential, and removes the container. Each probe can wait up to 90 seconds.
+- Authentication probes can rotate OAuth credentials. A skipped probe must be cancelled and finalized safely; it must never be abandoned in the background.
+
+### Selected startup policy
+
+The 2026-08-20 implementation authorization selects the recommended options:
+
+- **Authentication:** active agent + 12-hour success cache (1A).
+- **Enter during a probe:** skip this launch only, then wait for safe cleanup (2A).
+- **Non-interactive cache miss:** skip with a warning (3A).
+- **Doctor selection:** `babysit doctor --auth` checks all supported agents by default; an explicit agent narrows it, and `--refresh` bypasses cache.
+
+The alternatives below remain as decision history.
+
+### Previously considered alternatives
+
+#### 1. Default authentication policy
+
+- **A — Active agent + cache (recommended):** check only the agent being launched; reuse a successful result while its credential fingerprint is unchanged and the result is younger than 12 hours. `babysit doctor --auth` checks all agents on demand.
+- **B — Configured agents + cache:** retain the current configured-agent set, but reuse fresh successful results. This preserves cross-agent/subagent assurance at the cost of more cache-miss work.
+- **C — Manual only:** remove model-backed authentication probes from normal startup. `babysit doctor --auth` becomes the only real probe path; the launched CLI surfaces its own authentication failure.
+
+#### 2. What Enter means during a live probe
+
+- **A — Skip this launch only (recommended):** cancel outstanding probes, finish credential recovery/cleanup, and continue startup. Persistent policy changes remain explicit through `babysit config`.
+- **B — Snooze:** cancel and suppress new probes for one hour.
+- **C — Disable persistently:** cancel and set auth checks to `none`. This is fastest but makes an accidental Enter change durable configuration.
+
+#### 3. Non-interactive behavior on a cache miss
+
+- **A — Skip with warning (recommended):** CI/scripts never wait for a model-backed probe; `babysit doctor --auth` remains available when verification is required.
+- **B — Bounded advisory check:** run probes for at most 10 seconds, then continue with a warning.
+- **C — Fail closed (current behavior):** retain blocking checks; a failed check prints the prompt and exits because non-TTY input cannot answer it. Options A and B intentionally change current CI/script semantics.
+
+### Success criteria
+
+#### OpenCode prompt delivery
+
+- A new OpenCode launch records the configured initial prompt as its first submitted user message exactly once.
+- The prompt is not echoed, partially submitted, or split at embedded newlines.
+- Cold image-cache and warm starts behave identically.
+- Normal and `--yolo` launches work; resumes receive no new initial prompt.
+- A changed or unsupported OpenCode ready screen times out with a clear diagnostic instead of silently sending early.
+
+#### Startup latency
+
+- Every major startup phase has debug timing, allowing latency attribution without guesswork.
+- Warm starts with a valid auth cache perform no model-backed probe.
+- Pressing Enter during live probes produces visible acknowledgement immediately and advances only after credential-safe cleanup completes.
+- Interactive auth checks show a compact live indicator with elapsed time and per-agent state; redirected/non-interactive output remains stable plain text.
+- Skipped/cancelled checks never trigger the later `Unauthenticated agents ... Exit?` prompt.
+- No orphan auth-check containers, credential tmpfiles, raw-mode stdin state, keypress listeners, or refresh-token regressions remain.
+- An ordinary in-session OAuth rotation preserves a still-trusted fresh cache entry; a host-side re-login, credential replacement, or failed final flush invalidates it.
+
+#### Shutdown latency
+
+- Debug timing identifies where the recurring 10–30 second close delay is spent: agent exit, tmux teardown, container stop, credential final pull, recovery bookkeeping, or polling/backoff.
+- A normal interactive close releases the foreground promptly after agent exit; mandatory credential and container finalization then completes in the detached owner without a fixed foreground grace period.
+- Ctrl+C, agent-requested exit, tmux detach/kill, Docker failure, and forced termination converge on one idempotent cleanup path.
+- Faster close never drops a rotated credential, removes a recovery-retained container, or leaves a session/container/monitor orphaned.
+
+### Phase 1 — Establish real baselines
+
+1. Record end-to-end startup timings over at least five cold and five warm launches using `BABYSIT_DEBUG=1` where credentials are available; use the fake-agent Docker fixture for repeatable credential-free baselines.
+2. Add temporary or permanent debug timers around:
+   - dependency checks;
+   - Docker daemon and Watchtower inspection;
+   - credential discovery and each agent preflight;
+   - each auth probe's Docker preparation, model response, credential pull, and cleanup;
+   - main container preparation/start;
+   - TUI readiness and initial-prompt submission.
+3. Compare three auth configurations: `none`, one agent, and current defaults (`codex,claude`). Capture median and slowest observed duration.
+4. Verify the suspected cause before changing policy. Keep any optimization whose measured impact is material; reject speculative complexity.
+
+### Phase 2 — Discover OpenCode's real ready screen
+
+1. With Docker access, build or select the same image Babysit actually launches and record the in-container `opencode --version`.
+2. Create a disposable workspace with `initial_prompt: null` so Babysit cannot race the observation.
+3. Capture the visible tmux pane every 100–250 ms through cold and warm starts. Store sanitized, secret-free loading and ready snapshots as test fixtures.
+4. Prove the composer accepts input at the candidate boundary without making a model request:
+   - paste a unique sentinel without Enter;
+   - confirm it appears in the composer;
+   - clear it before submission;
+   - repeat across several launches.
+5. Select the narrowest stable text that:
+   - is present after ANSI normalization;
+   - appears only when the composer accepts input;
+   - does not depend on workspace path, account, model, version patch, or terminal redraw timing;
+   - is absent from loading, login, provider-selection, and error screens.
+6. Prefer a ready-screen regex in `src/agents/opencode.js`. Evaluate native `opencode --prompt` only as a fallback if no stable marker exists; command-line prompt delivery exposes the prompt through container command metadata and changes cross-agent behavior.
+
+### Phase 3 — Implement and verify OpenCode readiness
+
+1. Add `initial_prompt_ready_pattern` to the OpenCode adapter with a comment tied to the captured screen invariant.
+2. Add prompt-readiness unit cases using the real sanitized fixtures:
+   - loading screens do not match;
+   - ready screens match;
+   - ANSI-decorated ready screens match after normalization;
+   - login/error screens do not match;
+   - repeated checks remain deterministic.
+3. Extend Docker E2E coverage with a deterministic fake OpenCode-ready fixture, then add an explicit environment-gated real OpenCode launch in a disposable workspace. The real case submits a harmless minimal prompt and verifies it exists once in the native OpenCode session/transcript; it never runs in normal CI or on credential-less machines.
+4. Repeat for cold/warm and normal/`--yolo`; verify resume still suppresses initial-prompt injection.
+5. Run the app like a user: attach to tmux, observe the prompt submission, receive a minimal response, detach, and resume.
+
+### Phase 4 — Make auth probes observable and cancellable
+
+1. Introduce an auth-check run controller with an external `AbortSignal` and explicit result states: `authenticated`, `unauthenticated`, `skipped`, and `cancelled`/`failed` as needed. Do not overload `authenticated: false` for user skips.
+2. Thread cancellation through both stages:
+   - Docker create/copy preparation, which currently owns only an internal abort controller;
+   - the running agent child and its SIGTERM → grace period → SIGKILL path.
+3. Preserve credential correctness on cancellation:
+   - stop the probe agent;
+   - pull only that probe's credential after any possible token rotation;
+   - if final pull fails, retain the stopped container and recovery metadata exactly as current recovery rules require;
+   - otherwise remove the container and ephemeral transports;
+   - wait for all probe finalizers before starting the main container.
+4. Add a TTY-only keypress guard around the aggregate probe operation:
+   - display `Checking authentication: codex, claude — press Enter to skip`;
+   - recognize Enter only, while preserving Ctrl+C termination semantics;
+   - recognize raw `\x03` explicitly and invoke the normal termination path, because raw mode prevents the terminal driver from delivering SIGINT automatically;
+   - acknowledge `Skipping authentication checks; cleaning up...` immediately;
+   - restore raw mode and remove listeners in `finally`, including spawn errors and signals;
+   - complete that teardown before any readline-based genuine-auth-failure prompt starts;
+   - never install key listeners for non-TTY input.
+5. Add a terminal progress renderer shared by the auth controller:
+   - render one compact TTY line with a spinner, total elapsed time, the Enter hint, and per-agent states such as `codex ⠋`, `claude ✓`, `opencode ✗`, and `gemini skipped`;
+   - expose meaningful phases (`preparing`, `checking`, `recovering credentials`, `done`) so a slow cleanup does not look hung;
+   - repaint in place without flooding scrollback, and stop/unref the timer on every completion, skip, error, and signal path;
+   - suspend and clear the live line before warnings, readline prompts, stack traces, or tmux attachment, then render a final one-line summary;
+   - respect `NO_COLOR`, `TERM=dumb`, Unicode capability, and non-TTY output by using plain milestone lines with no cursor control or animation;
+   - keep animation output free of credential values, model responses, and Docker command details;
+   - make the renderer own output only; the keypress guard continues to own stdin so spinner updates cannot consume Enter or Ctrl+C.
+6. Keep existing concurrent probe execution. Parallelization already exists and is not the missing optimization.
+7. Filter skipped results before failure logging, unauthenticated-agent confirmation, and credential-abort handling so Enter always continues once cleanup is safe. Update the genuine failure prompt so it no longer claims startup selection comes from `babysit config`.
+
+### Phase 5 — Apply the selected authentication policy
+
+#### If option 1A or 1B uses caching
+
+1. Store cache metadata under `~/.babysit/`, never in project configuration or session records.
+2. Cache only safe metadata: agent name, successful-check timestamp, credential fingerprint, and immutable Babysit image identity. Fingerprint file, Keychain, and environment-backed credential inputs without storing their values; use the local image ID/digest rather than a mutable tag. Never store tokens or model output.
+3. Compute the credential fingerprint after a successful probe's final credential pull, because the probe itself may rotate the token.
+4. On macOS, derive Claude's fingerprint from the current Keychain credential value and persist only its hash; do not assume every provider has a credential file.
+5. Invalidate on an untrusted credential change, auth failure, image change, explicit `babysit doctor --auth --refresh`, or TTL expiry.
+6. A successful session final flush may re-stamp the cached fingerprint only when the pre-launch fingerprint matched a fresh successful cache entry and the final credential recovery completed. This preserves trust across normal OAuth token rotation without blessing a concurrent host re-login or a failed/retained recovery.
+7. Cache successes only. Never cache failure, skip, timeout, interrupted cleanup, or a credential whose final state could not be fingerprinted.
+
+#### If option 1A checks only the active agent
+
+1. Migrate startup selection to the launched agent.
+2. Normal startup ignores the legacy configured list. `babysit doctor --auth` checks all supported agents by default, and `babysit doctor --auth <agent>` narrows the selection. Keep reading old config files without error, but deprecate the configured list and remove its startup-facing prompt/help claims.
+
+#### If option 1C is manual-only
+
+1. Add `babysit doctor --auth [agent|all]` using the existing probe implementation.
+2. Normal startup performs credential presence/staging only and lets the actual agent report authentication errors.
+
+### Phase 6 — Remove measurable non-probe delay
+
+1. Replace unconditional credential-file `<agent> --version` calls with an adapter-declared preflight capability.
+2. Retain the preflight only where it changes credential state or avoids a known first-request failure—currently Claude according to project research.
+3. Do not stop staging other agent credentials; cross-agent credentials inside the container are an existing feature and separate from whether their host CLIs need a no-op preflight.
+4. Re-measure Docker daemon/Watchtower inspection and staged credential copies. Optimize only phases that remain material after auth changes.
+5. Do not reintroduce automatic updates or image pulls into startup.
+
+### Phase 7 — Diagnose and remove slow session close
+
+1. Reproduce the 10–30 second close delay through the real CLI in Docker and record at least five runs for each available exit path: the agent's normal exit command, Ctrl+C, tmux session close, container-side failure, and agent exit while the user is detached.
+2. Measure two separate timelines with a shared session correlation ID:
+   - foreground-visible close: agent/container process exit → `docker start -ai` exit → tmux session disappearance → `tmux attach` return → final CLI output → Node event-loop drain/process exit;
+   - detached cleanup: monitor death detection → credential final pull → container stop/remove → recovery-marker updates → monitor exit.
+3. Trace every shutdown timeout, retry interval, and serial finalizer. Prove which wait accounts for the observed delay before changing it; retain timings useful under `BABYSIT_DEBUG=1`.
+4. Replace fixed sleeps or coarse polling with event/process completion where possible. Run independent safe finalizers concurrently, while keeping credential pull before container removal and preserving recovery retention on pull failure.
+5. Make shutdown ownership explicit and idempotent so signals, the foreground waiter, tmux teardown, and monitor cleanup cannot each pay the same grace period or finalization cost. Do not make foreground return wait on detached credential cleanup unless measurements prove that cleanup already blocks the tmux/Docker boundary.
+6. Add deterministic tests with fake clocks/processes for fast normal exit, required SIGTERM-to-SIGKILL escalation, already-exited children, Docker stop/remove failures, credential-pull retention, and competing cleanup callers.
+7. Re-run real Docker close measurements after the fix. Record median and slowest before/after values and verify zero leftover Babysit containers, tmux sessions, credential tmpfiles, or recovery markers.
+
+### Expected file changes
+
+- `src/agents/opencode.js` — real ready-screen regex.
+- `src/cli/start.js` — phase timing, skip UX integration, selected auth policy.
+- `src/index.js` and `src/deps/check.js` — dependency/dispatch timing plus `doctor` routing.
+- `src/agents/auth.js` — cancellable probe controller, explicit result states, per-probe timing.
+- Optional new `src/cli/progress.js` — reusable TTY spinner/progress renderer with plain-output fallback.
+- `src/docker/launch.js` — safe external cancellation during Docker create/copy/start.
+- `src/credentials/{index,linux,darwin}.js` and agent adapters — declared preflight behavior and post-probe fingerprint handoff.
+- `src/babysit/config.js`, `src/cli/config.js`, `src/cli/parse.js`, `src/cli/help.js` — selected policy, TTL/doctor settings, and compatibility migration.
+- Optional new `src/cli/doctor.js` and auth-cache module under `src/agents/` or `src/credentials/`.
+- Sanitized OpenCode readiness fixtures and a small timing helper/test seam.
+- Shutdown owners discovered during Phase 7, expected among `src/cli/start.js`, `src/docker/launch.js`, `src/babysit/monitor.js`, and tmux/session helpers.
+- `tests/prompt.test.js`, `tests/agent_auth.test.js`, `tests/config.test.js`, parser/help tests, Docker launch tests, and real E2E coverage.
+- `README.md`, `CHANGELOG.md`, and persistent gotcha/research notes after implementation.
+
+### Required tests
+
+#### Unit and integration
+
+- OpenCode loading/ready/error fixture classification.
+- OpenCode readiness timeout does not send the prompt and emits the clear diagnostic.
+- Enter before Docker preparation, during create/copy, during model execution, and during final credential pull.
+- SIGTERM/SIGKILL escalation and close/timeout/skip race determinism.
+- Credential pull success, pull failure retention, source-wins host re-login, and cleanup idempotence.
+- Skipped results continue without the unauthenticated confirmation.
+- TTY listener/raw-mode restoration on every exit path; non-TTY never reads stdin.
+- Spinner frame/state rendering with a fake clock, final-line cleanup, `NO_COLOR`/`TERM=dumb` fallback, redirected output, and no timer/listener leaks.
+- Cache hit, TTL expiry, credential-fingerprint change, agent/image version change, and corrupt-cache fallback.
+- Trusted session-end token rotation re-stamps a fresh matching cache entry; host re-login and failed final recovery do not.
+- `doctor --auth` parse/dispatch, all/default and single-agent selection, `--refresh` bypass, and success-only cache writes.
+- Existing concurrent-start guarantee remains.
+
+#### Real user-path E2E
+
+- Real OpenCode cold/warm prompt submission and resume behavior.
+- Slow fake auth agent: press Enter through a PTY, verify quick acknowledgement, safe completion, and zero leftover probe containers.
+- Slow fake auth agent through a real PTY: verify animated phase changes, per-agent completion marks, a clean final summary, and no corrupted follow-up prompt.
+- Manual/opt-in, environment-gated real credential-backed probe with minimal output to verify cancellation does not invalidate the next launch. Never run it in normal CI or on credential-less machines.
+- Timing comparison before/after under no-auth, cache-hit, cache-miss, and manual-skip paths.
+- Real close timing comparison across normal exit, Ctrl+C, tmux close, and forced container exit, with post-run orphan checks.
+
+### Documentation and rollout
+
+1. Explain that authentication probes make real model requests and may rotate credentials.
+2. Document the selected default, Enter behavior, non-TTY behavior, cache TTL/invalidation, and `babysit doctor --auth` usage.
+3. Update `README.md`, `SPECIFICATION.md`, help text, and the configuration examples together.
+4. Preserve old `~/.babysit/config.json` compatibility; missing new fields receive the selected defaults.
+5. Update `CHANGELOG.md`, bump the package version, and synchronize both lockfiles because startup authentication semantics are user-visible.
+6. Update persistent gotchas for external cancellation plus credential-finalization ordering.
+7. Run reflect, style, changelog, tests, cleanup, commit the authorized implementation, then run the post-commit independent review.
+
+### Implementation outcome — 2026-08-20
+
+Status: complete.
+
+- OpenCode 1.18.15 was observed in the real Babysit image. `Ask anything...` is the verified composer boundary; provider, authentication, and invalid-model overlays are rejected. Sanitized captures now lock that behavior in tests.
+- Normal startup checks only the active agent. Successful checks use a 12-hour hash-only credential/image cache; Enter cooperatively cancels a live probe, and non-interactive cache misses warn and continue. `babysit doctor --auth [agent|all] [--refresh]` owns explicit checks.
+- Host credential preflight is adapter-declared and remains enabled only for Claude. Startup/auth/Docker/tmux phases print elapsed timings under `BABYSIT_DEBUG=1`.
+- Close-delay tracing separated agent exit from Docker and monitor cleanup. The fake agent exited in about 32 ms, but Moby 28.3.3 kept `docker start -ai` open for another 3.5–4.9 seconds while completing bounded stream/logger/task cleanup; the daemon's 2/10/30-second internal waits explain the reported 10–30-second tail under load. Credential final pull starts after tmux death and was not the foreground cause.
+- Interactive containers now run through a signal-forwarding entrypoint supervisor. It emits a randomized per-session exit marker as soon as the agent child is reaped. The monitor validates the token and closes tmux immediately, then waits for Docker's copy-safe stopped state before the final credential pull and container removal.
+- Before the fix, three direct close measurements were 4.576–4.940 seconds. The hardened real-Docker E2E measured nine natural closes at 277–1,056 ms, with zero labeled containers, private credential directories, or recovery markers left behind.
+- Unit/integration coverage includes cancellation before Docker create, during copy, during the agent process, and during final credential pull; TTY restoration; cache invalidation/rotation; shutdown marker forgery; stopped-state polling; and cleanup idempotence. The full fake-agent Docker E2E covers all four adapters, prompt submission, exact-once resume behavior, credential rotation, sandbox, mudbox, and nested Docker.

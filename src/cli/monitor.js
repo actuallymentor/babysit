@@ -10,7 +10,16 @@ import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
-import { remove_docker_container } from '../docker/file_transport.js'
+import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import {
+    clear_host_auth_cache,
+    refresh_file_credential_parts,
+    refresh_host_auth_cache,
+} from '../agents/auth_cache.js'
+
+const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
+    ? log.info( message )
+    : log.debug( message )
 
 /**
  * Rebuild the launch mode from stored session modifiers.
@@ -33,6 +42,53 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
 export const load_monitor_config = ( session = {} ) => load_config( session.pwd, {
     default_initial_prompt: build_system_prompt( mode_from_modifiers( session.modifiers ) ),
 } )
+
+/**
+ * Preserve a fresh auth result across a token rotation performed by the
+ * already-trusted session. A deliberate host credential replacement clears
+ * trust instead, and compare-and-swap protects concurrent launches.
+ *
+ * @param {Object} session - Stored session metadata
+ * @param {Object} agent - Active agent adapter
+ * @param {Object} creds_sync - Completed credential sync controller
+ * @param {Object} tmpfiles - Per-agent staged credential files
+ * @param {Object} [dependencies] - Cache test seams
+ * @returns {boolean} Whether cache trust was refreshed
+ */
+export const refresh_session_auth_cache = ( session, agent, creds_sync, tmpfiles, {
+    clear_cache = clear_host_auth_cache,
+    refresh_parts = refresh_file_credential_parts,
+    refresh_cache = refresh_host_auth_cache,
+} = {} ) => {
+
+    const context = session.auth_cache_context
+    if( !context ) return false
+
+    try {
+        if( creds_sync.source_changed?.() ) {
+            clear_cache( agent.name )
+            return false
+        }
+
+        const refreshed_identity = refresh_parts(
+            context.credential_parts,
+            tmpfiles[ agent.name ]
+        )
+        if( !refreshed_identity ) return false
+
+        return refresh_cache( agent.name, {
+            expected_credential_fingerprint: context.credential_fingerprint,
+            next_credential_fingerprint: refreshed_identity.fingerprint,
+            image_identity: context.image_identity,
+        } )
+    } catch ( error ) {
+        // Cache metadata is an optimization. Credential recovery already
+        // succeeded, so a cache write failure must not retain the container.
+        log.debug( `Could not refresh ${ agent.name } authentication cache: ${ error.message }` )
+        return false
+    }
+
+}
 
 /**
  * Run the supervision loop for an already-launched session.
@@ -85,37 +141,66 @@ export const cmd_monitor = async ( cmd ) => {
     let container_cleaned = false
     let credentials_cleaned = false
     let credential_cleanup_task = null
+    let credential_cleanup_result = null
+    let container_cleanup_task = null
+    let container_cleanup_result = null
+    let container_stop_task = null
+
+    const wait_for_container_stop = () => {
+        if( !session.container_id ) return Promise.resolve( null )
+        if( container_stop_task ) return container_stop_task
+
+        const started_at = Date.now()
+        container_stop_task = wait_for_docker_container_stopped( session.container_id )
+            .then( status => {
+                log_shutdown_timing( `Shutdown: Docker reached ${ status } in ${ Date.now() - started_at }ms` )
+                return status
+            } )
+
+        return container_stop_task
+    }
 
     const cleanup_credentials = async () => {
+        if( credential_cleanup_result !== null ) return credential_cleanup_result
         if( credentials_cleaned ) return true
         if( !credential_setup_complete ) {
             const has_recovery_files = Object.keys( existing_tmpfiles ).length > 0
             if( has_recovery_files ) {
                 log.warn( `Credential recovery could not start; retaining container and private recovery files.` )
+                credential_cleanup_result = false
                 return false
             }
 
+            credential_cleanup_result = true
             return true
         }
-        if( !creds_sync ) return true
+        if( !creds_sync ) {
+            credential_cleanup_result = true
+            return true
+        }
         if( credential_cleanup_task ) return credential_cleanup_task
 
         credential_cleanup_task = ( async () => {
+            const started_at = Date.now()
             try {
+                await wait_for_container_stop()
                 await creds_sync.stop()
+                refresh_session_auth_cache( session, agent, creds_sync, existing_tmpfiles )
                 if( !creds_sync.cleanup() ) {
                     log.warn( `Could not remove private credential recovery files; retaining the stopped container for retry.` )
+                    credential_cleanup_result = false
                     return false
                 }
                 credentials_cleaned = true
+                credential_cleanup_result = true
+                log_shutdown_timing( `Shutdown: credential finalisation completed in ${ Date.now() - started_at }ms` )
                 return true
             } catch ( error ) {
                 log.warn(
                     `Could not flush completed session credentials; retaining container and private recovery files: ${ error.message }`
                 )
+                credential_cleanup_result = false
                 return false
-            } finally {
-                credential_cleanup_task = null
             }
         } )()
 
@@ -123,14 +208,30 @@ export const cmd_monitor = async ( cmd ) => {
     }
 
     const cleanup_container = async () => {
-        if( container_cleaned || !session.container_id ) return
-
-        try {
-            await remove_docker_container( session.container_id )
-            container_cleaned = true
-        } catch ( error ) {
-            log.debug( `Could not remove completed Docker container ${ session.container_id }: ${ error.message }` )
+        if( container_cleanup_result !== null ) return container_cleanup_result
+        if( container_cleaned || !session.container_id ) {
+            container_cleanup_result = true
+            return true
         }
+        if( container_cleanup_task ) return container_cleanup_task
+
+        container_cleanup_task = ( async () => {
+            const started_at = Date.now()
+            try {
+                await wait_for_container_stop()
+                await remove_docker_container( session.container_id )
+                container_cleaned = true
+                container_cleanup_result = true
+                log_shutdown_timing( `Shutdown: container removal completed in ${ Date.now() - started_at }ms` )
+                return true
+            } catch ( error ) {
+                container_cleanup_result = false
+                log.debug( `Could not remove completed Docker container ${ session.container_id }: ${ error.message }` )
+                return false
+            }
+        } )()
+
+        return container_cleanup_task
     }
 
     try {
@@ -168,6 +269,7 @@ export const cmd_monitor = async ( cmd ) => {
             rules,
             agent_patterns,
             agent,
+            agent_exit_sentinel: session.agent_exit_sentinel,
             on_session_id: ( id ) => {
                 update_session( session.babysit_id, { agent_session_id: id } )
             },

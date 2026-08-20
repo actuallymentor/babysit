@@ -76,6 +76,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
 
     let last_source_hash = baseline_source_hash
     let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
+    let source_changed = false
     let transport = null
     let tick_queue = Promise.resolve()
 
@@ -108,6 +109,8 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             // credential cannot overwrite the newly selected host account.
             if( source && source_hash !== last_source_hash ) {
 
+                source_changed = true
+
                 rewrite_tmpfile( tmpfile_path, source )
                 if( transport ) await transport.push( tmpfile_path )
 
@@ -133,6 +136,8 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
                 : null
 
             if( latest_source_hash !== source_hash ) {
+                source_changed = true
+
                 if( latest_source ) {
                     rewrite_tmpfile( tmpfile_path, latest_source )
                     if( transport ) await transport.push( tmpfile_path )
@@ -196,6 +201,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             baseline_source_hash: last_source_hash,
             baseline_tmpfile_hash: last_tmpfile_hash,
         } ),
+        source_changed: () => source_changed,
         set_transport: next_transport => {
             transport = next_transport
         },

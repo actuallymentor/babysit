@@ -157,6 +157,18 @@ describe( `credential coverage`, () => {
 
 } )
 
+describe( `credential preflight`, () => {
+
+    it( `is declared only by Claude`, () => {
+        const preflight_agents = SUPPORTED_AGENTS.filter(
+            name => get_agent( name ).credential_preflight
+        )
+
+        expect( preflight_agents ).toEqual( [ `claude` ] )
+    } )
+
+} )
+
 describe( `model defaults`, () => {
 
     // OpenCode gets a current, concrete OpenAI catalog model. Gemini remains

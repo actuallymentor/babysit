@@ -109,11 +109,13 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
         const fake_agent = {
             name: `claude`,
             bin: `claude`,
+            credential_preflight: true,
             credentials: {
                 darwin: { keychain_service: `Claude Code-credentials` },
             },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }
+        const commands = []
 
         try {
             writeFileSync( tmpfile, container_credential )
@@ -124,16 +126,56 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
                     baseline_source_hash: initial_hash,
                     baseline_tmpfile_hash: initial_hash,
                 },
-                run_command: command => command.includes( ` -w ` )
-                    ? keychain_credential
-                    : `credential exists`,
+                run_command: command => {
+                    commands.push( command )
+                    return command.includes( ` -w ` )
+                        ? keychain_credential
+                        : `credential exists`
+                },
             } )
 
             await result.sync.stop()
 
             expect( readFileSync( tmpfile, `utf-8` ) ).toBe( container_credential )
+            expect( commands.some( command => command.includes( `--version` ) ) ).toBe( false )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `preflights fresh Claude Keychain credentials before capture`, async () => {
+
+        const keychain_credential = `{"refresh_token":"keychain-original"}`
+        const commands = []
+        const fake_agent = {
+            name: `claude`,
+            bin: `claude`,
+            credential_preflight: true,
+            credentials: {
+                darwin: { keychain_service: `Claude Code-credentials` },
+            },
+            container_paths: { creds: `/home/node/.claude/.credentials.json` },
+        }
+
+        const result = await setup_darwin_credentials( fake_agent, {
+            run_command: command => {
+                commands.push( command )
+                return command.includes( ` -w ` )
+                    ? keychain_credential
+                    : `credential exists`
+            },
+        } )
+
+        try {
+            expect( commands.slice( 0, 3 ) ).toEqual( [
+                `security find-generic-password -s "Claude Code-credentials" 2>/dev/null`,
+                `claude --version 2>/dev/null`,
+                `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null`,
+            ] )
+        } finally {
+            await result.sync.stop()
+            rmSync( result.cleanup_path, { recursive: true, force: true } )
         }
 
     } )
@@ -146,7 +188,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
     let original_home
     const fake_agent = {
         name: `codex-test`,
-        bin: `true`, // pre-flight runs `${bin} --version`; `true` is a safe no-op
+        bin: `codex-test`,
         credentials: {
             linux: { file: `~/.codex/auth.json` },
         },
@@ -185,6 +227,51 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         await sync.stop()
         rmSync( cleanup_path, { recursive: true, force: true } )
         expect( existsSync( cleanup_path ) ).toBe( false )
+
+    } )
+
+    it( `runs a declared preflight once and skips it for monitor reuse`, async () => {
+
+        const commands = []
+        const preflight_agent = {
+            ...fake_agent,
+            name: `claude-test`,
+            bin: `claude-test`,
+            credential_preflight: true,
+        }
+        const options = {
+            run_command: command => commands.push( command ),
+        }
+        const foreground = await setup_linux_credentials( preflight_agent, options )
+        const tmpfile = foreground.mounts.find( mount => mount.type === `synced_file` ).source
+        const monitor = await setup_linux_credentials( preflight_agent, {
+            ...options,
+            existing_tmpfile: tmpfile,
+        } )
+
+        try {
+            expect( commands ).toEqual( [ `claude-test --version 2>/dev/null` ] )
+        } finally {
+            await monitor.sync.stop()
+            await foreground.sync.stop()
+            rmSync( foreground.cleanup_path, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `skips fresh-capture preflight when the adapter omits the capability`, async () => {
+
+        const commands = []
+        const result = await setup_linux_credentials( fake_agent, {
+            run_command: command => commands.push( command ),
+        } )
+
+        try {
+            expect( commands ).toEqual( [] )
+        } finally {
+            await result.sync.stop()
+            rmSync( result.cleanup_path, { recursive: true, force: true } )
+        }
 
     } )
 

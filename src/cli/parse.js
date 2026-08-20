@@ -37,7 +37,7 @@ export const parse_args = ( argv ) => {
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `ignore-host-agents-md`, `all` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `ignore-host-agents-md`, `all`, `auth`, `refresh` ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -62,6 +62,8 @@ export const parse_args = ( argv ) => {
         // false (flag absent) vs string (flag present, possibly empty for default).
         log:  typeof args.log === `string`  ? args.log : false,
         auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
+        auth: verb === `doctor` && ( args.auth || false ),
+        refresh: verb === `doctor` && ( args.refresh || false ),
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),
@@ -79,6 +81,17 @@ export const parse_args = ( argv ) => {
 
     // babysit config
     if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }
+
+    // babysit doctor --auth [agent|all] [--refresh]
+    if( verb === `doctor` ) {
+        return {
+            verb: `doctor`,
+            agent: null,
+            auth_agent: positionals[1] || `all`,
+            flags,
+            passthrough: [],
+        }
+    }
 
     // babysit update — the only update path: deps check + git pulls + docker
     // pull + host agent CLI updates. Regular subcommands no longer auto-update.

@@ -13,13 +13,15 @@ import { cmd_resume, is_resume_listing } from './cli/resume.js'
 import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
 import { cmd_config } from './cli/config.js'
+import { cmd_doctor } from './cli/doctor.js'
 import { check_dependencies } from './deps/check.js'
+import { time_phase_sync } from './utils/timing.js'
 
 // Subcommands that need a dep check before they run. `help` and `--version`
 // are pure metadata reads, `__monitor` is a background daemon that inherits
 // the foreground's already-checked environment, and `update` runs its own
 // dep check inside `cmd_update`.
-const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open` ] )
+const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open`, `doctor` ] )
 
 /**
  * Main entry point
@@ -48,7 +50,7 @@ const main = async () => {
     // Keep bare `babysit resume` useful even before Docker/tmux are installed;
     // selecting a session still performs the normal dependency preflight.
     if( DEP_CHECK_VERBS.has( cmd.verb ) && !is_resume_listing( cmd ) ) {
-        if( !check_dependencies() ) {
+        if( !time_phase_sync( `dependencies`, check_dependencies ) ) {
             log.error( `Missing dependencies. Install them and try again.` )
             process.exit( 1 )
         }
@@ -82,6 +84,10 @@ const main = async () => {
 
     case `config`:
         await cmd_config( cmd )
+        break
+
+    case `doctor`:
+        await cmd_doctor( cmd )
         break
 
     case `__monitor`:

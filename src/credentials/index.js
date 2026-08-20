@@ -130,6 +130,9 @@ export const aggregate_syncs = ( syncs, {
                 .filter( ( { controller, name } ) => name && controller.baseline )
                 .map( ( { controller, name } ) => [ name, controller.baseline() ] )
         ),
+        source_changed: () => active_syncs.some(
+            ( { controller } ) => controller.source_changed?.() === true
+        ),
         connect: container_id => {
             active_syncs.forEach( ( { controller, target } ) => {
                 controller.set_transport( create_transport( container_id, target ) )

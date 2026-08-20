@@ -59,7 +59,7 @@ export const setup_darwin_credentials = async ( agent, {
                 // refreshed by the agent itself before we capture. Without this,
                 // a stale token would ride the container until our 5-minute sync
                 // daemon catches up.
-                run_command( `${ agent.bin } --version 2>/dev/null` )
+                if( agent.credential_preflight ) run_command( `${ agent.bin } --version 2>/dev/null` )
 
                 // Phase 2: capture after pre-flight rotation
                 const creds_json = run_command(

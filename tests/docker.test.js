@@ -360,6 +360,16 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `supervises interactive agent exit without changing headless probes`, () => {
+        const interactive_args = build_docker_command_args( make_options() )
+        const headless_args = build_docker_command_args( make_options( { interactive: false } ) )
+
+        expect( interactive_args ).toContain( `--init` )
+        expect( interactive_args ).toContain( `BABYSIT_SUPERVISED_SESSION=1` )
+        expect( headless_args ).toContain( `--init` )
+        expect( headless_args ).not.toContain( `BABYSIT_SUPERVISED_SESSION=1` )
+    } )
+
     it( `can build noninteractive argv without mounting the workspace`, () => {
 
         const args = build_docker_command_args( make_options( {

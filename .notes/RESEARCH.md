@@ -13,6 +13,12 @@ Agent model defaults and container tool pins last verified against primary sourc
 - Bind mount sources are resolved on the Docker daemon host, not the client container. Nested Babysit sessions therefore need the original host workspace path (`BABYSIT_HOST_WORKSPACE`) when building `docker run -v ...:/workspace`.
 - Docker's Debian install docs support installing the client-side packages `docker-ce-cli`, `docker-buildx-plugin`, and `docker-compose-plugin` from the official Docker apt repository. Babysit's image installs those CLI/plugin packages only, not `docker-ce` or `containerd.io`.
 
+## Docker session close latency
+- Measured 2026-08-20 against Moby 28.3.3. A disposable agent exited about 32 ms after its exit command, while `docker start -ai` returned 3.5–4.9 seconds later. Disabling the log driver did not remove the delay, and detached `docker wait` showed the same tail.
+- Moby completes task deletion, stream reset, logger cleanup, stopped-state publication, and the die event after the container process exits. Relevant daemon bounds are 2 seconds for stream waiting, up to 10 seconds for logger copier reset, and 30 seconds for task deletion. Host load can therefore turn a fast child exit into the reported 10–30-second attached wait.
+- Babysit's final credential pull was not the foreground cause: the detached monitor starts finalization only after tmux is gone. Final Docker copy/removal can still be slow, so foreground release and detached recovery must remain separate timelines.
+- The safe boundary is an unpredictable per-session marker emitted only after the entrypoint reaps the coding-agent child. The monitor may release tmux at that marker, but credential recovery must wait until Docker reports a copy-safe stopped state before pulling and removing the container.
+
 ## Watchtower compatibility
 - Verified against upstream repositories, image registries, and container-selection docs on 2026-08-06.
 - The maintained containrrr lineage preserves `com.centurylinklabs.watchtower.enable=false`: containrrr, Nicholas Fedor, Beatkind, OpenSerbia, Storj, Marrrrrrrrry, Torus Research, and their confirmed registry aliases (including Beatkind and Marrrrrrrrry on GHCR). Webhippie/Dockhippie and Jauder Ho rebuild compatible upstream releases. Whefter's deprecated fork is safe through mandatory explicit target tags rather than the standard false label.
@@ -66,6 +72,7 @@ Agent model defaults and container tool pins last verified against primary sourc
 - **Creds**: `~/.local/share/opencode/auth.json` on every platform (opencode does NOT use the macOS Keychain — beware adapters that only check Keychain on darwin, they will silently drop opencode creds).
 - **Install location**: `~/.local/bin/opencode` (curl install) or `~/.opencode/bin/opencode` (alternate). Container Dockerfile puts both on PATH.
 - **Home env**: `OPENCODE_CONFIG_DIR` — points at the config dir directly (no `.opencode` suffix). Default is `~/.config/opencode`. Known bug upstream: when set, the global AGENTS.md inside it can be ignored if `~/.config/opencode/AGENTS.md` also exists (issues #7003, #11534) — we sidestep this by pinning OPENCODE_CONFIG_DIR to that same path inside the container.
+- **Composer readiness**: Verified 2026-08-20 against OpenCode 1.18.15 in `actuallymentor/babysit:latest`. `Ask anything...` appeared only after the composer accepted a pasted sentinel; Ctrl+U then cleared it without submission. Repeated fresh starts reached the same invariant. Provider/auth modals and invalid-model errors can leave the background composer visible, so readiness must also reject their stable headings (`Connect a provider`, `Select auth method`, `Manually enter API Key`, and `Model … is not valid`). No model request was submitted during capture.
 
 ## Session inventory
 - Verified against the official Codex manual and Claude Code session docs on 2026-08-04.

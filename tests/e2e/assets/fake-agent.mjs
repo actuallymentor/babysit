@@ -19,7 +19,7 @@ const ready_banner_by_agent = {
     claude: `Claude Code v3`,
     codex: `OpenAI Codex`,
     gemini: `Gemini CLI`,
-    opencode: `OpenCode`,
+    opencode: `Ask anything...`,
 }
 const credential_paths = {
     claude: `/home/node/.claude/.credentials.json`,

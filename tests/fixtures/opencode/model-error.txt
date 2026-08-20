@@ -1,0 +1,19 @@
+┃                                         ┃
+┃  Model openai/gpt-5.6-sol is not valid  ┃
+┃                                         ┃
+
+▄
+█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+
+┃
+┃  Ask anything... "What is the tech stack of this project?"
+┃
+┃  Build · Big Pickle OpenCode Zen
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+tab agents  ctrl+p commands
+
+● Tip Run /connect to add an AI provider and start coding
+
+/workspace  1.18.15

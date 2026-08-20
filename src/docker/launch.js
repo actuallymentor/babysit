@@ -186,6 +186,7 @@ const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
  *
  * @param {Object} options - Options accepted by build_docker_command_args
  * @param {Object} [dependencies] - Injectable process seams for tests
+ * @param {AbortSignal|null} [dependencies.signal] - External preparation cancellation
  * @returns {Promise<{
  *   command: string,
  *   command_args: string[],
@@ -205,6 +206,7 @@ export const prepare_docker_launch = async ( options, {
     signal_target = process,
     kill_process = process.kill.bind( process ),
     build_private_file = build_private_tmpfile,
+    signal = null,
 } = {} ) => {
 
     let planned_options
@@ -234,6 +236,7 @@ export const prepare_docker_launch = async ( options, {
     const [ docker_command, ...docker_prefix_args ] = prefix
     const signal_handlers = new Map()
     const abort_controller = new AbortController()
+    const abort_preparation = () => abort_controller.abort( signal?.reason )
     let active_command = null
     let container_name = null
     let container_id = null
@@ -244,6 +247,12 @@ export const prepare_docker_launch = async ( options, {
     let staging_complete = false
     let abort_task = null
     let recovery_id = null
+
+    signal?.addEventListener?.( `abort`, abort_preparation, { once: true } )
+    if( signal?.aborted ) abort_preparation()
+
+    const remove_external_abort_handler = () =>
+        signal?.removeEventListener?.( `abort`, abort_preparation )
 
     const synced_files = planned_options.creds_mounts.filter( mount => mount.type === `synced_file` )
     const recoverable_sync_paths = synced_files.map(
@@ -298,6 +307,7 @@ export const prepare_docker_launch = async ( options, {
 
         handed_off = true
         remove_signal_handlers( signal_target, signal_handlers )
+        remove_external_abort_handler()
 
         if( stop && reference ) {
             try {
@@ -324,6 +334,7 @@ export const prepare_docker_launch = async ( options, {
             if( active_command ) await active_command.catch( () => {} )
 
             remove_signal_handlers( signal_target, signal_handlers )
+            remove_external_abort_handler()
             cleanup_credentials( copy_mounts )
             const discarded = await discard_container( { include_attempted_name } )
             if( discarded ) clear_recovery( recovery_id )
@@ -335,6 +346,7 @@ export const prepare_docker_launch = async ( options, {
     const handoff = () => {
         handed_off = true
         remove_signal_handlers( signal_target, signal_handlers )
+        remove_external_abort_handler()
         clear_recovery( recovery_id )
     }
 
@@ -366,6 +378,8 @@ export const prepare_docker_launch = async ( options, {
     }
 
     try {
+        if( signal?.aborted ) throw new Error( `Docker launch preparation cancelled` )
+
         const run_args = build_docker_command_args( planned_options )
         const create_args = docker_action_args( run_args, `create`, prefix )
         container_name = container_name_from( create_args )
@@ -444,6 +458,9 @@ export const prepare_docker_launch = async ( options, {
 
             return false
         }
+
+        if( signal?.aborted ) throw new Error( `Docker launch preparation cancelled` )
+        remove_external_abort_handler()
 
         return {
             command: render_command( command_args ),

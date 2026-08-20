@@ -17,7 +17,7 @@ import {
 
 describe( `babysit config`, () => {
 
-    it( `defaults auth checks to codex and claude`, () => {
+    it( `keeps legacy auth selection readable for compatibility`, () => {
         expect( default_babysit_config().auth_check_agents ).toEqual( [ `codex`, `claude` ] )
         expect( read_babysit_config( { config_path: `/tmp/does-not-exist-babysit-config.json` } ).auth_check_agents )
             .toEqual( [ `codex`, `claude` ] )
@@ -66,7 +66,8 @@ describe( `babysit config`, () => {
             const saved = JSON.parse( readFileSync( config_path, `utf-8` ) )
 
             expect( saved.auth_check_agents ).toEqual( [ `gemini`, `opencode` ] )
-            expect( rendered ).toBe( `Authentication checks: gemini, opencode\n` )
+            expect( rendered ).toContain( `Legacy authentication selection saved: gemini, opencode` )
+            expect( rendered ).toContain( `deprecated` )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
         }
@@ -84,8 +85,9 @@ describe( `babysit config`, () => {
 
         await cmd_config( { flags: {} }, { input, output } )
 
-        expect( rendered ).toContain( `Authentication checks: codex, claude` )
-        expect( rendered ).toContain( `babysit config --auth-check-agents codex,claude` )
+        expect( rendered ).toContain( `Startup authentication: active agent` )
+        expect( rendered ).toContain( `babysit doctor --auth` )
+        expect( rendered ).toContain( `Legacy authentication selection: codex, claude` )
     } )
 
 } )

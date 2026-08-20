@@ -4,6 +4,7 @@ import {
     create_docker_file_transport,
     normalise_local_sync_file,
     remove_docker_container,
+    wait_for_docker_container_stopped,
 } from '../src/docker/file_transport.js'
 
 describe( `Docker credential file transport`, () => {
@@ -86,6 +87,42 @@ describe( `Docker credential file transport`, () => {
             timeout_ms: 30_000,
         } ] )
 
+    } )
+
+    it( `waits through Docker exit bookkeeping before credential cleanup`, async () => {
+        const statuses = [ `running`, `running`, `exited` ]
+        const waits = []
+        let now = 0
+
+        const status = await wait_for_docker_container_stopped( `c`.repeat( 64 ), {
+            run_command: async () => statuses.shift(),
+            wait_fn: async delay_ms => {
+                waits.push( delay_ms )
+                now += delay_ms
+            },
+            now: () => now,
+            timeout_ms: 1_000,
+            poll_interval_ms: 100,
+        } )
+
+        expect( status ).toBe( `exited` )
+        expect( waits ).toEqual( [ 100, 100 ] )
+    } )
+
+    it( `fails closed when Docker never reaches a copy-safe stopped state`, async () => {
+        let now = 0
+
+        const result = wait_for_docker_container_stopped( `d`.repeat( 64 ), {
+            run_command: async () => `running`,
+            wait_fn: async delay_ms => {
+                now += delay_ms
+            },
+            now: () => now,
+            timeout_ms: 250,
+            poll_interval_ms: 100,
+        } )
+
+        await expect( result ).rejects.toThrow( /did not stop within 250ms/ )
     } )
 
 } )

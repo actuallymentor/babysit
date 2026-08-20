@@ -93,7 +93,13 @@ async function run( cmd, args = [], options = {} ) {
         let stderr = ``
         const timer = setTimeout( () => {
             child.kill( `SIGTERM` )
-            reject_run( new Error( `Timed out after ${ timeout_ms }ms: ${ [ cmd, ...args ].join( ` ` ) }` ) )
+            reject_run( new Error( [
+                `Timed out after ${ timeout_ms }ms: ${ [ cmd, ...args ].join( ` ` ) }`,
+                `STDOUT:`,
+                stdout,
+                `STDERR:`,
+                stderr,
+            ].join( `\n` ) ) )
         }, timeout_ms )
 
         child.stdout.on( `data`, chunk => stdout += chunk.toString() )
@@ -188,7 +194,7 @@ const latest_session = () => {
     return sessions.sort( ( a, b ) => String( b.started_at ).localeCompare( String( a.started_at ) ) )[0]
 }
 
-const launch_babysit_command = async ( workspace, args, timeout_ms = 90_000 ) => {
+const launch_babysit_command = async ( workspace, args, timeout_ms = 180_000 ) => {
 
     // In a non-TTY test process, Babysit's foreground tmux attach exits
     // immediately after cmd_start has saved session metadata. The E2E harness
@@ -212,15 +218,14 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 90_000 ) =>
     return session
 }
 
-const launch_agent = async ( workspace, agent, args, timeout_ms = 90_000 ) => launch_babysit_command(
+const launch_agent = async ( workspace, agent, args, timeout_ms = 180_000 ) => launch_babysit_command(
     workspace,
     [ agent, ...args ],
     timeout_ms
 )
 
-const launch_babysit = async ( workspace, args, timeout_ms = 90_000 ) => (
+const launch_babysit = async ( workspace, args, timeout_ms = 180_000 ) =>
     launch_agent( workspace, `codex`, args, timeout_ms )
-)
 
 const capture = async ( session ) => {
     const { stdout } = await tmux( [ `capture-pane`, `-t`, session.tmux_session, `-p`, `-S`, `-1000` ] )
@@ -238,6 +243,8 @@ const send_text = async ( session, text ) => {
 const stop_session = async ( session ) => {
     if( !session ) return
 
+    const started_at = Date.now()
+
     try {
         await send_text( session, `BABYSIT_E2E_EXIT` )
         await wait_until( `session ${ session.tmux_session } to stop`, async () => {
@@ -247,10 +254,34 @@ const stop_session = async ( session ) => {
             } catch {
                 return true
             }
-        }, 15_000 )
-    } catch {
+        }, 5_000 )
+    } catch ( error ) {
         await tmux( [ `kill-session`, `-t`, session.tmux_session ] ).catch( () => null )
+        throw error
     }
+
+    const elapsed_ms = Date.now() - started_at
+    console.log( `Natural close: ${ session.agent } ${ elapsed_ms }ms` )
+}
+
+const assert_no_orphans = async () => {
+    await wait_until( `E2E Docker container cleanup`, async () => {
+        const { stdout } = await docker( [
+            `ps`, `-aq`,
+            `--filter`, `label=babysit.e2e_run=${ run_id }`,
+        ] )
+        return stdout.trim() === ``
+    }, 120_000 )
+
+    const recovery_dir = join( home, `.babysit/credential-recovery` )
+    const recovery_markers = existsSync( recovery_dir )
+        ? readdirSync( recovery_dir ).filter( file => file.endsWith( `.json` ) )
+        : []
+    const private_credentials = readdirSync( workspace_tmp )
+        .filter( file => file.startsWith( `babysit-creds-` ) )
+
+    ensure( recovery_markers.length === 0, `E2E left credential recovery markers behind` )
+    ensure( private_credentials.length === 0, `E2E left private credential sync directories behind` )
 }
 
 const build_images = async () => {
@@ -343,7 +374,7 @@ babysit:
     await wait_until( `credential sync flush`, () => {
         const content = readFileSync( join( home, `.codex/auth.json` ), `utf8` )
         return content.includes( `e2e-rotated-token` )
-    }, 20_000 )
+    }, 120_000 )
 
 }
 
@@ -454,6 +485,7 @@ try {
     await run_mudbox_session()
     await run_sandbox_session()
     await run_dependency_session()
+    await assert_no_orphans()
 
     console.log( `E2E passed` )
 } finally {

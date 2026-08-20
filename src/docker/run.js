@@ -380,6 +380,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.include_agent_state=true] - Whether to mount persistent native resume state
  * @param {Object[]|null} [options.extra_mounts=null] - Precomputed agent config mounts
  * @param {string|null} [options.container_name=null] - Stable launch-scoped container name
+ * @param {string|null} [options.exit_sentinel=null] - Per-session exit marker token
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
  * @returns {string[]} Docker argv
@@ -406,6 +407,7 @@ export const build_docker_command_args = ( options ) => {
         include_agent_state = true,
         extra_mounts: supplied_extra_mounts = null,
         container_name = null,
+        exit_sentinel = randomUUID(),
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
         agent_command = null,
     } = options
@@ -416,13 +418,20 @@ export const build_docker_command_args = ( options ) => {
         : null
 
     // Base docker run flags
-    flags.push( ...get_docker_run_prefix(), `--rm` )
+    flags.push( ...get_docker_run_prefix(), `--rm`, `--init` )
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
     // Agent sessions are stateful, interactive workloads. An unattended image
     // refresh terminates their tmux panes and cannot restore that supervision
     // when it recreates the containers, so keep Watchtower from replacing them.
     flags.push( `--label`, WATCHTOWER_DISABLE_LABEL )
+
+    // The in-container entrypoint emits an early exit marker only for the
+    // interactive agent. Headless auth probes retain ordinary exec/exit.
+    if( interactive ) {
+        flags.push( `-e`, `BABYSIT_SUPERVISED_SESSION=1` )
+        flags.push( `-e`, `BABYSIT_EXIT_SENTINEL=${ exit_sentinel }` )
+    }
 
     if( process.env.BABYSIT_E2E_RUN_ID ) {
         flags.push( `--label`, `babysit.e2e_run=${ process.env.BABYSIT_E2E_RUN_ID }` )

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.30.0 — 2026-08-20
+
+### ✨ Added
+- **Startup authentication is active-agent scoped and skippable.** Successful
+  checks use a 12-hour credential/image-bound cache; Enter cancels safely,
+  non-interactive misses warn, and `doctor --auth` runs explicit checks.
+- **OpenCode prompt delivery waits for its real composer.** Sanitized loading,
+  ready, provider, authentication, and model-error screens lock the boundary.
+
+### 🐛 Fixed
+- **Session close releases tmux when the agent exits.** A randomized supervised
+  exit marker avoids Docker's 10–30-second bookkeeping tail while detached
+  cleanup preserves final credential recovery and container removal.
+- **Credential preflight runs only where it rotates state.** Claude retains its
+  host preflight; Codex, Gemini, and OpenCode skip the serial no-op command.
+
+### Changed
+- **Startup phases expose opt-in timings.** `BABYSIT_DEBUG=1` reports dependency,
+  Docker, authentication, TUI, tmux, and detached cleanup durations.
+
 ## 0.29.0 — 2026-08-19
 
 ### ✨ Added

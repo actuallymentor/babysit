@@ -390,6 +390,67 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
+    it( `honours an external cancellation before Docker create`, async () => {
+
+        const { transport, mount } = private_transport()
+        const controller = new AbortController()
+        const calls = []
+
+        controller.abort( { code: `skip` } )
+
+        await expect( prepare_docker_launch( make_options( mount ), {
+            signal: controller.signal,
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                return ``
+            },
+        } ) ).rejects.toThrow( `Docker launch preparation cancelled` )
+
+        expect( calls ).toEqual( [] )
+        expect( existsSync( transport.directory ) ).toBe( false )
+
+    } )
+
+    it( `uses external cancellation to stop an in-flight Docker copy`, async () => {
+
+        const { transport, mount } = private_transport()
+        const controller = new AbortController()
+        const calls = []
+        let copy_started
+        const copying = new Promise( resolve => {
+            copy_started = resolve
+        } )
+
+        const launch_task = prepare_docker_launch( make_options( mount ), {
+            signal: controller.signal,
+            signal_target: fake_signals(),
+            run_command: async ( command, args, options ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `cp` ) ) {
+                    copy_started()
+                    return new Promise( ( resolve, reject ) => {
+                        options.signal.addEventListener(
+                            `abort`,
+                            () => reject( new Error( `external copy cancellation` ) ),
+                            { once: true }
+                        )
+                    } )
+                }
+                return ``
+            },
+        } )
+
+        await copying
+        controller.abort( { code: `skip` } )
+        await expect( launch_task ).rejects.toThrow( `external copy cancellation` )
+
+        expect( existsSync( transport.directory ) ).toBe( false )
+        expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( CONTAINER_ID ) ) ).toBe( true )
+
+    } )
+
     it( `keeps ownership until Docker acknowledges the started container`, async () => {
 
         const { mount } = private_transport()
