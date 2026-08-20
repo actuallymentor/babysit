@@ -5,6 +5,12 @@ import { docker_command_prefix } from './run.js'
 
 const DOCKER_COPY_TIMEOUT_MS = 60_000
 const DOCKER_CLEANUP_TIMEOUT_MS = 30_000
+const DOCKER_INSPECT_TIMEOUT_MS = 5_000
+const DOCKER_STOP_WAIT_TIMEOUT_MS = 45_000
+const DOCKER_STOP_POLL_INTERVAL_MS = 100
+const STOPPED_CONTAINER_STATES = new Set( [ `created`, `dead`, `exited` ] )
+
+const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
 
 /**
  * Restore a pulled credential file to a mode the container's remapped node
@@ -96,6 +102,61 @@ export const create_docker_file_transport = ( container_id, container_path, {
             DOCKER_COPY_TIMEOUT_MS
         ),
     }
+
+}
+
+/**
+ * Wait until Docker exposes a container filesystem as stopped and copy-safe.
+ * Moby can report the process exit timestamp seconds before its daemon finishes
+ * stream, logger, and task cleanup, so final credential pulls wait for the
+ * stable stopped state rather than racing that bookkeeping.
+ *
+ * @param {string|null} container_id - Prepared/running Docker container id
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
+ * @param {Function} [options.wait_fn] - Injectable delay helper
+ * @param {Function} [options.now=Date.now] - Injectable clock
+ * @param {number} [options.timeout_ms=45000] - Total stopped-state wait
+ * @param {number} [options.poll_interval_ms=100] - Delay between inspections
+ * @returns {Promise<string|null>} Stable Docker state, or null without a container
+ */
+export const wait_for_docker_container_stopped = async ( container_id, {
+    run_command = run,
+    wait_fn = wait,
+    now = Date.now,
+    timeout_ms = DOCKER_STOP_WAIT_TIMEOUT_MS,
+    poll_interval_ms = DOCKER_STOP_POLL_INTERVAL_MS,
+} = {} ) => {
+
+    if( !container_id ) return null
+
+    const [ command, ...prefix_args ] = docker_command_prefix()
+    const deadline = now() + timeout_ms
+    let last_status = `unknown`
+    let last_error = null
+
+    while( true ) {
+        try {
+            last_status = await run_command(
+                command,
+                [ ...prefix_args, `inspect`, `--format`, `{{.State.Status}}`, container_id ],
+                {},
+                DOCKER_INSPECT_TIMEOUT_MS
+            )
+            last_error = null
+            if( STOPPED_CONTAINER_STATES.has( last_status ) ) return last_status
+        } catch ( error ) {
+            last_error = error
+        }
+
+        const remaining_ms = deadline - now()
+        if( remaining_ms <= 0 ) break
+
+        await wait_fn( Math.min( poll_interval_ms, remaining_ms ) )
+    }
+
+    const diagnostic = last_error?.message || `last state: ${ last_status }`
+    throw new Error( `Docker container ${ container_id } did not stop within ${ timeout_ms }ms (${ diagnostic })` )
 
 }
 

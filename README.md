@@ -51,16 +51,17 @@ babysit open <session_id>
 babysit open 2
 babysit open "feature 1"
 
-# Choose which agent logins babysit checks on startup
-babysit config --auth-check-agents codex,claude
+# Verify every agent login, or one agent, on demand
+babysit doctor --auth
+babysit doctor --auth opencode --refresh
 ```
 
 ## How it works
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
-2. **Host auth check** — before the main session starts, babysit mounts host credentials and asks the agents selected in `babysit config` to answer a tiny `ok` prompt inside the Babysit Docker image. Codex and Claude are checked by default. If any checked agent fails, it prints `Unauthenticated agents: ... Exit? [Y/n]` and points to `babysit config`
+2. **Host auth check** — before the main session starts, babysit checks only the agent being launched. A successful real check is reused for 12 hours while its hashed credential and local Docker image identity remain unchanged. Press Enter to skip a live check for this launch; non-interactive launches skip cache misses with a warning. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
 3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
-4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere
+4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
 7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
@@ -125,7 +126,9 @@ babysit:
 `config.initial_prompt` is typed into the agent screen once the session starts.
 New `babysit.yaml` files include Babysit's default launch prompt here. Existing
 configs that omit it use the generated default prompt. Set it to `null` or `""`
-to disable startup prompt typing.
+to disable startup prompt typing. Babysit waits for each supported TUI's real
+composer-ready screen before pasting; a changed or blocked screen times out
+without sending the prompt early.
 
 ### `on:` triggers
 
@@ -265,17 +268,22 @@ config:
 
 ## Host configuration
 
-`babysit config` edits host-level settings stored under `~/.babysit`.
-
-The first setting controls which coding agents get startup authentication
-checks. Codex and Claude are selected by default:
+Authentication policy and cache metadata live under `~/.babysit`. Startup
+checks only the active agent and caches successful checks for 12 hours. Cache
+entries contain timestamps and SHA-256 fingerprints only—never tokens or model
+output—and miss when credentials or the local Docker image change.
 
 ```bash
-babysit config
-babysit config --auth-check-agents codex,claude
-babysit config --auth-check-agents all
-babysit config --auth-check-agents none
+babysit doctor --auth             # all supported agents
+babysit doctor --auth codex       # one agent
+babysit doctor --auth --refresh   # force real checks
 ```
+
+Older `auth_check_agents` configuration remains readable for compatibility but
+is deprecated and ignored by startup and `doctor`.
+
+Set `BABYSIT_DEBUG=1` to print phase timings for dependency checks, startup,
+authentication probes, tmux attachment, and detached shutdown cleanup.
 
 If `~/.babysitrc` exists, Babysit bind-mounts it read-only into the container
 and sources it as the `node` user immediately before launching the coding

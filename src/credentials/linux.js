@@ -14,9 +14,14 @@ import { resolve_credential_file } from './paths.js'
  *   pulls reach the same credential baseline.
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
  *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
+ * @param {Function} [options.run_command=run_sync] - Host command runner
  * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }} Credential specs and sync controller
  */
-export const setup_linux_credentials = async ( agent, { existing_tmpfile = null, sync_baseline = null } = {} ) => {
+export const setup_linux_credentials = async ( agent, {
+    existing_tmpfile = null,
+    sync_baseline = null,
+    run_command = run_sync,
+} = {} ) => {
 
     const cred_config = agent.credentials?.linux
     if( !cred_config ) return { mounts: [], sync: null, sync_baseline: null, cleanup_path: null }
@@ -43,7 +48,7 @@ export const setup_linux_credentials = async ( agent, { existing_tmpfile = null,
                 // Skipped when re-using an existing tmpfile — the foreground
                 // already pre-flighted, and the container is already running on
                 // that capture.
-                run_sync( `${ agent.bin } --version 2>/dev/null` )
+                if( agent.credential_preflight ) run_command( `${ agent.bin } --version 2>/dev/null` )
 
                 // Copy into a chmod-666 client-side sync file. Docker stages it
                 // before start and later pulls refreshed credentials back here.

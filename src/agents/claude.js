@@ -7,6 +7,11 @@ export const claude = {
     name: `claude`,
     bin: `claude`,
 
+    // Claude's version command refreshes near-expiry host credentials.
+    // Other adapters omit this capability because their version commands do
+    // not change authentication state.
+    credential_preflight: true,
+
     credentials: {
         darwin: {
             keychain_service: `Claude Code-credentials`,

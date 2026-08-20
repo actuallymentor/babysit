@@ -86,6 +86,17 @@ const fake_error_spawn = error => () => {
 
 }
 
+const deferred = () => {
+
+    let resolve
+    const promise = new Promise( resolve_promise => {
+        resolve = resolve_promise
+    } )
+
+    return { promise, resolve }
+
+}
+
 describe( `host agent auth checks`, () => {
 
     it( `builds the timestamped prompt from UTC time`, () => {
@@ -202,6 +213,7 @@ describe( `host agent auth checks`, () => {
         } )
 
         expect( result.authenticated ).toBe( true )
+        expect( result.status ).toBe( `authenticated` )
         expect( result.output ).toBe( `ok` )
         expect( calls[0].cmd ).toBe( `docker` )
         expect( calls[0].args ).toContain( `run` )
@@ -219,6 +231,7 @@ describe( `host agent auth checks`, () => {
         } )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `unauthenticated` )
         expect( result.reason ).toBe( `login required` )
     } )
 
@@ -237,6 +250,7 @@ describe( `host agent auth checks`, () => {
         } )
 
         expect( result.authenticated ).toBe( true )
+        expect( result.status ).toBe( `authenticated` )
         expect( calls ).toEqual( [
             [ `pull`, { target: `/home/node/.codex/auth.json` } ],
             [ `abort` ],
@@ -268,6 +282,7 @@ describe( `host agent auth checks`, () => {
         } )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `unauthenticated` )
         expect( result.reason ).toBe( `docker copy unavailable` )
         expect( calls ).toEqual( [
             [ `pull` ],
@@ -293,21 +308,124 @@ describe( `host agent auth checks`, () => {
         expect( answered_ok( `looking ok at the time` ) ).toBe( false )
     } )
 
-    it( `marks missing adapter auth metadata as unauthenticated`, async () => {
+    it( `marks missing adapter auth metadata as failed`, async () => {
         const result = await run_host_agent_auth_check( { name: `missing`, bin: `missing` } )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `missing auth check command` )
     } )
 
-    it( `marks spawn errors as unauthenticated`, async () => {
+    it( `marks spawn errors as failed`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `claude` ), {
             spawn_fn: fake_error_spawn( new Error( `not found` ) ),
             timeout_ms: 1_000,
         } )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `not found` )
+    } )
+
+    it( `cancels Docker preparation with an explicit skipped result`, async () => {
+
+        const controller = new AbortController()
+        const preparing = deferred()
+        const task = run_host_agent_auth_check( get_agent( `codex` ), {
+            signal: controller.signal,
+            prepare_launch: async ( options, { signal } ) => {
+                expect( options.agent.name ).toBe( `codex` )
+                expect( signal ).toBe( controller.signal )
+                preparing.resolve()
+
+                return new Promise( ( resolve, reject ) => {
+                    signal.addEventListener( `abort`, () => reject( new Error( `preparation aborted` ) ), { once: true } )
+                } )
+            },
+            spawn_fn: () => {
+                throw new Error( `child must not start` )
+            },
+        } )
+
+        await preparing.promise
+        controller.abort( { code: `skip` } )
+
+        await expect( task ).resolves.toEqual( {
+            name: `codex`,
+            status: `skipped`,
+            authenticated: false,
+            reason: `preparation aborted`,
+        } )
+
+    } )
+
+    it( `cancels a running child and finalizes credentials before resolving`, async () => {
+
+        const controller = new AbortController()
+        const child_started = deferred()
+        const signals = []
+        const calls = []
+        const child_spawn = fake_sigterm_exit_spawn( signal => signals.push( signal ) )
+        const task = run_host_agent_auth_check( get_agent( `codex` ), {
+            signal: controller.signal,
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                pull_synced_files: async () => calls.push( `pull` ),
+                abort: async () => calls.push( `abort` ),
+            } ),
+            spawn_fn: ( ...args ) => {
+                child_started.resolve()
+                return child_spawn( ...args )
+            },
+            kill_grace_ms: 1_000,
+        } )
+
+        await child_started.promise
+        controller.abort( { code: `skip` } )
+        const result = await task
+
+        expect( result.status ).toBe( `skipped` )
+        expect( result.reason ).toBe( `skipped by user` )
+        expect( signals ).toEqual( [ `SIGTERM` ] )
+        expect( calls ).toEqual( [ `pull`, `abort` ] )
+
+    } )
+
+    it( `waits for an in-flight final pull when cancellation arrives`, async () => {
+
+        const controller = new AbortController()
+        const pull_started = deferred()
+        const release_pull = deferred()
+        const calls = []
+        const task = run_host_agent_auth_check( get_agent( `codex` ), {
+            signal: controller.signal,
+            spawn_fn: fake_spawn(),
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                pull_synced_files: async () => {
+                    calls.push( `pull` )
+                    pull_started.resolve()
+                    await release_pull.promise
+                },
+                abort: async () => calls.push( `abort` ),
+            } ),
+            kill_grace_ms: 1_000,
+        } )
+
+        await pull_started.promise
+        controller.abort( { code: `skip` } )
+
+        let settled = false
+        task.finally( () => settled = true )
+        await Promise.resolve()
+        expect( settled ).toBe( false )
+
+        release_pull.resolve()
+        const result = await task
+
+        expect( result.status ).toBe( `skipped` )
+        expect( calls ).toEqual( [ `pull`, `abort` ] )
+
     } )
 
     it( `times out stuck auth checks and escalates after SIGTERM`, async () => {
@@ -328,6 +446,7 @@ describe( `host agent auth checks`, () => {
         await new Promise( resolve => setTimeout( resolve, 20 ) )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `timed out` )
         expect( signals ).toEqual( [ `SIGTERM`, `SIGKILL` ] )
         expect( cleanups.length ).toBe( 1 )
@@ -348,6 +467,7 @@ describe( `host agent auth checks`, () => {
         await new Promise( resolve => setTimeout( resolve, 30 ) )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `timed out` )
         expect( signals ).toEqual( [ `SIGTERM` ] )
     } )
@@ -404,9 +524,22 @@ describe( `host agent auth checks`, () => {
 
         expect( results ).toEqual( [ {
             name: `claude`,
+            status: `failed`,
             authenticated: false,
             reason: `runner exploded`,
         } ] )
+    } )
+
+    it( `does not classify skipped or cancelled checks as unauthenticated`, () => {
+        const names = unauthenticated_agent_names( [
+            { name: `codex`, status: `skipped`, authenticated: false },
+            { name: `claude`, status: `cancelled`, authenticated: false },
+            { name: `gemini`, status: `unauthenticated`, authenticated: false },
+            { name: `opencode`, status: `failed`, authenticated: false },
+            { name: `legacy`, authenticated: false },
+        ] )
+
+        expect( names ).toEqual( [ `gemini`, `opencode`, `legacy` ] )
     } )
 
     it( `defaults the unauthenticated prompt to exit unless the user says no`, () => {
@@ -434,7 +567,7 @@ describe( `host agent auth checks`, () => {
         expect( rendered ).toBe(
             [
                 `Unauthenticated agents: claude, codex.`,
-                `Run \`babysit config\` to choose which coding agents Babysit checks on startup.`,
+                `Run \`babysit doctor --auth\` to check authentication explicitly.`,
                 `Exit? [Y/n] `,
             ].join( `\n` )
         )
@@ -456,7 +589,7 @@ describe( `host agent auth checks`, () => {
         expect( rendered ).toBe(
             [
                 `Unauthenticated agents: gemini.`,
-                `Run \`babysit config\` to choose which coding agents Babysit checks on startup.`,
+                `Run \`babysit doctor --auth\` to check authentication explicitly.`,
                 `Exit? [Y/n] \n`,
             ].join( `\n` )
         )

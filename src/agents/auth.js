@@ -11,6 +11,15 @@ import { get_agent, SUPPORTED_AGENTS } from './index.js'
 export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
 export const HOST_AUTH_CHECK_KILL_GRACE_MS = 1_500
 
+const cancellation_status = signal => signal?.reason?.code === `skip` ? `skipped` : `cancelled`
+
+const auth_result = ( name, status, options = {} ) => ( {
+    name,
+    status,
+    authenticated: status === `authenticated`,
+    ...options,
+} )
+
 /**
  * Format a date like the shell example in the boot auth-check prompt.
  * @param {Date} date - Date to format
@@ -214,7 +223,9 @@ export const build_docker_auth_check_cleanup_command_args = ( command_args = [] 
  * @param {Function} [options.prepare_launch=prepare_docker_launch] - Staged launch builder
  * @param {number} [options.timeout_ms=90000] - Max wait before treating the agent as unauthenticated
  * @param {number} [options.kill_grace_ms=1500] - Delay between SIGTERM and SIGKILL on timeout
- * @returns {Promise<{ name: string, authenticated: boolean, reason?: string }>}
+ * @param {AbortSignal|null} [options.signal] - External cancellation signal
+ * @param {Function} [options.on_phase] - Per-agent progress callback
+ * @returns {Promise<{ name: string, status: string, authenticated: boolean, reason?: string }>}
  */
 export const run_host_agent_auth_check = async ( agent, {
     prompt = build_host_auth_prompt(),
@@ -228,7 +239,20 @@ export const run_host_agent_auth_check = async ( agent, {
     timeout_ms = HOST_AUTH_CHECK_TIMEOUT_MS,
     kill_grace_ms = HOST_AUTH_CHECK_KILL_GRACE_MS,
     prepare_launch = prepare_docker_launch,
+    signal = null,
+    on_phase = () => {},
 } = {} ) => {
+
+    let current_phase = null
+    let phase_started_at = Date.now()
+    const set_phase = ( name, phase ) => {
+        if( process.env.BABYSIT_DEBUG === `1` && current_phase ) {
+            log.info( `Timing auth ${ name } ${ current_phase }: ${ Date.now() - phase_started_at }ms` )
+        }
+        current_phase = phase
+        phase_started_at = Date.now()
+        on_phase( name, phase )
+    }
 
     const docker_options = build_docker_auth_check_options( agent, {
         prompt,
@@ -239,22 +263,27 @@ export const run_host_agent_auth_check = async ( agent, {
         extra_env,
     } )
     if( !docker_options ) {
-        return {
-            name: agent?.name || `unknown`,
-            authenticated: false,
+        return auth_result( agent?.name || `unknown`, `failed`, {
             reason: `missing auth check command`,
-        }
+        } )
     }
 
     let prepared_launch
     try {
-        prepared_launch = await prepare_launch( docker_options )
+        set_phase( agent.name, `preparing` )
+        prepared_launch = await prepare_launch( docker_options, { signal } )
     } catch ( error ) {
-        return {
-            name: agent?.name || `unknown`,
-            authenticated: false,
+        const status = signal?.aborted ? cancellation_status( signal ) : `failed`
+        return auth_result( agent?.name || `unknown`, status, {
             reason: error.message,
-        }
+        } )
+    }
+
+    if( signal?.aborted ) {
+        await prepared_launch.abort()
+        return auth_result( agent.name, cancellation_status( signal ), {
+            reason: `cancelled before authentication started`,
+        } )
     }
 
     const { command_args } = prepared_launch
@@ -276,13 +305,14 @@ export const run_host_agent_auth_check = async ( agent, {
         let settled = false
         let timeout
         let kill_timeout
-        let timed_out = false
+        let termination_status = null
+        let termination_reason = null
         let finalise_task = null
 
         const current_output = () => strip_ansi( stdout ).trim()
         const clear_kill_timeout = () => clearTimeout( kill_timeout )
 
-        const cleanup_timed_out_container = () => {
+        const cleanup_terminated_container = () => {
 
             if( !cleanup_command_args ) return
 
@@ -306,6 +336,7 @@ export const run_host_agent_auth_check = async ( agent, {
             finalise_task = ( async () => {
                 let flush_error = null
 
+                set_phase( agent.name, `recovering credentials` )
                 try {
                     await prepared_launch.pull_synced_files?.( {
                         target: agent.container_paths?.creds || null,
@@ -316,7 +347,7 @@ export const run_host_agent_auth_check = async ( agent, {
 
                 if( flush_error ) {
                     const retained_container = prepared_launch.retain
-                        ? await prepared_launch.retain( { stop: timed_out } )
+                        ? await prepared_launch.retain( { stop: Boolean( termination_status ) } )
                         : null
                     if( !prepared_launch.retain ) prepared_launch.handoff?.()
 
@@ -331,12 +362,14 @@ export const run_host_agent_auth_check = async ( agent, {
                 // Direct docker-run probes have no prepared container owner.
                 // Reap their named --rm container after killing a stuck client;
                 // staged probes are removed by abort() after a successful pull.
-                if( timed_out && !prepared_launch.container_id ) cleanup_timed_out_container()
+                if( termination_status && !prepared_launch.container_id ) cleanup_terminated_container()
                 return flush_error
             } )()
 
             return finalise_task
         }
+
+        let on_abort = () => {}
 
         const finish = result => {
             if( settled ) return
@@ -344,24 +377,34 @@ export const run_host_agent_auth_check = async ( agent, {
             settled = true
             clearTimeout( timeout )
             clear_kill_timeout()
+            signal?.removeEventListener?.( `abort`, on_abort )
+            set_phase( agent.name, result.status )
             resolve( result )
         }
 
-        timeout = setTimeout( () => {
-            timed_out = true
-            if( typeof child.kill === `function` ) child.kill( `SIGTERM` )
-            kill_timeout = setTimeout( async () => {
-                if( typeof child.kill === `function` ) child.kill( `SIGKILL` )
-                await finalise_launch()
+        const begin_termination = ( status, reason ) => {
+            if( settled || termination_status ) return
 
-                finish( {
-                    name: agent.name,
-                    authenticated: false,
-                    reason: `timed out`,
+            termination_status = status
+            termination_reason = reason
+            set_phase( agent.name, `recovering credentials` )
+            child.kill?.( `SIGTERM` )
+            kill_timeout = setTimeout( async () => {
+                child.kill?.( `SIGKILL` )
+                const flush_error = await finalise_launch()
+                finish( auth_result( agent.name, status, {
+                    reason: flush_error?.message || reason,
                     output: current_output(),
-                } )
+                } ) )
             }, kill_grace_ms )
-        }, timeout_ms )
+        }
+
+        on_abort = () => begin_termination(
+            cancellation_status( signal ),
+            signal?.reason?.code === `skip` ? `skipped by user` : `cancelled`
+        )
+
+        timeout = setTimeout( () => begin_termination( `failed`, `timed out` ), timeout_ms )
 
         child.stdout?.on( `data`, chunk => {
             stdout += chunk.toString()
@@ -373,13 +416,12 @@ export const run_host_agent_auth_check = async ( agent, {
 
         child.on( `error`, async error => {
             clear_kill_timeout()
-            await finalise_launch()
-            finish( {
-                name: agent.name,
-                authenticated: false,
-                reason: error.message,
+            const flush_error = await finalise_launch()
+            const status = termination_status || `failed`
+            finish( auth_result( agent.name, status, {
+                reason: flush_error?.message || termination_reason || error.message,
                 output: current_output(),
-            } )
+            } ) )
         } )
 
         child.on( `close`, async code => {
@@ -388,18 +430,27 @@ export const run_host_agent_auth_check = async ( agent, {
 
             const output = current_output()
             const diagnostic = strip_ansi( stderr || stdout ).trim()
-            const is_authenticated = !timed_out && !flush_error && code === 0 && answered_ok( output )
-            const failure_reason = timed_out
-                ? `timed out`
-                : flush_error?.message || diagnostic || `exited with code ${ code }`
+            if( termination_status ) {
+                finish( auth_result( agent.name, termination_status, {
+                    reason: flush_error?.message || termination_reason,
+                    output,
+                } ) )
+                return
+            }
 
-            finish( {
-                name: agent.name,
-                authenticated: is_authenticated,
+            const is_authenticated = !flush_error && code === 0 && answered_ok( output )
+            const status = is_authenticated ? `authenticated` : `unauthenticated`
+            const failure_reason = flush_error?.message || diagnostic || `exited with code ${ code }`
+
+            finish( auth_result( agent.name, status, {
                 reason: is_authenticated ? undefined : failure_reason,
                 output,
-            } )
+            } ) )
         } )
+
+        set_phase( agent.name, `checking` )
+        signal?.addEventListener?.( `abort`, on_abort, { once: true } )
+        if( signal?.aborted ) on_abort()
 
     } )
 
@@ -412,31 +463,38 @@ export const run_host_agent_auth_check = async ( agent, {
  * @param {Object[]|null} [options.agents] - Pre-selected agent adapters to check
  * @param {Date} [options.date=new Date()] - Date used in the shared prompt
  * @param {Function} [options.run_auth_check=run_host_agent_auth_check] - Runner for tests
- * @returns {Promise<Array<{ name: string, authenticated: boolean, reason?: string }>>}
+ * @param {AbortSignal|null} [options.signal] - Shared cancellation signal
+ * @param {Function} [options.on_state] - Per-agent progress callback
+ * @returns {Promise<Array<{ name: string, status: string, authenticated: boolean, reason?: string }>>}
  */
 export const check_host_agent_authentication = async ( {
     agent_names = null,
     agents = null,
     date = new Date(),
     run_auth_check = run_host_agent_auth_check,
+    signal = null,
+    on_state = () => {},
 } = {} ) => {
 
     const prompt = build_host_auth_prompt( date )
     const agents_to_check = agents || select_host_auth_check_agents( { agent_names } )
 
     const auth_tasks = agents_to_check.map( agent =>
-        Promise.resolve().then( () => run_auth_check( agent, { prompt } ) )
+        Promise.resolve().then( () => run_auth_check( agent, {
+            prompt,
+            signal,
+            on_phase: on_state,
+        } ) )
     )
     const results = await Promise.allSettled( auth_tasks )
 
     const auth_results = results.map( ( result, index ) => {
         if( result.status === `fulfilled` ) return result.value
 
-        return {
-            name: agents_to_check[index].name,
-            authenticated: false,
+        const status = signal?.aborted ? cancellation_status( signal ) : `failed`
+        return auth_result( agents_to_check[index].name, status, {
             reason: result.reason?.message || String( result.reason ),
-        }
+        } )
     } )
 
     return auth_results
@@ -449,7 +507,12 @@ export const check_host_agent_authentication = async ( {
  * @returns {string[]} Unauthenticated agent names
  */
 export const unauthenticated_agent_names = ( results = [] ) => 
-    results.filter( result => !result.authenticated ).map( result => result.name )
+    results
+        .filter( result => result.status
+            ? [ `unauthenticated`, `failed` ].includes( result.status )
+            : !result.authenticated
+        )
+        .map( result => result.name )
 
 
 /**
@@ -474,7 +537,7 @@ export const confirm_continue_with_unauthenticated_agents = async ( names, {
 
     const question = [
         `Unauthenticated agents: ${ names.join( `, ` ) }.`,
-        `Run \`babysit config\` to choose which coding agents Babysit checks on startup.`,
+        `Run \`babysit doctor --auth\` to check authentication explicitly.`,
         `Exit? [Y/n] `,
     ].join( `\n` )
 

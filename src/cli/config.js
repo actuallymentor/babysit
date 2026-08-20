@@ -1,5 +1,3 @@
-import { createInterface } from 'readline/promises'
-
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import {
     DEFAULT_AUTH_CHECK_AGENTS,
@@ -73,34 +71,17 @@ export const cmd_config = async ( cmd, {
         } )
         const next_config = write_babysit_config( { auth_check_agents }, { config_path } )
 
-        output.write( `Authentication checks: ${ format_auth_check_agents( next_config.auth_check_agents ) }\n` )
+        output.write(
+            `Legacy authentication selection saved: ${ format_auth_check_agents( next_config.auth_check_agents ) } (deprecated; startup and doctor ignore it)\n`
+        )
         return
     }
 
     output.write( `\nbabysit config\n\n` )
-    output.write( `Authentication checks: ${ format_auth_check_agents( current_config.auth_check_agents ) }\n` )
-    output.write( `Available agents: ${ SUPPORTED_AGENTS.join( `, ` ) }\n` )
-    output.write( `Use "all" or "none", or enter a comma-separated list.\n\n` )
-
-    if( !input.isTTY ) {
-        output.write( `Use: babysit config --auth-check-agents codex,claude\n` )
-        return
-    }
-
-    const rl = createInterface( { input, output } )
-
-    try {
-        const answer = await rl.question(
-            `Agents to check for authentication [${ format_auth_check_agents( current_config.auth_check_agents ) }]: `
-        )
-        const auth_check_agents = parse_auth_check_agent_selection( answer, {
-            current: current_config.auth_check_agents,
-        } )
-        const next_config = write_babysit_config( { auth_check_agents }, { config_path } )
-
-        output.write( `Saved. Authentication checks: ${ format_auth_check_agents( next_config.auth_check_agents ) }\n` )
-    } finally {
-        rl.close()
-    }
+    output.write( `Startup authentication: active agent, with a 12-hour credential-bound success cache\n` )
+    output.write( `Explicit checks: babysit doctor --auth [agent|all]\n` )
+    output.write(
+        `Legacy authentication selection: ${ format_auth_check_agents( current_config.auth_check_agents ) } (deprecated and ignored)\n`
+    )
 
 }

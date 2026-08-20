@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'bun:test'
 import {
     agent_status_for_idle,
+    agent_exit_status,
     publish_agent_status,
     should_fire_rule,
+    start_monitor,
+    AGENT_EXIT_SENTINEL,
     DEBOUNCE_MS,
 } from '../src/babysit/monitor.js'
 import { IdleTracker } from '../src/babysit/matcher.js'
@@ -248,6 +251,52 @@ describe( `publish_agent_status`, () => {
         expect( retried ).toBe( `idle` )
         expect( attempts ).toBe( 2 )
 
+    } )
+
+} )
+
+describe( `supervised agent exit`, () => {
+
+    const sentinel = `9d057b50-c4be-430b-b41d-a2c574487afa`
+
+    it( `recognises only complete, valid entrypoint markers`, () => {
+        expect( agent_exit_status( `${ AGENT_EXIT_SENTINEL }:${ sentinel }:0`, sentinel ) ).toBe( 0 )
+        expect( agent_exit_status( `before\r\n${ AGENT_EXIT_SENTINEL }:${ sentinel }:143\r\nafter`, sentinel ) ).toBe( 143 )
+        expect( agent_exit_status( `${ AGENT_EXIT_SENTINEL }:${ sentinel }:999`, sentinel ) ).toBeNull()
+        expect( agent_exit_status( `prefix-${ AGENT_EXIT_SENTINEL }:${ sentinel }:0`, sentinel ) ).toBeNull()
+        expect( agent_exit_status( `${ AGENT_EXIT_SENTINEL }:forged:0`, sentinel ) ).toBeNull()
+        expect( agent_exit_status( `${ AGENT_EXIT_SENTINEL }:${ sentinel }:0` ) ).toBeNull()
+    } )
+
+    it( `captures the native session id before releasing tmux and cleanup`, async () => {
+        const events = []
+        const native_id = `00000000-0000-4000-8000-000000000001`
+
+        await start_monitor( {
+            session_name: `babysit_test`,
+            config: { idle_timeout_s: 300 },
+            rules: [],
+            agent_patterns: null,
+            agent: { session_id_pattern: /session: ([0-9a-f-]+)/i },
+            agent_exit_sentinel: sentinel,
+            on_session_id: id => events.push( [ `session`, id ] ),
+            on_exit: async () => events.push( [ `cleanup` ] ),
+            has_session_fn: async () => true,
+            capture_pane_fn: async () => `session: ${ native_id }\n${ AGENT_EXIT_SENTINEL }:${ sentinel }:0`,
+            kill_session_fn: async session_name => events.push( [ `kill`, session_name ] ),
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            write_loop_deadline_fn: value => events.push( [ `deadline`, value ] ),
+            wait_fn: async () => {
+                throw new Error( `monitor should not poll after the exit marker` )
+            },
+        } )
+
+        expect( events ).toEqual( [
+            [ `session`, native_id ],
+            [ `deadline`, `idle` ],
+            [ `kill`, `babysit_test` ],
+            [ `cleanup` ],
+        ] )
     } )
 
 } )

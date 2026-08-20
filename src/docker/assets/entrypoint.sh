@@ -89,15 +89,77 @@ fi
 # Source the host-mounted ~/.babysitrc as the runtime user so environment
 # customisations use the same HOME and uid as the coding agent. `set -a`
 # exports plain KEY=value assignments as child-process environment variables.
-if [ -f /home/node/.babysitrc ]; then
-    exec gosu node env HOME=/home/node bash -c '
-        set -a
-        # shellcheck source=/dev/null
-        source /home/node/.babysitrc || exit $?
-        set +a
-        exec "$@"
-    ' babysit-agent "$@"
+run_agent() {
+    if [ -f /home/node/.babysitrc ]; then
+        exec gosu node env HOME=/home/node bash -c '
+            set -a
+            # shellcheck source=/dev/null
+            source /home/node/.babysitrc || exit $?
+            set +a
+            exec "$@"
+        ' babysit-agent "$@"
+    fi
+
+    exec gosu node "$@"
+}
+
+# Headless probes and other one-shot Docker commands keep ordinary exec
+# semantics. Only the tmux-supervised agent needs the early-exit handshake.
+if [ "${BABYSIT_SUPERVISED_SESSION:-0}" != "1" ]; then
+    if [ -f /home/node/.babysitrc ]; then
+        exec gosu node env HOME=/home/node bash -c '
+            set -a
+            # shellcheck source=/dev/null
+            source /home/node/.babysitrc || exit $?
+            set +a
+            exec "$@"
+        ' babysit-agent "$@"
+    fi
+
+    exec gosu node "$@"
 fi
 
-# Drop privileges back to node (now uid=$HOST_UID) and exec the agent.
-exec gosu node "$@"
+if [ -z "${BABYSIT_EXIT_SENTINEL:-}" ]; then
+    printf 'Missing supervised-session exit sentinel\n' >&2
+    exit 1
+fi
+
+# Docker can spend seconds closing attach streams after the agent process has
+# already exited. Keep a tiny supervisor around so Babysit's monitor sees this
+# marker immediately and can release the foreground tmux client while Docker
+# finishes its bookkeeping in the detached cleanup process.
+agent_pid=""
+
+# Invoked indirectly by the signal traps below.
+# shellcheck disable=SC2317
+forward_signal() {
+    local signal="$1"
+
+    [ -n "$agent_pid" ] || return
+    kill "-$signal" "$agent_pid" 2>/dev/null || true
+}
+
+trap 'forward_signal HUP' HUP
+trap 'forward_signal INT' INT
+trap 'forward_signal TERM' TERM
+
+set +e
+# An explicit stdin duplication prevents non-interactive Bash from replacing
+# the asynchronous child's terminal input with /dev/null.
+run_agent "$@" <&0 >&1 2>&2 &
+agent_pid=$!
+
+# A trapped signal interrupts wait before the child necessarily exits. Reap it
+# fully so the marker never races a still-running agent or credential write.
+while kill -0 "$agent_pid" 2>/dev/null; do
+    wait "$agent_pid"
+    agent_status=$?
+done
+wait "$agent_pid" 2>/dev/null
+wait_status=$?
+if [ "$wait_status" -ne 127 ]; then agent_status=$wait_status; fi
+set -e
+
+trap - HUP INT TERM
+printf '\r\n__BABYSIT_AGENT_EXIT__:%s:%s\r\n' "$BABYSIT_EXIT_SENTINEL" "${agent_status:-1}"
+exit "${agent_status:-1}"

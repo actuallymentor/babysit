@@ -1,7 +1,7 @@
 import { wait } from 'mentie'
 import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
-import { has_session, set_agent_status } from '../tmux/session.js'
+import { has_session, kill_session, set_agent_status } from '../tmux/session.js'
 import { IdleTracker, strip_ansi, evaluate_rule } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
@@ -10,6 +10,10 @@ import { write_loop_deadline } from '../statusline/render.js'
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
 const ACTIVITY_IDLE_SECONDS = 1
+export const AGENT_EXIT_SENTINEL = `__BABYSIT_AGENT_EXIT__`
+const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
+    ? log.info( message )
+    : log.debug( message )
 
 // Debounce between consecutive fires of the same rule (sir-claudius lesson: redraw flicker)
 export const DEBOUNCE_MS = 3_000
@@ -24,6 +28,27 @@ export const agent_status_for_idle = ( idle_seconds ) => {
     // One complete unchanged poll means the viewport has stopped moving.
     // Supervision timeouts remain separate: they decide when rules fire.
     return idle_seconds >= ACTIVITY_IDLE_SECONDS ? `idle` : `running`
+
+}
+
+/**
+ * Read the supervised entrypoint's process exit marker from pane output.
+ * @param {string} output - ANSI-normalised tmux pane output
+ * @param {string|null} sentinel - Random token assigned to this session
+ * @returns {number|null} Agent exit status, or null while the agent is running
+ */
+export const agent_exit_status = ( output = ``, sentinel = null ) => {
+
+    if( !sentinel ) return null
+
+    const escaped_sentinel = String( sentinel ).replace( /[.*+?^${}()|[\]\\]/g, `\\$&` )
+    const pattern = new RegExp(
+        `(?:^|\\n)${ AGENT_EXIT_SENTINEL }:${ escaped_sentinel }:(\\d{1,3})(?:\\n|$)`
+    )
+    const match = String( output ).replace( /\r/g, `` ).match( pattern )
+    const status = match ? Number( match[1] ) : null
+
+    return status !== null && status <= 255 ? status : null
 
 }
 
@@ -112,7 +137,23 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
  */
-export const start_monitor = async ( { session_name, config, rules, agent_patterns, agent, on_session_id, on_exit } ) => {
+export const start_monitor = async ( {
+    session_name,
+    config,
+    rules,
+    agent_patterns,
+    agent,
+    on_session_id,
+    on_exit,
+    agent_exit_sentinel = null,
+    has_session_fn = has_session,
+    capture_pane_fn = capture_pane,
+    kill_session_fn = kill_session,
+    publish_agent_status_fn = publish_agent_status,
+    execute_action_fn = execute_action,
+    write_loop_deadline_fn = write_loop_deadline,
+    wait_fn = wait,
+} ) => {
 
     const idle_tracker = new IdleTracker()
     let session_id_captured = false
@@ -129,10 +170,10 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
     while( true ) {
 
         // Check if session is still alive
-        const alive = await has_session( session_name )
+        const alive = await has_session_fn( session_name )
         if( !alive ) {
             log.info( `Session ended: ${ session_name }` )
-            write_loop_deadline( `idle` )
+            write_loop_deadline_fn( `idle` )
             if( on_exit ) await on_exit()
             break
         }
@@ -140,10 +181,10 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
         // Capture pane output
         let raw_output
         try {
-            raw_output = await capture_pane( session_name )
+            raw_output = await capture_pane_fn( session_name )
         } catch {
             log.debug( `Failed to capture pane, session may be closing` )
-            await wait( POLL_INTERVAL_MS )
+            await wait_fn( POLL_INTERVAL_MS )
             continue
         }
 
@@ -157,7 +198,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
         // Store activity with the tmux session itself. Only transitions issue
         // a command, keeping the one-second monitor poll cheap. Failed writes
         // stay pending so a transient tmux error is retried on the next tick.
-        last_agent_status = await publish_agent_status( {
+        last_agent_status = await publish_agent_status_fn( {
             session_name,
             agent_status,
             last_agent_status,
@@ -167,7 +208,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
         if( idle_rule ) {
             const deadline = idle_tracker.get_deadline( idle_timeout_s )
             if( deadline !== null && deadline !== last_written_deadline ) {
-                write_loop_deadline( deadline )
+                write_loop_deadline_fn( deadline )
                 last_written_deadline = deadline
             }
         }
@@ -180,6 +221,22 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
                 log.info( `Captured agent session ID: ${ captured_id }` )
                 if( on_session_id ) on_session_id( captured_id )
             }
+        }
+
+        // The entrypoint knows when the coding agent exits before Docker's
+        // daemon finishes its bounded stream/task cleanup. Capture the native
+        // session id first, then end tmux so the foreground CLI can return while
+        // the detached monitor finalises credentials safely.
+        const exit_status = agent_exit_status( clean_output, agent_exit_sentinel )
+        if( exit_status !== null ) {
+            const exit_started_at = Date.now()
+
+            log_shutdown_timing( `Shutdown: agent exited with status ${ exit_status }; releasing tmux foreground` )
+            write_loop_deadline_fn( `idle` )
+            await kill_session_fn( session_name )
+            log_shutdown_timing( `Shutdown: tmux released in ${ Date.now() - exit_started_at }ms` )
+            if( on_exit ) await on_exit()
+            break
         }
 
         // Evaluate rules in order — first match wins
@@ -195,7 +252,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
             rule.first_matched_at = null  // re-arm for the next cycle
 
             try {
-                await execute_action( session_name, rule.do, config )
+                await execute_action_fn( session_name, rule.do, config )
             } catch ( e ) {
                 log.error( `Action failed: ${ e.message }` )
             }
@@ -208,7 +265,7 @@ export const start_monitor = async ( { session_name, config, rules, agent_patter
 
         }
 
-        await wait( POLL_INTERVAL_MS )
+        await wait_fn( POLL_INTERVAL_MS )
 
     }
 

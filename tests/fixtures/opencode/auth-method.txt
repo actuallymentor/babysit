@@ -1,0 +1,18 @@
+Select auth method  esc
+
+Search
+
+ChatGPT Pro/Plus (browser)
+ChatGPT Pro/Plus (headless)
+Manually enter API Key
+
+┃
+┃  Ask anything... "Fix broken tests"
+┃
+┃  Build · Big Pickle OpenCode Zen
+╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+tab agents  ctrl+p commands
+
+● Tip Run /connect to add an AI provider and start coding
+
+/workspace  1.18.15

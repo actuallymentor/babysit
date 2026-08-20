@@ -1,4 +1,5 @@
 import { spawn, execSync } from 'child_process'
+import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { createInterface } from 'readline/promises'
@@ -27,11 +28,19 @@ import { build_system_prompt } from '../modes/prompt.js'
 import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
-    format_host_auth_status_message,
     run_host_agent_auth_check,
-    select_host_auth_check_agents,
     unauthenticated_agent_names,
 } from '../agents/auth.js'
+import {
+    clear_host_auth_cache,
+    find_host_auth_cache_hit,
+    fingerprint_agent_credentials,
+    record_host_auth_success,
+    refresh_file_credential_parts,
+    refresh_host_auth_cache,
+    resolve_auth_image_identity,
+} from '../agents/auth_cache.js'
+import { run_auth_checks_with_progress } from './auth_progress.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
@@ -40,6 +49,7 @@ import { save_session, load_session, list_stored_sessions, generate_session_id }
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { strip_ansi } from '../babysit/matcher.js'
+import { time_phase, time_phase_sync } from '../utils/timing.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
@@ -446,6 +456,112 @@ export const confirm_docker_restricted_mode = async ( mode = {}, { input = proce
 }
 
 /**
+ * Check only the agent being launched, reusing a fresh hash-bound success.
+ * Non-interactive launches skip cache misses so scripts never block on a real
+ * model request; `babysit doctor --auth` remains the explicit verification
+ * path.
+ *
+ * @param {Object} agent - Active agent adapter
+ * @param {Object} options - Launch authentication context
+ * @returns {Promise<{ results: Object[], cache_context: Object|null }>} Results and safe trust metadata
+ */
+export const check_startup_agent_authentication = async ( agent, {
+    workspace,
+    mode,
+    creds_mounts,
+    input = process.stdin,
+    output = process.stdout,
+    cache_path = undefined,
+    resolve_image_identity = resolve_auth_image_identity,
+    run_auth_check = run_host_agent_auth_check,
+} ) => {
+
+    const credential_identity = fingerprint_agent_credentials( agent, creds_mounts )
+    const image_identity = credential_identity ? await resolve_image_identity() : null
+    const cache_options = cache_path ? { cache_path } : {}
+    const cached = credential_identity && find_host_auth_cache_hit( agent.name, {
+        credential_fingerprint: credential_identity.fingerprint,
+        image_identity,
+    }, cache_options )
+
+    if( cached ) {
+        log.info( `Authentication cache hit: ${ agent.name }` )
+        return {
+            results: [ {
+                name: agent.name,
+                status: `cached`,
+                authenticated: true,
+            } ],
+            cache_context: {
+                credential_fingerprint: credential_identity.fingerprint,
+                credential_parts: credential_identity.parts,
+                image_identity,
+            },
+        }
+    }
+
+    if( !input.isTTY ) {
+        log.warn(
+            `Skipping uncached ${ agent.name } authentication check for non-interactive startup; run \`babysit doctor --auth ${ agent.name }\` to verify.`
+        )
+        return {
+            results: [ {
+                name: agent.name,
+                status: `skipped`,
+                authenticated: false,
+                reason: `non-interactive startup`,
+            } ],
+            cache_context: null,
+        }
+    }
+
+    const results = await run_auth_checks_with_progress( [ agent ], ( { signal, on_state } ) =>
+        check_host_agent_authentication( {
+            agents: [ agent ],
+            signal,
+            on_state,
+            run_auth_check: ( auth_agent, options ) => run_auth_check( auth_agent, {
+                ...options,
+                workspace,
+                mode,
+                creds_mounts,
+                config: { isolate_dependencies: false },
+            } ),
+        } ), {
+        input,
+        output,
+    } )
+    const authenticated = results.find( result => result.status === `authenticated` )
+
+    if( !authenticated ) {
+        if( results.some( result => [ `unauthenticated`, `failed` ].includes( result.status ) ) ) {
+            clear_host_auth_cache( agent.name, cache_options )
+        }
+        return { results, cache_context: null }
+    }
+
+    // The auth probe can rotate OAuth credentials. Fingerprint only after its
+    // final credential pull has completed.
+    const verified_identity = fingerprint_agent_credentials( agent, creds_mounts )
+    if( !verified_identity || !image_identity ) return { results, cache_context: null }
+
+    record_host_auth_success( agent.name, {
+        credential_fingerprint: verified_identity.fingerprint,
+        image_identity,
+    }, cache_options )
+
+    return {
+        results,
+        cache_context: {
+            credential_fingerprint: verified_identity.fingerprint,
+            credential_parts: verified_identity.parts,
+            image_identity,
+        },
+    }
+
+}
+
+/**
  * Start a new babysit session
  * @param {Object} cmd - Parsed command { agent, flags, passthrough }
  */
@@ -517,7 +633,7 @@ export const cmd_start = async ( cmd ) => {
         process.exit( 1 )
     }
 
-    const docker_status = docker_daemon_status()
+    const docker_status = time_phase_sync( `docker daemon`, docker_daemon_status )
     if( !docker_status.available ) {
         print_error( `Docker is not running or is not reachable.` )
         if( docker_status.reason ) print_error( docker_status.reason )
@@ -528,7 +644,7 @@ export const cmd_start = async ( cmd ) => {
     // Confirmed Watchtower releases either honor Babysit's opt-out label or
     // require explicit targets. Warn loudly when a similarly named daemon has
     // not been confirmed safe, before credentials or session state are created.
-    warn_if_unrecognized_watchtower_is_running()
+    time_phase_sync( `watchtower inspection`, warn_if_unrecognized_watchtower_is_running )
 
     if( should_confirm_docker_restricted_mode( mode ) ) {
         const confirmed = await confirm_docker_restricted_mode( mode )
@@ -549,30 +665,26 @@ export const cmd_start = async ( cmd ) => {
         sync_baseline: creds_sync_baseline,
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
-    } = await setup_credentials( agent )
+    } = await time_phase( `credential discovery and preflight`, () => setup_credentials( agent ) )
     const foreground_recovery_id = register_credential_recovery( {
         sync_paths: Object.values( creds_tmpfiles ).map(
             file => private_credential_tmpdir( file ) || file
         ),
     } )
-    const auth_agents = select_host_auth_check_agents()
-    log.info( format_host_auth_status_message( auth_agents.map( a => a.name ) ) )
-
-    const auth_results = await check_host_agent_authentication( {
-        agents: auth_agents,
-        run_auth_check: ( auth_agent, options ) => run_host_agent_auth_check( auth_agent, {
-            ...options,
-            workspace,
-            mode,
-            creds_mounts,
-            config: { isolate_dependencies: false },
-        } ),
-    } )
+    const {
+        results: auth_results,
+        cache_context: startup_auth_cache_context,
+    } = await time_phase( `authentication`, () => check_startup_agent_authentication( agent, {
+        workspace,
+        mode,
+        creds_mounts,
+    } ) )
+    let auth_cache_context = startup_auth_cache_context
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )
     if( unauthenticated_agents.length ) {
         auth_results
-            .filter( result => !result.authenticated )
+            .filter( result => [ `unauthenticated`, `failed` ].includes( result.status ) )
             .forEach( result => log.debug( `Auth check failed for ${ result.name }: ${ result.reason || `unknown reason` }` ) )
 
         const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents )
@@ -653,6 +765,7 @@ export const cmd_start = async ( cmd ) => {
 
     // Create tmux session (detached — we'll attach the foreground in a moment)
     const session_name = make_session_name( workspace, agent.name )
+    const agent_exit_sentinel = randomUUID()
     const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
 
     // GitHub's isolated credential profile is uploaded through Docker's API to
@@ -668,7 +781,7 @@ export const cmd_start = async ( cmd ) => {
     let prepared_launch = null
 
     try {
-        prepared_launch = await prepare_docker_launch( {
+        prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
             agent, workspace, mode,
             agent_args,
             creds_mounts: all_creds_mounts,
@@ -677,7 +790,8 @@ export const cmd_start = async ( cmd ) => {
             modifiers,
             ports: flags.ports || [],
             docker_socket_path,
-        } )
+            exit_sentinel: agent_exit_sentinel,
+        } ) )
 
         // Connect before the tmux pane can start Docker. A very fast agent may
         // refresh and exit before await_started() observes a running state; the
@@ -686,13 +800,13 @@ export const cmd_start = async ( cmd ) => {
             creds_sync.connect( prepared_launch.container_id )
         }
 
-        const { pipe_started: started_pipe } = await create_session( session_name, prepared_launch.command, {
+        const { pipe_started: started_pipe } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
             log_path,
             startup_log_path: log_path ? null : diagnostic_log_path,
-        } )
+        } ) )
         pipe_started = started_pipe
 
-        if( !await prepared_launch.await_started() ) {
+        if( !await time_phase( `main container start`, () => prepared_launch.await_started() ) ) {
             throw new Error( `Docker container did not reach a running state after launch` )
         }
 
@@ -700,7 +814,10 @@ export const cmd_start = async ( cmd ) => {
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
 
         if( initial_prompt ) {
-            const prompt_ready = await wait_for_initial_prompt_ready( session_name, agent )
+            const prompt_ready = await time_phase(
+                `tui readiness`,
+                () => wait_for_initial_prompt_ready( session_name, agent )
+            )
             if( prompt_ready ) {
                 log.info( `Sending initial prompt` )
                 await send_text( session_name, initial_prompt )
@@ -757,6 +874,28 @@ export const cmd_start = async ( cmd ) => {
                 ...creds_sync_baselines,
                 ...creds_sync.baselines(),
             }
+
+            if( auth_cache_context && creds_sync.source_changed?.() ) {
+                clear_host_auth_cache( agent.name )
+                auth_cache_context = null
+            } else if( auth_cache_context ) {
+                const refreshed_identity = refresh_file_credential_parts(
+                    auth_cache_context.credential_parts,
+                    creds_tmpfiles[ agent.name ]
+                )
+
+                if( refreshed_identity && refresh_host_auth_cache( agent.name, {
+                    expected_credential_fingerprint: auth_cache_context.credential_fingerprint,
+                    next_credential_fingerprint: refreshed_identity.fingerprint,
+                    image_identity: auth_cache_context.image_identity,
+                } ) ) {
+                    auth_cache_context = {
+                        ...auth_cache_context,
+                        credential_fingerprint: refreshed_identity.fingerprint,
+                        credential_parts: refreshed_identity.parts,
+                    }
+                }
+            }
         }
         const monitor_sync_baseline = monitor_sync_baselines[ agent.name ]
             || creds_sync_baseline
@@ -778,13 +917,15 @@ export const cmd_start = async ( cmd ) => {
             creds_tmpfiles,
             creds_sync_baseline: monitor_sync_baseline,
             creds_sync_baselines: monitor_sync_baselines,
+            auth_cache_context,
+            agent_exit_sentinel,
             container_id: prepared_launch.container_id,
             started_at: new Date().toISOString(),
         }
         save_session( session_data )
         clear_credential_recovery( foreground_recovery_id )
 
-        await spawn_monitor_daemon( babysit_id )
+        await time_phase( `monitor handoff`, () => spawn_monitor_daemon( babysit_id ) )
         prepared_launch.handoff()
     } catch ( error ) {
         await cleanup_failed_launch_credentials( {
@@ -802,10 +943,10 @@ export const cmd_start = async ( cmd ) => {
     // (Ctrl+B d) or the agent exits and the session terminates.
     log.info( `Attaching to tmux session: ${ session_name }` )
     try {
-        execSync(
+        time_phase_sync( `foreground tmux attach`, () => execSync(
             `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`,
             { stdio: `inherit` }
-        )
+        ) )
     } catch ( e ) {
         // tmux exits non-zero on certain detach scenarios — that's normal
         log.debug( `tmux attach exited: ${ e.message }` )

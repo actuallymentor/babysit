@@ -31,6 +31,28 @@ describe( `parse_args`, () => {
         expect( cmd.flags.auth_check_agents ).toBe( `codex,claude` )
     } )
 
+    it( `parses doctor authentication selection and cache refresh`, () => {
+
+        const all = parse_args( [ `doctor`, `--auth` ] )
+        expect( all ).toMatchObject( {
+            verb: `doctor`,
+            agent: null,
+            auth_agent: `all`,
+            flags: { auth: true, refresh: false },
+            passthrough: [],
+        } )
+
+        const one = parse_args( [ `doctor`, `--auth`, `opencode`, `--refresh` ] )
+        expect( one ).toMatchObject( {
+            verb: `doctor`,
+            agent: null,
+            auth_agent: `opencode`,
+            flags: { auth: true, refresh: true },
+            passthrough: [],
+        } )
+
+    } )
+
     it( `recognises babysit open <id>`, () => {
         const cmd = parse_args( [ `open`, `abc-123` ] )
         expect( cmd.verb ).toBe( `open` )
