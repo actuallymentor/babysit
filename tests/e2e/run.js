@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url'
 import { spawn } from 'child_process'
 
 import { SUPPORTED_AGENTS } from '../../src/agents/index.js'
+import { ensure_chrome_seccomp_profile } from '../../src/docker/chrome-seccomp.js'
 
 const repo_root = resolve( fileURLToPath( new URL( `../../`, import.meta.url ) ) )
 const run_id = `babysit-e2e-${ Date.now() }-${ Math.random().toString( 16 ).slice( 2, 8 ) }`
@@ -16,6 +17,9 @@ const base_image = process.env.BABYSIT_E2E_BASE_IMAGE || `babysit:e2e-base`
 const fake_image = process.env.BABYSIT_E2E_FAKE_IMAGE || `babysit:e2e-fake`
 const root = await mkdtemp( join( repo_root, `.babysit-e2e-${ run_id }-` ) )
 const state_root = await mkdtemp( join( tmpdir(), `${ run_id }-` ) )
+const browser_seccomp_profile = ensure_chrome_seccomp_profile( {
+    path: join( state_root, `chrome-seccomp.json` ),
+} )
 const home = join( state_root, `home` )
 const host_bin = join( state_root, `bin` )
 const workspaces_root = join( root, `workspaces` )
@@ -332,7 +336,7 @@ const run_puppeteer_browser = async () => {
     `
     const { stdout } = await docker( [
         `run`, `--rm`, `--init`, `--shm-size=1g`,
-        `--security-opt`, `seccomp=unconfined`,
+        `--security-opt`, `seccomp=${ browser_seccomp_profile }`,
         `--entrypoint`, `gosu`,
         base_image,
         `node`, `node`, `--input-type=module`, `-e`, browser_script,

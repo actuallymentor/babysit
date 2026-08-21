@@ -20,8 +20,9 @@ without duplicating browser downloads or weakening Chrome's sandbox.
    a real non-root browser launch in native-architecture Docker testing.
 4. Pass an explicit workflow refresh stamp before the browser/agent layers so
    scheduled builds bypass stale BuildKit cache; give browser processes ample
-   shared memory, allow Chrome's sandbox namespace setup without granting
-   `SYS_ADMIN`, and document that `babysit update` pulls this refreshed toolset.
+   shared memory, allow Chrome's sandbox namespace setup through a minimally
+   extended Docker seccomp profile without granting `SYS_ADMIN`, and document
+   that `babysit update` pulls this refreshed toolset.
 5. Update user-facing docs, changelog/version metadata, and persistent notes;
    run lint, focused/full tests, a real image build, and an actual page load.
 

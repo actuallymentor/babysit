@@ -5,6 +5,7 @@ import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
+import { CHROME_SECCOMP_PROFILE_PATH } from './chrome-seccomp.js'
 import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
 import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/render.js'
@@ -420,18 +421,16 @@ export const build_docker_command_args = ( options ) => {
         : null
 
     // Base docker run flags
-    // Chrome must create its own PID/network/user namespaces before applying
-    // its renderer sandbox. Docker's default seccomp profile blocks that clone
-    // shape unless the much broader SYS_ADMIN capability is granted. Relax the
-    // outer syscall filter instead; Docker namespaces/capability limits remain,
-    // and Puppeteer can keep Chrome's own sandbox enabled.
+    // Chrome must create nested PID/network/user namespaces for its renderer
+    // sandbox. Babysit's profile retains Docker's syscall allowlist and opens
+    // only clone/unshare, avoiding both seccomp=unconfined and CAP_SYS_ADMIN.
     flags.push(
         ...get_docker_run_prefix(),
         `--rm`,
         `--init`,
         `--shm-size=1g`,
         `--security-opt`,
-        `seccomp=unconfined`
+        `seccomp=${ CHROME_SECCOMP_PROFILE_PATH }`
     )
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
