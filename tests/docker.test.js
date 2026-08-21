@@ -4,6 +4,10 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { get_image_name } from '../src/docker/update.js'
 import {
+    CHROME_SECCOMP_SOURCE,
+    ensure_chrome_seccomp_profile,
+} from '../src/docker/chrome-seccomp.js'
+import {
     BABYSIT_HOST_RC_ENV,
     BABYSIT_RC_CONTAINER_PATH,
     WATCHTOWER_DISABLE_LABEL,
@@ -113,6 +117,44 @@ describe( `docker image`, () => {
         expect( dockerfile ).toContain( `/node_modules/puppeteer` )
         expect( dockerfile ).not.toContain( `--no-sandbox` )
         expect( workflow ).toContain( `RUNTIME_REFRESH=\${{ github.run_id }}` )
+
+    } )
+
+    it( `retains Docker's seccomp allowlist while permitting Chrome namespaces`, () => {
+
+        const profile_path = new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
+        const profile = JSON.parse( readFileSync( profile_path, `utf8` ) )
+        const chrome_rule = profile.syscalls.find( rule =>
+            rule.action === `SCMP_ACT_ALLOW`
+            && rule.names.length === 2
+            && rule.names.includes( `clone` )
+            && rule.names.includes( `unshare` )
+        )
+
+        expect( CHROME_SECCOMP_SOURCE ).toBe( `moby/moby@b612274c5489b546ff8b4a4f93f25a0b8952713a` )
+        expect( profile.defaultAction ).toBe( `SCMP_ACT_ERRNO` )
+        expect( chrome_rule ).toBeDefined()
+
+    } )
+
+    it( `materializes the embedded seccomp profile atomically`, () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-seccomp-` ) )
+        const profile_path = join( directory, `chrome-seccomp.json` )
+
+        try {
+            writeFileSync( profile_path, `stale` )
+
+            expect( ensure_chrome_seccomp_profile( { path: profile_path } ) ).toBe( profile_path )
+            expect( JSON.parse( readFileSync( profile_path, `utf8` ) ).defaultAction ).toBe( `SCMP_ACT_ERRNO` )
+            expect( statSync( profile_path ).mode & 0o777 ).toBe( 0o600 )
+
+            chmodSync( profile_path, 0o666 )
+            expect( ensure_chrome_seccomp_profile( { path: profile_path } ) ).toBe( profile_path )
+            expect( statSync( profile_path ).mode & 0o777 ).toBe( 0o600 )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
 
     } )
 
@@ -390,9 +432,11 @@ describe( `build_docker_command`, () => {
 
     it( `supports Chrome's sandbox without granting SYS_ADMIN`, () => {
         const args = build_docker_command_args( make_options() )
+        const security_profile = args[ args.indexOf( `--security-opt` ) + 1 ]
 
         expect( args ).toContain( `--shm-size=1g` )
-        expect( args ).toContain( `seccomp=unconfined` )
+        expect( security_profile ).toMatch( /seccomp=.*chrome-seccomp\.json$/ )
+        expect( security_profile ).not.toBe( `seccomp=unconfined` )
         expect( args ).not.toContain( `--cap-add` )
         expect( args ).not.toContain( `SYS_ADMIN` )
     } )

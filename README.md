@@ -247,11 +247,12 @@ await browser.close()
 
 Babysit gives each container a 1 GB `/dev/shm` ceiling for browser renderer
 stability. Chrome runs as the non-root `node` user with its sandbox enabled;
-do not add `--no-sandbox` when browsing untrusted pages. Babysit relaxes
-Docker's outer seccomp filter so Chrome can create its own sandbox namespaces,
-but does not grant the broad `SYS_ADMIN` capability. Docker namespace and
-capability boundaries remain active. The separate legacy `chrome-headless-shell`
-binary is intentionally not bundled.
+do not add `--no-sandbox` when browsing untrusted pages. Babysit retains
+Docker's syscall allowlist, adding only the `clone` and `unshare` calls Chrome
+needs to create its own sandbox namespaces. It does not grant the broad
+`SYS_ADMIN` capability. Docker namespace, capability, AppArmor, and seccomp
+boundaries remain active. The separate legacy `chrome-headless-shell` binary
+is intentionally not bundled.
 
 ## Loop mode
 
