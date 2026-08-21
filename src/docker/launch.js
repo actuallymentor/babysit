@@ -447,11 +447,13 @@ export const prepare_docker_launch = async ( options, {
                         `{{.State.Status}}`,
                         container_id,
                     ], DOCKER_INSPECT_TIMEOUT_MS )
-                } catch {
+                } catch ( error ) {
+                    if( error.code !== `ETIMEDOUT` ) return false
+
                     // Docker Desktop and loaded remote daemons can miss one
                     // inspect deadline while the already-started container is
-                    // healthy. Retry until the overall startup deadline; an
-                    // explicit exited/dead state still fails immediately.
+                    // healthy. Retry until the overall startup deadline. Hard
+                    // Docker errors still fail immediately.
                     await wait( poll_ms )
                     continue
                 }

@@ -49,8 +49,14 @@ const docker = async ( args, options = {} ) => {
 const tmux = ( args, options = {} ) => run( `tmux`, [ `-L`, tmux_socket, ...args ], options )
 
 const e2e_env = () => {
+    // The test image has no host profile. Do not inherit an enclosing
+    // Babysit session's carried host path: it is intentionally unreadable in
+    // this synthetic HOME, which correctly disables production auth caching
+    // but would make every E2E launch repeat all four verified probes.
+    const host_env = { ...process.env }
+    delete host_env.BABYSIT_HOST_BABYSITRC
     const env = {
-        ...process.env,
+        ...host_env,
         HOME: home,
         TMPDIR: workspace_tmp,
         CODEX_HOME: join( home, `.codex` ),
