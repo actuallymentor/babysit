@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import { EventEmitter } from 'events'
 import { existsSync, readFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { fileURLToPath } from 'url'
 
 import { opencode } from '../src/agents/opencode.js'
@@ -57,6 +59,12 @@ const private_transport = () => {
     }
 
 }
+
+const private_seccomp_transport = () => build_private_tmpfile(
+    `chrome`,
+    `chrome-seccomp.json`,
+    `{}`
+)
 
 const fake_signals = () => new EventEmitter()
 
@@ -144,7 +152,9 @@ describe( `prepared Docker launch`, () => {
         expect( copy_call.args ).toContain( `${ CONTAINER_ID }:/tmp/.babysit-gh-hosts.yml` )
         expect( uploaded_profile ).toContain( `fake-token` )
         expect( existsSync( transport.directory ) ).toBe( false )
-        expect( seccomp_profile_path ).toStartWith( `/tmp/babysit-chrome-chrome-seccomp.json-` )
+        expect( seccomp_profile_path ).toStartWith(
+            join( tmpdir(), `babysit-chrome-chrome-seccomp.json-` )
+        )
         expect( existsSync( seccomp_profile_path ) ).toBe( false )
         expect( launch.command ).toBe( `docker start -ai ${ CONTAINER_ID }` )
 
@@ -153,36 +163,43 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
-    it( `retains a direct-run seccomp profile only until launch handoff`, async () => {
+    it( `stages launches without copies until Docker consumes the seccomp profile`, async () => {
 
         const options = make_options( {} )
         options.creds_mounts = []
         options.extra_mounts = []
-        const seccomp_transport = build_private_tmpfile(
-            `chrome-test`,
-            `chrome-seccomp.json`,
-            `{}`
-        )
+        const seccomp_transport = private_seccomp_transport()
+        const calls = []
 
         const launch = await prepare_docker_launch( options, {
             create_seccomp_profile: () => seccomp_transport,
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                return ``
+            },
         } )
 
-        expect( launch.command ).toContain( `seccomp=${ seccomp_transport.file }` )
-        expect( existsSync( seccomp_transport.file ) ).toBe( true )
+        const create_call = calls.find( call => call.args.includes( `create` ) )
 
-        launch.handoff()
+        expect( create_call.args ).toContain( `seccomp=${ seccomp_transport.file }` )
+        expect( launch.command ).toBe( `docker start -ai ${ CONTAINER_ID }` )
+        expect( launch.container_id ).toBe( CONTAINER_ID )
         expect( existsSync( seccomp_transport.directory ) ).toBe( false )
+        launch.handoff()
 
     } )
 
     it( `cleans the transport and stopped container when upload fails`, async () => {
 
         const { transport, mount } = private_transport()
+        const seccomp_transport = private_seccomp_transport()
         const calls = []
 
         await expect( prepare_docker_launch( make_options( mount ), {
             signal_target: fake_signals(),
+            create_seccomp_profile: () => seccomp_transport,
             run_command: async ( command, args ) => {
                 calls.push( { command, args: [ ...args ] } )
                 if( args.includes( `create` ) ) return CONTAINER_ID
@@ -193,6 +210,7 @@ describe( `prepared Docker launch`, () => {
         } ) ).rejects.toThrow( `upload failed` )
 
         expect( existsSync( transport.directory ) ).toBe( false )
+        expect( existsSync( seccomp_transport.directory ) ).toBe( false )
         expect( calls.some( call => call.args.includes( `start` ) ) ).toBe( false )
         expect( calls.some( call => call.args.includes( `rm` ) && call.args.includes( CONTAINER_ID ) ) ).toBe( true )
 
@@ -201,10 +219,12 @@ describe( `prepared Docker launch`, () => {
     it( `does not remove an unowned name when docker create is rejected`, async () => {
 
         const { transport, mount } = private_transport()
+        const seccomp_transport = private_seccomp_transport()
         const calls = []
 
         await expect( prepare_docker_launch( make_options( mount ), {
             signal_target: fake_signals(),
+            create_seccomp_profile: () => seccomp_transport,
             run_command: async ( command, args ) => {
                 calls.push( { command, args: [ ...args ] } )
                 if( args.includes( `create` ) ) throw new Error( `name conflict` )
@@ -214,6 +234,7 @@ describe( `prepared Docker launch`, () => {
 
         expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
         expect( existsSync( transport.directory ) ).toBe( false )
+        expect( existsSync( seccomp_transport.directory ) ).toBe( false )
 
     } )
 
@@ -247,12 +268,31 @@ describe( `prepared Docker launch`, () => {
     it( `cleans the transport when Docker argument construction fails`, async () => {
 
         const { transport, mount } = private_transport()
+        const seccomp_transport = private_seccomp_transport()
         const options = make_options( mount )
+        options.extra_mounts = []
         options.agent = null
 
         await expect( prepare_docker_launch( options, {
             signal_target: fake_signals(),
+            create_seccomp_profile: () => seccomp_transport,
         } ) ).rejects.toThrow()
+
+        expect( existsSync( transport.directory ) ).toBe( false )
+        expect( existsSync( seccomp_transport.directory ) ).toBe( false )
+
+    } )
+
+    it( `cleans planned transports when seccomp profile creation fails`, async () => {
+
+        const { transport, mount } = private_transport()
+
+        await expect( prepare_docker_launch( make_options( mount ), {
+            create_seccomp_profile: () => {
+                throw new Error( `profile creation failed` )
+            },
+            signal_target: fake_signals(),
+        } ) ).rejects.toThrow( `profile creation failed` )
 
         expect( existsSync( transport.directory ) ).toBe( false )
 

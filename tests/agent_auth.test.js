@@ -109,6 +109,13 @@ const deferred = () => {
 
 }
 
+const fake_prepared_launch = () => async () => ( {
+    command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+    container_id: `probe-id`,
+    pull_synced_files: async () => {},
+    abort: async () => {},
+} )
+
 describe( `host agent auth checks`, () => {
 
     it( `builds the timestamped prompt from UTC time`, () => {
@@ -336,6 +343,7 @@ describe( `host agent auth checks`, () => {
         const calls = []
         const result = await run_host_agent_auth_check( get_agent( `claude` ), {
             prompt: `hello`,
+            prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( {}, call => calls.push( call ) ),
             timeout_ms: 1_000,
         } )
@@ -344,16 +352,14 @@ describe( `host agent auth checks`, () => {
         expect( result.status ).toBe( `authenticated` )
         expect( result.output ).toBe( `ok` )
         expect( calls[0].cmd ).toBe( `docker` )
-        expect( calls[0].args ).toContain( `run` )
-        expect( calls[0].args ).not.toContain( `-it` )
-        expect( calls[0].args ).toContain( `actuallymentor/babysit:latest` )
-        expect( calls[0].args.slice( -4 ) ).toEqual( [ `claude`, `-p`, `hello`, `--no-session-persistence` ] )
+        expect( calls[0].args ).toEqual( [ `start`, `-ai`, `probe-id` ] )
         expect( calls[0].options.env.NO_COLOR ).toBe( `1` )
     } )
 
     it( `marks a non-zero prompt run as unauthenticated`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `codex` ), {
             prompt: `hello`,
+            prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( { code: 1, stderr: `login required` } ),
             timeout_ms: 1_000,
         } )
@@ -422,6 +428,7 @@ describe( `host agent auth checks`, () => {
     it( `requires the prompt response to include ok`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
             prompt: `hello`,
+            prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( { code: 0, stdout: `choose an auth method` } ),
             timeout_ms: 1_000,
         } )
@@ -434,7 +441,8 @@ describe( `host agent auth checks`, () => {
     it( `classifies OpenCode's provider picker as unauthenticated`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
             prepare_launch: async () => ( {
-                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-auth-picker-test` ],
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                container_id: `probe-id`,
                 pull_synced_files: async () => {},
                 abort: async () => {},
             } ),
@@ -449,6 +457,7 @@ describe( `host agent auth checks`, () => {
     it( `classifies missing underscored API-key environment variables as unauthenticated`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
             prompt: `hello`,
+            prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( {
                 code: 1,
                 stderr: `GEMINI_API_KEY environment variable not found`,
@@ -463,7 +472,8 @@ describe( `host agent auth checks`, () => {
     it( `reports model and tool errors as probe failures, not missing login`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
             prepare_launch: async () => ( {
-                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-model-test` ],
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                container_id: `probe-id`,
                 pull_synced_files: async () => {},
                 abort: async () => {},
             } ),
@@ -481,6 +491,7 @@ describe( `host agent auth checks`, () => {
     it( `does not match authentication words embedded in longer identifiers`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `codex` ), {
             prompt: `hello`,
+            prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( {
                 code: 1,
                 stderr: `Model mycredentials adapter required a supported tool schema`,
@@ -507,6 +518,7 @@ describe( `host agent auth checks`, () => {
 
     it( `marks spawn errors as failed`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `claude` ), {
+            prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_error_spawn( new Error( `not found` ) ),
             timeout_ms: 1_000,
         } )
@@ -638,20 +650,15 @@ describe( `host agent auth checks`, () => {
 
     it( `times out stuck auth checks and escalates after SIGTERM`, async () => {
         const signals = []
-        const cleanups = []
+        const lifecycle = []
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
             prepare_launch: async () => ( {
-                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-timeout-test` ],
-                pull_synced_files: async () => {},
-                abort: async () => {},
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                container_id: `probe-id`,
+                pull_synced_files: async () => lifecycle.push( `pull` ),
+                abort: async () => lifecycle.push( `abort` ),
             } ),
             spawn_fn: fake_hanging_spawn( signal => signals.push( signal ) ),
-            cleanup_spawn_fn: ( cmd, args, options ) => {
-                const child = new EventEmitter()
-                child.unref = () => {}
-                cleanups.push( { cmd, args, options } )
-                return child
-            },
             timeout_ms: 1,
             kill_grace_ms: 1,
         } )
@@ -662,20 +669,18 @@ describe( `host agent auth checks`, () => {
         expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `timed out` )
         expect( signals ).toEqual( [ `SIGTERM`, `SIGKILL` ] )
-        expect( cleanups.length ).toBe( 1 )
-        expect( cleanups[0].cmd ).toBe( `docker` )
-        expect( cleanups[0].args.slice( 0, 2 ) ).toEqual( [ `rm`, `-f` ] )
-        expect( cleanups[0].args[2].startsWith( `babysit-opencode-` ) ).toBe( true )
-        expect( cleanups[0].options.env.NO_COLOR ).toBe( `1` )
+        expect( lifecycle ).toEqual( [ `pull`, `abort` ] )
     } )
 
     it( `does not escalate to SIGKILL when the child exits after SIGTERM`, async () => {
         const signals = []
+        const lifecycle = []
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
             prepare_launch: async () => ( {
-                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-sigterm-test` ],
-                pull_synced_files: async () => {},
-                abort: async () => {},
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                container_id: `probe-id`,
+                pull_synced_files: async () => lifecycle.push( `pull` ),
+                abort: async () => lifecycle.push( `abort` ),
             } ),
             spawn_fn: fake_sigterm_exit_spawn( signal => signals.push( signal ) ),
             timeout_ms: 1,
@@ -688,6 +693,7 @@ describe( `host agent auth checks`, () => {
         expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `timed out` )
         expect( signals ).toEqual( [ `SIGTERM` ] )
+        expect( lifecycle ).toEqual( [ `pull`, `abort` ] )
     } )
 
     it( `checks all supported agents with the same prompt`, async () => {

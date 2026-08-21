@@ -46,7 +46,7 @@ const docker_action_args = ( args, action, prefix = docker_command_prefix() ) =>
 
     const action_index = prefix.length
     if( args[ action_index ] !== `run` ) {
-        throw new Error( `Expected Docker run command before preparing staged credentials` )
+        throw new Error( `Expected Docker run command before preparing the launch` )
     }
 
     const next_args = [ ...args ]
@@ -183,9 +183,9 @@ export const build_docker_launch_plan = ( options, {
 const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
 
 /**
- * Build a launch command, uploading private and daemon-invisible files to a
- * stopped container. `docker cp` is the acknowledgment boundary: only after
- * the daemon accepts every file do we remove short-lived host transports.
+ * Build a launch command through a stopped container. `docker create` is the
+ * acknowledgment boundary for the seccomp profile; any private files are then
+ * uploaded before short-lived host transports are removed.
  *
  * @param {Object} options - Options accepted by build_docker_command_args
  * @param {Object} [dependencies] - Injectable process seams for tests
@@ -240,32 +240,6 @@ export const prepare_docker_launch = async ( options, {
     }
 
     const copy_mounts = copy_mounts_from( planned_options.extra_mounts, planned_options.creds_mounts )
-    if( !copy_mounts.length ) {
-        let command_args
-        try {
-            command_args = build_docker_command_args( planned_options )
-        } catch ( error ) {
-            cleanup_seccomp_profile()
-            throw error
-        }
-
-        return {
-            command: render_command( command_args ),
-            command_args,
-            container_id: null,
-            abort: async () => {
-                cleanup_seccomp_profile()
-            },
-            await_started: async () => true,
-            pull_synced_files: async () => {},
-            retain: async () => {
-                cleanup_seccomp_profile()
-                return null
-            },
-            handoff: cleanup_seccomp_profile,
-        }
-    }
-
     const prefix = docker_command_prefix()
     const [ docker_command, ...docker_prefix_args ] = prefix
     const signal_handlers = new Map()

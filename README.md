@@ -250,8 +250,9 @@ stability. Chrome runs as the non-root `node` user with its sandbox enabled;
 do not add `--no-sandbox` when browsing untrusted pages. Babysit retains
 Docker's syscall allowlist, adding only the `clone` and `unshare` calls Chrome
 needs for user, PID, and network sandbox namespaces. Each launch uses a private,
-short-lived profile path that is deleted after the Docker client consumes it.
-Babysit does not grant the broad `SYS_ADMIN` capability. Docker namespace,
+short-lived profile path; every container is created before tmux starts it, so
+the profile is deleted only after Docker acknowledges it. Babysit does not
+grant the broad `SYS_ADMIN` capability. Docker namespace,
 capability, AppArmor, and seccomp boundaries remain active. The separate legacy
 `chrome-headless-shell` binary is intentionally not bundled.
 

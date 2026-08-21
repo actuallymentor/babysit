@@ -22,7 +22,8 @@ without duplicating browser downloads or weakening Chrome's sandbox.
    scheduled builds bypass stale BuildKit cache; give browser processes ample
    shared memory, allow Chrome's sandbox namespace setup through a minimally
    extended, private launch-scoped Docker seccomp profile without granting
-   `SYS_ADMIN`, and document that `babysit update` pulls this refreshed toolset.
+   `SYS_ADMIN`; require Docker to acknowledge container creation before deleting
+   that profile, and document that `babysit update` pulls this refreshed toolset.
 5. Update user-facing docs, changelog/version metadata, and persistent notes;
    run lint, focused/full tests, a real image build, and an actual page load.
 

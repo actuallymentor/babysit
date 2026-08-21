@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import { get_image_name } from '../src/docker/update.js'
 import {
     CHROME_SECCOMP_SOURCE,
+    CHROME_SECCOMP_SOURCE_SHA256,
     ensure_chrome_seccomp_profile,
 } from '../src/docker/chrome-seccomp.js'
 import {
@@ -150,6 +151,7 @@ describe( `docker image`, () => {
         )
 
         expect( CHROME_SECCOMP_SOURCE ).toBe( `moby/moby@b612274c5489b546ff8b4a4f93f25a0b8952713a` )
+        expect( CHROME_SECCOMP_SOURCE_SHA256 ).toBe( `536529b665dd0972c37bfb569f5d4ac8a53592e7b00752bc39ff063ca9864c74` )
         expect( upstream_digest ).toBe( `afb4934b023cfceaaec1a9d752ca3f801aaa96eb2e59abe6e7ea16976948e080` )
         expect( profile.defaultAction ).toBe( `SCMP_ACT_ERRNO` )
         expect( chrome_rule ).toBeDefined()
