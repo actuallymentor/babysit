@@ -5,7 +5,7 @@
 ### 🐛 Fixed
 - **Codex startup prompts target its stable composer.** Optional banner/footer
   text no longer causes a silent 60-second wait; blocked screens still reject
-  injection and the visible readiness deadline is now 15 seconds.
+  injection and Codex's visible readiness deadline is now 15 seconds.
 - **Startup probes only relevant host CLIs.** The active agent is always
   checked, while non-active agents run only when their CLI exists on host PATH.
 - **Enter skips the entire startup auth decision.** Completed failures and

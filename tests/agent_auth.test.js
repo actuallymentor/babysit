@@ -471,6 +471,19 @@ describe( `host agent auth checks`, () => {
         expect( result.reason ).toBe( `Model does not support tool calls` )
     } )
 
+    it( `does not match authentication words embedded in longer identifiers`, async () => {
+        const result = await run_host_agent_auth_check( get_agent( `codex` ), {
+            prompt: `hello`,
+            spawn_fn: fake_spawn( {
+                code: 1,
+                stderr: `Model mycredentials adapter required a supported tool schema`,
+            } ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `failed` )
+    } )
+
     it( `checks the final non-empty response line for ok`, () => {
         expect( last_nonempty_line( `warning\n\nok\n` ) ).toBe( `ok` )
         expect( answered_ok( `warning\nok\n` ) ).toBe( true )
