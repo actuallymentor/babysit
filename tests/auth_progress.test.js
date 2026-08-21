@@ -249,7 +249,7 @@ describe( `authentication progress`, () => {
     it( `keeps Enter as a batch skip when the final failure just completed`, async () => {
 
         const { input } = fake_tty_input()
-        const { output } = collect_output()
+        const { output, rendered } = collect_output()
         const grace_started = deferred()
         const release_grace = deferred()
         const task = run_auth_checks_with_progress(
@@ -278,6 +278,8 @@ describe( `authentication progress`, () => {
         const batch = await task
         expect( batch.skipped ).toBe( true )
         expect( batch.results[0].status ).toBe( `failed` )
+        expect( rendered() ).toContain( `Authentication checks skipped: opencode skipped` )
+        expect( rendered() ).not.toContain( `Authentication checks skipped: opencode failed` )
 
     } )
 

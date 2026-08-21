@@ -61,8 +61,8 @@ const AUTHENTICATION_FAILURE_PATTERNS = [
     /\b(?:not logged in|login required|please log in|sign in required)\b/i,
     /\bauthentication\s+(?:failed|required)\b/i,
     /\b(?:connect a provider|select auth method|manually enter api key|choose an auth method)\b/i,
-    /\binvalid\s+(?:api\s+key|access\s+token|refresh\s+token|credentials?)\b/i,
-    /\b(?:api\s+key|access\s+token|refresh\s+token|credentials?)\b[^\n]*(?:missing|expired|invalid|required|not found|not configured)/i,
+    /invalid[_\s]+(?:api[_\s]+key|access[_\s]+token|refresh[_\s]+token|credentials?)\b/i,
+    /(?:api[_\s]+key|access[_\s]+token|refresh[_\s]+token|credentials?)\b[^\n]*(?:missing|expired|invalid|required|not found|not configured)/i,
 ]
 
 const is_authentication_failure = output =>
