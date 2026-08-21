@@ -4,6 +4,27 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-08-21 — Bundled Chrome and Puppeteer
+
+Intent: give every coding agent a ready-to-use, multi-arch Puppeteer browser
+without duplicating browser downloads or weakening Chrome's sandbox.
+
+1. Install the latest Google Chrome Stable from Google's signed Debian
+   repository, whose current package indexes were verified for both amd64 and
+   arm64, and expose one stable executable path to Puppeteer.
+2. Install the latest `puppeteer` package in the same global npm layer as Codex
+   and Gemini; set image-wide download/executable configuration so project-local
+   installs also reuse Chrome instead of downloading another browser.
+3. Make the global package resolvable from both CommonJS and ESM workspace
+   scripts, verify commands/imports statically in the Dockerfile, and exercise
+   a real non-root browser launch in native-architecture Docker testing.
+4. Pass an explicit workflow refresh stamp before the browser/agent layers so
+   scheduled builds bypass stale BuildKit cache; give browser processes ample
+   shared memory, allow Chrome's sandbox namespace setup without granting
+   `SYS_ADMIN`, and document that `babysit update` pulls this refreshed toolset.
+5. Update user-facing docs, changelog/version metadata, and persistent notes;
+   run lint, focused/full tests, a real image build, and an actual page load.
+
 ## 2026-08-19 — Active-session flags column
 
 Intent: make each active session's launch mode immediately visible in both

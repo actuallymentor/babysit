@@ -420,7 +420,19 @@ export const build_docker_command_args = ( options ) => {
         : null
 
     // Base docker run flags
-    flags.push( ...get_docker_run_prefix(), `--rm`, `--init` )
+    // Chrome must create its own PID/network/user namespaces before applying
+    // its renderer sandbox. Docker's default seccomp profile blocks that clone
+    // shape unless the much broader SYS_ADMIN capability is granted. Relax the
+    // outer syscall filter instead; Docker namespaces/capability limits remain,
+    // and Puppeteer can keep Chrome's own sandbox enabled.
+    flags.push(
+        ...get_docker_run_prefix(),
+        `--rm`,
+        `--init`,
+        `--shm-size=1g`,
+        `--security-opt`,
+        `seccomp=unconfined`
+    )
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
     // Agent sessions are stateful, interactive workloads. An unattended image

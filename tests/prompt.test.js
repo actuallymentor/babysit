@@ -94,6 +94,8 @@ describe( `build_system_prompt`, () => {
     it( `returns the spec base prompt when no mode flags are set`, () => {
         const prompt = build_system_prompt( {} )
         expect( prompt ).toContain( `running inside a Docker container` )
+        expect( prompt ).toContain( `Google Chrome and Puppeteer are preinstalled` )
+        expect( prompt ).toContain( `without \`--no-sandbox\`` )
         expect( prompt ).toContain( `Do NOT add Co-Authored-By lines` )
     } )
 

@@ -55,5 +55,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ inputs.publish-version-tag && format('actuallymentor/babysit:{0}', steps.version.outputs.version) || 'actuallymentor/babysit:latest' }}
+          build-args: |
+            RUNTIME_REFRESH=${{ github.run_id }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

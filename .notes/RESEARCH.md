@@ -2,6 +2,15 @@
 
 Agent model defaults and container tool pins last verified against primary sources: 2026-08-07.
 
+## Browser automation
+
+- Verified 2026-08-21 against Google Chrome's signed Debian repository and Puppeteer's official package metadata. Google publishes current `google-chrome-stable` packages for both amd64 and arm64, preserving Babysit's multi-architecture image; Puppeteer 25.8.0 requires Node 22.12 or newer.
+- Installing the full `puppeteer` package normally downloads Chrome for Testing and Chrome Headless Shell. Point `PUPPETEER_EXECUTABLE_PATH` at the system Chrome and set `PUPPETEER_SKIP_DOWNLOAD=true` to retain Puppeteer's high-level API without duplicating browser binaries.
+- The globally installed package needs a root-level Node resolution path to support both CommonJS and ESM scripts from arbitrary workspaces. A `/node_modules/puppeteer` link to npm's global package provides that path.
+- Chrome's Linux sandbox works as the non-root image user when Docker's outer seccomp filter is relaxed. The tested runtime uses `seccomp=unconfined` plus a 1 GiB `/dev/shm`; it does not grant `SYS_ADMIN` and does not disable Chrome's own sandbox.
+- The current amd64 image added about 620 MB over the previous published image. Chrome Stable 151.0.7922.173 and Puppeteer 25.8.0 drove a real remote page successfully in the built container.
+- Docker BuildKit can reuse unchanged network-install layers across daily scheduled builds. A per-workflow-run build argument must invalidate Chrome and all later coding-agent/package layers so the rolling image actually refreshes them.
+
 ## Container toolchain
 - Current pinned releases: fd 10.4.2, bat 0.26.1, fzf 0.74.1, yq 4.53.3, scc 3.7.0, just 1.58.0, Bun 1.3.14, and nvm 0.40.6.
 - Both amd64 and arm64 artifact URLs were checked before updating the Dockerfile. Pin scc to a versioned release URL rather than the floating `latest/download` path so builds remain reproducible.
