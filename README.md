@@ -127,8 +127,9 @@ babysit:
 New `babysit.yaml` files include Babysit's default launch prompt here. Existing
 configs that omit it use the generated default prompt. Set it to `null` or `""`
 to disable startup prompt typing. Babysit waits for each supported TUI's real
-composer-ready screen before pasting; a changed or blocked screen times out
-without sending the prompt early.
+composer-ready screen, bracket-pastes the text, lets the paste handler settle,
+then sends Enter exactly once. A changed or blocked screen times out without
+sending the prompt early.
 
 ### `on:` triggers
 

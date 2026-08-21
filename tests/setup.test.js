@@ -325,11 +325,27 @@ describe( `codex_extra_mounts`, () => {
         const content = readFileSync( join( config_mount.host, `config.toml` ), `utf-8` )
         expect( content ).toContain( `[projects."/workspace"]` )
         expect( content ).toContain( `trust_level = "trusted"` )
+        expect( content ).toContain( `check_for_update_on_startup = false` )
         // Each known model gets pre-marked seen so codex doesn't pop the
         // "Try new model" intro on a fresh container.
         for ( const model of CODEX_KNOWN_MODELS_FOR_NUX ) {
             expect( content ).toContain( `"${ model }" = ` )
         }
+
+    } )
+
+    it( `overrides Codex's host update check in the container snapshot`, () => {
+
+        const { tmpdir: codex_home } = build_codex_config_tmpdir(
+            `check_for_update_on_startup = true\n[features]\napps = true\n`
+        )
+        const content = readFileSync( join( codex_home, `config.toml` ), `utf-8` )
+
+        expect( content.match( /^check_for_update_on_startup\s*=.*$/gm ) ).toEqual( [
+            `check_for_update_on_startup = false`,
+        ] )
+
+        rmSync( codex_home, { recursive: true, force: true } )
 
     } )
 

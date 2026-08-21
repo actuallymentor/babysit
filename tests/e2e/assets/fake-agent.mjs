@@ -15,10 +15,15 @@ const session_prefix_by_agent = {
     gemini: `9e1`,
     opencode: `0ce`,
 }
-const ready_banner_by_agent = {
-    claude: `Claude Code v3`,
-    codex: `OpenAI Codex`,
+const startup_banner_by_agent = {
+    claude: `Welcome to Claude Code v3`,
+    codex: `OpenAI Codex\nmodel: loading\ndirectory: loading or /workspace`,
     gemini: `Gemini CLI`,
+    opencode: `OpenCode loading`,
+}
+const composer_ready_by_agent = {
+    claude: `Claude Code v3\n? for shortcuts`,
+    codex: `OpenAI Codex\nmodel: fake\ndirectory: /workspace\n? for shortcuts`,
     opencode: `Ask anything...`,
 }
 const credential_paths = {
@@ -201,12 +206,10 @@ if( is_auth_check ) {
     process.exit( 0 )
 }
 
-console.log( ready_banner_by_agent[ agent_name ] || `${ agent_name } fake agent` )
-console.log( `${ agent_name } fake agent ready` )
+console.log( startup_banner_by_agent[ agent_name ] || `${ agent_name } fake agent` )
+console.log( `${ agent_name } fake agent starting` )
 console.log( `session: ${ session_id }` )
-console.log( `FAKE_AGENT_READY` )
 record( `argv ${ JSON.stringify( agent_args ) }` )
-record( `ready ${ session_id }` )
 assert_all_credentials_present()
 
 if( agent_args.includes( `resume` ) ) {
@@ -219,5 +222,28 @@ const rl = createInterface( {
     terminal: true,
 } )
 
-rl.on( `line`, handle_prompt )
+let composer_ready = !composer_ready_by_agent[ agent_name ]
+
+rl.on( `line`, line => {
+    if( composer_ready ) handle_prompt( line )
+    else record( `startup input ignored ${ JSON.stringify( line ) }` )
+} )
 rl.on( `close`, () => process.exit( 0 ) )
+
+if( composer_ready ) {
+    console.log( `FAKE_AGENT_READY` )
+    record( `ready ${ session_id }` )
+} else {
+    setTimeout( () => {
+        composer_ready = true
+        // Full-screen TUIs repaint startup placeholders instead of retaining
+        // them in the visible pane. Clear the fake splash so blocker checks
+        // exercise the same current-screen semantics.
+        process.stdout.write( `\x1b[2J\x1b[H` )
+        console.log( composer_ready_by_agent[ agent_name ] )
+        console.log( `${ agent_name } fake agent ready` )
+        console.log( `session: ${ session_id }` )
+        console.log( `FAKE_AGENT_READY` )
+        record( `ready ${ session_id }` )
+    }, 350 )
+}

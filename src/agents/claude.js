@@ -2,6 +2,25 @@
  * Claude Code adapter
  * CLI docs: https://code.claude.com/docs/en/cli-reference
  */
+const INITIAL_PROMPT_BLOCKERS = [
+    /Choose the text style/i,
+    /Select (?:a )?login method/i,
+    /Press Enter to continue/i,
+    /Update available/i,
+    /Bypass Permissions mode/i,
+    /Do you trust the files in this folder/i,
+]
+
+const is_initial_prompt_ready = output => {
+
+    const has_composer = /Claude Code v\d/i.test( output )
+        && /\?\s+for shortcuts/i.test( output )
+    const has_startup_blocker = INITIAL_PROMPT_BLOCKERS.some( pattern => pattern.test( output ) )
+
+    return has_composer && !has_startup_blocker
+
+}
+
 export const claude = {
 
     name: `claude`,
@@ -68,11 +87,10 @@ export const claude = {
     // `claude --resume ...` command when it exits.
     session_id_pattern: /(?:claude\s+(?:--resume|-r)\s+|session(?:\s+id)?[:\s]+)([0-9a-f-]{36})/i,
 
-    // Claude is a full-screen TUI. Wait until the welcome screen is visible
-    // before pasting Babysit's launch prompt, otherwise the prompt can land
-    // while Claude is still switching terminal modes and echo into the pane
-    // multiple times before ending up in the composer.
-    initial_prompt_ready_pattern: /Claude Code v\d/,
+    // Claude prints its version on the splash before its composer exists.
+    // First-run/theme/trust screens reuse the splash and consume Enter too.
+    // The shortcuts footer appears only with the interactive composer.
+    initial_prompt_ready: is_initial_prompt_ready,
 
     /**
      * Get extra environment variables for this agent

@@ -795,3 +795,34 @@ targeted mitigations without changing behavior.
    candidates, not as behavior-equivalent assumptions.
 6. Ask an independent coding agent to challenge the plan and diagnosis, then
    rank causes and mitigations by expected impact, safety, and effort.
+
+## 2026-08-21 — Reliable initial-prompt submission
+
+Intent: ensure Codex, Claude, and OpenCode receive `config.initial_prompt`
+exactly once as a submitted message, never as an unsubmitted composer newline.
+
+1. Trace readiness detection, tmux bracketed paste, Enter delivery, startup
+   timing, session logging, and fake/real E2E coverage for all three agents.
+2. Capture current agent versions and real ready screens without reading
+   ignored credentials. Prove whether each readiness marker denotes an active
+   composer, and reproduce the paste-to-submit race repeatedly.
+3. Replace banner-only readiness or immediate post-paste Enter behavior where
+   evidence shows a race. Keep prompts out of Docker command metadata, preserve
+   embedded newlines as one composer value, retry transient pane-capture errors
+   within an absolute deadline, and retain no-prompt-on-resume.
+4. Add deterministic PTY/tmux regression coverage that models asynchronous
+   bracketed-paste processing. Make fake submissions append-only, then assert
+   exact multiline contents, one submission, and no prompt left in the composer.
+5. Run focused tests, full tests, lint, and real user-path launches for Codex,
+   Claude, and OpenCode. Verify native transcript/session state where available,
+   exercise resume suppression for each agent, and check sessions, containers,
+   buffers, and temp files for orphans after success and failure paths.
+6. Update user-facing docs, changelog/version, and persistent notes in line with
+   the verified behavior, then run independent review before and after commit.
+
+Outcome: Claude and Codex now require their usable composer footer and reject
+startup blockers; OpenCode retains its validated composer gate. All automated
+text waits 150 ms after bracketed paste before sending Enter once. A delayed-
+composer Docker/tmux matrix submitted the exact prompt once for every adapter
+without any early input; the unit suite covers transient capture failures and
+the monotonic readiness deadline.

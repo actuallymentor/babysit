@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.30.1 — 2026-08-21
+
+### 🐛 Fixed
+- **Startup prompts reach the active composer exactly once.** Claude and Codex
+  reject splash, loading, update, trust, and onboarding screens; bracketed
+  paste settles before one Enter so Codex cannot turn submit into a newline.
+- **TUI readiness uses a real wall-time bound.** Transient tmux capture errors
+  retry until a monotonic deadline, while exited sessions stop immediately.
+
 ## 0.30.0 — 2026-08-20
 
 ### ✨ Added
