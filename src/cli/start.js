@@ -279,7 +279,9 @@ export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
  */
 export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
     capture = capture_pane,
-    debug = message => log.debug( message ),
+    debug = message => process.env.BABYSIT_DEBUG === `1`
+        ? log.info( message )
+        : log.debug( message ),
     has_session_fn = has_session,
     wait_fn = wait,
     now_fn = monotonic_now,
