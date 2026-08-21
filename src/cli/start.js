@@ -57,7 +57,7 @@ import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
 import { command_exists } from '../utils/exec.js'
 
-const INITIAL_PROMPT_READY_TIMEOUT_MS = 15_000
+const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
 const STARTUP_EXIT_GRACE_MS = 750
 const STARTUP_LOG_TAIL_LINES = 80
@@ -269,6 +269,14 @@ export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
 }
 
 /**
+ * Resolve an adapter-specific startup-composer deadline.
+ * @param {Object} agent - Active agent adapter
+ * @returns {number} Readiness timeout in milliseconds
+ */
+export const resolve_initial_prompt_ready_timeout = ( agent = {} ) =>
+    agent.initial_prompt_ready_timeout_ms || INITIAL_PROMPT_READY_TIMEOUT_MS
+
+/**
  * Wait for the agent TUI to be ready before typing the startup prompt.
  * Agents without a readiness gate are considered ready immediately.
  * @param {string} session_name - Tmux session name
@@ -279,7 +287,7 @@ export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
  * @param {Function} [options.has_session_fn=has_session] - Session liveness helper
  * @param {Function} [options.wait_fn=wait] - Sleep helper
  * @param {Function} [options.now_fn=performance.now] - Monotonic clock helper
- * @param {number} [options.timeout_ms=15000] - Max wait before giving up
+ * @param {number} [options.timeout_ms] - Max wait before giving up
  * @param {number} [options.interval_ms=250] - Poll interval
  * @returns {Promise<boolean>} True when ready, false on timeout
  */
@@ -291,7 +299,7 @@ export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
     has_session_fn = has_session,
     wait_fn = wait,
     now_fn = monotonic_now,
-    timeout_ms = INITIAL_PROMPT_READY_TIMEOUT_MS,
+    timeout_ms = resolve_initial_prompt_ready_timeout( agent ),
     interval_ms = INITIAL_PROMPT_READY_INTERVAL_MS,
 } = {} ) => {
 
@@ -555,6 +563,7 @@ export const check_startup_agent_authentication = async ( agent, {
     cache_path = undefined,
     resolve_image_identity = resolve_auth_image_identity,
     resolve_context_files = resolve_host_auth_context_files,
+    resolve_context_values = resolve_host_auth_context_values,
     run_auth_check = run_host_agent_auth_check,
     agents = SUPPORTED_AGENTS.map( get_agent ).filter( Boolean ),
     is_host_cli_installed = candidate => command_exists( candidate.bin ),
@@ -574,7 +583,7 @@ export const check_startup_agent_authentication = async ( agent, {
     ] ) )
     const context_values = new Map( selected_agents.map( candidate => [
         candidate.name,
-        resolve_host_auth_context_values(
+        resolve_context_values(
             candidate,
             candidate.name === agent.name ? agent_args : [],
             {
@@ -683,9 +692,17 @@ export const check_startup_agent_authentication = async ( agent, {
         // A real probe can rotate OAuth credentials. Fingerprint only after
         // that probe's final credential pull has completed.
         const checked_agent = get_agent( result.name )
+        const verified_context_values = resolve_context_values(
+            checked_agent,
+            checked_agent.name === agent.name ? agent_args : [],
+            {
+                workspace,
+                include_host_preferences: !mode.ignore_host_agents_md,
+            }
+        )
         const identity = fingerprint_agent_credentials( checked_agent, creds_mounts, {
             context_files: context_files.get( checked_agent.name ),
-            context_values: context_values.get( checked_agent.name ),
+            context_values: verified_context_values,
         } )
         const initial_context = credential_identities.get( result.name )?.parts
             ?.filter( part => [ `context`, `value` ].includes( part.kind ) )
@@ -1017,10 +1034,13 @@ export const cmd_start = async ( cmd ) => {
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
 
         if( initial_prompt ) {
-            log.info( `Waiting up to ${ INITIAL_PROMPT_READY_TIMEOUT_MS / 1_000 }s for ${ agent.name } to accept the initial prompt` )
+            const readiness_timeout_ms = resolve_initial_prompt_ready_timeout( agent )
+            log.info( `Waiting up to ${ readiness_timeout_ms / 1_000 }s for ${ agent.name } to accept the initial prompt` )
             const prompt_ready = await time_phase(
                 `tui readiness`,
-                () => wait_for_initial_prompt_ready( session_name, agent )
+                () => wait_for_initial_prompt_ready( session_name, agent, {
+                    timeout_ms: readiness_timeout_ms,
+                } )
             )
             if( prompt_ready ) {
                 log.info( `Sending initial prompt` )

@@ -111,6 +111,9 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
 
         if( /[\r\n]/.test( text ) && !controller.signal.aborted ) {
             skipped = true
+            states.forEach( ( state, name ) => {
+                if( ![ `authenticated`, `cached` ].includes( state ) ) states.set( name, `skipped` )
+            } )
             output.write( animated
                 ? `\r\x1b[2KSkipping authentication checks; cleaning up...\n`
                 : `Skipping authentication checks; cleaning up...\n`

@@ -10,6 +10,7 @@ import {
     is_initial_prompt_ready,
     read_startup_log_tail,
     resolve_initial_prompt,
+    resolve_initial_prompt_ready_timeout,
     select_startup_auth_agents,
     should_confirm_startup_authentication,
     startup_diagnostic_log_path,
@@ -193,6 +194,12 @@ describe( `initial prompt readiness`, () => {
 
     it( `treats agents without a readiness pattern as ready`, () => {
         expect( is_initial_prompt_ready( {}, `` ) ).toBe( true )
+    } )
+
+    it( `keeps the shorter readiness deadline scoped to Codex`, () => {
+        expect( resolve_initial_prompt_ready_timeout( codex ) ).toBe( 15_000 )
+        expect( resolve_initial_prompt_ready_timeout( claude ) ).toBe( 60_000 )
+        expect( resolve_initial_prompt_ready_timeout( opencode ) ).toBe( 60_000 )
     } )
 
     it( `recognises Codex's usable composer screen`, () => {
@@ -888,6 +895,46 @@ describe( `startup authentication policy`, () => {
                 `openai/first`,
                 `anthropic/second`,
             ] )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
+    it( `rejects auth trust when route context changes during the probe`, async () => {
+
+        const fixture = startup_auth_fixture()
+        fixture.input.isTTY = false
+        let context_reads = 0
+
+        try {
+            const result = await check_startup_agent_authentication( codex, {
+                workspace: fixture.directory,
+                mode: {},
+                creds_mounts: fixture.creds_mounts,
+                input: fixture.input,
+                output: fixture.output,
+                cache_path: fixture.cache_path,
+                resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
+                resolve_context_values: () => ( {
+                    route: context_reads++ === 0 ? `before` : `after`,
+                } ),
+                run_auth_check: async () => ( {
+                    name: `codex`,
+                    status: `authenticated`,
+                    authenticated: true,
+                } ),
+                agents: [ codex ],
+            } )
+
+            expect( context_reads ).toBe( 2 )
+            expect( result.results[0] ).toMatchObject( {
+                status: `failed`,
+                authenticated: false,
+                reason: `authentication context changed during the check`,
+            } )
+            expect( result.cache_context ).toBeNull()
         } finally {
             fixture.cleanup()
         }

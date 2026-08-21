@@ -127,6 +127,7 @@ export const codex = {
     // dialogs keep that composer behind them and consume Enter themselves, so
     // reject every known startup blocker before typing.
     initial_prompt_ready: is_initial_prompt_ready,
+    initial_prompt_ready_timeout_ms: 15_000,
 
     /**
      * Keep Codex's newer SQLite-backed state under CODEX_HOME too. The

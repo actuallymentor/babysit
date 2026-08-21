@@ -439,6 +439,20 @@ describe( `host agent auth checks`, () => {
         expect( result.reason ).toBe( `Connect a provider` )
     } )
 
+    it( `classifies missing underscored API-key environment variables as unauthenticated`, async () => {
+        const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
+            prompt: `hello`,
+            spawn_fn: fake_spawn( {
+                code: 1,
+                stderr: `GEMINI_API_KEY environment variable not found`,
+            } ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `unauthenticated` )
+        expect( result.authenticated ).toBe( false )
+    } )
+
     it( `reports model and tool errors as probe failures, not missing login`, async () => {
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
             prepare_launch: async () => ( {
