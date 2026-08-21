@@ -485,7 +485,11 @@ describe( `prepared Docker launch`, () => {
                 if( args.includes( `create` ) ) return CONTAINER_ID
                 if( args.includes( `inspect` ) ) {
                     inspections += 1
-                    if( inspections === 1 ) throw new Error( `daemon busy` )
+                    if( inspections === 1 ) {
+                        const error = new Error( `docker inspect timed out` )
+                        error.code = `ETIMEDOUT`
+                        throw error
+                    }
                     return `running`
                 }
                 return ``
@@ -494,6 +498,28 @@ describe( `prepared Docker launch`, () => {
 
         expect( await launch.await_started( { timeout_ms: 1_000, poll_ms: 1 } ) ).toBe( true )
         expect( inspections ).toBe( 2 )
+        await launch.abort()
+
+    } )
+
+    it( `fails immediately on hard Docker inspection errors`, async () => {
+
+        const { mount } = private_transport()
+        let inspections = 0
+        const launch = await prepare_docker_launch( make_options( mount ), {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `inspect` ) ) {
+                    inspections += 1
+                    throw new Error( `No such container` )
+                }
+                return ``
+            },
+        } )
+
+        expect( await launch.await_started( { timeout_ms: 1_000, poll_ms: 1 } ) ).toBe( false )
+        expect( inspections ).toBe( 1 )
         await launch.abort()
 
     } )

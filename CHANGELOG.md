@@ -19,7 +19,8 @@
 - **Slow auth recovery cannot lose lease ownership.** Live launches remain
   serialized through credential pull/removal, while abandoned state recovers.
 - **Loaded Docker daemons retain warm auth results.** Image inspection gets a
-  realistic bound, and transient container-start inspection failures retry.
+  realistic bound, and transient container-start inspection timeouts retry
+  without delaying hard Docker failures.
 
 ### Changed
 - **Non-interactive startup now verifies cache misses and fails closed.** It no
