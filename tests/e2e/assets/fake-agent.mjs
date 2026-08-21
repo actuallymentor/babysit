@@ -23,7 +23,7 @@ const startup_banner_by_agent = {
 }
 const composer_ready_by_agent = {
     claude: `Claude Code v3\n? for shortcuts`,
-    codex: `OpenAI Codex\nmodel: fake\ndirectory: /workspace\n? for shortcuts`,
+    codex: `OpenAI Codex\nmodel: fake\ndirectory: /workspace\n› Ask Codex to do anything`,
     opencode: `Ask anything...`,
 }
 const credential_paths = {

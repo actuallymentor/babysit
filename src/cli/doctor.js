@@ -2,6 +2,7 @@ import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import {
     check_host_agent_authentication,
     resolve_host_auth_context_files,
+    resolve_host_auth_context_values,
     run_host_agent_auth_check,
 } from '../agents/auth.js'
 import {
@@ -97,6 +98,7 @@ export const cmd_doctor = async ( cmd, {
             agent.name,
             fingerprint_agent_credentials( agent, creds_mounts, {
                 context_files: context_files.get( agent.name ),
+                context_values: resolve_host_auth_context_values( agent, [], { workspace } ),
             } ),
         ] ) )
         const cached_results = []
@@ -122,7 +124,7 @@ export const cmd_doctor = async ( cmd, {
             }
         }
 
-        const checked_results = agents_to_check.length
+        const checked_batch = agents_to_check.length
             ? await run_auth_checks_with_progress( agents_to_check, ( { signal, on_state } ) =>
                 check_host_agent_authentication( {
                     agents: agents_to_check,
@@ -165,7 +167,8 @@ export const cmd_doctor = async ( cmd, {
                 output,
                 allow_skip: false,
             } )
-            : []
+            : { results: [], skipped: false }
+        const checked_results = checked_batch.results
 
         for( const result of checked_results ) {
             if( result.status !== `authenticated` ) {
@@ -182,10 +185,12 @@ export const cmd_doctor = async ( cmd, {
             const agent = get_agent( result.name )
             const identity = fingerprint_agent_credentials( agent, creds_mounts, {
                 context_files: context_files.get( agent.name ),
+                context_values: resolve_host_auth_context_values( agent, [], { workspace } ),
             } )
             const initial_context = identities.get( result.name )?.parts
-                ?.filter( part => part.kind === `context` )
-            const verified_context = identity?.parts.filter( part => part.kind === `context` )
+                ?.filter( part => [ `context`, `value` ].includes( part.kind ) )
+            const verified_context = identity?.parts
+                .filter( part => [ `context`, `value` ].includes( part.kind ) )
             if( JSON.stringify( initial_context ) !== JSON.stringify( verified_context ) ) {
                 result.status = `failed`
                 result.authenticated = false

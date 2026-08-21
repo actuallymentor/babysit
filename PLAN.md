@@ -881,3 +881,31 @@ Policy decisions from independent review:
 - Keep isolated per-agent probe containers in this patch. A shared multi-exec
   container could reduce Docker floor further, but changes entrypoint/config
   semantics enough to require separate measurement and design.
+
+## 2026-08-21 — Startup regression corrections
+
+Intent: remove the prompt/auth regressions introduced by v0.30.1–v0.31.0 while
+keeping model-backed verification and credential recovery intact.
+
+1. Replace Codex's optional banner/footer readiness conjunction with its stable
+   empty-composer marker plus existing startup blockers. Cover footer-collapsed,
+   banner-scrolled, loading, and blocker screens; audit Claude's equivalent gate
+   without broadening this fix beyond evidence.
+2. Select startup auth agents as the active frontend plus non-active supported
+   CLIs that resolve on the host PATH. Keep active-first ordering, injectable
+   detection, cache behavior, and `doctor --auth all` semantics.
+3. Make an Enter skip apply to the entire startup auth decision: cancel pending
+   probes safely, finish credential recovery, surface the batch-level skip to
+   startup, and continue without a second `Exit? [Y/n]` prompt caused by
+   failures that completed before Enter.
+4. Give OpenCode probes the same effective model as the real session, including
+   `--model` passthrough and the `openai/gpt-5.6-sol` adapter default. Add only
+   a generated tool-free auth agent, fingerprint the effective model for cache
+   invalidation, and distinguish credential failures from generic probe/model
+   failures in user-facing diagnostics. Do not import a host config that the
+   real session itself does not stage.
+5. Add focused unit/integration coverage, real Docker/tmux user-path checks for
+   Codex prompt delivery and OpenCode probe command/output, and orphan cleanup
+   assertions. Update docs, changelog, version, and persistent notes.
+6. Run lint, focused tests, full tests, E2E, build, reflect/style review, and an
+   independent post-commit review. Release target: v0.31.1.

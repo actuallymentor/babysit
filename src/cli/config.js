@@ -78,7 +78,7 @@ export const cmd_config = async ( cmd, {
     }
 
     output.write( `\nbabysit config\n\n` )
-    output.write( `Startup authentication: all supported agents, with concurrent misses and a 12-hour auth-input-bound success cache\n` )
+    output.write( `Startup authentication: active agent plus supported host-installed CLIs, with concurrent misses and a 12-hour auth-input-bound success cache\n` )
     output.write( `Explicit checks: babysit doctor --auth [agent|all]\n` )
     output.write(
         `Legacy authentication selection: ${ format_auth_check_agents( current_config.auth_check_agents ) } (deprecated and ignored)\n`

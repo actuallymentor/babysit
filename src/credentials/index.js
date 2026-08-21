@@ -14,6 +14,7 @@ const EPHEMERAL_CREDENTIAL_PREFIXES = [
     `babysit-gh-credentials.env-`,
     `babysit-credentials-env-`,
     `babysit-creds-`,
+    `babysit-opencode-`,
 ]
 const STALE_EPHEMERAL_CREDENTIAL_AGE_MS = 60 * 60 * 1_000
 

@@ -15,15 +15,18 @@ import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
     docker_auth_check_container_name,
+    failed_agent_names,
     format_host_auth_status_message,
     format_utc_timestamp,
     last_nonempty_line,
     resolve_host_auth_context_files,
+    resolve_host_auth_context_values,
     run_host_agent_auth_check,
     select_host_auth_check_agents,
     should_continue_with_unauthenticated_agents,
     unauthenticated_agent_names,
 } from '../src/agents/auth.js'
+import { OPENCODE_DEFAULT_MODEL, resolve_opencode_model } from '../src/agents/opencode.js'
 
 const fake_spawn = ( { code = 0, stdout = `ok\n`, stderr = `` } = {}, on_spawn = () => {} ) => (
     cmd,
@@ -122,7 +125,63 @@ describe( `host agent auth checks`, () => {
         expect( build_host_auth_args( get_agent( `gemini` ), prompt ) )
             .toEqual( [ `--skip-trust`, `-p`, prompt ] )
         expect( build_host_auth_args( get_agent( `opencode` ), prompt ) )
-            .toEqual( [ `run`, prompt ] )
+            .toEqual( [
+                `run`,
+                `--model`, OPENCODE_DEFAULT_MODEL,
+                `--agent`, `babysit-auth`,
+                prompt,
+            ] )
+    } )
+
+    it( `pins OpenCode probes to the effective passthrough model`, () => {
+        const args = [ `--model`, `anthropic/first`, `-m=openai/second` ]
+
+        expect( resolve_opencode_model( args ) ).toBe( `openai/second` )
+        expect( resolve_opencode_model( [ `--model=google/gemini-pro` ] ) )
+            .toBe( `google/gemini-pro` )
+        expect( resolve_opencode_model() ).toBe( OPENCODE_DEFAULT_MODEL )
+        expect( build_host_auth_args( get_agent( `opencode` ), `hello`, { agent_args: args } ) )
+            .toEqual( [
+                `run`,
+                `--model`, `openai/second`,
+                `--agent`, `babysit-auth`,
+                `hello`,
+            ] )
+        expect( resolve_host_auth_context_values( get_agent( `opencode` ), args ) ).toEqual( {
+            model: `openai/second`,
+            profile: `tool-free-v1`,
+            route: `{}`,
+        } )
+    } )
+
+    it( `pins OpenCode probes to the generated config profile`, async () => {
+        let launch_options
+
+        await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prompt: `hello`,
+            prepare_launch: async options => {
+                launch_options = options
+                return {
+                    command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                    pull_synced_files: async () => {},
+                    abort: async () => {},
+                }
+            },
+            spawn_fn: fake_spawn(),
+            timeout_ms: 1_000,
+        } )
+
+        expect( launch_options.agent_command ).toEqual( [
+            `env`,
+            `-u`, `OPENCODE_CONFIG`,
+            `-u`, `OPENCODE_CONFIG_CONTENT`,
+            `OPENCODE_CONFIG_DIR=/home/node/.config/opencode`,
+            `opencode`,
+            `run`,
+            `--model`, OPENCODE_DEFAULT_MODEL,
+            `--agent`, `babysit-auth`,
+            `hello`,
+        ] )
     } )
 
     it( `builds auth checks against the Babysit Docker image`, () => {
@@ -344,7 +403,7 @@ describe( `host agent auth checks`, () => {
         } )
 
         expect( result.authenticated ).toBe( false )
-        expect( result.status ).toBe( `unauthenticated` )
+        expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `docker copy unavailable` )
         expect( calls ).toEqual( [
             [ `pull` ],
@@ -361,7 +420,41 @@ describe( `host agent auth checks`, () => {
         } )
 
         expect( result.authenticated ).toBe( false )
+        expect( result.status ).toBe( `unauthenticated` )
         expect( result.reason ).toBe( `choose an auth method` )
+    } )
+
+    it( `classifies OpenCode's provider picker as unauthenticated`, async () => {
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-auth-picker-test` ],
+                pull_synced_files: async () => {},
+                abort: async () => {},
+            } ),
+            spawn_fn: fake_spawn( { code: 1, stderr: `Connect a provider` } ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `unauthenticated` )
+        expect( result.reason ).toBe( `Connect a provider` )
+    } )
+
+    it( `reports model and tool errors as probe failures, not missing login`, async () => {
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-model-test` ],
+                pull_synced_files: async () => {},
+                abort: async () => {},
+            } ),
+            spawn_fn: fake_spawn( {
+                code: 1,
+                stderr: `Model does not support tool calls`,
+            } ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `failed` )
+        expect( result.reason ).toBe( `Model does not support tool calls` )
     } )
 
     it( `checks the final non-empty response line for ok`, () => {
@@ -513,6 +606,11 @@ describe( `host agent auth checks`, () => {
         const signals = []
         const cleanups = []
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-timeout-test` ],
+                pull_synced_files: async () => {},
+                abort: async () => {},
+            } ),
             spawn_fn: fake_hanging_spawn( signal => signals.push( signal ) ),
             cleanup_spawn_fn: ( cmd, args, options ) => {
                 const child = new EventEmitter()
@@ -540,6 +638,11 @@ describe( `host agent auth checks`, () => {
     it( `does not escalate to SIGKILL when the child exits after SIGTERM`, async () => {
         const signals = []
         const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `run`, `--rm`, `--name`, `babysit-opencode-sigterm-test` ],
+                pull_synced_files: async () => {},
+                abort: async () => {},
+            } ),
             spawn_fn: fake_sigterm_exit_spawn( signal => signals.push( signal ) ),
             timeout_ms: 1,
             kill_grace_ms: 20,
@@ -620,7 +723,11 @@ describe( `host agent auth checks`, () => {
             { name: `legacy`, authenticated: false },
         ] )
 
-        expect( names ).toEqual( [ `gemini`, `opencode`, `legacy` ] )
+        expect( names ).toEqual( [ `gemini`, `legacy` ] )
+        expect( failed_agent_names( [
+            { name: `gemini`, status: `unauthenticated` },
+            { name: `opencode`, status: `failed` },
+        ] ) ).toEqual( [ `opencode` ] )
     } )
 
     it( `defaults the unauthenticated prompt to exit unless the user says no`, () => {
@@ -652,6 +759,26 @@ describe( `host agent auth checks`, () => {
                 `Exit? [Y/n] `,
             ].join( `\n` )
         )
+    } )
+
+    it( `separates probe failures from unauthenticated agents`, async () => {
+        const input = new PassThrough()
+        const output = new PassThrough()
+        let rendered = ``
+
+        input.isTTY = true
+        output.on( `data`, chunk => rendered += chunk.toString() )
+
+        const answer = confirm_continue_with_unauthenticated_agents( [ `claude` ], {
+            input,
+            output,
+            failed_names: [ `opencode` ],
+        } )
+        queueMicrotask( () => input.write( `n\n` ) )
+
+        await expect( answer ).resolves.toBe( true )
+        expect( rendered ).toContain( `Unauthenticated agents: claude.` )
+        expect( rendered ).toContain( `Authentication checks failed: opencode.` )
     } )
 
     it( `defaults to exit instead of hanging when stdin is not a TTY`, async () => {

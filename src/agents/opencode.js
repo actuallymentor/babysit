@@ -2,6 +2,29 @@
  * OpenCode adapter
  * CLI docs: https://opencode.ai/docs/cli/
  */
+import { resolve_opencode_route_config } from './opencode_config.js'
+
+export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
+export const OPENCODE_AUTH_AGENT = `babysit-auth`
+export const OPENCODE_AUTH_PROFILE_VERSION = `tool-free-v1`
+
+/**
+ * Resolve OpenCode's effective model from Babysit passthrough arguments.
+ * OpenCode accepts long/short and separate/equals forms; the last flag wins.
+ *
+ * @param {string[]} agent_args - Arguments passed through to OpenCode
+ * @returns {string} Effective provider/model slug
+ */
+export const resolve_opencode_model = ( agent_args = [] ) => agent_args.reduce(
+    ( model, argument, index ) => {
+        if( [ `--model`, `-m` ].includes( argument ) ) return agent_args[ index + 1 ] || model
+
+        const inline_model = argument.match( /^(?:--model|-m)=(.+)$/ )?.[1]
+        return inline_model || model
+    },
+    OPENCODE_DEFAULT_MODEL
+)
+
 export const opencode = {
 
     name: `opencode`,
@@ -45,14 +68,33 @@ export const opencode = {
     },
 
     auth_check: {
-        args: prompt => [ `run`, prompt ],
+        // .babysitrc is sourced by the entrypoint after Docker env flags. Pin
+        // only the config directory at exec time so the generated tool-free
+        // agent cannot be bypassed while provider/token env remains available.
+        command_prefix: [
+            `env`,
+            `-u`, `OPENCODE_CONFIG`,
+            `-u`, `OPENCODE_CONFIG_CONTENT`,
+            `OPENCODE_CONFIG_DIR=/home/node/.config/opencode`,
+        ],
+        args: ( prompt, { agent_args = [] } = {} ) => [
+            `run`,
+            `--model`, resolve_opencode_model( agent_args ),
+            `--agent`, OPENCODE_AUTH_AGENT,
+            prompt,
+        ],
+        cache_context: ( agent_args = [], options = {} ) => ( {
+            model: resolve_opencode_model( agent_args ),
+            profile: OPENCODE_AUTH_PROFILE_VERSION,
+            route: JSON.stringify( resolve_opencode_route_config( options ) ),
+        } ),
     },
 
     // Keep OpenCode on a concrete model from its current OpenAI catalog rather
     // than inheriting a provider-dependent built-in. Non-OpenAI providers override
     // via `babysit opencode --model anthropic/claude-opus-4-7`.
     defaults: {
-        model: `openai/gpt-5.6-sol`,
+        model: OPENCODE_DEFAULT_MODEL,
     },
 
     // OpenCode session ids are commonly `ses_...`, not UUIDs. Capture its

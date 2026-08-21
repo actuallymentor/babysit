@@ -118,11 +118,14 @@ describe( `authentication progress`, () => {
         expect( settled ).toBe( false )
 
         cleanup.resolve()
-        await expect( task ).resolves.toEqual( [ {
-            name: `codex`,
-            status: `skipped`,
-            authenticated: false,
-        } ] )
+        await expect( task ).resolves.toEqual( {
+            results: [ {
+                name: `codex`,
+                status: `skipped`,
+                authenticated: false,
+            } ],
+            skipped: true,
+        } )
 
         expect( raw_modes ).toEqual( [ true, false ] )
         expect( input.listenerCount( `data` ) ).toBe( 0 )
@@ -184,7 +187,7 @@ describe( `authentication progress`, () => {
             throw new Error( `unexpected raw mode` )
         }
 
-        const results = await run_auth_checks_with_progress(
+        const batch = await run_auth_checks_with_progress(
             [ { name: `codex` } ],
             async () => [ { name: `codex`, status: `authenticated`, authenticated: true } ],
             {
@@ -198,10 +201,83 @@ describe( `authentication progress`, () => {
             }
         )
 
-        expect( results[0].status ).toBe( `authenticated` )
+        expect( batch.results[0].status ).toBe( `authenticated` )
+        expect( batch.skipped ).toBe( false )
         expect( input.listenerCount( `data` ) ).toBe( 0 )
         expect( rendered() ).not.toContain( `press Enter to skip` )
         expect( rendered() ).not.toContain( `\x1b` )
+
+    } )
+
+    it( `keeps completed failures but marks the whole decision skipped`, async () => {
+
+        const { input } = fake_tty_input()
+        const { output, rendered } = collect_output()
+        const failure_complete = deferred()
+        const pending_cleanup = deferred()
+
+        const task = run_auth_checks_with_progress(
+            [ { name: `opencode` }, { name: `codex` } ],
+            async ( { signal, on_state } ) => {
+                on_state( `opencode`, `failed` )
+                failure_complete.resolve()
+                await new Promise( resolve_abort => signal.addEventListener( `abort`, resolve_abort, { once: true } ) )
+                on_state( `codex`, `recovering credentials` )
+                await pending_cleanup.promise
+                return [
+                    { name: `opencode`, status: `failed`, authenticated: false },
+                    { name: `codex`, status: `skipped`, authenticated: false },
+                ]
+            },
+            { input, output, env: { TERM: `dumb` }, now: () => 1_000 }
+        )
+
+        await failure_complete.promise
+        input.write( `\n` )
+        await new Promise( resolve => setImmediate( resolve ) )
+        pending_cleanup.resolve()
+
+        const batch = await task
+        expect( batch.skipped ).toBe( true )
+        expect( batch.results.map( result => result.status ) ).toEqual( [ `failed`, `skipped` ] )
+        expect( rendered() ).toContain( `Authentication checks skipped` )
+        expect( rendered() ).toContain( `opencode skipped, codex skipped` )
+        expect( rendered() ).not.toContain( `Authentication checks skipped: opencode failed` )
+
+    } )
+
+    it( `keeps Enter as a batch skip when the final failure just completed`, async () => {
+
+        const { input } = fake_tty_input()
+        const { output } = collect_output()
+        const grace_started = deferred()
+        const release_grace = deferred()
+        const task = run_auth_checks_with_progress(
+            [ { name: `opencode` } ],
+            async () => [ {
+                name: `opencode`,
+                status: `failed`,
+                authenticated: false,
+            } ],
+            {
+                input,
+                output,
+                env: { TERM: `dumb` },
+                now: () => 1_000,
+                wait_fn: async milliseconds => {
+                    grace_started.resolve( milliseconds )
+                    await release_grace.promise
+                },
+            }
+        )
+
+        expect( await grace_started.promise ).toBe( 150 )
+        input.write( `\n` )
+        release_grace.resolve()
+
+        const batch = await task
+        expect( batch.skipped ).toBe( true )
+        expect( batch.results[0].status ).toBe( `failed` )
 
     } )
 

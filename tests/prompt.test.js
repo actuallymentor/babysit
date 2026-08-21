@@ -10,6 +10,8 @@ import {
     is_initial_prompt_ready,
     read_startup_log_tail,
     resolve_initial_prompt,
+    select_startup_auth_agents,
+    should_confirm_startup_authentication,
     startup_diagnostic_log_path,
     wait_for_initial_prompt_ready,
 } from '../src/cli/start.js'
@@ -40,6 +42,15 @@ const make_clock = () => {
 
 }
 
+const deferred = () => {
+    let resolve
+    const promise = new Promise( resolve_promise => {
+        resolve = resolve_promise
+    } )
+
+    return { promise, resolve }
+}
+
 const startup_auth_fixture = () => {
 
     const directory = mkdtempSync( join( tmpdir(), `babysit-startup-auth-` ) )
@@ -68,6 +79,7 @@ const startup_auth_fixture = () => {
         cache_path,
         cleanup: () => rmSync( directory, { recursive: true, force: true } ),
         credential_path,
+        directory,
         creds_mounts,
         input,
         output,
@@ -194,6 +206,23 @@ directory: /workspace
         expect( is_initial_prompt_ready( codex, output ) ).toBe( true )
     } )
 
+    it( `recognises Codex when its optional footer is collapsed`, () => {
+        expect( is_initial_prompt_ready( codex, `
+OpenAI Codex
+model: gpt-5.6-sol
+directory: /workspace
+› Ask Codex to do anything
+` ) ).toBe( true )
+    } )
+
+    it( `recognises Codex when its banner has scrolled away`, () => {
+        expect( is_initial_prompt_ready( codex, `
+model: gpt-5.6-sol
+directory: /workspace
+› Ask Codex to do anything
+` ) ).toBe( true )
+    } )
+
     it( `rejects Codex's provisional composer while startup is loading`, () => {
         const output = `
 >_ OpenAI Codex (v0.148.0)
@@ -205,6 +234,22 @@ directory: loading or /workspace
         expect( is_initial_prompt_ready( codex, output ) ).toBe( false )
     } )
 
+    it( `rejects Codex while only its model is loading`, () => {
+        expect( is_initial_prompt_ready( codex, `
+model: loading
+directory: /workspace
+› Ask Codex to do anything
+` ) ).toBe( false )
+    } )
+
+    it( `rejects Codex while only its directory is loading`, () => {
+        expect( is_initial_prompt_ready( codex, `
+model: gpt-5.6-sol
+directory: loading
+› Ask Codex to do anything
+` ) ).toBe( false )
+    } )
+
     it( `does not treat Codex's bare banner as a ready composer`, () => {
         expect( is_initial_prompt_ready( codex, `>_ OpenAI Codex (v0.148.0)` ) ).toBe( false )
     } )
@@ -213,11 +258,27 @@ directory: loading or /workspace
         const output = `
 >_ OpenAI Codex (v0.148.0)
 ? for shortcuts
+› Ask Codex to do anything
 Update available! 0.148.0 -> 0.149.0
 Press enter to continue
 `
         expect( is_initial_prompt_ready( codex, output ) ).toBe( false )
     } )
+
+    for( const blocker of [
+        `Do you trust the contents of this directory`,
+        `Choose an approval mode`,
+        `Sign in to Codex`,
+    ] ) {
+        it( `rejects Codex blocker: ${ blocker }`, () => {
+            expect( is_initial_prompt_ready( codex, `
+model: gpt-5.6-sol
+directory: /workspace
+› Ask Codex to do anything
+${ blocker }
+` ) ).toBe( false )
+        } )
+    }
 
     it( `recognises Claude's usable composer screen`, () => {
         const output = `
@@ -304,7 +365,7 @@ Do NOT add Co-Authored-By lines to git commit messages.
         const captures = [
             `starting`,
             `still starting`,
-            `OpenAI Codex\nmodel: ready\n? for shortcuts`,
+            `OpenAI Codex\nmodel: ready\n› Ask Codex to do anything`,
         ]
         const clock = make_clock()
 
@@ -476,7 +537,42 @@ describe( `startup diagnostics`, () => {
 
 describe( `startup authentication policy`, () => {
 
-    it( `checks every supported agent and scopes each probe to its own credentials`, async () => {
+    it( `keeps the active agent first and includes only installed host CLIs`, () => {
+
+        const checked_bins = []
+        const selected = select_startup_auth_agents( codex, {
+            candidates: [ claude, codex, opencode, claude ],
+            is_installed: candidate => {
+                checked_bins.push( candidate.bin )
+                return candidate.name !== `opencode`
+            },
+        } )
+
+        expect( selected.map( agent => agent.name ) ).toEqual( [ `codex`, `claude` ] )
+        expect( checked_bins ).toEqual( [ `claude`, `opencode` ] )
+
+    } )
+
+    it( `checks the active image agent without requiring a host binary`, () => {
+        const selected = select_startup_auth_agents( codex, {
+            candidates: [ codex ],
+            is_installed: () => { throw new Error( `active agent must not be detected` ) },
+        } )
+
+        expect( selected ).toEqual( [ codex ] )
+    } )
+
+    it( `suppresses the exit prompt after the user skips the auth batch`, () => {
+        const mixed_results = [
+            { name: `opencode`, status: `failed`, authenticated: false },
+            { name: `codex`, status: `skipped`, authenticated: false },
+        ]
+
+        expect( should_confirm_startup_authentication( mixed_results, true ) ).toBe( false )
+        expect( should_confirm_startup_authentication( mixed_results, false ) ).toBe( true )
+    } )
+
+    it( `checks the active agent and installed host CLIs with scoped credentials`, async () => {
 
         const fixture = startup_auth_fixture()
         const checked_agents = []
@@ -504,11 +600,13 @@ describe( `startup authentication policy`, () => {
                         authenticated: true,
                     }
                 },
+                is_host_cli_installed: () => true,
                 reconcile_credentials: async name => reconciled_agents.push( name ),
             } )
 
-            expect( checked_agents ).toEqual( SUPPORTED_AGENTS )
-            expect( reconciled_agents ).toEqual( SUPPORTED_AGENTS )
+            const active_first_agents = [ `codex`, ...SUPPORTED_AGENTS.filter( name => name !== `codex` ) ]
+            expect( checked_agents ).toEqual( active_first_agents )
+            expect( reconciled_agents ).toEqual( active_first_agents )
             expect( result.results.every( item => item.status === `authenticated` ) ).toBe( true )
             expect( result.cache_context.image_identity ).toBe( `sha256:test-image` )
             expect( Object.keys( result.cache_contexts ) ).toEqual( [ `codex` ] )
@@ -561,6 +659,58 @@ describe( `startup authentication policy`, () => {
 
     } )
 
+    it( `ignores warm auth state for an uninstalled non-active CLI`, async () => {
+
+        const fixture = startup_auth_fixture()
+        const opencode_mount = {
+            type: `synced_file`,
+            source: fixture.credential_path,
+            target: opencode.container_paths.creds,
+        }
+        const creds_mounts = [ ...fixture.creds_mounts, opencode_mount ]
+        const opencode_identity = fingerprint_agent_credentials( opencode, creds_mounts, {
+            context_values: opencode.auth_check.cache_context( [], {
+                workspace: `/tmp/project`,
+            } ),
+        } )
+        const resolved_context = []
+        const checked = []
+
+        try {
+            record_host_auth_success( `opencode`, {
+                credential_fingerprint: opencode_identity.fingerprint,
+                image_identity: `sha256:test-image`,
+            }, { cache_path: fixture.cache_path } )
+
+            const result = await check_startup_agent_authentication( codex, {
+                workspace: `/tmp/project`,
+                mode: {},
+                creds_mounts,
+                input: fixture.input,
+                output: fixture.output,
+                cache_path: fixture.cache_path,
+                resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: ( _, { agent } ) => {
+                    resolved_context.push( agent.name )
+                    return {}
+                },
+                run_auth_check: async agent => {
+                    checked.push( agent.name )
+                    return { name: agent.name, status: `authenticated`, authenticated: true }
+                },
+                agents: [ codex, opencode ],
+                is_host_cli_installed: agent => agent.name !== `opencode`,
+            } )
+
+            expect( result.results.map( item => item.name ) ).toEqual( [ `codex` ] )
+            expect( resolved_context ).toEqual( [ `codex` ] )
+            expect( checked ).toEqual( [ `codex` ] )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
     it( `probes only misses while preserving agent order and one image lookup`, async () => {
 
         const fixture = startup_auth_fixture()
@@ -596,13 +746,14 @@ describe( `startup authentication policy`, () => {
                     }
                 },
                 agents,
+                is_host_cli_installed: () => true,
             } )
 
             expect( image_lookups ).toBe( 1 )
             expect( probed ).toEqual( [ `claude` ] )
             expect( result.results.map( item => `${ item.name }:${ item.status }` ) ).toEqual( [
-                `claude:authenticated`,
                 `codex:cached`,
+                `claude:authenticated`,
             ] )
         } finally {
             fixture.cleanup()
@@ -685,6 +836,112 @@ describe( `startup authentication policy`, () => {
             expect( result.cache_context ).toBeNull()
             expect( read_host_auth_cache( { cache_path: fixture.cache_path } ).agents )
                 .toEqual( {} )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
+    it( `invalidates OpenCode auth trust when its effective model changes`, async () => {
+
+        const fixture = startup_auth_fixture()
+        fixture.input.isTTY = false
+        const observed_models = []
+        const route_path = join( fixture.directory, `opencode.json` )
+        const opencode_creds_mounts = [ {
+            type: `synced_file`,
+            source: fixture.credential_path,
+            target: opencode.container_paths.creds,
+        } ]
+
+        const check = agent_args => check_startup_agent_authentication( opencode, {
+            workspace: fixture.directory,
+            mode: {},
+            creds_mounts: opencode_creds_mounts,
+            input: fixture.input,
+            output: fixture.output,
+            cache_path: fixture.cache_path,
+            resolve_image_identity: async () => `sha256:test-image`,
+            resolve_context_files: () => ( {} ),
+            run_auth_check: async ( agent, options ) => {
+                observed_models.push( options.agent_args.at( -1 ) )
+                return {
+                    name: agent.name,
+                    status: `authenticated`,
+                    authenticated: true,
+                }
+            },
+            agents: [ opencode ],
+            agent_args,
+        } )
+
+        try {
+            writeFileSync( route_path, `{ "provider": { "custom": { "options": { "baseURL": "https://first.example" } } } }` )
+            await check( [ `--model`, `openai/first` ] )
+            await check( [ `--model`, `openai/first` ] )
+            writeFileSync( route_path, `{ "provider": { "custom": { "options": { "baseURL": "https://changed.example" } } } }` )
+            await check( [ `--model`, `openai/first` ] )
+            await check( [ `--model`, `anthropic/second` ] )
+
+            expect( observed_models ).toEqual( [
+                `openai/first`,
+                `openai/first`,
+                `anthropic/second`,
+            ] )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
+    it( `returns a batch skip even when another startup probe already failed`, async () => {
+
+        const fixture = startup_auth_fixture()
+        const opencode_failed = deferred()
+        const task = check_startup_agent_authentication( codex, {
+            workspace: `/tmp/project`,
+            mode: {},
+            creds_mounts: fixture.creds_mounts,
+            input: fixture.input,
+            output: fixture.output,
+            cache_path: fixture.cache_path,
+            resolve_image_identity: async () => `sha256:test-image`,
+            resolve_context_files: () => ( {} ),
+            agents: [ codex, opencode ],
+            is_host_cli_installed: () => true,
+            run_auth_check: async ( agent, { signal } ) => {
+                if( agent.name === `opencode` ) {
+                    opencode_failed.resolve()
+                    return {
+                        name: agent.name,
+                        status: `failed`,
+                        authenticated: false,
+                        reason: `model rejected tool schema`,
+                    }
+                }
+
+                await new Promise( resolve_abort => signal.addEventListener( `abort`, resolve_abort, { once: true } ) )
+                return {
+                    name: agent.name,
+                    status: `skipped`,
+                    authenticated: false,
+                    reason: `skipped by user`,
+                }
+            },
+        } )
+
+        try {
+            await opencode_failed.promise
+            fixture.input.write( `\n` )
+
+            const result = await task
+            expect( result.skipped ).toBe( true )
+            expect( result.results.map( item => `${ item.name }:${ item.status }` ) ).toEqual( [
+                `codex:skipped`,
+                `opencode:failed`,
+            ] )
+            expect( should_confirm_startup_authentication( result.results, result.skipped ) )
+                .toBe( false )
         } finally {
             fixture.cleanup()
         }

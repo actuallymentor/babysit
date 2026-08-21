@@ -2,9 +2,16 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 
-import { copy_host_file_to_tmpfile, build_tmpfile, build_tmpdir_with_files } from '../utils/tmpfile.js'
+import {
+    build_private_tmpfile,
+    build_tmpdir_with_files,
+    build_tmpfile,
+    copy_host_file_to_tmpfile,
+} from '../utils/tmpfile.js'
 import { expand_home_path } from '../credentials/paths.js'
 import { get_host_codex_home } from './codex.js'
+import { OPENCODE_AUTH_AGENT } from './opencode.js'
+import { resolve_opencode_route_config } from './opencode_config.js'
 
 const home = homedir()
 
@@ -443,14 +450,59 @@ export const build_gemini_settings_tmpfile = ( host_settings_path, {
 }
 
 /**
- * Opencode extra mounts. Opencode's auth.json is already handled by the
- * credentials module; opencode keeps the rest of its state in
- * ~/.local/share/opencode (a sqlite DB) but those are session-scoped and
- * don't need to be copied into the container.
+ * OpenCode extra mounts. Both normal sessions and auth probes receive the same
+ * sanitized provider/model route snapshot. Probes add one generated primary
+ * agent with every tool disabled. This keeps the request useful as an auth
+ * check without asking a fallback model to parse unsupported tool schemas.
  *
+ * @param {Object} [options]
+ * @param {boolean} [options.auth_probe=false] - Generate a tool-free probe agent
+ * @param {boolean} [options.include_host_preferences=true] - Include host route config
+ * @param {string} [options.workspace=process.cwd()] - Active project directory
  * @returns {{ host: string, container: string }[]}
  */
-export const opencode_extra_mounts = () => []
+export const opencode_extra_mounts = ( {
+    auth_probe = false,
+    include_host_preferences = true,
+    workspace = process.cwd(),
+} = {} ) => {
+
+    const route = resolve_opencode_route_config( {
+        workspace,
+        include_host_preferences,
+    } )
+    if( !auth_probe && !Object.keys( route ).length ) return []
+
+    const profile = {
+        ...route,
+        ...auth_probe ? {
+            agent: {
+                [ OPENCODE_AUTH_AGENT ]: {
+                    mode: `primary`,
+                    permission: `deny`,
+                    tools: { '*': false },
+                },
+            },
+        } : {},
+    }
+    const transport = build_private_tmpfile(
+        `opencode`,
+        `opencode.json`,
+        `${ JSON.stringify( profile, null, 2 ) }\n`,
+        { file_mode: 0o644 }
+    )
+    if( !transport ) return []
+
+    return [ {
+        host: transport.file,
+        container: `/home/node/.config/opencode/opencode.json`,
+        type: `seed_file`,
+        source: transport.file,
+        target: `/home/node/.config/opencode/opencode.json`,
+        cleanup: transport.directory,
+    } ]
+
+}
 
 const NO_EXTRA_MOUNTS = () => []
 
@@ -468,6 +520,6 @@ const EXTRA_MOUNTS_BY_AGENT = {
  * and all builders honor `include_host_preferences`).
  * Adapters that don't care about options ignore them.
  * @param {string} agent_name
- * @returns {(options?: { yolo?: boolean, include_host_preferences?: boolean }) => { host: string, container: string, ro?: boolean }[]}
+ * @returns {(options?: { yolo?: boolean, include_host_preferences?: boolean, auth_probe?: boolean, workspace?: string }) => { host: string, container: string, ro?: boolean }[]}
  */
 export const get_extra_mounts = ( agent_name ) => EXTRA_MOUNTS_BY_AGENT[ agent_name ] || NO_EXTRA_MOUNTS
