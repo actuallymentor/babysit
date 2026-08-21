@@ -315,6 +315,32 @@ const build_images = async () => {
     ], { timeout_ms: 300_000 } )
 }
 
+const run_puppeteer_browser = async () => {
+    const browser_script = `
+        import puppeteer from 'puppeteer'
+
+        const browser = await puppeteer.launch()
+        try {
+            const page = await browser.newPage()
+            await page.setContent( '<button>Browse</button><output>idle</output><script>document.querySelector("button").addEventListener("click", () => document.querySelector("output").textContent = "clicked")</script>' )
+            await page.click( 'button' )
+            const result = await page.$eval( 'output', element => element.textContent )
+            console.log( \`PUPPETEER_E2E_\${ result }\` )
+        } finally {
+            await browser.close()
+        }
+    `
+    const { stdout } = await docker( [
+        `run`, `--rm`, `--init`, `--shm-size=1g`,
+        `--security-opt`, `seccomp=unconfined`,
+        `--entrypoint`, `gosu`,
+        base_image,
+        `node`, `node`, `--input-type=module`, `-e`, browser_script,
+    ], { timeout_ms: 120_000 } )
+
+    ensure( stdout.includes( `PUPPETEER_E2E_clicked` ), `Puppeteer did not drive bundled Chrome` )
+}
+
 const run_submit_parity_sessions = async () => {
     for( const agent of SUPPORTED_AGENTS ) {
         const marker = `BABYSIT_E2E_AUTO_PROMPT_${ agent.toUpperCase() }`
@@ -499,6 +525,7 @@ try {
     ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
 
     await build_images()
+    await run_puppeteer_browser()
 
     await run_submit_parity_sessions()
     await run_default_session()

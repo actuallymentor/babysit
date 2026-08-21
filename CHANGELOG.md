@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.32.0 — 2026-08-21
+
+### ✨ Added
+- **Coding agents can browse with bundled Chrome and Puppeteer.** The
+  multi-architecture image provides one globally importable Puppeteer package
+  backed by current Google Chrome Stable, with Chrome's sandbox retained.
+
+### Changed
+- **Daily image builds refresh browser and agent tooling together.** BuildKit
+  cache invalidation now covers Chrome, Puppeteer, and every bundled coding
+  agent; `babysit update` pulls the refreshed runtime.
+- **Browser sessions receive stable shared-memory capacity.** Containers use a
+  1 GiB `/dev/shm` and permit Chrome's sandbox namespaces without granting
+  `SYS_ADMIN` or passing `--no-sandbox`.
+
 ## 0.31.1 — 2026-08-21
 
 ### 🐛 Fixed

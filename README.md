@@ -60,7 +60,7 @@ babysit doctor --auth opencode --refresh
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
 2. **Host auth check** — before the main session starts, babysit verifies the active agent plus supported non-active agent CLIs found on host PATH. Cache misses run concurrently; a successful check is reused for 12 hours while its hashed auth inputs and local Docker image identity remain unchanged. Press Enter to skip the entire auth decision for one interactive launch. Non-interactive launches verify misses and fail closed. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
-3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
+3. **Docker container** — babysit starts a container with all four agent CLIs, Google Chrome Stable, and Puppeteer preinstalled; credentials for every supported agent plus host `gh` auth are passed through, and your workspace is mounted at `/workspace`
 4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
@@ -228,6 +228,31 @@ Use `--port` to publish services running inside the Babysit container. `--port
 port `663` to container port `12345`. Repeat `--port` to publish multiple
 ports.
 
+## Browser automation
+
+The container includes the latest Google Chrome Stable and a global Puppeteer
+install. Puppeteer is configured to reuse `/usr/bin/google-chrome-stable`, so
+installing Puppeteer inside a project does not download a second Chrome or the
+legacy Headless Shell. Both CommonJS and ESM scripts can import the bundled
+package directly:
+
+```js
+import puppeteer from 'puppeteer'
+
+const browser = await puppeteer.launch()
+const page = await browser.newPage()
+await page.goto( `https://example.com` )
+await browser.close()
+```
+
+Babysit gives each container a 1 GB `/dev/shm` ceiling for browser renderer
+stability. Chrome runs as the non-root `node` user with its sandbox enabled;
+do not add `--no-sandbox` when browsing untrusted pages. Babysit relaxes
+Docker's outer seccomp filter so Chrome can create its own sandbox namespaces,
+but does not grant the broad `SYS_ADMIN` capability. Docker namespace and
+capability boundaries remain active. The separate legacy `chrome-headless-shell`
+binary is intentionally not bundled.
+
 ## Loop mode
 
 With `--loop`, the idle action is overridden. Babysit looks for instructions in order:
@@ -375,7 +400,7 @@ Updates are explicit. Run `babysit update` to refresh everything in one sweep:
 
 1. `git pull` on the babysit repo (or download the latest GitHub-release binary, for compiled installs)
 2. `git pull` on `~/.agents` (if it exists)
-3. `docker pull` the latest container image
+3. `docker pull` the latest container image, refreshing the bundled coding agents, Chrome, and Puppeteer
 4. Upgrades each host-installed agent CLI (`claude`, `codex`, `gemini`, `opencode`) using the agent's built-in self-update if available, otherwise the matching package manager (npm or brew, auto-detected from the binary's install path). Agents not on PATH are skipped.
 
 ## Building from source

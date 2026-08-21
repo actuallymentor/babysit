@@ -112,6 +112,26 @@ RUN set -eux; \
     install -m 0755 /root/.local/bin/uvx /usr/local/bin/uvx; \
     rm /tmp/install-uv.sh
 
+# The published image rebuilds daily. The workflow changes this value on every
+# run so BuildKit cannot serve stale network-install layers for Chrome or the
+# coding agents merely because their Dockerfile instructions are unchanged.
+ARG RUNTIME_REFRESH=manual
+
+# Google Chrome Stable — use Google's signed apt repository, which publishes
+# native packages for both architectures in Babysit's multi-arch image.
+RUN set -eux; \
+    echo "Runtime refresh: ${RUNTIME_REFRESH}"; \
+    install -m 0755 -d /etc/apt/keyrings; \
+    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+    | gpg --dearmor --batch --yes -o /etc/apt/keyrings/google-chrome.gpg; \
+    printf '%s\n' \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+        > /etc/apt/sources.list.d/google-chrome.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends google-chrome-stable; \
+    rm -rf /var/lib/apt/lists/*; \
+    google-chrome-stable --version
+
 # Non-root user with passwordless sudo and required directories.
 # Pre-create every dir we plan to bind-mount into so docker's auto-mkdir
 # doesn't leave them root-owned (which would block credential refreshes
@@ -142,10 +162,20 @@ COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 
-# Codex (OpenAI) + Gemini CLI — install globally via npm as root.
-# Corepack gives agents pnpm/yarn when project package-manager metadata expects them.
+# Reuse the image's Chrome for both global and project-local Puppeteer installs.
+# This avoids Puppeteer's otherwise automatic Chrome-for-Testing and Headless
+# Shell downloads while keeping one current, multi-arch browser in the image.
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+
+# Codex (OpenAI), Gemini CLI, and Puppeteer — refresh together via npm as root.
+# Corepack gives agents pnpm/yarn when project package-manager metadata expects
+# them. The root-level symlink makes the global Puppeteer package resolvable by
+# both CommonJS and ESM scripts anywhere below /workspace.
 RUN corepack enable \
-    && npm install -g @openai/codex @google/gemini-cli
+    && npm install -g @openai/codex @google/gemini-cli puppeteer \
+    && mkdir -p /node_modules \
+    && ln -s "$(npm root -g)/puppeteer" /node_modules/puppeteer
 
 # Switch to non-root user for user-scoped agent installs
 USER node
@@ -189,12 +219,16 @@ RUN set -eux; \
         git git-lfs python3 pip3 pipx sudo gosu curl wget jq tmux ssh openssl gpg \
         rsync tar zip unzip gzip xz zstd patch bwrap htop strace lsof ps file find \
         nc dig ip ping vim nano less shellcheck sqlite3 tree rg just gh docker fd bat \
-        fzf yq scc uv uvx bun corepack pnpm yarn codex gemini claude opencode \
+        fzf yq scc uv uvx bun corepack pnpm yarn google-chrome-stable puppeteer \
+        codex gemini claude opencode \
     ; do \
         command -v "$cmd"; \
     done; \
     docker compose version; \
     docker buildx version; \
+    google-chrome-stable --version; \
+    gosu node node -e 'const p = require("puppeteer"); if (typeof p.launch !== "function") process.exit(1)'; \
+    gosu node node --input-type=module -e 'import p from "puppeteer"; if (typeof p.launch !== "function") process.exit(1)'; \
     gosu node bash -lc 'source "$NVM_DIR/nvm.sh" && command -v nvm'
 
 WORKDIR /workspace

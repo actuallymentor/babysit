@@ -98,6 +98,24 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `bundles multi-arch Google Chrome and globally resolvable Puppeteer`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+        const workflow = readFileSync( new URL( `../.github/workflows/docker.yml`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `https://dl.google.com/linux/chrome/deb/ stable main` )
+        expect( dockerfile ).toContain( `arch=$(dpkg --print-architecture)` )
+        expect( dockerfile ).toContain( `signed-by=/etc/apt/keyrings/google-chrome.gpg` )
+        expect( dockerfile ).toContain( `apt-get install -y --no-install-recommends google-chrome-stable` )
+        expect( dockerfile ).toContain( `ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable` )
+        expect( dockerfile ).toContain( `ENV PUPPETEER_SKIP_DOWNLOAD=true` )
+        expect( dockerfile ).toContain( `npm install -g @openai/codex @google/gemini-cli puppeteer` )
+        expect( dockerfile ).toContain( `/node_modules/puppeteer` )
+        expect( dockerfile ).not.toContain( `--no-sandbox` )
+        expect( workflow ).toContain( `RUNTIME_REFRESH=\${{ github.run_id }}` )
+
+    } )
+
     it( `verifies expected container tools are on PATH`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
@@ -368,6 +386,15 @@ describe( `build_docker_command`, () => {
         expect( interactive_args ).toContain( `BABYSIT_SUPERVISED_SESSION=1` )
         expect( headless_args ).toContain( `--init` )
         expect( headless_args ).not.toContain( `BABYSIT_SUPERVISED_SESSION=1` )
+    } )
+
+    it( `supports Chrome's sandbox without granting SYS_ADMIN`, () => {
+        const args = build_docker_command_args( make_options() )
+
+        expect( args ).toContain( `--shm-size=1g` )
+        expect( args ).toContain( `seccomp=unconfined` )
+        expect( args ).not.toContain( `--cap-add` )
+        expect( args ).not.toContain( `SYS_ADMIN` )
     } )
 
     it( `can build noninteractive argv without mounting the workspace`, () => {
