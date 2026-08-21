@@ -10,5 +10,11 @@ Babysit adds an
 allow rule for Chrome's `clone` and `unshare` sandbox calls, excluding mount,
 UTS, IPC, and cgroup namespaces, without requiring `CAP_SYS_ADMIN`.
 
+Reproduce the upstream hash:
+
+```bash
+curl -fsSL 'https://raw.githubusercontent.com/moby/moby/b612274c5489b546ff8b4a4f93f25a0b8952713a/vendor/github.com/moby/profiles/seccomp/default.json' | sha256sum
+```
+
 Copyright 2012-2017 Docker, Inc. Licensed under the Apache License 2.0;
 see `LICENSES/Moby-Apache-2.0.txt` and `LICENSES/Moby-NOTICE.txt`.
