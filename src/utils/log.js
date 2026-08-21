@@ -1,5 +1,21 @@
 import { log as mentie_log } from 'mentie'
 
+/**
+ * Make BABYSIT_DEBUG=1 reveal info diagnostics unless the user chose an
+ * explicit Mentie log level.
+ * @param {Object} [env=process.env] - Environment map
+ * @returns {void}
+ */
+export const enable_babysit_debug_logging = ( env = process.env ) => {
+
+    if( env.BABYSIT_DEBUG === `1` && !env.LOG_LEVEL && !env.LOGLEVEL ) {
+        env.LOG_LEVEL = `info`
+    }
+
+}
+
+enable_babysit_debug_logging()
+
 // Re-export mentie log with babysit prefix
 mentie_log.prefix = `babysit`
 

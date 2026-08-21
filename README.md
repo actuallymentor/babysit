@@ -284,7 +284,9 @@ Older `auth_check_agents` configuration remains readable for compatibility but
 is deprecated and ignored by startup and `doctor`.
 
 Set `BABYSIT_DEBUG=1` to print phase timings for dependency checks, startup,
-authentication probes, tmux attachment, and detached shutdown cleanup.
+authentication probes, tmux attachment, and detached shutdown cleanup. If a
+startup prompt readiness check times out, it also prints the final blocked TUI
+screen. An explicit `LOG_LEVEL` or `LOGLEVEL` still takes precedence.
 
 If `~/.babysitrc` exists, Babysit bind-mounts it read-only into the container
 and sources it as the `node` user immediately before launching the coding
