@@ -10,12 +10,10 @@ import { SUPPORTED_AGENTS, get_agent } from '../src/agents/index.js'
 import {
     answered_ok,
     build_docker_auth_check_command_args,
-    build_docker_auth_check_cleanup_command_args,
     build_host_auth_args,
     build_host_auth_prompt,
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
-    docker_auth_check_container_name,
     failed_agent_names,
     format_host_auth_status_message,
     format_utc_timestamp,
@@ -243,25 +241,6 @@ describe( `host agent auth checks`, () => {
         expect( args.some( arg => arg.endsWith( `:/home/node/.agents` ) ) ).toBe( false )
         expect( args.some( arg => arg.includes( `:/home/node/.claude/CLAUDE.md` ) ) ).toBe( false )
         expect( args.some( arg => arg.includes( `:/home/node/.claude/skills` ) ) ).toBe( false )
-    } )
-
-    it( `builds cleanup commands for Dockerized auth-check containers`, () => {
-        const command_args = [
-            `sudo`,
-            `docker`,
-            `run`,
-            `--rm`,
-            `--name`,
-            `babysit-codex-123`,
-            `actuallymentor/babysit:latest`,
-            `codex`,
-        ]
-
-        expect( docker_auth_check_container_name( command_args ) ).toBe( `babysit-codex-123` )
-        expect( build_docker_auth_check_cleanup_command_args( command_args ) )
-            .toEqual( [ `sudo`, `docker`, `rm`, `-f`, `babysit-codex-123` ] )
-        expect( build_docker_auth_check_cleanup_command_args( [ `docker`, `run`, `--rm` ] ) )
-            .toBeNull()
     } )
 
     it( `formats the requested boot auth status message`, () => {

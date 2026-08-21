@@ -176,7 +176,10 @@ describe( `prepared Docker launch`, () => {
             signal_target: fake_signals(),
             run_command: async ( command, args ) => {
                 calls.push( { command, args: [ ...args ] } )
-                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `create` ) ) {
+                    expect( existsSync( seccomp_transport.file ) ).toBe( true )
+                    return CONTAINER_ID
+                }
                 return ``
             },
         } )
@@ -481,6 +484,51 @@ describe( `prepared Docker launch`, () => {
 
         expect( calls ).toEqual( [] )
         expect( existsSync( transport.directory ) ).toBe( false )
+
+    } )
+
+    it( `reaps the attempted name when external cancellation interrupts create`, async () => {
+
+        const options = make_options( {} )
+        options.creds_mounts = []
+        options.extra_mounts = []
+        const controller = new AbortController()
+        const seccomp_transport = private_seccomp_transport()
+        const calls = []
+        let create_started
+        const creating = new Promise( resolve => create_started = resolve )
+
+        const launch_task = prepare_docker_launch( options, {
+            create_seccomp_profile: () => seccomp_transport,
+            signal: controller.signal,
+            signal_target: fake_signals(),
+            run_command: async ( command, args, { signal } ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) {
+                    create_started()
+                    return new Promise( ( resolve, reject ) => {
+                        signal.addEventListener(
+                            `abort`,
+                            () => reject( new Error( `create aborted` ) ),
+                            { once: true }
+                        )
+                    } )
+                }
+                return ``
+            },
+        } )
+
+        await creating
+        controller.abort( { code: `timeout` } )
+        await expect( launch_task ).rejects.toThrow( `create aborted` )
+
+        const create_call = calls.find( call => call.args.includes( `create` ) )
+        const generated_name = create_call.args[ create_call.args.indexOf( `--name` ) + 1 ]
+
+        expect( calls.some( call =>
+            call.args.includes( `rm` ) && call.args.includes( generated_name )
+        ) ).toBe( true )
+        expect( existsSync( seccomp_transport.directory ) ).toBe( false )
 
     } )
 

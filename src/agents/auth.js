@@ -318,40 +318,6 @@ export const build_docker_auth_check_command_args = ( agent, options = {} ) => {
 }
 
 /**
- * Extract the generated Docker container name from auth-check argv.
- * @param {string[]} command_args - Docker run command argv
- * @returns {string|null} Container name, or null when absent
- */
-export const docker_auth_check_container_name = ( command_args = [] ) => {
-
-    const name_index = command_args.indexOf( `--name` )
-    if( name_index === -1 ) return null
-
-    return command_args[ name_index + 1 ] || null
-
-}
-
-/**
- * Build the cleanup command for a timed-out auth-check container.
- * Killing `docker run` with SIGKILL does not propagate SIGKILL into the
- * container, so timeout cleanup must reap the container explicitly.
- * @param {string[]} command_args - Docker run command argv
- * @returns {string[]|null} Docker cleanup argv, or null when no name is present
- */
-export const build_docker_auth_check_cleanup_command_args = ( command_args = [] ) => {
-
-    const container_name = docker_auth_check_container_name( command_args )
-    if( !container_name ) return null
-
-    const docker_prefix = command_args[0] === `sudo`
-        ? [ `sudo`, `docker` ]
-        : [ `docker` ]
-
-    return [ ...docker_prefix, `rm`, `-f`, container_name ]
-
-}
-
-/**
  * Run a real prompt through the agent CLI installed inside Babysit's Docker image.
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
@@ -363,7 +329,6 @@ export const build_docker_auth_check_cleanup_command_args = ( command_args = [] 
  * @param {Object} [options.extra_env={}] - Extra environment variables
  * @param {string[]} [options.agent_args=[]] - Effective agent CLI arguments
  * @param {Function} [options.spawn_fn=spawn] - Spawn helper for tests
- * @param {Function} [options.cleanup_spawn_fn=spawn] - Spawn helper for timeout cleanup
  * @param {Function} [options.prepare_launch=prepare_docker_launch] - Staged launch builder
  * @param {number} [options.timeout_ms=180000] - Max wait before treating the agent as unauthenticated
  * @param {number} [options.kill_grace_ms=1500] - Delay between SIGTERM and SIGKILL on timeout
@@ -380,7 +345,6 @@ export const run_host_agent_auth_check = async ( agent, {
     extra_env = {},
     agent_args = [],
     spawn_fn = spawn,
-    cleanup_spawn_fn = spawn,
     timeout_ms = HOST_AUTH_CHECK_TIMEOUT_MS,
     kill_grace_ms = HOST_AUTH_CHECK_KILL_GRACE_MS,
     prepare_launch = prepare_docker_launch,
@@ -463,7 +427,6 @@ export const run_host_agent_auth_check = async ( agent, {
     return new Promise( resolve => {
 
         const [ cmd, ...args ] = command_args
-        const cleanup_command_args = build_docker_auth_check_cleanup_command_args( command_args )
         const child = spawn_fn( cmd, args, {
             stdio: [ `ignore`, `pipe`, `pipe` ],
             env: {
@@ -482,24 +445,6 @@ export const run_host_agent_auth_check = async ( agent, {
 
         const current_output = () => strip_ansi( stdout ).trim()
         const clear_kill_timeout = () => clearTimeout( kill_timeout )
-
-        const cleanup_terminated_container = () => {
-
-            if( !cleanup_command_args ) return
-
-            const [ cleanup_cmd, ...cleanup_args ] = cleanup_command_args
-            const cleanup_child = cleanup_spawn_fn( cleanup_cmd, cleanup_args, {
-                stdio: `ignore`,
-                env: {
-                    ...process.env,
-                    NO_COLOR: `1`,
-                },
-            } )
-
-            cleanup_child?.on?.( `error`, () => {} )
-            cleanup_child?.unref?.()
-
-        }
 
         const finalise_launch = () => {
             if( finalise_task ) return finalise_task
@@ -529,11 +474,6 @@ export const run_host_agent_auth_check = async ( agent, {
                 }
 
                 await prepared_launch.abort()
-
-                // Direct docker-run probes have no prepared container owner.
-                // Reap their named --rm container after killing a stuck client;
-                // staged probes are removed by abort() after a successful pull.
-                if( termination_status && !prepared_launch.container_id ) cleanup_terminated_container()
                 return flush_error
             } )()
 
