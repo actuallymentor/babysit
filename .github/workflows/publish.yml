@@ -143,6 +143,9 @@ jobs:
           files: |
             dist/babysit-*
             dist/checksums.txt
+            LICENSES/Moby-Apache-2.0.txt
+            LICENSES/Moby-NOTICE.txt
+            THIRD_PARTY_NOTICES.md
 
   deploy-docker:
     needs: release

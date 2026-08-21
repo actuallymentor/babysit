@@ -17,6 +17,7 @@ import {
     docker_command_prefix,
     shell_quote,
 } from './run.js'
+import { create_chrome_seccomp_profile } from './chrome-seccomp.js'
 
 const DOCKER_CREATE_TIMEOUT_MS = 5 * 60 * 1_000
 const DOCKER_COPY_TIMEOUT_MS = 60_000
@@ -208,29 +209,60 @@ export const prepare_docker_launch = async ( options, {
     signal_target = process,
     kill_process = process.kill.bind( process ),
     build_private_file = build_private_tmpfile,
+    create_seccomp_profile = create_chrome_seccomp_profile,
     signal = null,
 } = {} ) => {
 
     let planned_options
+    let seccomp_transport
     try {
         planned_options = build_docker_launch_plan( options, { build_private_file } )
+        seccomp_transport = create_seccomp_profile()
+        planned_options = {
+            ...planned_options,
+            chrome_seccomp_profile_path: seccomp_transport.file,
+        }
     } catch ( error ) {
-        cleanup_credentials( options.creds_mounts || [] )
+        const cleanup_mounts = planned_options
+            ? [ ...planned_options.extra_mounts, ...planned_options.creds_mounts ]
+            : options.creds_mounts || []
+        cleanup_credentials( cleanup_mounts )
         throw error
+    }
+
+    const seccomp_cleanup = [ { cleanup: seccomp_transport.directory } ]
+    let seccomp_profile_cleaned = false
+    const cleanup_seccomp_profile = () => {
+        if( seccomp_profile_cleaned ) return true
+
+        seccomp_profile_cleaned = cleanup_credentials( seccomp_cleanup )
+        return seccomp_profile_cleaned
     }
 
     const copy_mounts = copy_mounts_from( planned_options.extra_mounts, planned_options.creds_mounts )
     if( !copy_mounts.length ) {
-        const command_args = build_docker_command_args( planned_options )
+        let command_args
+        try {
+            command_args = build_docker_command_args( planned_options )
+        } catch ( error ) {
+            cleanup_seccomp_profile()
+            throw error
+        }
+
         return {
             command: render_command( command_args ),
             command_args,
             container_id: null,
-            abort: async () => {},
+            abort: async () => {
+                cleanup_seccomp_profile()
+            },
             await_started: async () => true,
             pull_synced_files: async () => {},
-            retain: async () => null,
-            handoff: () => {},
+            retain: async () => {
+                cleanup_seccomp_profile()
+                return null
+            },
+            handoff: cleanup_seccomp_profile,
         }
     }
 
@@ -310,6 +342,7 @@ export const prepare_docker_launch = async ( options, {
         handed_off = true
         remove_signal_handlers( signal_target, signal_handlers )
         remove_external_abort_handler()
+        cleanup_seccomp_profile()
 
         if( stop && reference ) {
             try {
@@ -338,6 +371,7 @@ export const prepare_docker_launch = async ( options, {
             remove_signal_handlers( signal_target, signal_handlers )
             remove_external_abort_handler()
             cleanup_credentials( copy_mounts )
+            cleanup_seccomp_profile()
             const discarded = await discard_container( { include_attempted_name } )
             if( discarded ) clear_recovery( recovery_id )
         } )()
@@ -350,6 +384,7 @@ export const prepare_docker_launch = async ( options, {
         remove_signal_handlers( signal_target, signal_handlers )
         remove_external_abort_handler()
         clear_recovery( recovery_id )
+        cleanup_seccomp_profile()
     }
 
     for( const signal of LAUNCH_SIGNALS ) {
@@ -389,6 +424,9 @@ export const prepare_docker_launch = async ( options, {
 
         const output = await run_docker( create_args.slice( 1 ), DOCKER_CREATE_TIMEOUT_MS )
         container_owned = true
+        if( !cleanup_seccomp_profile() ) {
+            throw new Error( `Could not remove Chrome's private seccomp profile after Docker create` )
+        }
 
         const created_container_id = String( output ).trim()
         if( !DOCKER_CONTAINER_ID_PATTERN.test( created_container_id ) ) {

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from 'fs'
+import { createHash } from 'crypto'
+import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { fileURLToPath } from 'url'
 import { get_image_name } from '../src/docker/update.js'
 import {
     CHROME_SECCOMP_SOURCE,
@@ -27,6 +29,10 @@ import { codex } from '../src/agents/codex.js'
 import { gemini } from '../src/agents/gemini.js'
 import { opencode } from '../src/agents/opencode.js'
 
+const chrome_seccomp_profile_path = fileURLToPath(
+    new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
+)
+
 const make_options = ( overrides = {} ) => ( {
     agent: codex,
     workspace: `/tmp/empty`,
@@ -36,6 +42,7 @@ const make_options = ( overrides = {} ) => ( {
     config: { isolate_dependencies: false },
     extra_env: {},
     modifiers: [ `yolo` ],
+    chrome_seccomp_profile_path,
     ...overrides,
 } )
 
@@ -106,6 +113,7 @@ describe( `docker image`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
         const workflow = readFileSync( new URL( `../.github/workflows/docker.yml`, import.meta.url ), `utf8` )
+        const publish_workflow = readFileSync( new URL( `../.github/workflows/publish.yml`, import.meta.url ), `utf8` )
 
         expect( dockerfile ).toContain( `https://dl.google.com/linux/chrome/deb/ stable main` )
         expect( dockerfile ).toContain( `arch=$(dpkg --print-architecture)` )
@@ -117,6 +125,9 @@ describe( `docker image`, () => {
         expect( dockerfile ).toContain( `/node_modules/puppeteer` )
         expect( dockerfile ).not.toContain( `--no-sandbox` )
         expect( workflow ).toContain( `RUNTIME_REFRESH=\${{ github.run_id }}` )
+        expect( publish_workflow ).toContain( `LICENSES/Moby-Apache-2.0.txt` )
+        expect( publish_workflow ).toContain( `LICENSES/Moby-NOTICE.txt` )
+        expect( publish_workflow ).toContain( `THIRD_PARTY_NOTICES.md` )
 
     } )
 
@@ -124,6 +135,13 @@ describe( `docker image`, () => {
 
         const profile_path = new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
         const profile = JSON.parse( readFileSync( profile_path, `utf8` ) )
+        const upstream_profile = {
+            ...profile,
+            syscalls: profile.syscalls.slice( 0, -2 ),
+        }
+        const upstream_digest = createHash( `sha256` )
+            .update( JSON.stringify( upstream_profile ) )
+            .digest( `hex` )
         const chrome_rule = profile.syscalls.find( rule =>
             rule.action === `SCMP_ACT_ALLOW`
             && rule.names.length === 2
@@ -132,8 +150,14 @@ describe( `docker image`, () => {
         )
 
         expect( CHROME_SECCOMP_SOURCE ).toBe( `moby/moby@b612274c5489b546ff8b4a4f93f25a0b8952713a` )
+        expect( upstream_digest ).toBe( `afb4934b023cfceaaec1a9d752ca3f801aaa96eb2e59abe6e7ea16976948e080` )
         expect( profile.defaultAction ).toBe( `SCMP_ACT_ERRNO` )
         expect( chrome_rule ).toBeDefined()
+        expect( chrome_rule.args ).toEqual( [ {
+            index: 0,
+            value: 235012096,
+            op: `SCMP_CMP_MASKED_EQ`,
+        } ] )
 
     } )
 
@@ -152,6 +176,7 @@ describe( `docker image`, () => {
             chmodSync( profile_path, 0o666 )
             expect( ensure_chrome_seccomp_profile( { path: profile_path } ) ).toBe( profile_path )
             expect( statSync( profile_path ).mode & 0o777 ).toBe( 0o600 )
+            expect( readdirSync( directory ).filter( file => file.endsWith( `.tmp` ) ) ).toEqual( [] )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
@@ -439,6 +464,12 @@ describe( `build_docker_command`, () => {
         expect( security_profile ).not.toBe( `seccomp=unconfined` )
         expect( args ).not.toContain( `--cap-add` )
         expect( args ).not.toContain( `SYS_ADMIN` )
+    } )
+
+    it( `fails clearly when a low-level caller has not materialized seccomp`, () => {
+        expect( () => build_docker_command_args( make_options( {
+            chrome_seccomp_profile_path: null,
+        } ) ) ).toThrow( `materialized Chrome seccomp profile` )
     } )
 
     it( `can build noninteractive argv without mounting the workspace`, () => {

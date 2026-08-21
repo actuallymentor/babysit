@@ -20,7 +20,6 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { private_credential_tmpdir } from '../utils/tmpfile.js'
-import { ensure_chrome_seccomp_profile } from '../docker/chrome-seccomp.js'
 import { run_auth_checks_with_progress } from './auth_progress.js'
 
 /**
@@ -65,8 +64,6 @@ export const cmd_doctor = async ( cmd, {
     if( !cmd.flags.auth ) {
         throw new Error( `Choose a diagnostic, for example: babysit doctor --auth` )
     }
-
-    ensure_chrome_seccomp_profile()
 
     const agents = select_doctor_auth_agents( cmd.auth_agent )
     const cache_options = cache_path ? { cache_path } : {}

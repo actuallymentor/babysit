@@ -255,6 +255,7 @@ const build_docker_auth_check_options = ( agent, {
     config = { isolate_dependencies: false },
     extra_env = {},
     agent_args = [],
+    chrome_seccomp_profile_path = null,
 } = {} ) => {
 
     const auth_args = build_host_auth_args( agent, prompt, { agent_args } )
@@ -292,6 +293,7 @@ const build_docker_auth_check_options = ( agent, {
         include_loop_deadline: false,
         include_agent_state: false,
         auth_probe: true,
+        chrome_seccomp_profile_path,
         agent_command: [
             ...agent.auth_check?.command_prefix || [],
             agent.bin,

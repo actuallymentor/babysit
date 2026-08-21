@@ -877,7 +877,40 @@
         "unshare"
       ],
       "action": "SCMP_ACT_ALLOW",
-      "comment": "Permit Chrome to create its nested user, PID, and network sandbox namespaces without CAP_SYS_ADMIN."
+      "args": [
+        {
+          "index": 0,
+          "value": 235012096,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "Permit Chrome's user, PID, and network namespaces while excluding mount, UTS, IPC, and cgroup namespaces.",
+      "excludes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      }
+    },
+    {
+      "names": [
+        "clone"
+      ],
+      "action": "SCMP_ACT_ALLOW",
+      "args": [
+        {
+          "index": 1,
+          "value": 235012096,
+          "op": "SCMP_CMP_MASKED_EQ"
+        }
+      ],
+      "comment": "s390 clone parameter ordering for Chrome's sandbox namespaces.",
+      "includes": {
+        "arches": [
+          "s390",
+          "s390x"
+        ]
+      }
     }
   ]
 }

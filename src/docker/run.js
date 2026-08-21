@@ -5,7 +5,6 @@ import { homedir } from 'os'
 import { dirname, join } from 'path'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
-import { CHROME_SECCOMP_PROFILE_PATH } from './chrome-seccomp.js'
 import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
 import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/render.js'
@@ -385,6 +384,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {string|null} [options.exit_sentinel=null] - Per-session exit marker token
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
+ * @param {string} [options.chrome_seccomp_profile_path] - Materialized Chrome seccomp profile
  * @returns {string[]} Docker argv
  */
 export const build_docker_command_args = ( options ) => {
@@ -413,7 +413,12 @@ export const build_docker_command_args = ( options ) => {
         exit_sentinel = randomUUID(),
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
         agent_command = null,
+        chrome_seccomp_profile_path = null,
     } = options
+    if( !chrome_seccomp_profile_path ) {
+        throw new Error( `Docker argv requires a materialized Chrome seccomp profile` )
+    }
+
     const flags = []
     const workspace_source = resolve_workspace_mount_source( workspace )
     const docker_socket_path = mode.docker
@@ -430,7 +435,7 @@ export const build_docker_command_args = ( options ) => {
         `--init`,
         `--shm-size=1g`,
         `--security-opt`,
-        `seccomp=${ CHROME_SECCOMP_PROFILE_PATH }`
+        `seccomp=${ chrome_seccomp_profile_path }`
     )
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
