@@ -7,7 +7,8 @@
   reject splash, loading, update, trust, and onboarding screens; bracketed
   paste settles before one Enter so Codex cannot turn submit into a newline.
 - **TUI readiness uses a real wall-time bound.** Transient tmux capture errors
-  retry until a monotonic deadline, while exited sessions stop immediately.
+  retry until a monotonic deadline, exited sessions stop immediately, and
+  debug logs retain the final blocked screen.
 
 ## 0.30.0 — 2026-08-20
 

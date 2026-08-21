@@ -405,14 +405,16 @@ Do NOT add Co-Authored-By lines to git commit messages.
 
         const clock = make_clock()
         const capture_timeouts = []
+        const debug_messages = []
         let captures = 0
         const ready = await wait_for_initial_prompt_ready( `session`, codex, {
             capture: async ( _, capture_timeout_ms ) => {
                 captures++
                 capture_timeouts.push( capture_timeout_ms )
                 clock.advance( 250 )
-                return `OpenAI Codex\nmodel: loading\n? for shortcuts`
+                return `\x1b[31mOpenAI Codex\x1b[0m\nmodel: loading\n? for shortcuts`
             },
+            debug: message => debug_messages.push( message ),
             wait_fn: async () => null,
             now_fn: clock.now_fn,
             timeout_ms: 500,
@@ -422,6 +424,9 @@ Do NOT add Co-Authored-By lines to git commit messages.
         expect( ready ).toBe( false )
         expect( captures ).toBe( 2 )
         expect( capture_timeouts ).toEqual( [ 500, 250 ] )
+        expect( debug_messages ).toEqual( [
+            `codex pane at initial-prompt readiness timeout:\nOpenAI Codex\nmodel: loading\n? for shortcuts`,
+        ] )
 
     } )
 

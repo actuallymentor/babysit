@@ -269,6 +269,7 @@ export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
  * @param {Function} [options.capture=capture_pane] - Pane capture helper
+ * @param {Function} [options.debug=log.debug] - Diagnostic logger
  * @param {Function} [options.has_session_fn=has_session] - Session liveness helper
  * @param {Function} [options.wait_fn=wait] - Sleep helper
  * @param {Function} [options.now_fn=performance.now] - Monotonic clock helper
@@ -278,6 +279,7 @@ export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
  */
 export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
     capture = capture_pane,
+    debug = message => log.debug( message ),
     has_session_fn = has_session,
     wait_fn = wait,
     now_fn = monotonic_now,
@@ -289,6 +291,7 @@ export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
 
     const deadline = now_fn() + timeout_ms
     let first_attempt = true
+    let last_output = ``
 
     while( first_attempt || now_fn() < deadline ) {
 
@@ -297,6 +300,7 @@ export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
 
         try {
             const output = await capture( session_name, capture_timeout_ms )
+            last_output = output
             if( is_initial_prompt_ready( agent, output ) ) return true
         } catch {
             // Capture can race a tmux repaint, but a dead pane will never
@@ -305,10 +309,15 @@ export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
         }
 
         const remaining_ms = deadline - now_fn()
-        if( remaining_ms <= 0 ) return false
+        if( remaining_ms <= 0 ) break
 
         await wait_fn( Math.min( interval_ms, remaining_ms ) )
 
+    }
+
+    const diagnostic = strip_ansi( last_output ).trim()
+    if( diagnostic ) {
+        debug( `${ agent.name || `Agent` } pane at initial-prompt readiness timeout:\n${ diagnostic }` )
     }
 
     return false
