@@ -14,6 +14,7 @@ describe( `ephemeral credential cleanup`, () => {
         const legacy_stale = join( directory, `babysit-gh-credentials.env-stale` )
         const credential_env_stale = join( directory, `babysit-credentials-env-stale` )
         const synced_credential_stale = join( directory, `babysit-creds-codex-stale` )
+        const opencode_config_stale = join( directory, `babysit-opencode-opencode.json-stale` )
         const protected_synced_credential = join( directory, `babysit-creds-claude-protected` )
         const fresh = join( directory, `babysit-gh-hosts.yml-fresh` )
         const unrelated = join( directory, `unrelated` )
@@ -25,6 +26,7 @@ describe( `ephemeral credential cleanup`, () => {
                 legacy_stale,
                 credential_env_stale,
                 synced_credential_stale,
+                opencode_config_stale,
                 protected_synced_credential,
                 fresh,
                 unrelated,
@@ -35,6 +37,7 @@ describe( `ephemeral credential cleanup`, () => {
             utimesSync( legacy_stale, old_time, old_time )
             utimesSync( credential_env_stale, old_time, old_time )
             utimesSync( synced_credential_stale, old_time, old_time )
+            utimesSync( opencode_config_stale, old_time, old_time )
             utimesSync( protected_synced_credential, old_time, old_time )
 
             expect( cleanup_stale_ephemeral_credential_mounts( {
@@ -42,12 +45,13 @@ describe( `ephemeral credential cleanup`, () => {
                 now,
                 max_age_ms: 1_000,
                 protected_paths: [ protected_synced_credential ],
-            } ) ).toBe( 4 )
+            } ) ).toBe( 5 )
 
             expect( existsSync( stale ) ).toBe( false )
             expect( existsSync( legacy_stale ) ).toBe( false )
             expect( existsSync( credential_env_stale ) ).toBe( false )
             expect( existsSync( synced_credential_stale ) ).toBe( false )
+            expect( existsSync( opencode_config_stale ) ).toBe( false )
             expect( existsSync( protected_synced_credential ) ).toBe( true )
             expect( existsSync( fresh ) ).toBe( true )
             expect( existsSync( unrelated ) ).toBe( true )

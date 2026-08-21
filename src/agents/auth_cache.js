@@ -158,11 +158,13 @@ const write_host_auth_cache = ( cache, {
  * @param {Object} [options]
  * @param {Function} [options.read_file=readFileSync] - File reader seam
  * @param {Object<string,string|Object>} [options.context_files] - Auth-relevant files keyed by safe labels
+ * @param {Object<string,string>} [options.context_values] - Effective non-secret route values
  * @returns {{ fingerprint: string, parts: Object[] }|null} Safe fingerprint metadata
  */
 export const fingerprint_agent_credentials = ( agent, mounts = [], {
     read_file = readFileSync,
     context_files = {},
+    context_values = {},
 } = {} ) => {
 
     const credential_target = agent?.container_paths?.creds
@@ -211,7 +213,18 @@ export const fingerprint_agent_credentials = ( agent, mounts = [], {
         }
     }
 
-    if( !parts.length ) return null
+    Object.entries( context_values ).forEach( ( [ key, value ] ) => {
+        parts.push( {
+            kind: `value`,
+            key,
+            hash: hash_value( value ),
+        } )
+    } )
+
+    // Route values refine an observed credential/config identity; they cannot
+    // establish one alone. Otherwise an agent authenticated only through
+    // untracked cloud metadata could stay trusted after that access vanished.
+    if( !parts.some( part => part.kind !== `value` ) ) return null
 
     parts.sort( ( left, right ) =>
         `${ left.kind }:${ left.target || left.key }`.localeCompare( `${ right.kind }:${ right.target || right.key }` )

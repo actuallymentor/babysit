@@ -28,8 +28,7 @@ const INITIAL_PROMPT_BLOCKERS = [
 
 const is_initial_prompt_ready = output => {
 
-    const has_composer = /OpenAI Codex/i.test( output )
-        && /\?\s+for shortcuts/i.test( output )
+    const has_composer = /\bAsk Codex to do anything\b/i.test( output )
     const has_startup_blocker = INITIAL_PROMPT_BLOCKERS.some( pattern => pattern.test( output ) )
 
     return has_composer && !has_startup_blocker
@@ -123,10 +122,10 @@ export const codex = {
     // back to `codex resume --last`, which is inherently less precise.
     session_id_pattern: /(?:codex\s+resume\s+|session(?:\s+id)?[:\s]+)([0-9a-f-]{36})/i,
 
-    // Codex draws its banner and a provisional composer while the model and
-    // workspace still say "loading". Startup/update dialogs also keep that
-    // screen behind them and consume Enter themselves. Wait for the usable
-    // composer footer and reject every known startup blocker.
+    // The banner can scroll away and the shortcut footer collapses at narrow
+    // widths. The empty-composer placeholder remains stable. Startup/update
+    // dialogs keep that composer behind them and consume Enter themselves, so
+    // reject every known startup blocker before typing.
     initial_prompt_ready: is_initial_prompt_ready,
 
     /**

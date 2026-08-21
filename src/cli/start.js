@@ -28,7 +28,9 @@ import { build_system_prompt } from '../modes/prompt.js'
 import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
+    failed_agent_names,
     resolve_host_auth_context_files,
+    resolve_host_auth_context_values,
     run_host_agent_auth_check,
     unauthenticated_agent_names,
 } from '../agents/auth.js'
@@ -53,8 +55,9 @@ import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
+import { command_exists } from '../utils/exec.js'
 
-const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
+const INITIAL_PROMPT_READY_TIMEOUT_MS = 15_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
 const STARTUP_EXIT_GRACE_MS = 750
 const STARTUP_LOG_TAIL_LINES = 80
@@ -276,7 +279,7 @@ export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
  * @param {Function} [options.has_session_fn=has_session] - Session liveness helper
  * @param {Function} [options.wait_fn=wait] - Sleep helper
  * @param {Function} [options.now_fn=performance.now] - Monotonic clock helper
- * @param {number} [options.timeout_ms=60000] - Max wait before giving up
+ * @param {number} [options.timeout_ms=15000] - Max wait before giving up
  * @param {number} [options.interval_ms=250] - Poll interval
  * @returns {Promise<boolean>} True when ready, false on timeout
  */
@@ -489,14 +492,59 @@ export const confirm_docker_restricted_mode = async ( mode = {}, { input = proce
 }
 
 /**
- * Check every supported coding agent, reusing fresh hash-bound successes and
- * running every miss concurrently. The main session receives all captured
- * credentials so nested agent calls work; each throwaway probe receives only
- * its own credential descriptors.
+ * Select startup auth probes. The active frontend always remains first because
+ * Babysit can launch it from the image even when no host binary exists. Other
+ * agents are relevant only when their host CLI resolves on PATH.
+ *
+ * @param {Object} active_agent - Active frontend adapter
+ * @param {Object} [options]
+ * @param {Object[]} [options.candidates] - Supported candidate adapters
+ * @param {Function} [options.is_installed] - Host CLI detector
+ * @returns {Object[]} Active-first, deduplicated adapters
+ */
+export const select_startup_auth_agents = ( active_agent, {
+    candidates = SUPPORTED_AGENTS.map( get_agent ).filter( Boolean ),
+    is_installed = candidate => command_exists( candidate.bin ),
+} = {} ) => {
+
+    const unique_candidates = [ ...new Map(
+        candidates.filter( Boolean ).map( candidate => [ candidate.name, candidate ] )
+    ).values() ]
+    const installed_candidates = unique_candidates.filter( candidate =>
+        candidate?.name
+        && candidate.name !== active_agent?.name
+        && is_installed( candidate )
+    )
+    const selected = [ active_agent, ...installed_candidates ].filter( Boolean )
+
+    return [ ...new Map( selected.map( candidate => [ candidate.name, candidate ] ) ).values() ]
+
+}
+
+/**
+ * Decide whether startup needs the fail-closed confirmation prompt.
+ * Pressing Enter skips the whole batch decision even when one probe failed
+ * before cancellation reached its siblings.
+ *
+ * @param {Object[]} results - Authentication results
+ * @param {boolean} skipped - Batch-level user skip decision
+ * @returns {boolean} Whether to ask Exit? [Y/n]
+ */
+export const should_confirm_startup_authentication = ( results = [], skipped = false ) =>
+    !skipped && Boolean(
+        unauthenticated_agent_names( results ).length
+        || failed_agent_names( results ).length
+    )
+
+/**
+ * Check the active agent plus host-installed supported agents, reusing fresh
+ * hash-bound successes and running every miss concurrently. The main session
+ * still receives all captured credentials so nested agent calls work; each
+ * throwaway probe receives only its own credential descriptors.
  *
  * @param {Object} agent - Active agent adapter
  * @param {Object} options - Launch authentication context
- * @returns {Promise<{ results: Object[], cache_context: Object|null, cache_contexts: Object }>} Results and safe trust metadata
+ * @returns {Promise<{ results: Object[], skipped: boolean, cache_context: Object|null, cache_contexts: Object }>} Results and safe trust metadata
  */
 export const check_startup_agent_authentication = async ( agent, {
     workspace,
@@ -509,19 +557,37 @@ export const check_startup_agent_authentication = async ( agent, {
     resolve_context_files = resolve_host_auth_context_files,
     run_auth_check = run_host_agent_auth_check,
     agents = SUPPORTED_AGENTS.map( get_agent ).filter( Boolean ),
+    is_host_cli_installed = candidate => command_exists( candidate.bin ),
+    agent_args = [],
     reconcile_credentials = async () => {},
     credential_source_changed = () => false,
 } ) => {
 
+    const selected_agents = select_startup_auth_agents( agent, {
+        candidates: agents,
+        is_installed: is_host_cli_installed,
+    } )
     const cache_options = cache_path ? { cache_path } : {}
-    const context_files = new Map( agents.map( candidate => [
+    const context_files = new Map( selected_agents.map( candidate => [
         candidate.name,
         resolve_context_files( mode, { agent: candidate } ),
     ] ) )
-    const credential_identities = new Map( agents.map( candidate => [
+    const context_values = new Map( selected_agents.map( candidate => [
+        candidate.name,
+        resolve_host_auth_context_values(
+            candidate,
+            candidate.name === agent.name ? agent_args : [],
+            {
+                workspace,
+                include_host_preferences: !mode.ignore_host_agents_md,
+            }
+        ),
+    ] ) )
+    const credential_identities = new Map( selected_agents.map( candidate => [
         candidate.name,
         fingerprint_agent_credentials( candidate, creds_mounts, {
             context_files: context_files.get( candidate.name ),
+            context_values: context_values.get( candidate.name ),
         } ),
     ] ) )
     const has_cacheable_identity = [ ...credential_identities.values() ].some( Boolean )
@@ -530,7 +596,7 @@ export const check_startup_agent_authentication = async ( agent, {
     const cache_contexts = {}
     const agents_to_check = []
 
-    agents.forEach( candidate => {
+    selected_agents.forEach( candidate => {
         const identity = credential_identities.get( candidate.name )
         const cached = identity && find_host_auth_cache_hit( candidate.name, {
             credential_fingerprint: identity.fingerprint,
@@ -555,7 +621,7 @@ export const check_startup_agent_authentication = async ( agent, {
         }
     } )
 
-    const checked_results = agents_to_check.length
+    const checked_batch = agents_to_check.length
         ? await run_auth_checks_with_progress( agents_to_check, ( { signal, on_state } ) =>
             check_host_agent_authentication( {
                 agents: agents_to_check,
@@ -568,6 +634,7 @@ export const check_startup_agent_authentication = async ( agent, {
                         mode,
                         creds_mounts: credential_mounts_for_agent( auth_agent, creds_mounts ),
                         config: { isolate_dependencies: false },
+                        agent_args: auth_agent.name === agent.name ? agent_args : [],
                     } )
                     if( result.status !== `authenticated` ) return result
 
@@ -597,7 +664,8 @@ export const check_startup_agent_authentication = async ( agent, {
             input,
             output,
         } )
-        : []
+        : { results: [], skipped: false }
+    const checked_results = checked_batch.results
 
     checked_results.forEach( result => {
         if( result.status !== `authenticated` ) {
@@ -617,10 +685,12 @@ export const check_startup_agent_authentication = async ( agent, {
         const checked_agent = get_agent( result.name )
         const identity = fingerprint_agent_credentials( checked_agent, creds_mounts, {
             context_files: context_files.get( checked_agent.name ),
+            context_values: context_values.get( checked_agent.name ),
         } )
         const initial_context = credential_identities.get( result.name )?.parts
-            ?.filter( part => part.kind === `context` )
-        const verified_context = identity?.parts.filter( part => part.kind === `context` )
+            ?.filter( part => [ `context`, `value` ].includes( part.kind ) )
+        const verified_context = identity?.parts
+            .filter( part => [ `context`, `value` ].includes( part.kind ) )
         if( JSON.stringify( initial_context ) !== JSON.stringify( verified_context ) ) {
             result.status = `failed`
             result.authenticated = false
@@ -648,10 +718,11 @@ export const check_startup_agent_authentication = async ( agent, {
     const results_by_name = new Map(
         [ ...cached_results, ...checked_results ].map( result => [ result.name, result ] )
     )
-    const results = agents.map( candidate => results_by_name.get( candidate.name ) )
+    const results = selected_agents.map( candidate => results_by_name.get( candidate.name ) )
 
     return {
         results,
+        skipped: checked_batch.skipped,
         cache_context: cache_contexts[ agent.name ] || null,
         cache_contexts,
     }
@@ -779,6 +850,7 @@ export const cmd_start = async ( cmd ) => {
             creds_mounts: credential_setup.mounts,
             reconcile_credentials: name => credential_setup.sync?.flush?.( name ),
             credential_source_changed: name => credential_setup.sync?.source_changed?.( name ) === true,
+            agent_args: passthrough,
         } ) )
     } catch ( error ) {
         if( credential_setup ) {
@@ -802,6 +874,7 @@ export const cmd_start = async ( cmd ) => {
     } = credential_setup
     const {
         results: auth_results,
+        skipped: startup_auth_skipped,
         cache_context: startup_auth_cache_context,
         cache_contexts: startup_auth_cache_contexts,
     } = startup_auth
@@ -809,12 +882,15 @@ export const cmd_start = async ( cmd ) => {
     let auth_cache_contexts = startup_auth_cache_contexts
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )
-    if( unauthenticated_agents.length ) {
+    const failed_agents = failed_agent_names( auth_results )
+    if( should_confirm_startup_authentication( auth_results, startup_auth_skipped ) ) {
         auth_results
             .filter( result => [ `unauthenticated`, `failed` ].includes( result.status ) )
             .forEach( result => log.debug( `Auth check failed for ${ result.name }: ${ result.reason || `unknown reason` }` ) )
 
-        const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents )
+        const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents, {
+            failed_names: failed_agents,
+        } )
 
         if( !should_continue ) {
             await cleanup_failed_launch_credentials( {
@@ -941,6 +1017,7 @@ export const cmd_start = async ( cmd ) => {
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
 
         if( initial_prompt ) {
+            log.info( `Waiting up to ${ INITIAL_PROMPT_READY_TIMEOUT_MS / 1_000 }s for ${ agent.name } to accept the initial prompt` )
             const prompt_ready = await time_phase(
                 `tui readiness`,
                 () => wait_for_initial_prompt_ready( session_name, agent )

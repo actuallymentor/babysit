@@ -159,6 +159,29 @@ describe( `host authentication cache`, () => {
 
     } )
 
+    it( `binds cache identity to effective non-secret route values`, () => {
+
+        const agent = get_agent( `opencode` )
+        const first = fingerprint_agent_credentials( agent, [], {
+            context_files: { babysitrc: `/host/.babysitrc` },
+            context_values: { model: `openai/gpt-5.6-sol`, profile: `tool-free-v1` },
+            read_file: () => `OPENCODE_API_KEY=opaque`,
+        } )
+        const changed = fingerprint_agent_credentials( agent, [], {
+            context_files: { babysitrc: `/host/.babysitrc` },
+            context_values: { model: `anthropic/claude-opus-4-7`, profile: `tool-free-v1` },
+            read_file: () => `OPENCODE_API_KEY=opaque`,
+        } )
+
+        expect( first.parts.map( part => part.kind ) ).toEqual( [ `context`, `value`, `value` ] )
+        expect( JSON.stringify( first ) ).not.toContain( `gpt-5.6-sol` )
+        expect( changed.fingerprint ).not.toBe( first.fingerprint )
+        expect( fingerprint_agent_credentials( agent, [], {
+            context_values: { model: `openai/gpt-5.6-sol` },
+        } ) ).toBeNull()
+
+    } )
+
     it( `hashes only effective fields from transformed context`, () => {
 
         const agent = get_agent( `gemini` )

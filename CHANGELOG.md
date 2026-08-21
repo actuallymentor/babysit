@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.31.1 — 2026-08-21
+
+### 🐛 Fixed
+- **Codex startup prompts target its stable composer.** Optional banner/footer
+  text no longer causes a silent 60-second wait; blocked screens still reject
+  injection and the visible readiness deadline is now 15 seconds.
+- **Startup probes only relevant host CLIs.** The active agent is always
+  checked, while non-active agents run only when their CLI exists on host PATH.
+- **Enter skips the entire startup auth decision.** Completed failures and
+  final-probe races no longer resurrect the `Exit?` confirmation.
+- **OpenCode auth checks use the real route without tools.** Probes pin the
+  effective model, stage sanitized provider routing, disable agent tools, and
+  distinguish missing login from model/configuration failures.
+
 ## 0.31.0 — 2026-08-21
 
 ### ✨ Added

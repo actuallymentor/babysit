@@ -49,7 +49,9 @@ const final_state_for = result => {
  * @param {Object[]} agents - Agents being checked
  * @param {Function} run_checks - Async ({ signal, on_state }) auth runner
  * @param {Object} [options]
- * @returns {Promise<Array>} Authentication results
+ * @param {number} [options.completion_grace_ms=150] - Final-failure Enter handoff window
+ * @param {Function} [options.wait_fn] - Completion grace timer seam
+ * @returns {Promise<{ results: Array, skipped: boolean }>} Results and batch skip decision
  */
 export const run_auth_checks_with_progress = async ( agents, run_checks, {
     input = process.stdin,
@@ -60,6 +62,8 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
     set_interval = setInterval,
     clear_interval = clearInterval,
     kill_process = process.kill.bind( process ),
+    completion_grace_ms = 150,
+    wait_fn = milliseconds => new Promise( resolve => setTimeout( resolve, milliseconds ) ),
 } = {} ) => {
 
     const controller = new AbortController()
@@ -89,7 +93,10 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
     }
 
     const on_state = ( name, state ) => {
-        states.set( name, state )
+        const visible_state = skipped && ![ `authenticated`, `cached` ].includes( state )
+            ? `skipped`
+            : state
+        states.set( name, visible_state )
         if( animated ) render()
     }
 
@@ -127,7 +134,19 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
     let results
     try {
         results = await run_checks( { signal: controller.signal, on_state } )
-        results.forEach( result => states.set( result.name, final_state_for( result ) ) )
+        results.forEach( result => {
+            const final_state = final_state_for( result )
+            const visible_state = skipped && ![ `authenticated`, `cached` ].includes( final_state )
+                ? `skipped`
+                : final_state
+            states.set( result.name, visible_state )
+        } )
+        const has_blocking_result = results.some(
+            result => ![ `authenticated`, `cached` ].includes( final_state_for( result ) )
+        )
+        if( can_read_keys && has_blocking_result && !skipped && completion_grace_ms > 0 ) {
+            await wait_fn( completion_grace_ms )
+        }
     } catch ( error ) {
         run_error = error
     } finally {
@@ -147,5 +166,5 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
         [ ...states ].map( ( [ name, state ] ) => `${ name } ${ state }` ).join( `, ` )
     }\n` )
 
-    return results
+    return { results, skipped }
 }

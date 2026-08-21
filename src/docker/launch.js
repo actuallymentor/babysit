@@ -130,6 +130,7 @@ export const build_docker_launch_plan = ( options, {
         yolo: mode.yolo,
         include_host_preferences: include_host_agent_context,
         auth_probe: options.auth_probe === true,
+        workspace: options.workspace,
     } )
     const raw_credential_mounts = options.creds_mounts || []
     const has_staged_agent_credentials = raw_credential_mounts.some( mount => mount.type === `synced_file` )
@@ -146,7 +147,7 @@ export const build_docker_launch_plan = ( options, {
             type: `seed_file`,
             source: copy_source_from( mount.host ),
             target: mount.container,
-            cleanup: is_ephemeral_path( mount.host ) ? mount.host : null,
+            cleanup: mount.cleanup || ( is_ephemeral_path( mount.host ) ? mount.host : null ),
         }
     } )
 

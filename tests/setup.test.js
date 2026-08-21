@@ -578,9 +578,70 @@ describe( `gemini_extra_mounts`, () => {
 
 describe( `opencode_extra_mounts`, () => {
 
-    it( `returns no extra mounts (auth.json handled by credentials, no other state needed)`, () => {
+    it( `returns no extra mounts for normal sessions`, () => {
 
         expect( opencode_extra_mounts() ).toEqual( [] )
+
+    } )
+
+    it( `stages a tool-free primary agent for auth probes`, () => {
+
+        const [ mount ] = opencode_extra_mounts( { auth_probe: true } )
+
+        try {
+            expect( mount.type ).toBe( `seed_file` )
+            expect( mount.target ).toBe( `/home/node/.config/opencode/opencode.json` )
+            expect( JSON.parse( readFileSync( mount.source, `utf8` ) ) ).toEqual( {
+                agent: {
+                    'babysit-auth': {
+                        mode: `primary`,
+                        permission: `deny`,
+                        tools: { '*': false },
+                    },
+                },
+            } )
+        } finally {
+            rmSync( mount.cleanup, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `stages the same sanitized project route for sessions and probes`, () => {
+
+        const workspace = mkdtempSync( join( tmpdir(), `babysit-opencode-setup-route-` ) )
+        writeFileSync( join( workspace, `opencode.json` ), JSON.stringify( {
+            provider: {
+                custom: {
+                    options: { baseURL: `https://example.test/v1` },
+                },
+            },
+            model: `custom/model`,
+            plugin: [ `unsafe-plugin` ],
+        } ) )
+        const [ session_mount ] = opencode_extra_mounts( {
+            workspace,
+            include_host_preferences: false,
+        } )
+        const [ probe_mount ] = opencode_extra_mounts( {
+            workspace,
+            include_host_preferences: false,
+            auth_probe: true,
+        } )
+
+        try {
+            const session_config = JSON.parse( readFileSync( session_mount.source, `utf8` ) )
+            const probe_config = JSON.parse( readFileSync( probe_mount.source, `utf8` ) )
+
+            expect( session_config.provider ).toEqual( probe_config.provider )
+            expect( session_config.model ).toBe( `custom/model` )
+            expect( session_config ).not.toHaveProperty( `plugin` )
+            expect( session_config ).not.toHaveProperty( `agent` )
+            expect( probe_config.agent[ `babysit-auth` ].tools ).toEqual( { '*': false } )
+        } finally {
+            rmSync( session_mount.cleanup, { recursive: true, force: true } )
+            rmSync( probe_mount.cleanup, { recursive: true, force: true } )
+            rmSync( workspace, { recursive: true, force: true } )
+        }
 
     } )
 

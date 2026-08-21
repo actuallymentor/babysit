@@ -544,6 +544,7 @@ export const build_docker_command_args = ( options ) => {
         yolo: mode.yolo,
         include_host_preferences: include_host_agent_context,
         auth_probe,
+        workspace,
     } )
     for( const m of extra_mounts ) {
         if( m.type === `copy` || m.type === `seed_file` ) continue

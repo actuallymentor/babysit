@@ -56,6 +56,18 @@ const auth_result = ( name, status, options = {} ) => ( {
     ...options,
 } )
 
+const AUTHENTICATION_FAILURE_PATTERNS = [
+    /\b(?:401|unauthenticated|unauthorized)\b/i,
+    /\b(?:not logged in|login required|please log in|sign in required)\b/i,
+    /\bauthentication\s+(?:failed|required)\b/i,
+    /\b(?:connect a provider|select auth method|manually enter api key|choose an auth method)\b/i,
+    /\binvalid\s+(?:api\s+key|access\s+token|refresh\s+token|credentials?)\b/i,
+    /\b(?:api\s+key|access\s+token|refresh\s+token|credentials?)\b[^\n]*(?:missing|expired|invalid|required|not found|not configured)/i,
+]
+
+const is_authentication_failure = output =>
+    AUTHENTICATION_FAILURE_PATTERNS.some( pattern => pattern.test( output ) )
+
 /**
  * Format a date like the shell example in the boot auth-check prompt.
  * @param {Date} date - Date to format
@@ -183,14 +195,28 @@ export const select_host_auth_check_agents = ( {
  * Build the command arguments for an agent's host auth check.
  * @param {Object} agent - Agent adapter
  * @param {string} prompt - Prompt to send to the host agent CLI
+ * @param {Object} [options]
+ * @param {string[]} [options.agent_args=[]] - Effective agent CLI arguments
  * @returns {string[]|null} CLI args, or null when the adapter cannot be checked
  */
-export const build_host_auth_args = ( agent, prompt ) => {
+export const build_host_auth_args = ( agent, prompt, { agent_args = [] } = {} ) => {
 
     if( typeof agent?.auth_check?.args !== `function` ) return null
-    return agent.auth_check.args( prompt )
+    return agent.auth_check.args( prompt, { agent_args } )
 
 }
+
+/**
+ * Resolve safe, non-secret values that affect an adapter's auth route.
+ * @param {Object} agent - Agent adapter
+ * @param {string[]} agent_args - Effective CLI passthrough arguments
+ * @param {Object} [options] - Workspace/profile context
+ * @returns {Object<string,string>} Cache context values
+ */
+export const resolve_host_auth_context_values = ( agent, agent_args = [], options = {} ) =>
+    typeof agent?.auth_check?.cache_context === `function`
+        ? agent.auth_check.cache_context( agent_args, options )
+        : {}
 
 /**
  * Get the last non-empty line of command output.
@@ -218,6 +244,7 @@ export const answered_ok = ( output = `` ) => /^ok$/i.test( last_nonempty_line( 
  * @param {Object[]} [options.creds_mounts=[]] - Credential mounts/env from setup_credentials
  * @param {Object} [options.config={ isolate_dependencies: false }] - Babysit config
  * @param {Object} [options.extra_env={}] - Extra environment variables
+ * @param {string[]} [options.agent_args=[]] - Effective agent CLI arguments
  * @returns {Object|null} Docker launch options, or null when the adapter cannot be checked
  */
 const build_docker_auth_check_options = ( agent, {
@@ -227,9 +254,10 @@ const build_docker_auth_check_options = ( agent, {
     creds_mounts = [],
     config = { isolate_dependencies: false },
     extra_env = {},
+    agent_args = [],
 } = {} ) => {
 
-    const auth_args = build_host_auth_args( agent, prompt )
+    const auth_args = build_host_auth_args( agent, prompt, { agent_args } )
     if( !agent?.bin || !auth_args ) return null
 
     const agent_extra_env = typeof agent.extra_env === `function`
@@ -264,7 +292,11 @@ const build_docker_auth_check_options = ( agent, {
         include_loop_deadline: false,
         include_agent_state: false,
         auth_probe: true,
-        agent_command: [ agent.bin, ...auth_args ],
+        agent_command: [
+            ...agent.auth_check?.command_prefix || [],
+            agent.bin,
+            ...auth_args,
+        ],
     }
 
 }
@@ -327,6 +359,7 @@ export const build_docker_auth_check_cleanup_command_args = ( command_args = [] 
  * @param {Object[]} [options.creds_mounts=[]] - Credential mounts/env from setup_credentials
  * @param {Object} [options.config={ isolate_dependencies: false }] - Babysit config
  * @param {Object} [options.extra_env={}] - Extra environment variables
+ * @param {string[]} [options.agent_args=[]] - Effective agent CLI arguments
  * @param {Function} [options.spawn_fn=spawn] - Spawn helper for tests
  * @param {Function} [options.cleanup_spawn_fn=spawn] - Spawn helper for timeout cleanup
  * @param {Function} [options.prepare_launch=prepare_docker_launch] - Staged launch builder
@@ -343,6 +376,7 @@ export const run_host_agent_auth_check = async ( agent, {
     creds_mounts = [],
     config = { isolate_dependencies: false },
     extra_env = {},
+    agent_args = [],
     spawn_fn = spawn,
     cleanup_spawn_fn = spawn,
     timeout_ms = HOST_AUTH_CHECK_TIMEOUT_MS,
@@ -388,6 +422,7 @@ export const run_host_agent_auth_check = async ( agent, {
         creds_mounts,
         config,
         extra_env,
+        agent_args,
     } )
     if( !docker_options ) {
         clear_lifecycle()
@@ -562,6 +597,7 @@ export const run_host_agent_auth_check = async ( agent, {
 
             const output = current_output()
             const diagnostic = strip_ansi( stderr || stdout ).trim()
+            const authentication_diagnostic = strip_ansi( `${ stderr }\n${ stdout }` ).trim()
             if( termination_status ) {
                 finish( auth_result( agent.name, termination_status, {
                     reason: flush_error?.message || termination_reason,
@@ -571,7 +607,9 @@ export const run_host_agent_auth_check = async ( agent, {
             }
 
             const is_authenticated = !flush_error && code === 0 && answered_ok( output )
-            const status = is_authenticated ? `authenticated` : `unauthenticated`
+            const status = is_authenticated
+                ? `authenticated`
+                : is_authentication_failure( authentication_diagnostic ) ? `unauthenticated` : `failed`
             const failure_reason = flush_error?.message || diagnostic || `exited with code ${ code }`
 
             finish( auth_result( agent.name, status, {
@@ -634,17 +672,25 @@ export const check_host_agent_authentication = async ( {
 }
 
 /**
- * Extract failed agent names from auth-check results.
+ * Extract explicitly unauthenticated agent names from auth-check results.
  * @param {Array<{ name: string, authenticated: boolean }>} results - Auth-check results
  * @returns {string[]} Unauthenticated agent names
  */
 export const unauthenticated_agent_names = ( results = [] ) => 
     results
         .filter( result => result.status
-            ? [ `unauthenticated`, `failed` ].includes( result.status )
+            ? result.status === `unauthenticated`
             : !result.authenticated
         )
         .map( result => result.name )
+
+/**
+ * Extract agents whose model-backed check failed for a non-auth reason.
+ * @param {Array<{ name: string, status?: string }>} results - Auth-check results
+ * @returns {string[]} Failed agent names
+ */
+export const failed_agent_names = ( results = [] ) =>
+    results.filter( result => result.status === `failed` ).map( result => result.name )
 
 
 /**
@@ -658,6 +704,7 @@ export const should_continue_with_unauthenticated_agents = ( answer = `` ) => /^
  * Prompt before starting a main session with unauthenticated host agents.
  * @param {string[]} names - Unauthenticated agent names
  * @param {Object} [io]
+ * @param {string[]} [io.failed_names=[]] - Agents with non-auth probe failures
  * @param {NodeJS.ReadableStream} [io.input=process.stdin] - Prompt input
  * @param {NodeJS.WritableStream} [io.output=process.stdout] - Prompt output
  * @returns {Promise<boolean>} True when the user chose to continue
@@ -665,13 +712,15 @@ export const should_continue_with_unauthenticated_agents = ( answer = `` ) => /^
 export const confirm_continue_with_unauthenticated_agents = async ( names, {
     input = process.stdin,
     output = process.stdout,
+    failed_names = [],
 } = {} ) => {
 
     const question = [
-        `Unauthenticated agents: ${ names.join( `, ` ) }.`,
+        names.length ? `Unauthenticated agents: ${ names.join( `, ` ) }.` : null,
+        failed_names.length ? `Authentication checks failed: ${ failed_names.join( `, ` ) }.` : null,
         `Run \`babysit doctor --auth\` to check authentication explicitly.`,
         `Exit? [Y/n] `,
-    ].join( `\n` )
+    ].filter( Boolean ).join( `\n` )
 
     if( !input.isTTY ) {
         output.write( `${ question }\n` )
