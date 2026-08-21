@@ -55,6 +55,7 @@ const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
 const STARTUP_EXIT_GRACE_MS = 750
 const STARTUP_LOG_TAIL_LINES = 80
+const monotonic_now = () => performance.now()
 
 /**
  * Resolve the prompt babysit types into the agent pane once the TUI launches.
@@ -248,47 +249,65 @@ export const resolve_agent_resume_target = ( cmd = {}, agent = {}, session_loade
  */
 export const is_initial_prompt_ready = ( agent = {}, output = `` ) => {
 
+    const clean = strip_ansi( output )
+    if( typeof agent.initial_prompt_ready === `function` ) {
+        return agent.initial_prompt_ready( clean )
+    }
+
     const pattern = agent.initial_prompt_ready_pattern
     if( !pattern ) return true
 
     pattern.lastIndex = 0
-    return pattern.test( strip_ansi( output ) )
+    return pattern.test( clean )
 
 }
 
 /**
  * Wait for the agent TUI to be ready before typing the startup prompt.
- * Agents without a readiness pattern are considered ready immediately.
+ * Agents without a readiness gate are considered ready immediately.
  * @param {string} session_name - Tmux session name
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
  * @param {Function} [options.capture=capture_pane] - Pane capture helper
+ * @param {Function} [options.has_session_fn=has_session] - Session liveness helper
  * @param {Function} [options.wait_fn=wait] - Sleep helper
+ * @param {Function} [options.now_fn=performance.now] - Monotonic clock helper
  * @param {number} [options.timeout_ms=60000] - Max wait before giving up
  * @param {number} [options.interval_ms=250] - Poll interval
  * @returns {Promise<boolean>} True when ready, false on timeout
  */
 export const wait_for_initial_prompt_ready = async ( session_name, agent = {}, {
     capture = capture_pane,
+    has_session_fn = has_session,
     wait_fn = wait,
+    now_fn = monotonic_now,
     timeout_ms = INITIAL_PROMPT_READY_TIMEOUT_MS,
     interval_ms = INITIAL_PROMPT_READY_INTERVAL_MS,
 } = {} ) => {
 
-    if( !agent.initial_prompt_ready_pattern ) return true
+    if( !agent.initial_prompt_ready && !agent.initial_prompt_ready_pattern ) return true
 
-    const attempts = Math.max( 1, Math.ceil( timeout_ms / interval_ms ) )
+    const deadline = now_fn() + timeout_ms
+    let first_attempt = true
 
-    for( let attempt = 0; attempt < attempts; attempt++ ) {
+    while( first_attempt || now_fn() < deadline ) {
+
+        first_attempt = false
+        const capture_timeout_ms = Math.max( 1, Math.min( 1_000, deadline - now_fn() ) )
 
         try {
-            const output = await capture( session_name, 1_000 )
+            const output = await capture( session_name, capture_timeout_ms )
             if( is_initial_prompt_ready( agent, output ) ) return true
         } catch {
-            return false
+            // Capture can race a tmux repaint, but a dead pane will never
+            // become ready. Avoid hiding the launch failure for a full minute.
+            if( !await has_session_fn( session_name ) ) return false
         }
 
-        if( attempt < attempts - 1 ) await wait_fn( interval_ms )
+        const remaining_ms = deadline - now_fn()
+        if( remaining_ms <= 0 ) return false
+
+        await wait_fn( Math.min( interval_ms, remaining_ms ) )
 
     }
 

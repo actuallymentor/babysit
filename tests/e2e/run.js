@@ -312,8 +312,9 @@ const build_images = async () => {
 const run_submit_parity_sessions = async () => {
     for( const agent of SUPPORTED_AGENTS ) {
         const marker = `BABYSIT_E2E_AUTO_PROMPT_${ agent.toUpperCase() }`
+        const initial_prompt = `BABYSIT_E2E_INITIAL_PROMPT_${ agent.toUpperCase() }`
         const workspace = make_workspace( `submit-${ agent }`, `config:
-    initial_prompt: "BABYSIT_E2E_INITIAL_PROMPT_${ agent.toUpperCase() }"
+    initial_prompt: "${ initial_prompt }"
 babysit:
     - on: "FAKE_AGENT_READY"
       do: "${ marker }"
@@ -336,6 +337,20 @@ babysit:
         ensure(
             readFileSync( join( workspace, `e2e-all-creds-${ agent }.txt` ), `utf8` ) === `ok`,
             `${ agent } session did not receive every agent credential file`
+        )
+        ensure(
+            readFileSync( join( workspace, `e2e-initial-prompt.txt` ), `utf8` ) === initial_prompt,
+            `${ agent } did not receive the exact initial prompt`
+        )
+
+        const agent_log = readFileSync( join( workspace, `e2e-fake-agent.log` ), `utf8` )
+        ensure(
+            count_occurrences( agent_log, `input ${ JSON.stringify( initial_prompt ) }` ) === 1,
+            `${ agent } did not submit the initial prompt exactly once`
+        )
+        ensure(
+            !agent_log.includes( `startup input ignored` ),
+            `${ agent } sent input before the composer was ready`
         )
         await stop_session( session )
     }

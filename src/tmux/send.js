@@ -1,6 +1,12 @@
+import { wait } from 'mentie'
 import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
+
+// Codex suppresses Enter for 120ms after an unframed paste burst. Tmux only
+// adds bracketed-paste framing after the TUI has enabled it, so leave one small
+// safety margin for startup and for OpenCode's asynchronous paste handler.
+const PASTE_SETTLE_MS = 150
 
 const make_buffer_name = () => `babysit-send-${ process.pid }-${ Date.now() }-${ Math.random().toString( 36 ).slice( 2 ) }`
 
@@ -73,13 +79,21 @@ const paste_text = async ( session_name, text, { runner = run } = {} ) => {
  * @param {string} text - The text to type and submit
  * @param {Object} [options]
  * @param {Function} [options.runner=run] - Command runner, injected by tests
+ * @param {Function} [options.wait_fn=wait] - Sleep helper, injected by tests
+ * @param {number} [options.settle_ms=150] - Paste commit delay before Enter
  * @returns {Promise<void>}
  */
-export const send_text = async ( session_name, text, { runner = run } = {} ) => {
+export const send_text = async ( session_name, text, {
+    runner = run,
+    wait_fn = wait,
+    settle_ms = PASTE_SETTLE_MS,
+} = {} ) => {
 
     log.debug( `Sending text to session: ${ text.slice( 0, 80 ) }...` )
 
     await paste_text( session_name, text, { runner } )
+
+    if( settle_ms > 0 ) await wait_fn( settle_ms )
 
     await send_enter( session_name, { runner } )
 

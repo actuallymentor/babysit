@@ -27,6 +27,18 @@ const read_opencode_fixture = name => readFileSync(
     `utf8`
 ).replaceAll( `[ESC]`, `\x1b` )
 
+const make_clock = () => {
+
+    let current = 0
+
+    return {
+        advance: milliseconds => { current += milliseconds },
+        now_fn: () => current,
+        wait_fn: async milliseconds => { current += milliseconds },
+    }
+
+}
+
 const startup_auth_fixture = () => {
 
     const directory = mkdtempSync( join( tmpdir(), `babysit-startup-auth-` ) )
@@ -170,23 +182,67 @@ describe( `initial prompt readiness`, () => {
         expect( is_initial_prompt_ready( {}, `` ) ).toBe( true )
     } )
 
-    it( `recognises Codex's first TUI screen`, () => {
+    it( `recognises Codex's usable composer screen`, () => {
         const output = `
 >_ OpenAI Codex (v0.128.0)
+model: gpt-5.6-sol
+directory: /workspace
+› Ask Codex to do anything
+? for shortcuts
 `
         expect( is_initial_prompt_ready( codex, output ) ).toBe( true )
     } )
 
-    it( `recognises Claude's first TUI screen`, () => {
+    it( `rejects Codex's provisional composer while startup is loading`, () => {
+        const output = `
+>_ OpenAI Codex (v0.148.0)
+model: loading
+directory: loading or /workspace
+› Ask Codex to do anything
+? for shortcuts
+`
+        expect( is_initial_prompt_ready( codex, output ) ).toBe( false )
+    } )
+
+    it( `does not treat Codex's bare banner as a ready composer`, () => {
+        expect( is_initial_prompt_ready( codex, `>_ OpenAI Codex (v0.148.0)` ) ).toBe( false )
+    } )
+
+    it( `rejects Codex's update dialog even with a composer behind it`, () => {
+        const output = `
+>_ OpenAI Codex (v0.148.0)
+? for shortcuts
+Update available! 0.148.0 -> 0.149.0
+Press enter to continue
+`
+        expect( is_initial_prompt_ready( codex, output ) ).toBe( false )
+    } )
+
+    it( `recognises Claude's usable composer screen`, () => {
         const output = `
 Claude Code v2.1.128
 Welcome back Mentor!
+❯
+? for shortcuts
 `
         expect( is_initial_prompt_ready( claude, output ) ).toBe( true )
     } )
 
     it( `does not require Claude's banner to use three-part semver`, () => {
-        expect( is_initial_prompt_ready( claude, `Claude Code v3` ) ).toBe( true )
+        expect( is_initial_prompt_ready( claude, `Claude Code v3\n? for shortcuts` ) ).toBe( true )
+    } )
+
+    it( `does not treat Claude's splash screen as a ready composer`, () => {
+        expect( is_initial_prompt_ready( claude, `Welcome to Claude Code v2.1.237` ) ).toBe( false )
+    } )
+
+    it( `rejects Claude's theme dialog even if its footer is visible`, () => {
+        const output = `
+Welcome to Claude Code v2.1.237
+Choose the text style that looks best with your terminal
+? for shortcuts
+`
+        expect( is_initial_prompt_ready( claude, output ) ).toBe( false )
     } )
 
     it( `does not treat early Claude pane echo as ready`, () => {
@@ -244,14 +300,21 @@ Do NOT add Co-Authored-By lines to git commit messages.
     it( `waits until the readiness pattern appears`, async () => {
 
         const seen = []
-        const captures = [ `starting`, `still starting`, `OpenAI Codex` ]
+        const captures = [
+            `starting`,
+            `still starting`,
+            `OpenAI Codex\nmodel: ready\n? for shortcuts`,
+        ]
+        const clock = make_clock()
 
         const ready = await wait_for_initial_prompt_ready( `session`, codex, {
             capture: async ( session_name ) => {
                 seen.push( session_name )
                 return captures.shift()
             },
+            has_session_fn: async () => true,
             wait_fn: async () => null,
+            now_fn: clock.now_fn,
             timeout_ms: 750,
             interval_ms: 250,
         } )
@@ -263,9 +326,11 @@ Do NOT add Co-Authored-By lines to git commit messages.
 
     it( `returns false when the ready screen never appears`, async () => {
 
+        const clock = make_clock()
         const ready = await wait_for_initial_prompt_ready( `session`, codex, {
             capture: async () => `loading`,
-            wait_fn: async () => null,
+            wait_fn: clock.wait_fn,
+            now_fn: clock.now_fn,
             timeout_ms: 500,
             interval_ms: 250,
         } )
@@ -280,14 +345,83 @@ Do NOT add Co-Authored-By lines to git commit messages.
             read_opencode_fixture( `loading` ),
             read_opencode_fixture( `model-error` ),
         ]
+        const clock = make_clock()
         const ready = await wait_for_initial_prompt_ready( `session`, opencode, {
             capture: async () => captures.shift() || read_opencode_fixture( `model-error` ),
-            wait_fn: async () => null,
+            wait_fn: clock.wait_fn,
+            now_fn: clock.now_fn,
             timeout_ms: 500,
             interval_ms: 250,
         } )
 
         expect( ready ).toBe( false )
+
+    } )
+
+    it( `retries a transient pane capture failure`, async () => {
+
+        const clock = make_clock()
+        let captures = 0
+        const ready = await wait_for_initial_prompt_ready( `session`, claude, {
+            capture: async () => {
+                captures++
+                if( captures === 1 ) throw new Error( `tmux is busy` )
+                return `Claude Code v3\n? for shortcuts`
+            },
+            has_session_fn: async () => true,
+            wait_fn: clock.wait_fn,
+            now_fn: clock.now_fn,
+            timeout_ms: 500,
+            interval_ms: 250,
+        } )
+
+        expect( ready ).toBe( true )
+        expect( captures ).toBe( 2 )
+
+    } )
+
+    it( `stops retrying when the tmux session has exited`, async () => {
+
+        const clock = make_clock()
+        let liveness_checks = 0
+        const ready = await wait_for_initial_prompt_ready( `session`, claude, {
+            capture: async () => { throw new Error( `no pane` ) },
+            has_session_fn: async () => {
+                liveness_checks++
+                return false
+            },
+            wait_fn: async () => null,
+            now_fn: clock.now_fn,
+            timeout_ms: 500,
+            interval_ms: 250,
+        } )
+
+        expect( ready ).toBe( false )
+        expect( liveness_checks ).toBe( 1 )
+
+    } )
+
+    it( `uses an absolute deadline even when pane capture is slow`, async () => {
+
+        const clock = make_clock()
+        const capture_timeouts = []
+        let captures = 0
+        const ready = await wait_for_initial_prompt_ready( `session`, codex, {
+            capture: async ( _, capture_timeout_ms ) => {
+                captures++
+                capture_timeouts.push( capture_timeout_ms )
+                clock.advance( 250 )
+                return `OpenAI Codex\nmodel: loading\n? for shortcuts`
+            },
+            wait_fn: async () => null,
+            now_fn: clock.now_fn,
+            timeout_ms: 500,
+            interval_ms: 250,
+        } )
+
+        expect( ready ).toBe( false )
+        expect( captures ).toBe( 2 )
+        expect( capture_timeouts ).toEqual( [ 500, 250 ] )
 
     } )
 

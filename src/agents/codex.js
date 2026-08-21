@@ -17,6 +17,25 @@ export const get_host_codex_home = () => ( process.env.CODEX_HOME || `~/.codex` 
  */
 export const get_host_codex_auth_file = () => `${ get_host_codex_home() }/auth.json`
 
+const INITIAL_PROMPT_BLOCKERS = [
+    /\b(?:model|directory):\s*loading\b/i,
+    /Update available/i,
+    /Press enter to continue/i,
+    /Do you trust the contents of this directory/i,
+    /Choose an approval mode/i,
+    /Sign in to Codex/i,
+]
+
+const is_initial_prompt_ready = output => {
+
+    const has_composer = /OpenAI Codex/i.test( output )
+        && /\?\s+for shortcuts/i.test( output )
+    const has_startup_blocker = INITIAL_PROMPT_BLOCKERS.some( pattern => pattern.test( output ) )
+
+    return has_composer && !has_startup_blocker
+
+}
+
 export const codex = {
 
     name: `codex`,
@@ -104,11 +123,11 @@ export const codex = {
     // back to `codex resume --last`, which is inherently less precise.
     session_id_pattern: /(?:codex\s+resume\s+|session(?:\s+id)?[:\s]+)([0-9a-f-]{36})/i,
 
-    // Codex is a full-screen TUI. Wait until it has drawn its first screen
-    // before pasting Babysit's launch prompt, otherwise the prompt can land
-    // while Codex is still switching terminal modes and render as duplicated
-    // or partially submitted text.
-    initial_prompt_ready_pattern: /OpenAI Codex/,
+    // Codex draws its banner and a provisional composer while the model and
+    // workspace still say "loading". Startup/update dialogs also keep that
+    // screen behind them and consume Enter themselves. Wait for the usable
+    // composer footer and reject every known startup blocker.
+    initial_prompt_ready: is_initial_prompt_ready,
 
     /**
      * Keep Codex's newer SQLite-backed state under CODEX_HOME too. The

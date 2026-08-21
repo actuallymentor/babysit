@@ -215,6 +215,19 @@ const inject_codex_first_run_bypass = ( raw ) => {
 
     let out = raw
 
+    // A fresh Codex release can open an update dialog over the composer. That
+    // dialog owns Enter, so the launch prompt would confirm the dialog instead
+    // of submitting. This is a container-only config snapshot; host update
+    // preferences remain untouched.
+    const first_section = out.search( /^\s*\[/m )
+    const update_check = /^\s*check_for_update_on_startup\s*=.*$/m
+    const update_match = update_check.exec( out )
+    if( update_match && ( first_section === -1 || update_match.index < first_section ) ) {
+        out = out.replace( update_check, `check_for_update_on_startup = false` )
+    } else {
+        out = `check_for_update_on_startup = false\n${ out }`
+    }
+
     if( !out.includes( `[projects."/workspace"]` ) ) {
         out += `\n\n[projects."/workspace"]\ntrust_level = "trusted"\n`
     }
