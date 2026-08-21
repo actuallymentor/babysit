@@ -15,7 +15,7 @@ import { prepare_docker_launch } from '../docker/launch.js'
 import { log } from '../utils/log.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
 
-export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
+export const HOST_AUTH_CHECK_TIMEOUT_MS = 180_000
 export const HOST_AUTH_CHECK_KILL_GRACE_MS = 1_500
 
 const cancellation_status = signal => signal?.reason?.code === `skip` ? `skipped` : `cancelled`
@@ -26,6 +26,27 @@ const authentication_abort_reason = signal => {
     if( signal?.reason?.code === `timeout` ) return `timed out`
     if( signal?.reason?.code === `skip` ) return `skipped by user`
     return `cancelled`
+}
+
+const isolated_gemini_auth_settings = raw => {
+
+    let parsed = {}
+    try {
+        parsed = JSON.parse( raw )
+    } catch { /* malformed settings become an empty generated profile */ }
+
+    const selected_type = parsed.security?.auth?.selectedType
+    const legacy_selected_type = parsed.auth?.selectedType
+
+    return JSON.stringify( {
+        ... typeof selected_type === `string` && selected_type
+            ? { security: { auth: { selectedType: selected_type } } }
+            : {},
+        ... typeof legacy_selected_type === `string` && legacy_selected_type
+            ? { auth: { selectedType: legacy_selected_type } }
+            : {},
+    } )
+
 }
 
 const auth_result = ( name, status, options = {} ) => ( {
@@ -75,7 +96,7 @@ export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS 
  * @param {string} [options.babysit_rc_path] - Default host rc path
  * @param {string} [options.home_dir=homedir()] - Host home path
  * @param {Function} [options.path_exists=existsSync] - Filesystem seam
- * @returns {Object<string,string>} Safe context labels to source paths
+ * @returns {Object<string,string|Object>} Safe context labels to source descriptors
  */
 export const resolve_host_auth_context_files = ( mode = {}, {
     env = process.env,
@@ -123,6 +144,13 @@ export const resolve_host_auth_context_files = ( mode = {}, {
         .forEach( ( [ key, path ] ) => {
             context_files[ key ] = path
         } )
+
+    if( mode.ignore_host_agents_md && context_files.gemini_settings ) {
+        context_files.gemini_settings = {
+            path: context_files.gemini_settings,
+            transform: isolated_gemini_auth_settings,
+        }
+    }
 
     return context_files
 
@@ -302,7 +330,7 @@ export const build_docker_auth_check_cleanup_command_args = ( command_args = [] 
  * @param {Function} [options.spawn_fn=spawn] - Spawn helper for tests
  * @param {Function} [options.cleanup_spawn_fn=spawn] - Spawn helper for timeout cleanup
  * @param {Function} [options.prepare_launch=prepare_docker_launch] - Staged launch builder
- * @param {number} [options.timeout_ms=90000] - Max wait before treating the agent as unauthenticated
+ * @param {number} [options.timeout_ms=180000] - Max wait before treating the agent as unauthenticated
  * @param {number} [options.kill_grace_ms=1500] - Delay between SIGTERM and SIGKILL on timeout
  * @param {AbortSignal|null} [options.signal] - External cancellation signal
  * @param {Function} [options.on_phase] - Per-agent progress callback

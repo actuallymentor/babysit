@@ -12,9 +12,14 @@
 - **Auth probes stage only their own credentials.** Provider/account state and
   `.babysitrc` remain intact while unrelated secrets and instructions stay out.
 - **Probe deadlines cover Docker preparation.** Host preflight and full probe
-  setup are bounded without abandoning credential recovery.
+  setup are bounded without abandoning credential recovery or false-failing
+  slow but successful Docker cleanup.
 - **Credential rotations reconcile before reuse.** Cache trust and source
   replacement are tracked independently for every supported agent.
+- **Slow auth recovery cannot lose lease ownership.** Live launches remain
+  serialized through credential pull/removal, while abandoned state recovers.
+- **Loaded Docker daemons retain warm auth results.** Image inspection gets a
+  realistic bound, and transient container-start inspection failures retry.
 
 ### Changed
 - **Non-interactive startup now verifies cache misses and fails closed.** It no

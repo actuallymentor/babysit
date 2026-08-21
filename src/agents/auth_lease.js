@@ -11,10 +11,11 @@ import {
 import { dirname, join } from 'path'
 
 import { BABYSIT_DIR } from '../utils/paths.js'
+import { log } from '../utils/log.js'
 
 export const HOST_AUTH_LEASE_PATH = join( BABYSIT_DIR, `host-auth-check.lease` )
-export const HOST_AUTH_LEASE_TIMEOUT_MS = 2 * 60 * 1_000
-export const HOST_AUTH_LEASE_STALE_MS = 5 * 60 * 1_000
+export const HOST_AUTH_LEASE_TIMEOUT_MS = 8 * 60 * 1_000
+export const HOST_AUTH_LEASE_STALE_MS = 90_000
 
 const wait = milliseconds => new Promise( resolve => setTimeout( resolve, milliseconds ) )
 
@@ -49,29 +50,71 @@ const lease_is_stale = ( lease_path, {
 
     const owner = read_lease_owner( lease_path )
     const alive = process_is_alive( owner?.pid, kill )
-    try {
-        if( now() - statSync( lease_path ).mtimeMs >= stale_ms ) return true
-    } catch {
-        return false
-    }
     if( alive === false ) return true
     if( alive === true ) return false
 
-    return false
+    try {
+        return now() - statSync( lease_path ).mtimeMs >= stale_ms
+    } catch {
+        return false
+    }
 
 }
 
-const remove_stale_lease = lease_path => {
+const try_create_lease = ( lease_path, token ) => {
 
-    const takeover_path = `${ lease_path }.stale-${ randomUUID() }`
+    // Publish a complete owner record atomically. A crash while preparing the
+    // candidate cannot leave an owner-less lease that blocks every launcher.
+    const candidate_path = `${ lease_path }.candidate-${ token }`
 
     try {
+        mkdirSync( candidate_path, { mode: 0o700 } )
+        writeFileSync( join( candidate_path, `owner.json` ), JSON.stringify( {
+            pid: process.pid,
+            token,
+            acquired_at: new Date().toISOString(),
+        } ), { mode: 0o600 } )
+        renameSync( candidate_path, lease_path )
+        return true
+    } catch ( error ) {
+        rmSync( candidate_path, { recursive: true, force: true } )
+        if( [ `EEXIST`, `ENOTEMPTY` ].includes( error.code ) ) return false
+        throw error
+    }
+
+}
+
+const remove_stale_lease = ( lease_path, lease_options ) => {
+
+    const takeover_path = `${ lease_path }.stale-${ randomUUID() }`
+    const takeover_lock = `${ lease_path }.takeover`
+    let owns_takeover = false
+
+    try {
+        mkdirSync( takeover_lock, { mode: 0o700 } )
+        owns_takeover = true
+
+        // Another waiter may have reclaimed the old lease and a new owner may
+        // have acquired it since our first observation. Recheck while stale
+        // takeover is serialized so that new owner can never be renamed away.
+        if( !lease_is_stale( lease_path, lease_options ) ) return false
+
         renameSync( lease_path, takeover_path )
         rmSync( takeover_path, { recursive: true, force: true } )
         return true
-    } catch {
+    } catch ( error ) {
         rmSync( takeover_path, { recursive: true, force: true } )
+        if( !owns_takeover && error.code === `EEXIST` ) {
+            try {
+                const age = lease_options.now() - statSync( takeover_lock ).mtimeMs
+                if( age >= lease_options.stale_ms ) {
+                    rmSync( takeover_lock, { recursive: true, force: true } )
+                }
+            } catch { /* another waiter already recovered it */ }
+        }
         return false
+    } finally {
+        if( owns_takeover ) rmSync( takeover_lock, { recursive: true, force: true } )
     }
 
 }
@@ -108,28 +151,14 @@ export const acquire_host_auth_lease = async ( {
     mkdirSync( dirname( lease_path ), { recursive: true } )
 
     while( true ) {
-        try {
-            mkdirSync( lease_path, { mode: 0o700 } )
-            writeFileSync( join( lease_path, `owner.json` ), JSON.stringify( {
-                pid: process.pid,
-                token,
-                acquired_at: new Date().toISOString(),
-            } ), { mode: 0o600 } )
-            break
-        } catch ( error ) {
-            if( error.code !== `EEXIST` ) {
-                rmSync( lease_path, { recursive: true, force: true } )
-                throw error
-            }
+        if( try_create_lease( lease_path, token ) ) break
 
-            if( lease_is_stale( lease_path, { now, stale_ms, kill } ) ) {
-                remove_stale_lease( lease_path )
-                continue
-            }
+        const lease_options = { now, stale_ms, kill }
+        if( lease_is_stale( lease_path, lease_options )
+            && remove_stale_lease( lease_path, lease_options ) ) continue
 
-            if( now() >= deadline ) throw new Error( `Timed out waiting for another authentication check` )
-            await wait_fn( Math.min( poll_ms, Math.max( 0, deadline - now() ) ) )
-        }
+        if( now() >= deadline ) throw new Error( `Timed out waiting for another authentication check` )
+        await wait_fn( Math.min( poll_ms, Math.max( 0, deadline - now() ) ) )
     }
 
     let released = false
@@ -141,11 +170,15 @@ export const acquire_host_auth_lease = async ( {
 
             try {
                 const owner = read_lease_owner( lease_path )
-                if( owner?.token !== token ) return false
+                if( owner?.token !== token ) {
+                    log.warn( `Authentication lease ownership changed before release.` )
+                    return false
+                }
 
                 rmSync( lease_path, { recursive: true, force: true } )
                 return !existsSync( lease_path )
             } catch {
+                log.warn( `Authentication lease could not be released cleanly.` )
                 return false
             }
         },

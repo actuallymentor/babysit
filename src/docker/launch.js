@@ -21,8 +21,8 @@ import {
 const DOCKER_CREATE_TIMEOUT_MS = 5 * 60 * 1_000
 const DOCKER_COPY_TIMEOUT_MS = 60_000
 const DOCKER_CLEANUP_TIMEOUT_MS = 30_000
-const DOCKER_INSPECT_TIMEOUT_MS = 5_000
-const DOCKER_START_TIMEOUT_MS = 10_000
+const DOCKER_INSPECT_TIMEOUT_MS = 15_000
+const DOCKER_START_TIMEOUT_MS = 60_000
 const DOCKER_START_POLL_MS = 100
 const DOCKER_CONTAINER_ID_PATTERN = /^[0-9a-f]{12,64}$/
 const LAUNCH_SIGNALS = [ `SIGHUP`, `SIGINT`, `SIGTERM` ]
@@ -448,7 +448,12 @@ export const prepare_docker_launch = async ( options, {
                         container_id,
                     ], DOCKER_INSPECT_TIMEOUT_MS )
                 } catch {
-                    return false
+                    // Docker Desktop and loaded remote daemons can miss one
+                    // inspect deadline while the already-started container is
+                    // healthy. Retry until the overall startup deadline; an
+                    // explicit exited/dead state still fails immediately.
+                    await wait( poll_ms )
+                    continue
                 }
 
                 if( [ `running`, `paused`, `restarting` ].includes( status ) ) return true

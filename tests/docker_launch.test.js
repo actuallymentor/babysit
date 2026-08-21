@@ -475,6 +475,29 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
+    it( `retries transient Docker inspection failures while startup remains bounded`, async () => {
+
+        const { mount } = private_transport()
+        let inspections = 0
+        const launch = await prepare_docker_launch( make_options( mount ), {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `inspect` ) ) {
+                    inspections += 1
+                    if( inspections === 1 ) throw new Error( `daemon busy` )
+                    return `running`
+                }
+                return ``
+            },
+        } )
+
+        expect( await launch.await_started( { timeout_ms: 1_000, poll_ms: 1 } ) ).toBe( true )
+        expect( inspections ).toBe( 2 )
+        await launch.abort()
+
+    } )
+
     it( `removes a container that never leaves the created state`, async () => {
 
         const { mount } = private_transport()
