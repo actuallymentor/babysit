@@ -6,6 +6,7 @@ import { join } from 'path'
 import {
     HOST_AUTH_CACHE_TTL_MS,
     clear_host_auth_cache,
+    credential_mounts_for_agent,
     find_host_auth_cache_hit,
     fingerprint_agent_credentials,
     read_host_auth_cache,
@@ -114,6 +115,12 @@ describe( `host authentication cache`, () => {
             `file:/agent/credential.json`,
         ] )
         expect( JSON.stringify( identity ) ).not.toContain( `secret` )
+        expect( credential_mounts_for_agent( agent, mounts ) ).toEqual( [
+            mounts[0],
+            mounts[2],
+            mounts[3],
+        ] )
+        expect( mounts ).toHaveLength( 4 )
 
         const reordered = fingerprint_agent_credentials( agent, [ ...mounts ].reverse(), {
             read_file: () => `file-secret`,
@@ -124,6 +131,31 @@ describe( `host authentication cache`, () => {
 
         expect( reordered.fingerprint ).toBe( identity.fingerprint )
         expect( changed.fingerprint ).not.toBe( identity.fingerprint )
+
+    } )
+
+    it( `binds cache identity to shared authentication context`, () => {
+
+        const agent = get_agent( `opencode` )
+        const options = content => ( {
+            context_files: { babysitrc: `/host/.babysitrc` },
+            read_file: path => {
+                expect( path ).toBe( `/host/.babysitrc` )
+                return content
+            },
+        } )
+
+        const first = fingerprint_agent_credentials( agent, [], options( `API_KEY=first` ) )
+        const changed = fingerprint_agent_credentials( agent, [], options( `API_KEY=changed` ) )
+
+        expect( first.parts ).toHaveLength( 1 )
+        expect( first.parts[0].kind ).toBe( `context` )
+        expect( JSON.stringify( first ) ).not.toContain( `API_KEY` )
+        expect( changed.fingerprint ).not.toBe( first.fingerprint )
+        expect( fingerprint_agent_credentials( agent, [], {
+            context_files: { babysitrc: `/unreadable` },
+            read_file: () => { throw new Error( `unreadable` ) },
+        } ) ).toBeNull()
 
     } )
 
@@ -233,6 +265,41 @@ describe( `host authentication cache`, () => {
 
     } )
 
+    it( `does not let a stale failure clear a newer success`, () => {
+
+        record_host_auth_success( `codex`, {
+            credential_fingerprint: `newer-credential`,
+            image_identity: IMAGE_IDENTITY,
+        }, { cache_path, now: NOW } )
+
+        expect( clear_host_auth_cache( `codex`, {
+            cache_path,
+            expected_credential_fingerprint: `stale-credential`,
+            image_identity: IMAGE_IDENTITY,
+        } ) ).toBe( true )
+        expect( read_host_auth_cache( { cache_path } ).agents.codex.credential_fingerprint )
+            .toBe( `newer-credential` )
+
+    } )
+
+    it( `preserves every warm result when cache invalidation cannot lock`, () => {
+
+        for( const name of [ `claude`, `codex` ] ) {
+            record_host_auth_success( name, {
+                credential_fingerprint: `${ name }-credential`,
+                image_identity: IMAGE_IDENTITY,
+            }, { cache_path, now: NOW } )
+        }
+
+        expect( clear_host_auth_cache( `codex`, {
+            cache_path,
+            lock_cache: () => { throw new Error( `busy` ) },
+        } ) ).toBe( false )
+        expect( Object.keys( read_host_auth_cache( { cache_path } ).agents ) )
+            .toEqual( [ `claude`, `codex` ] )
+
+    } )
+
     it( `keeps trust across session token rotation but clears it on host replacement`, () => {
 
         const agent = get_agent( `codex` )
@@ -293,6 +360,37 @@ describe( `host authentication cache`, () => {
             dependencies
         ) ).toBe( false )
         expect( read_host_auth_cache( { cache_path } ).agents.codex ).toBeUndefined()
+
+    } )
+
+    it( `refreshes and invalidates session trust independently per agent`, () => {
+
+        const cleared = []
+        const refreshed = []
+        const context = name => ( {
+            credential_fingerprint: `${ name }-before`,
+            credential_parts: [ { kind: `env`, key: `${ name }_KEY`, hash: `${ name }-hash` } ],
+            image_identity: IMAGE_IDENTITY,
+        } )
+
+        const result = refresh_session_auth_cache( {
+            auth_cache_contexts: {
+                codex: context( `codex` ),
+                gemini: context( `gemini` ),
+            },
+        }, get_agent( `codex` ), {
+            source_changed: name => name === `gemini`,
+        }, {}, {
+            clear_cache: name => cleared.push( name ),
+            refresh_cache: name => {
+                refreshed.push( name )
+                return true
+            },
+        } )
+
+        expect( result ).toBe( false )
+        expect( cleared ).toEqual( [ `gemini` ] )
+        expect( refreshed ).toEqual( [ `codex` ] )
 
     } )
 

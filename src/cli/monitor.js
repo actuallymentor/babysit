@@ -49,7 +49,7 @@ export const load_monitor_config = ( session = {} ) => load_config( session.pwd,
  * trust instead, and compare-and-swap protects concurrent launches.
  *
  * @param {Object} session - Stored session metadata
- * @param {Object} agent - Active agent adapter
+ * @param {Object} agent - Active agent adapter, used for legacy session metadata
  * @param {Object} creds_sync - Completed credential sync controller
  * @param {Object} tmpfiles - Per-agent staged credential files
  * @param {Object} [dependencies] - Cache test seams
@@ -61,30 +61,39 @@ export const refresh_session_auth_cache = ( session, agent, creds_sync, tmpfiles
     refresh_cache = refresh_host_auth_cache,
 } = {} ) => {
 
-    const context = session.auth_cache_context
-    if( !context ) return false
+    const contexts = session.auth_cache_contexts || (
+        session.auth_cache_context ? { [ agent.name ]: session.auth_cache_context } : {}
+    )
+    if( !Object.keys( contexts ).length ) return false
 
     try {
-        if( creds_sync.source_changed?.() ) {
-            clear_cache( agent.name )
-            return false
-        }
+        const refreshed = Object.entries( contexts ).map( ( [ name, context ] ) => {
+            if( creds_sync.source_changed?.( name ) ) {
+                clear_cache( name, {
+                    expected_credential_fingerprint: context.credential_fingerprint,
+                    image_identity: context.image_identity,
+                } )
+                return false
+            }
 
-        const refreshed_identity = refresh_parts(
-            context.credential_parts,
-            tmpfiles[ agent.name ]
-        )
-        if( !refreshed_identity ) return false
+            const refreshed_identity = refresh_parts(
+                context.credential_parts,
+                tmpfiles[ name ]
+            )
+            if( !refreshed_identity ) return false
 
-        return refresh_cache( agent.name, {
-            expected_credential_fingerprint: context.credential_fingerprint,
-            next_credential_fingerprint: refreshed_identity.fingerprint,
-            image_identity: context.image_identity,
+            return refresh_cache( name, {
+                expected_credential_fingerprint: context.credential_fingerprint,
+                next_credential_fingerprint: refreshed_identity.fingerprint,
+                image_identity: context.image_identity,
+            } )
         } )
+
+        return refreshed.every( Boolean )
     } catch ( error ) {
         // Cache metadata is an optimization. Credential recovery already
         // succeeded, so a cache write failure must not retain the container.
-        log.debug( `Could not refresh ${ agent.name } authentication cache: ${ error.message }` )
+        log.debug( `Could not refresh session authentication caches: ${ error.message }` )
         return false
     }
 

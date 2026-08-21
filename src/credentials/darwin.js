@@ -9,6 +9,8 @@ import {
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
 
+const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
+
 /**
  * Extract credentials from macOS Keychain (or file fallback) for an agent
  * @param {Object} agent - Agent adapter
@@ -46,7 +48,8 @@ export const setup_darwin_credentials = async ( agent, {
         // has a fallback auth.json would get a one-way keychain sync in the
         // monitor instead of the bidirectional file sync the foreground set up.
         const exists = run_command(
-            `security find-generic-password -s "${ cred_config.keychain_service }" 2>/dev/null`
+            `security find-generic-password -s "${ cred_config.keychain_service }" 2>/dev/null`,
+            { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
         )
 
         if( exists !== null ) {
@@ -59,11 +62,16 @@ export const setup_darwin_credentials = async ( agent, {
                 // refreshed by the agent itself before we capture. Without this,
                 // a stale token would ride the container until our 5-minute sync
                 // daemon catches up.
-                if( agent.credential_preflight ) run_command( `${ agent.bin } --version 2>/dev/null` )
+                if( agent.credential_preflight ) {
+                    run_command( `${ agent.bin } --version 2>/dev/null`, {
+                        timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS,
+                    } )
+                }
 
                 // Phase 2: capture after pre-flight rotation
                 const creds_json = run_command(
-                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
+                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`,
+                    { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
                 )
 
                 if( creds_json ) {
@@ -97,7 +105,8 @@ export const setup_darwin_credentials = async ( agent, {
             if( tmpfile ) {
 
                 const read_source = async () => run_command(
-                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`
+                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`,
+                    { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
                 )
                 sync = start_credential_sync( read_source, tmpfile, null, baseline || {} )
 

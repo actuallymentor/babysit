@@ -59,7 +59,7 @@ babysit doctor --auth opencode --refresh
 ## How it works
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
-2. **Host auth check** — before the main session starts, babysit checks only the agent being launched. A successful real check is reused for 12 hours while its hashed credential and local Docker image identity remain unchanged. Press Enter to skip a live check for this launch; non-interactive launches skip cache misses with a warning. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
+2. **Host auth check** — before the main session starts, babysit verifies Claude, Codex, Gemini, and OpenCode with real model requests so nested agent calls are covered too. Cache misses run concurrently; a successful check is reused for 12 hours while its hashed auth inputs and local Docker image identity remain unchanged. Press Enter to skip live checks for one interactive launch. Non-interactive launches verify misses and fail closed. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
 3. **Docker container** — babysit starts a container with all four agent CLIs preinstalled, credentials for every supported agent plus host `gh` auth passed through, and your workspace mounted at `/workspace`
 4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
@@ -270,9 +270,14 @@ config:
 ## Host configuration
 
 Authentication policy and cache metadata live under `~/.babysit`. Startup
-checks only the active agent and caches successful checks for 12 hours. Cache
-entries contain timestamps and SHA-256 fingerprints only—never tokens or model
-output—and miss when credentials or the local Docker image change.
+checks all four supported coding agents and runs cache misses concurrently.
+Successful checks are cached for 12 hours. Entries contain timestamps and
+SHA-256 fingerprints only—never tokens or model output—and miss when an
+agent's credentials, effective `.babysitrc`, or local Docker image changes.
+Each throwaway probe receives only its own credential descriptors and minimal
+provider/account config; the real session still receives all agent credentials.
+Concurrent launches share an auth lease, so one launch verifies while waiters
+reuse its reconciled credential rotation and warm results.
 
 ```bash
 babysit doctor --auth             # all supported agents

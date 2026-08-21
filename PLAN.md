@@ -826,3 +826,58 @@ text waits 150 ms after bracketed paste before sending Enter once. A delayed-
 composer Docker/tmux matrix submitted the exact prompt once for every adapter
 without any early input; the unit suite covers transient capture failures and
 the monotonic readiness deadline.
+
+## 2026-08-21 — Faster all-agent authentication without weaker assurance
+
+Intent: guarantee prompt-level authentication for every supported coding agent
+before starting any session, while removing avoidable serial and unrelated work.
+
+1. Preserve the strongest check: each uncached Claude, Codex, Gemini, and
+   OpenCode result must come from a successful real model response in Babysit's
+   Docker image. Keep credential refresh recovery, selected provider/config,
+   `.babysitrc`, and failure confirmation semantics intact.
+2. Capture independent agent credentials concurrently. Retain Claude's
+   preflight-before-capture ordering, add a hard bound to host preflight
+   commands, and preserve active-agent-first result ordering and monitor sync.
+   Move blocking command primitives to the bounded async runner first; merely
+   wrapping synchronous capture in `Promise.all` is not concurrency.
+3. Replace active-only startup verification with all-supported-agent cache
+   lookup and concurrent misses. Resolve the immutable image identity once,
+   run uncached checks in non-interactive launches too, cache successes only,
+   and keep Enter as an explicit cooperative override in interactive launches.
+4. Give each probe only its own credential descriptors. Continue staging all
+   credentials into the real session so agents can invoke one another, but do
+   not copy unrelated secrets into four throwaway probe containers. Use one
+   shared selector for probe staging and cache fingerprinting. Preserve every
+   auth-relevant shared input and per-agent provider/account setting; never
+   infer that an agent is unconfigured from missing tracked credentials because
+   `.babysitrc`, provider helpers, and cloud metadata can authenticate it.
+5. Track source replacement and cache trust per agent. Refresh or invalidate
+   each verified cache independently after foreground and detached credential
+   finalization; one agent's host login must not evict every other warm result.
+   Store `auth_cache_contexts` keyed by agent with legacy singular-field reads,
+   expose per-name source-change state, and fingerprint effective `.babysitrc`
+   plus generated provider/account config so a cache hit covers the probe's
+   complete auth input.
+6. Bound the entire probe lifecycle, including Docker preparation, model call,
+   credential recovery, and cleanup. A timeout may fail closed or retain
+   recoverable state; it must never be recorded as authenticated.
+7. Add timing and behavior tests for concurrent capture/checks, per-probe mount
+   filtering, cache hit/miss ordering, non-TTY verification, per-agent token
+   rotation/source replacement, lifecycle timeout, and zero leftover probe
+   resources. Run focused, full, lint, build, and real fake-agent Docker paths.
+8. Update README/config/help/specification, changelog/version, and persistent
+   notes. Run independent reviews before implementation and after commit.
+
+Policy decisions from independent review:
+
+- Probe all four agents on every cache miss, even without a tracked file/env.
+  Real inference is the guarantee; local credential presence is not.
+- Non-interactive misses run and fail closed. Interactive Enter remains an
+  explicit user override, never an automatic assurance downgrade.
+- Keep `.babysitrc` and route/account config. Do not use `--bare`,
+  `--ignore-user-config`, `--pure`, fixed models, or other profile changes that
+  would verify a different route than the real session.
+- Keep isolated per-agent probe containers in this patch. A shared multi-exec
+  container could reduce Docker floor further, but changes entrypoint/config
+  semantics enough to require separate measurement and design.

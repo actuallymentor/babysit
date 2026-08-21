@@ -27,6 +27,13 @@ const lock_waiter = new Int32Array( new SharedArrayBuffer( 4 ) )
 
 const wait_sync = milliseconds => Atomics.wait( lock_waiter, 0, 0, milliseconds )
 
+const credential_environment_keys = agent => new Set(
+    [ agent?.credentials?.linux, agent?.credentials?.darwin ]
+        .filter( Boolean )
+        .flatMap( config => [ config.env_key, config.fallback_env ] )
+        .filter( Boolean )
+)
+
 const with_cache_lock = ( cache_path, task, {
     now = Date.now,
     wait = wait_sync,
@@ -73,6 +80,27 @@ const with_cache_lock = ( cache_path, task, {
  * @returns {string} Combined SHA-256 fingerprint
  */
 export const fingerprint_credential_parts = ( parts = [] ) => hash_value( JSON.stringify( parts ) )
+
+/**
+ * Select only credential descriptors consumed by one agent.
+ * Shared session setup captures every agent so nested calls work, but an auth
+ * probe needs only the credential file and environment keys for its own CLI.
+ *
+ * @param {Object} agent - Agent adapter
+ * @param {Object[]} mounts - All credential descriptors
+ * @returns {Object[]} Agent-scoped descriptors, preserving input order
+ */
+export const credential_mounts_for_agent = ( agent, mounts = [] ) => {
+
+    const environment_keys = credential_environment_keys( agent )
+    const credential_target = agent?.container_paths?.creds
+
+    return mounts.filter( mount =>
+        mount?.target === credential_target
+        ||  [ `env`, `secret_env` ].includes( mount?.type ) && environment_keys.has( mount.key )
+    )
+
+}
 
 /**
  * Read the hash-only authentication cache. Corrupt or unknown shapes miss
@@ -129,22 +157,18 @@ const write_host_auth_cache = ( cache, {
  * @param {Object[]} mounts - Credential mounts produced by setup_credentials
  * @param {Object} [options]
  * @param {Function} [options.read_file=readFileSync] - File reader seam
+ * @param {Object<string,string>} [options.context_files] - Auth-relevant files keyed by safe labels
  * @returns {{ fingerprint: string, parts: Object[] }|null} Safe fingerprint metadata
  */
 export const fingerprint_agent_credentials = ( agent, mounts = [], {
     read_file = readFileSync,
+    context_files = {},
 } = {} ) => {
 
-    const credential_config = [ agent?.credentials?.linux, agent?.credentials?.darwin ]
-        .filter( Boolean )
-    const environment_keys = new Set( credential_config.flatMap( config => [
-        config.env_key,
-        config.fallback_env,
-    ] ).filter( Boolean ) )
     const credential_target = agent?.container_paths?.creds
     const parts = []
 
-    for( const mount of mounts ) {
+    for( const mount of credential_mounts_for_agent( agent, mounts ) ) {
         if( mount?.target === credential_target && mount.source ) {
             try {
                 parts.push( {
@@ -158,13 +182,27 @@ export const fingerprint_agent_credentials = ( agent, mounts = [], {
         }
 
         if( [ `env`, `secret_env` ].includes( mount?.type )
-            && environment_keys.has( mount.key )
             && typeof mount.value === `string` ) {
             parts.push( {
                 kind: `env`,
                 key: mount.key,
                 hash: hash_value( mount.value ),
             } )
+        }
+    }
+
+    for( const [ key, path ] of Object.entries( context_files ) ) {
+        try {
+            parts.push( {
+                kind: `context`,
+                key,
+                hash: hash_value( read_file( path ) ),
+            } )
+        } catch {
+            // A carried nested-Docker path may be readable by the outer daemon
+            // but not this process. Disable caching instead of trusting an
+            // identity that omits an effective authentication input.
+            return null
         }
     }
 
@@ -319,31 +357,37 @@ export const record_host_auth_success = ( name, {
  * Invalidate one agent after a real failed authentication check.
  * @param {string} name - Agent name
  * @param {Object} [options]
+ * @param {string} [options.expected_credential_fingerprint] - Delete only this observed generation
+ * @param {string} [options.image_identity] - Expected image generation
+ * @param {Function} [options.lock_cache] - Cache lock seam
  * @returns {boolean} Whether the stale cache entry is absent
  */
 export const clear_host_auth_cache = ( name, {
     cache_path = HOST_AUTH_CACHE_PATH,
+    expected_credential_fingerprint = null,
+    image_identity = null,
+    lock_cache = with_cache_lock,
 } = {} ) => {
 
     try {
-        with_cache_lock( cache_path, () => {
+        return lock_cache( cache_path, () => {
             const cache = read_host_auth_cache( { cache_path } )
             if( !Object.hasOwn( cache.agents, name ) ) return true
+
+            const entry = cache.agents[ name ]
+            if( expected_credential_fingerprint
+                && entry.credential_fingerprint !== expected_credential_fingerprint ) return true
+            if( image_identity && entry.image_identity !== image_identity ) return true
 
             delete cache.agents[ name ]
             write_host_auth_cache( cache, { cache_path } )
             return true
         } )
-        return true
     } catch {
-        // A whole-cache fallback is conservative: losing unrelated warm hits
-        // is safer than retaining a success disproved by a real probe.
-        try {
-            rmSync( cache_path, { force: true } )
-            return true
-        } catch {
-            return false
-        }
+        // A cache lock or write failure cannot safely disprove this entry.
+        // Leave every agent's last atomic snapshot intact; the caller already
+        // has the live probe result and can fail closed for this launch.
+        return false
     }
 }
 

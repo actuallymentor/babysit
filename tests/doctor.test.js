@@ -13,6 +13,7 @@ import { get_agent, SUPPORTED_AGENTS } from '../src/agents/index.js'
 import { cmd_doctor, select_doctor_auth_agents } from '../src/cli/doctor.js'
 
 const IMAGE_IDENTITY = `sha256:doctor-test-image`
+const WITHOUT_HOST_CONTEXT = { resolve_context_files: () => ( {} ) }
 
 const command = ( {
     agent = `codex`,
@@ -93,9 +94,10 @@ describe( `doctor authentication diagnostics`, () => {
         const { input, output } = collect_io()
 
         const results = await cmd_doctor( command( { agent: `all` } ), {
+            ...WITHOUT_HOST_CONTEXT,
             input,
             output,
-            setup: setup_result( [] ),
+            setup: setup_result( mounts ),
             resolve_image_identity: async () => null,
             run_auth_check: async ( agent, options ) => {
                 checked.push( { name: agent.name, options } )
@@ -106,6 +108,9 @@ describe( `doctor authentication diagnostics`, () => {
         expect( checked.map( check => check.name ) ).toEqual( SUPPORTED_AGENTS )
         expect( results.map( result => result.name ) ).toEqual( SUPPORTED_AGENTS )
         expect( checked.every( check => check.options.config.isolate_dependencies === false ) ).toBe( true )
+        expect( checked.find( check => check.name === `codex` ).options.creds_mounts ).toEqual( mounts )
+        expect( checked.filter( check => check.name !== `codex` )
+            .every( check => check.options.creds_mounts.length === 0 ) ).toBe( true )
 
     } )
 
@@ -120,6 +125,7 @@ describe( `doctor authentication diagnostics`, () => {
         }, { cache_path } )
 
         const results = await cmd_doctor( command(), {
+            ...WITHOUT_HOST_CONTEXT,
             cache_path,
             input,
             output,
@@ -151,6 +157,7 @@ describe( `doctor authentication diagnostics`, () => {
         }, { cache_path } )
 
         const results = await cmd_doctor( command( { refresh: true } ), {
+            ...WITHOUT_HOST_CONTEXT,
             cache_path,
             input,
             output,
@@ -178,6 +185,7 @@ describe( `doctor authentication diagnostics`, () => {
         }, { cache_path } )
 
         await cmd_doctor( command( { refresh: true } ), {
+            ...WITHOUT_HOST_CONTEXT,
             cache_path,
             input,
             output,
@@ -203,6 +211,7 @@ describe( `doctor authentication diagnostics`, () => {
             const { input, output } = collect_io()
 
             await cmd_doctor( command( { refresh: true } ), {
+                ...WITHOUT_HOST_CONTEXT,
                 cache_path: status_cache_path,
                 input,
                 output,
@@ -243,6 +252,7 @@ describe( `doctor authentication diagnostics`, () => {
         mkdirSync( cleanup_path )
 
         await expect( cmd_doctor( command(), {
+            ...WITHOUT_HOST_CONTEXT,
             ...collect_io(),
             setup: setup_result( mounts, sync ),
             resolve_image_identity: async () => {
@@ -253,6 +263,27 @@ describe( `doctor authentication diagnostics`, () => {
 
         expect( events ).toEqual( [ `stop`, `cleanup` ] )
         expect( existsSync( cleanup_path ) ).toBe( false )
+
+    } )
+
+    it( `releases the auth lease when recovery registration fails`, async () => {
+
+        const events = []
+
+        await expect( cmd_doctor( command(), {
+            ...WITHOUT_HOST_CONTEXT,
+            ...collect_io(),
+            setup: setup_result( [], {
+                stop: async () => events.push( `stop` ),
+                cleanup: () => true,
+            } ),
+            acquire_lease: async () => ( {
+                release: () => events.push( `release` ),
+            } ),
+            register_recovery: () => { throw new Error( `registration failed` ) },
+        } ) ).rejects.toThrow( /registration failed/ )
+
+        expect( events ).toEqual( [ `stop`, `release` ] )
 
     } )
 

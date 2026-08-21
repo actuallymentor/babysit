@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, chmodSync, mkdtempSync, rmSync } from 'fs'
+import { randomUUID } from 'crypto'
 import { tmpdir } from 'os'
 import { join, basename, dirname } from 'path'
 
@@ -31,7 +32,7 @@ export const copy_host_file_to_tmpfile = ( host_path, tag, transform ) => {
         let content = readFileSync( host_path, `utf-8` )
         if( transform ) content = transform( content )
 
-        const tmpfile = join( tmpdir(), `babysit-${ tag }-${ basename( host_path ) }-${ Date.now() }` )
+        const tmpfile = join( tmpdir(), `babysit-${ tag }-${ basename( host_path ) }-${ randomUUID() }` )
         writeFileSync( tmpfile, content )
         chmodSync( tmpfile, 0o666 )
 
@@ -59,7 +60,7 @@ export const build_tmpfile = ( tag, hint, content ) => {
 
     try {
 
-        const tmpfile = join( tmpdir(), `babysit-${ tag }-${ hint }-${ Date.now() }` )
+        const tmpfile = join( tmpdir(), `babysit-${ tag }-${ hint }-${ randomUUID() }` )
         writeFileSync( tmpfile, content )
         chmodSync( tmpfile, 0o666 )
         return tmpfile

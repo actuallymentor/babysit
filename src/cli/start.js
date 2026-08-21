@@ -7,7 +7,7 @@ import { wait } from 'mentie'
 
 import { log, print_error } from '../utils/log.js'
 import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
-import { get_agent } from '../agents/index.js'
+import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import {
@@ -28,11 +28,13 @@ import { build_system_prompt } from '../modes/prompt.js'
 import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
+    resolve_host_auth_context_files,
     run_host_agent_auth_check,
     unauthenticated_agent_names,
 } from '../agents/auth.js'
 import {
     clear_host_auth_cache,
+    credential_mounts_for_agent,
     find_host_auth_cache_hit,
     fingerprint_agent_credentials,
     record_host_auth_success,
@@ -40,6 +42,7 @@ import {
     refresh_host_auth_cache,
     resolve_auth_image_identity,
 } from '../agents/auth_cache.js'
+import { acquire_host_auth_lease } from '../agents/auth_lease.js'
 import { run_auth_checks_with_progress } from './auth_progress.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session } from '../tmux/session.js'
@@ -486,14 +489,14 @@ export const confirm_docker_restricted_mode = async ( mode = {}, { input = proce
 }
 
 /**
- * Check only the agent being launched, reusing a fresh hash-bound success.
- * Non-interactive launches skip cache misses so scripts never block on a real
- * model request; `babysit doctor --auth` remains the explicit verification
- * path.
+ * Check every supported coding agent, reusing fresh hash-bound successes and
+ * running every miss concurrently. The main session receives all captured
+ * credentials so nested agent calls work; each throwaway probe receives only
+ * its own credential descriptors.
  *
  * @param {Object} agent - Active agent adapter
  * @param {Object} options - Launch authentication context
- * @returns {Promise<{ results: Object[], cache_context: Object|null }>} Results and safe trust metadata
+ * @returns {Promise<{ results: Object[], cache_context: Object|null, cache_contexts: Object }>} Results and safe trust metadata
  */
 export const check_startup_agent_authentication = async ( agent, {
     workspace,
@@ -503,90 +506,154 @@ export const check_startup_agent_authentication = async ( agent, {
     output = process.stdout,
     cache_path = undefined,
     resolve_image_identity = resolve_auth_image_identity,
+    resolve_context_files = resolve_host_auth_context_files,
     run_auth_check = run_host_agent_auth_check,
+    agents = SUPPORTED_AGENTS.map( get_agent ).filter( Boolean ),
+    reconcile_credentials = async () => {},
+    credential_source_changed = () => false,
 } ) => {
 
-    const credential_identity = fingerprint_agent_credentials( agent, creds_mounts )
-    const image_identity = credential_identity ? await resolve_image_identity() : null
     const cache_options = cache_path ? { cache_path } : {}
-    const cached = credential_identity && find_host_auth_cache_hit( agent.name, {
-        credential_fingerprint: credential_identity.fingerprint,
-        image_identity,
-    }, cache_options )
+    const context_files = new Map( agents.map( candidate => [
+        candidate.name,
+        resolve_context_files( mode, { agent: candidate } ),
+    ] ) )
+    const credential_identities = new Map( agents.map( candidate => [
+        candidate.name,
+        fingerprint_agent_credentials( candidate, creds_mounts, {
+            context_files: context_files.get( candidate.name ),
+        } ),
+    ] ) )
+    const has_cacheable_identity = [ ...credential_identities.values() ].some( Boolean )
+    const image_identity = has_cacheable_identity ? await resolve_image_identity() : null
+    const cached_results = []
+    const cache_contexts = {}
+    const agents_to_check = []
 
-    if( cached ) {
-        log.info( `Authentication cache hit: ${ agent.name }` )
-        return {
-            results: [ {
-                name: agent.name,
-                status: `cached`,
-                authenticated: true,
-            } ],
-            cache_context: {
-                credential_fingerprint: credential_identity.fingerprint,
-                credential_parts: credential_identity.parts,
-                image_identity,
-            },
+    agents.forEach( candidate => {
+        const identity = credential_identities.get( candidate.name )
+        const cached = identity && find_host_auth_cache_hit( candidate.name, {
+            credential_fingerprint: identity.fingerprint,
+            image_identity,
+        }, cache_options )
+
+        if( !cached ) {
+            agents_to_check.push( candidate )
+            return
         }
-    }
 
-    if( !input.isTTY ) {
-        log.warn(
-            `Skipping uncached ${ agent.name } authentication check for non-interactive startup; run \`babysit doctor --auth ${ agent.name }\` to verify.`
-        )
-        return {
-            results: [ {
-                name: agent.name,
-                status: `skipped`,
-                authenticated: false,
-                reason: `non-interactive startup`,
-            } ],
-            cache_context: null,
+        log.info( `Authentication cache hit: ${ candidate.name }` )
+        cached_results.push( {
+            name: candidate.name,
+            status: `cached`,
+            authenticated: true,
+        } )
+        cache_contexts[ candidate.name ] = {
+            credential_fingerprint: identity.fingerprint,
+            credential_parts: identity.parts,
+            image_identity,
         }
-    }
-
-    const results = await run_auth_checks_with_progress( [ agent ], ( { signal, on_state } ) =>
-        check_host_agent_authentication( {
-            agents: [ agent ],
-            signal,
-            on_state,
-            run_auth_check: ( auth_agent, options ) => run_auth_check( auth_agent, {
-                ...options,
-                workspace,
-                mode,
-                creds_mounts,
-                config: { isolate_dependencies: false },
-            } ),
-        } ), {
-        input,
-        output,
     } )
-    const authenticated = results.find( result => result.status === `authenticated` )
 
-    if( !authenticated ) {
-        if( results.some( result => [ `unauthenticated`, `failed` ].includes( result.status ) ) ) {
-            clear_host_auth_cache( agent.name, cache_options )
+    const checked_results = agents_to_check.length
+        ? await run_auth_checks_with_progress( agents_to_check, ( { signal, on_state } ) =>
+            check_host_agent_authentication( {
+                agents: agents_to_check,
+                signal,
+                on_state,
+                run_auth_check: async ( auth_agent, options ) => {
+                    const result = await run_auth_check( auth_agent, {
+                        ...options,
+                        workspace,
+                        mode,
+                        creds_mounts: credential_mounts_for_agent( auth_agent, creds_mounts ),
+                        config: { isolate_dependencies: false },
+                    } )
+                    if( result.status !== `authenticated` ) return result
+
+                    try {
+                        await reconcile_credentials( auth_agent.name )
+                    } catch ( error ) {
+                        return {
+                            ...result,
+                            status: `failed`,
+                            authenticated: false,
+                            reason: `credential reconciliation failed: ${ error.message }`,
+                        }
+                    }
+
+                    if( credential_source_changed( auth_agent.name ) ) {
+                        return {
+                            ...result,
+                            status: `failed`,
+                            authenticated: false,
+                            reason: `host credentials changed during authentication`,
+                        }
+                    }
+
+                    return result
+                },
+            } ), {
+            input,
+            output,
+        } )
+        : []
+
+    checked_results.forEach( result => {
+        if( result.status !== `authenticated` ) {
+            if( [ `unauthenticated`, `failed` ].includes( result.status ) ) {
+                const observed_identity = credential_identities.get( result.name )
+                clear_host_auth_cache( result.name, {
+                    ...cache_options,
+                    expected_credential_fingerprint: observed_identity?.fingerprint,
+                    image_identity,
+                } )
+            }
+            return
         }
-        return { results, cache_context: null }
-    }
 
-    // The auth probe can rotate OAuth credentials. Fingerprint only after its
-    // final credential pull has completed.
-    const verified_identity = fingerprint_agent_credentials( agent, creds_mounts )
-    if( !verified_identity || !image_identity ) return { results, cache_context: null }
+        // A real probe can rotate OAuth credentials. Fingerprint only after
+        // that probe's final credential pull has completed.
+        const checked_agent = get_agent( result.name )
+        const identity = fingerprint_agent_credentials( checked_agent, creds_mounts, {
+            context_files: context_files.get( checked_agent.name ),
+        } )
+        const initial_context = credential_identities.get( result.name )?.parts
+            ?.filter( part => part.kind === `context` )
+        const verified_context = identity?.parts.filter( part => part.kind === `context` )
+        if( JSON.stringify( initial_context ) !== JSON.stringify( verified_context ) ) {
+            result.status = `failed`
+            result.authenticated = false
+            result.reason = `authentication context changed during the check`
+            clear_host_auth_cache( result.name, {
+                ...cache_options,
+                expected_credential_fingerprint: credential_identities.get( result.name )?.fingerprint,
+                image_identity,
+            } )
+            return
+        }
+        if( !identity || !image_identity ) return
 
-    record_host_auth_success( agent.name, {
-        credential_fingerprint: verified_identity.fingerprint,
-        image_identity,
-    }, cache_options )
+        record_host_auth_success( result.name, {
+            credential_fingerprint: identity.fingerprint,
+            image_identity,
+        }, cache_options )
+        cache_contexts[ result.name ] = {
+            credential_fingerprint: identity.fingerprint,
+            credential_parts: identity.parts,
+            image_identity,
+        }
+    } )
+
+    const results_by_name = new Map(
+        [ ...cached_results, ...checked_results ].map( result => [ result.name, result ] )
+    )
+    const results = agents.map( candidate => results_by_name.get( candidate.name ) )
 
     return {
         results,
-        cache_context: {
-            credential_fingerprint: verified_identity.fingerprint,
-            credential_parts: verified_identity.parts,
-            image_identity,
-        },
+        cache_context: cache_contexts[ agent.name ] || null,
+        cache_contexts,
     }
 
 }
@@ -686,30 +753,60 @@ export const cmd_start = async ( cmd ) => {
 
     const workspace = process.cwd()
 
-    // Set up credentials before auth checks so the prompt probes exercise the
-    // same in-container agent binaries and mounted auth state as the real
-    // Babysit session. The sync stays alive for the foreground session below.
+    // Serialize before capture. A waiting launch then observes any refresh
+    // token reconciled by the leader and reuses its warm verification instead
+    // of racing the same one-use credential through another model request.
+    const auth_lease = await time_phase( `authentication lease`, acquire_host_auth_lease )
+    let credential_setup = null
+    let foreground_recovery_id = null
+    let startup_auth = null
+
+    try {
+        // The real session still receives credentials for every supported
+        // agent so nested coding-agent calls remain authenticated.
+        credential_setup = await time_phase(
+            `credential discovery and preflight`,
+            () => setup_credentials( agent )
+        )
+        foreground_recovery_id = register_credential_recovery( {
+            sync_paths: Object.values( credential_setup.tmpfiles ).map(
+                file => private_credential_tmpdir( file ) || file
+            ),
+        } )
+        startup_auth = await time_phase( `authentication`, () => check_startup_agent_authentication( agent, {
+            workspace,
+            mode,
+            creds_mounts: credential_setup.mounts,
+            reconcile_credentials: name => credential_setup.sync?.flush?.( name ),
+            credential_source_changed: name => credential_setup.sync?.source_changed?.( name ) === true,
+        } ) )
+    } catch ( error ) {
+        if( credential_setup ) {
+            await cleanup_failed_launch_credentials( {
+                creds_sync: credential_setup.sync,
+                recovery_id: foreground_recovery_id,
+                context: `authentication setup failure`,
+            } )
+        }
+        throw error
+    } finally {
+        auth_lease.release()
+    }
+
     const {
         mounts: creds_mounts,
         sync: creds_sync,
         sync_baseline: creds_sync_baseline,
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
-    } = await time_phase( `credential discovery and preflight`, () => setup_credentials( agent ) )
-    const foreground_recovery_id = register_credential_recovery( {
-        sync_paths: Object.values( creds_tmpfiles ).map(
-            file => private_credential_tmpdir( file ) || file
-        ),
-    } )
+    } = credential_setup
     const {
         results: auth_results,
         cache_context: startup_auth_cache_context,
-    } = await time_phase( `authentication`, () => check_startup_agent_authentication( agent, {
-        workspace,
-        mode,
-        creds_mounts,
-    } ) )
+        cache_contexts: startup_auth_cache_contexts,
+    } = startup_auth
     let auth_cache_context = startup_auth_cache_context
+    let auth_cache_contexts = startup_auth_cache_contexts
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )
     if( unauthenticated_agents.length ) {
@@ -905,27 +1002,34 @@ export const cmd_start = async ( cmd ) => {
                 ...creds_sync.baselines(),
             }
 
-            if( auth_cache_context && creds_sync.source_changed?.() ) {
-                clear_host_auth_cache( agent.name )
-                auth_cache_context = null
-            } else if( auth_cache_context ) {
-                const refreshed_identity = refresh_file_credential_parts(
-                    auth_cache_context.credential_parts,
-                    creds_tmpfiles[ agent.name ]
-                )
+            auth_cache_contexts = Object.fromEntries(
+                Object.entries( auth_cache_contexts ).flatMap( ( [ name, context ] ) => {
+                    if( creds_sync.source_changed?.( name ) ) {
+                        clear_host_auth_cache( name, {
+                            expected_credential_fingerprint: context.credential_fingerprint,
+                            image_identity: context.image_identity,
+                        } )
+                        return []
+                    }
 
-                if( refreshed_identity && refresh_host_auth_cache( agent.name, {
-                    expected_credential_fingerprint: auth_cache_context.credential_fingerprint,
-                    next_credential_fingerprint: refreshed_identity.fingerprint,
-                    image_identity: auth_cache_context.image_identity,
-                } ) ) {
-                    auth_cache_context = {
-                        ...auth_cache_context,
+                    const refreshed_identity = refresh_file_credential_parts(
+                        context.credential_parts,
+                        creds_tmpfiles[ name ]
+                    )
+                    const refreshed = refreshed_identity && refresh_host_auth_cache( name, {
+                        expected_credential_fingerprint: context.credential_fingerprint,
+                        next_credential_fingerprint: refreshed_identity.fingerprint,
+                        image_identity: context.image_identity,
+                    } )
+
+                    return [ [ name, refreshed ? {
+                        ...context,
                         credential_fingerprint: refreshed_identity.fingerprint,
                         credential_parts: refreshed_identity.parts,
-                    }
-                }
-            }
+                    } : context ] ]
+                } )
+            )
+            auth_cache_context = auth_cache_contexts[ agent.name ] || null
         }
         const monitor_sync_baseline = monitor_sync_baselines[ agent.name ]
             || creds_sync_baseline
@@ -948,6 +1052,7 @@ export const cmd_start = async ( cmd ) => {
             creds_sync_baseline: monitor_sync_baseline,
             creds_sync_baselines: monitor_sync_baselines,
             auth_cache_context,
+            auth_cache_contexts,
             agent_exit_sentinel,
             container_id: prepared_launch.container_id,
             started_at: new Date().toISOString(),

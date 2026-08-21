@@ -379,6 +379,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.include_loop_deadline=true] - Whether to mount the statusline loop deadline file
  * @param {boolean} [options.include_agent_state=true] - Whether to mount persistent native resume state
  * @param {Object[]|null} [options.extra_mounts=null] - Precomputed agent config mounts
+ * @param {boolean} [options.auth_probe=false] - Build an auth-only agent config profile
  * @param {string|null} [options.container_name=null] - Stable launch-scoped container name
  * @param {string|null} [options.exit_sentinel=null] - Per-session exit marker token
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
@@ -406,6 +407,7 @@ export const build_docker_command_args = ( options ) => {
         include_loop_deadline = true,
         include_agent_state = true,
         extra_mounts: supplied_extra_mounts = null,
+        auth_probe = false,
         container_name = null,
         exit_sentinel = randomUUID(),
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
@@ -541,6 +543,7 @@ export const build_docker_command_args = ( options ) => {
     const extra_mounts = supplied_extra_mounts || get_extra_mounts( agent.name )( {
         yolo: mode.yolo,
         include_host_preferences: include_host_agent_context,
+        auth_probe,
     } )
     for( const m of extra_mounts ) {
         if( m.type === `copy` || m.type === `seed_file` ) continue
