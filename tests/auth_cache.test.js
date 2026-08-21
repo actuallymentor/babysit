@@ -159,6 +159,28 @@ describe( `host authentication cache`, () => {
 
     } )
 
+    it( `hashes only effective fields from transformed context`, () => {
+
+        const agent = get_agent( `gemini` )
+        const identity = theme => fingerprint_agent_credentials( agent, [], {
+            context_files: {
+                gemini_settings: {
+                    path: `/host/settings.json`,
+                    transform: raw => JSON.stringify( {
+                        selectedType: JSON.parse( raw ).security.auth.selectedType,
+                    } ),
+                },
+            },
+            read_file: () => JSON.stringify( {
+                security: { auth: { selectedType: `oauth` } },
+                theme,
+            } ),
+        } )
+
+        expect( identity( `light` ).fingerprint ).toBe( identity( `dark` ).fingerprint )
+
+    } )
+
     it( `resolves the immutable Docker image identity and misses safely`, async () => {
 
         const calls = []
@@ -176,7 +198,7 @@ describe( `host authentication cache`, () => {
             command: `sudo`,
             args: [ `docker`, `image`, `inspect`, `babysit:test`, `--format`, `{{.Id}}` ],
             options: {},
-            timeout_ms: 5_000,
+            timeout_ms: 30_000,
         } ] )
 
         await expect( resolve_auth_image_identity( {

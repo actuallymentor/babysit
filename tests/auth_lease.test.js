@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { acquire_host_auth_lease } from '../src/agents/auth_lease.js'
+import {
+    HOST_AUTH_LEASE_STALE_MS,
+    acquire_host_auth_lease,
+} from '../src/agents/auth_lease.js'
 
 describe( `host authentication lease`, () => {
 
@@ -80,6 +83,31 @@ describe( `host authentication lease`, () => {
             wait_fn: async milliseconds => { current += milliseconds },
             kill: () => {},
         } ) ).rejects.toThrow( `Timed out waiting for another authentication check` )
+
+    } )
+
+    it( `never reclaims an old lease while its owner is alive`, async () => {
+
+        mkdirSync( lease_path )
+        writeFileSync( join( lease_path, `owner.json` ), JSON.stringify( {
+            pid: process.pid,
+            token: `live-owner`,
+        } ) )
+        const old = new Date( Date.now() - HOST_AUTH_LEASE_STALE_MS * 2 )
+        utimesSync( lease_path, old, old )
+        let current = Date.now()
+
+        await expect( acquire_host_auth_lease( {
+            lease_path,
+            timeout_ms: 5,
+            poll_ms: 2,
+            now: () => current,
+            wait_fn: async milliseconds => { current += milliseconds },
+            kill: () => {},
+        } ) ).rejects.toThrow( `Timed out waiting for another authentication check` )
+
+        expect( JSON.parse( readFileSync( join( lease_path, `owner.json` ) ) ).token )
+            .toBe( `live-owner` )
 
     } )
 

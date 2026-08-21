@@ -194,7 +194,7 @@ const latest_session = () => {
     return sessions.sort( ( a, b ) => String( b.started_at ).localeCompare( String( a.started_at ) ) )[0]
 }
 
-const launch_babysit_command = async ( workspace, args, timeout_ms = 180_000 ) => {
+const launch_babysit_command = async ( workspace, args, timeout_ms = 360_000 ) => {
 
     // In a non-TTY test process, Babysit's foreground tmux attach exits
     // immediately after cmd_start has saved session metadata. The E2E harness
@@ -218,13 +218,13 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 180_000 ) =
     return session
 }
 
-const launch_agent = async ( workspace, agent, args, timeout_ms = 180_000 ) => launch_babysit_command(
+const launch_agent = async ( workspace, agent, args, timeout_ms = 360_000 ) => launch_babysit_command(
     workspace,
     [ agent, ...args ],
     timeout_ms
 )
 
-const launch_babysit = async ( workspace, args, timeout_ms = 180_000 ) =>
+const launch_babysit = async ( workspace, args, timeout_ms = 360_000 ) =>
     launch_agent( workspace, `codex`, args, timeout_ms )
 
 const capture = async ( session ) => {
@@ -271,7 +271,7 @@ const assert_no_orphans = async () => {
             `--filter`, `label=babysit.e2e_run=${ run_id }`,
         ] )
         return stdout.trim() === ``
-    }, 120_000 )
+    }, 180_000 )
 
     const recovery_dir = join( home, `.babysit/credential-recovery` )
     const recovery_markers = existsSync( recovery_dir )

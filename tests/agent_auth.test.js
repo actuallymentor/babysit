@@ -244,7 +244,10 @@ describe( `host agent auth checks`, () => {
                 env: {},
                 home_dir,
             } ) ).toEqual( {
-                gemini_settings: join( home_dir, `.gemini`, `settings.json` ),
+                gemini_settings: {
+                    path: join( home_dir, `.gemini`, `settings.json` ),
+                    transform: expect.any( Function ),
+                },
                 gemini_account: join( home_dir, `.gemini`, `google_accounts.json` ),
             } )
         } finally {

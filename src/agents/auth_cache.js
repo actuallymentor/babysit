@@ -157,7 +157,7 @@ const write_host_auth_cache = ( cache, {
  * @param {Object[]} mounts - Credential mounts produced by setup_credentials
  * @param {Object} [options]
  * @param {Function} [options.read_file=readFileSync] - File reader seam
- * @param {Object<string,string>} [options.context_files] - Auth-relevant files keyed by safe labels
+ * @param {Object<string,string|Object>} [options.context_files] - Auth-relevant files keyed by safe labels
  * @returns {{ fingerprint: string, parts: Object[] }|null} Safe fingerprint metadata
  */
 export const fingerprint_agent_credentials = ( agent, mounts = [], {
@@ -191,12 +191,17 @@ export const fingerprint_agent_credentials = ( agent, mounts = [], {
         }
     }
 
-    for( const [ key, path ] of Object.entries( context_files ) ) {
+    for( const [ key, descriptor ] of Object.entries( context_files ) ) {
+        const path = typeof descriptor === `string` ? descriptor : descriptor.path
         try {
+            const raw = read_file( path )
+            const effective_content = typeof descriptor?.transform === `function`
+                ? descriptor.transform( raw )
+                : raw
             parts.push( {
                 kind: `context`,
                 key,
-                hash: hash_value( read_file( path ) ),
+                hash: hash_value( effective_content ),
             } )
         } catch {
             // A carried nested-Docker path may be readable by the outer daemon
@@ -278,7 +283,7 @@ export const resolve_auth_image_identity = async ( {
             command,
             [ ...prefix_args, `image`, `inspect`, image, `--format`, `{{.Id}}` ],
             {},
-            5_000
+            30_000
         )
         return identity || null
     } catch {
