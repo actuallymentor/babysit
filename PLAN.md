@@ -770,3 +770,28 @@ Status: complete.
 - Interactive containers now run through a signal-forwarding entrypoint supervisor. It emits a randomized per-session exit marker as soon as the agent child is reaped. The monitor validates the token and closes tmux immediately, then waits for Docker's copy-safe stopped state before the final credential pull and container removal.
 - Before the fix, three direct close measurements were 4.576–4.940 seconds. The hardened real-Docker E2E measured nine natural closes at 277–1,056 ms, with zero labeled containers, private credential directories, or recovery markers left behind.
 - Unit/integration coverage includes cancellation before Docker create, during copy, during the agent process, and during final credential pull; TTY restoration; cache invalidation/rotation; shutdown marker forgery; stopped-state polling; and cleanup idempotence. The full fake-agent Docker E2E covers all four adapters, prompt submission, exact-once resume behavior, credential rotation, sandbox, mudbox, and nested Docker.
+
+## 2026-08-21 — Credential-check startup latency diagnosis
+
+Intent: explain why session startup credential checks are slow for every
+supported coding agent (`claude`, `codex`, `gemini`, `opencode`) and propose
+targeted mitigations without changing behavior.
+
+1. Map the startup/auth-check path, agent adapters, cache, Docker lifecycle,
+   credential staging/recovery, GitHub auth capture, and concurrency boundaries.
+2. Attribute latency separately to all-agent credential setup, cache lookup and
+   miss reasons, Docker create/copy/start/remove, agent CLI boot, first output,
+   model completion, and final credential recovery.
+3. Build a per-agent matrix covering credential backend, copied inputs, probe
+   command, cacheability, agent-specific startup work, causes, confidence, and
+   mitigations. Separate behavior-preserving optimizations from lower-assurance
+   or policy-changing alternatives.
+4. Reproduce cold, warm, success, failure, and cancellation paths with safe
+   fakes for all four agents; use opt-in real runs only where credentials are
+   already available without reading ignored files. Include native Linux vs
+   Docker Desktop and macOS Keychain distinctions when evidence permits.
+5. Verify relevant CLI/auth and Docker behavior against current primary
+   documentation. Test status commands and startup-disabling flags as
+   candidates, not as behavior-equivalent assumptions.
+6. Ask an independent coding agent to challenge the plan and diagnosis, then
+   rank causes and mitigations by expected impact, safety, and effort.
