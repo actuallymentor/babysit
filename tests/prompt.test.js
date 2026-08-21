@@ -16,6 +16,7 @@ import {
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 import { opencode } from '../src/agents/opencode.js'
+import { SUPPORTED_AGENTS } from '../src/agents/index.js'
 import {
     fingerprint_agent_credentials,
     read_host_auth_cache,
@@ -475,10 +476,11 @@ describe( `startup diagnostics`, () => {
 
 describe( `startup authentication policy`, () => {
 
-    it( `checks only the active agent and caches a successful TTY probe`, async () => {
+    it( `checks every supported agent and scopes each probe to its own credentials`, async () => {
 
         const fixture = startup_auth_fixture()
         const checked_agents = []
+        const reconciled_agents = []
 
         try {
             const result = await check_startup_agent_authentication( codex, {
@@ -489,20 +491,27 @@ describe( `startup authentication policy`, () => {
                 output: fixture.output,
                 cache_path: fixture.cache_path,
                 resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
                 run_auth_check: async ( agent, options ) => {
                     checked_agents.push( agent.name )
                     expect( options.signal ).toBeInstanceOf( AbortSignal )
+                    expect( options.creds_mounts ).toEqual(
+                        agent.name === `codex` ? fixture.creds_mounts : []
+                    )
                     return {
                         name: agent.name,
                         status: `authenticated`,
                         authenticated: true,
                     }
                 },
+                reconcile_credentials: async name => reconciled_agents.push( name ),
             } )
 
-            expect( checked_agents ).toEqual( [ `codex` ] )
-            expect( result.results[0].status ).toBe( `authenticated` )
+            expect( checked_agents ).toEqual( SUPPORTED_AGENTS )
+            expect( reconciled_agents ).toEqual( SUPPORTED_AGENTS )
+            expect( result.results.every( item => item.status === `authenticated` ) ).toBe( true )
             expect( result.cache_context.image_identity ).toBe( `sha256:test-image` )
+            expect( Object.keys( result.cache_contexts ) ).toEqual( [ `codex` ] )
             expect( read_host_auth_cache( { cache_path: fixture.cache_path } ).agents.codex )
                 .toBeDefined()
             expect( fixture.raw_modes ).toEqual( [ true, false ] )
@@ -512,7 +521,7 @@ describe( `startup authentication policy`, () => {
 
     } )
 
-    it( `uses a warm cache before applying the non-TTY skip policy`, async () => {
+    it( `uses a warm cache without probing`, async () => {
 
         const fixture = startup_auth_fixture()
         fixture.input.isTTY = false
@@ -532,9 +541,11 @@ describe( `startup authentication policy`, () => {
                 output: fixture.output,
                 cache_path: fixture.cache_path,
                 resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
                 run_auth_check: async () => {
                     throw new Error( `warm cache must not probe` )
                 },
+                agents: [ codex ],
             } )
 
             expect( result.results ).toEqual( [ {
@@ -550,7 +561,56 @@ describe( `startup authentication policy`, () => {
 
     } )
 
-    it( `skips an uncached non-TTY startup without probing or caching`, async () => {
+    it( `probes only misses while preserving agent order and one image lookup`, async () => {
+
+        const fixture = startup_auth_fixture()
+        const agents = [ claude, codex ]
+        const credential_identity = fingerprint_agent_credentials( codex, fixture.creds_mounts )
+        const probed = []
+        let image_lookups = 0
+
+        try {
+            record_host_auth_success( `codex`, {
+                credential_fingerprint: credential_identity.fingerprint,
+                image_identity: `sha256:test-image`,
+            }, { cache_path: fixture.cache_path } )
+
+            const result = await check_startup_agent_authentication( codex, {
+                workspace: `/tmp/project`,
+                mode: {},
+                creds_mounts: fixture.creds_mounts,
+                input: fixture.input,
+                output: fixture.output,
+                cache_path: fixture.cache_path,
+                resolve_context_files: () => ( {} ),
+                resolve_image_identity: async () => {
+                    image_lookups += 1
+                    return `sha256:test-image`
+                },
+                run_auth_check: async checked_agent => {
+                    probed.push( checked_agent.name )
+                    return {
+                        name: checked_agent.name,
+                        status: `authenticated`,
+                        authenticated: true,
+                    }
+                },
+                agents,
+            } )
+
+            expect( image_lookups ).toBe( 1 )
+            expect( probed ).toEqual( [ `claude` ] )
+            expect( result.results.map( item => `${ item.name }:${ item.status }` ) ).toEqual( [
+                `claude:authenticated`,
+                `codex:cached`,
+            ] )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
+    it( `runs an uncached non-TTY startup probe and caches success`, async () => {
 
         const fixture = startup_auth_fixture()
         fixture.input.isTTY = false
@@ -565,23 +625,24 @@ describe( `startup authentication policy`, () => {
                 output: fixture.output,
                 cache_path: fixture.cache_path,
                 resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
                 run_auth_check: async () => {
                     probed = true
+                    return {
+                        name: `codex`,
+                        status: `authenticated`,
+                        authenticated: true,
+                    }
                 },
+                agents: [ codex ],
             } )
 
-            expect( probed ).toBe( false )
-            expect( result ).toEqual( {
-                results: [ {
-                    name: `codex`,
-                    status: `skipped`,
-                    authenticated: false,
-                    reason: `non-interactive startup`,
-                } ],
-                cache_context: null,
-            } )
-            expect( read_host_auth_cache( { cache_path: fixture.cache_path } ).agents )
-                .toEqual( {} )
+            expect( probed ).toBe( true )
+            expect( result.results[0].status ).toBe( `authenticated` )
+            expect( result.cache_context ).not.toBeNull()
+            expect( read_host_auth_cache( { cache_path: fixture.cache_path } ).agents.codex )
+                .toBeDefined()
+            expect( fixture.raw_modes ).toEqual( [] )
         } finally {
             fixture.cleanup()
         }
@@ -610,12 +671,14 @@ describe( `startup authentication policy`, () => {
                 output: fixture.output,
                 cache_path: fixture.cache_path,
                 resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
                 run_auth_check: async agent => ( {
                     name: agent.name,
                     status: `unauthenticated`,
                     authenticated: false,
                     reason: `login required`,
                 } ),
+                agents: [ codex ],
             } )
 
             expect( result.results[0].status ).toBe( `unauthenticated` )

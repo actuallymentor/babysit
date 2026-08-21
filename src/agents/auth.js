@@ -1,9 +1,16 @@
 import { spawn } from 'child_process'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
 import { createInterface } from 'readline/promises'
 
 import { strip_ansi } from '../babysit/matcher.js'
 import { read_babysit_config } from '../babysit/config.js'
-import { build_docker_command_args } from '../docker/run.js'
+import {
+    BABYSIT_HOST_RC_ENV,
+    DEFAULT_BABYSIT_RC_PATH,
+    build_docker_command_args,
+} from '../docker/run.js'
 import { prepare_docker_launch } from '../docker/launch.js'
 import { log } from '../utils/log.js'
 import { get_agent, SUPPORTED_AGENTS } from './index.js'
@@ -12,6 +19,14 @@ export const HOST_AUTH_CHECK_TIMEOUT_MS = 90_000
 export const HOST_AUTH_CHECK_KILL_GRACE_MS = 1_500
 
 const cancellation_status = signal => signal?.reason?.code === `skip` ? `skipped` : `cancelled`
+const authentication_abort_status = signal => signal?.reason?.code === `timeout`
+    ? `failed`
+    : cancellation_status( signal )
+const authentication_abort_reason = signal => {
+    if( signal?.reason?.code === `timeout` ) return `timed out`
+    if( signal?.reason?.code === `skip` ) return `skipped by user`
+    return `cancelled`
+}
 
 const auth_result = ( name, status, options = {} ) => ( {
     name,
@@ -47,6 +62,71 @@ export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS 
     agent_names.length
         ? `Checking agent auth status...`
         : `No agents configured for authentication checks; skipping authentication checks`
+
+/**
+ * Resolve shared host files that can change authentication inside a probe.
+ * A nested-Docker carried path is returned even when it is not locally
+ * readable; fingerprinting then disables caching rather than omitting it.
+ *
+ * @param {Object} [mode] - Launch mode
+ * @param {Object} [options]
+ * @param {Object} [options.env=process.env] - Environment lookup
+ * @param {Object} [options.agent] - Agent whose provider/account config is used
+ * @param {string} [options.babysit_rc_path] - Default host rc path
+ * @param {string} [options.home_dir=homedir()] - Host home path
+ * @param {Function} [options.path_exists=existsSync] - Filesystem seam
+ * @returns {Object<string,string>} Safe context labels to source paths
+ */
+export const resolve_host_auth_context_files = ( mode = {}, {
+    env = process.env,
+    agent = null,
+    babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
+    home_dir = homedir(),
+    path_exists = existsSync,
+} = {} ) => {
+
+    const context_files = {}
+    const carried_path = env[ BABYSIT_HOST_RC_ENV ]
+    const source = carried_path || babysit_rc_path
+    if( !mode.ignore_host_agents_md && source && ( carried_path || path_exists( source ) ) ) {
+        // Nested Babysit carries the outer-daemon source path, which this
+        // process cannot read, while the same file is already mounted at the
+        // local default path. Hash that readable mirror for warm-cache reuse.
+        context_files.babysitrc = carried_path && path_exists( babysit_rc_path )
+            ? babysit_rc_path
+            : source
+    }
+
+    const codex_home = String( env.CODEX_HOME || join( home_dir, `.codex` ) )
+        .replace( /^~(?=\/|$)/, home_dir )
+        .replace( /\/$/, `` )
+    const agent_context_candidates = {
+        claude: {
+            claude_settings: join( home_dir, `.claude`, `settings.json` ),
+            claude_account: join( home_dir, `.claude.json` ),
+        },
+        codex: {
+            codex_config: join( codex_home, `config.toml` ),
+        },
+        gemini: {
+            gemini_settings: join( home_dir, `.gemini`, `settings.json` ),
+            gemini_account: join( home_dir, `.gemini`, `google_accounts.json` ),
+        },
+    }
+
+    const agent_context = mode.ignore_host_agents_md && agent?.name !== `gemini`
+        ? {}
+        : agent_context_candidates[ agent?.name ] || {}
+
+    Object.entries( agent_context )
+        .filter( ( [ , path ] ) => path_exists( path ) )
+        .forEach( ( [ key, path ] ) => {
+            context_files[ key ] = path
+        } )
+
+    return context_files
+
+}
 
 /**
  * Select host agents configured to receive prompt-level auth checks.
@@ -155,6 +235,7 @@ const build_docker_auth_check_options = ( agent, {
         include_host_agent_context: !mode.ignore_host_agents_md,
         include_loop_deadline: false,
         include_agent_state: false,
+        auth_probe: true,
         agent_command: [ agent.bin, ...auth_args ],
     }
 
@@ -243,6 +324,24 @@ export const run_host_agent_auth_check = async ( agent, {
     on_phase = () => {},
 } = {} ) => {
 
+    // One deadline covers Docker preparation as well as the agent process.
+    // Credential recovery remains awaited after cancellation so a refreshed
+    // one-use token is never destroyed just to meet a wall-clock target.
+    const lifecycle_controller = new AbortController()
+    const forward_abort = () => lifecycle_controller.abort( signal?.reason )
+    const lifecycle_timeout = setTimeout(
+        () => lifecycle_controller.abort( { code: `timeout` } ),
+        timeout_ms
+    )
+    lifecycle_timeout.unref?.()
+    signal?.addEventListener?.( `abort`, forward_abort, { once: true } )
+    if( signal?.aborted ) forward_abort()
+    const auth_signal = lifecycle_controller.signal
+    const clear_lifecycle = () => {
+        clearTimeout( lifecycle_timeout )
+        signal?.removeEventListener?.( `abort`, forward_abort )
+    }
+
     let current_phase = null
     let phase_started_at = Date.now()
     const set_phase = ( name, phase ) => {
@@ -263,6 +362,7 @@ export const run_host_agent_auth_check = async ( agent, {
         extra_env,
     } )
     if( !docker_options ) {
+        clear_lifecycle()
         return auth_result( agent?.name || `unknown`, `failed`, {
             reason: `missing auth check command`,
         } )
@@ -271,18 +371,25 @@ export const run_host_agent_auth_check = async ( agent, {
     let prepared_launch
     try {
         set_phase( agent.name, `preparing` )
-        prepared_launch = await prepare_launch( docker_options, { signal } )
+        prepared_launch = await prepare_launch( docker_options, { signal: auth_signal } )
     } catch ( error ) {
-        const status = signal?.aborted ? cancellation_status( signal ) : `failed`
+        const status = auth_signal.aborted ? authentication_abort_status( auth_signal ) : `failed`
+        clear_lifecycle()
         return auth_result( agent?.name || `unknown`, status, {
-            reason: error.message,
+            reason: auth_signal.reason?.code === `timeout`
+                ? authentication_abort_reason( auth_signal )
+                : error.message,
         } )
     }
 
-    if( signal?.aborted ) {
-        await prepared_launch.abort()
-        return auth_result( agent.name, cancellation_status( signal ), {
-            reason: `cancelled before authentication started`,
+    if( auth_signal.aborted ) {
+        try {
+            await prepared_launch.abort()
+        } finally {
+            clear_lifecycle()
+        }
+        return auth_result( agent.name, authentication_abort_status( auth_signal ), {
+            reason: authentication_abort_reason( auth_signal ),
         } )
     }
 
@@ -303,7 +410,6 @@ export const run_host_agent_auth_check = async ( agent, {
         let stdout = ``
         let stderr = ``
         let settled = false
-        let timeout
         let kill_timeout
         let termination_status = null
         let termination_reason = null
@@ -375,9 +481,9 @@ export const run_host_agent_auth_check = async ( agent, {
             if( settled ) return
 
             settled = true
-            clearTimeout( timeout )
             clear_kill_timeout()
-            signal?.removeEventListener?.( `abort`, on_abort )
+            auth_signal.removeEventListener?.( `abort`, on_abort )
+            clear_lifecycle()
             set_phase( agent.name, result.status )
             resolve( result )
         }
@@ -400,11 +506,9 @@ export const run_host_agent_auth_check = async ( agent, {
         }
 
         on_abort = () => begin_termination(
-            cancellation_status( signal ),
-            signal?.reason?.code === `skip` ? `skipped by user` : `cancelled`
+            authentication_abort_status( auth_signal ),
+            authentication_abort_reason( auth_signal )
         )
-
-        timeout = setTimeout( () => begin_termination( `failed`, `timed out` ), timeout_ms )
 
         child.stdout?.on( `data`, chunk => {
             stdout += chunk.toString()
@@ -449,8 +553,8 @@ export const run_host_agent_auth_check = async ( agent, {
         } )
 
         set_phase( agent.name, `checking` )
-        signal?.addEventListener?.( `abort`, on_abort, { once: true } )
-        if( signal?.aborted ) on_abort()
+        auth_signal.addEventListener?.( `abort`, on_abort, { once: true } )
+        if( auth_signal.aborted ) on_abort()
 
     } )
 

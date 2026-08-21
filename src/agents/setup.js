@@ -29,11 +29,13 @@ const AGENTS_DIR = join( home, `.agents` )
  *   in the merged settings tmpfile so claude doesn't show the "Bypass Permissions
  *   mode" warning at every `--dangerously-skip-permissions` launch.
  * @param {boolean} [options.include_host_preferences=true] - Copy host agent preferences
+ * @param {boolean} [options.auth_probe=false] - Omit instructions and skills from auth probes
  * @returns {{ host: string, container: string, ro?: boolean }[]}
  */
 export const claude_extra_mounts = ( {
     yolo = false,
     include_host_preferences = true,
+    auth_probe = false,
 } = {} ) => {
 
     const mounts = []
@@ -60,7 +62,7 @@ export const claude_extra_mounts = ( {
     // Same logic for skills/ — ~/.agents/skills/ is the cross-agent
     // convention; the entrypoint symlinks it into place when present.
     const shared_agents_md = join( AGENTS_DIR, `AGENTS.md` )
-    if( include_host_preferences && !existsSync( shared_agents_md ) ) {
+    if( !auth_probe && include_host_preferences && !existsSync( shared_agents_md ) ) {
         const claude_md = join( home, `.claude`, `CLAUDE.md` )
         if( existsSync( claude_md ) ) {
             mounts.push( { host: claude_md, container: `/home/node/.claude/CLAUDE.md`, ro: true } )
@@ -68,7 +70,7 @@ export const claude_extra_mounts = ( {
     }
 
     const shared_skills = join( AGENTS_DIR, `skills` )
-    if( include_host_preferences && !existsSync( shared_skills ) ) {
+    if( !auth_probe && include_host_preferences && !existsSync( shared_skills ) ) {
         const skills_dir = join( home, `.claude`, `skills` )
         if( existsSync( skills_dir ) ) {
             mounts.push( { host: skills_dir, container: `/home/node/.claude/skills`, ro: true } )
@@ -267,18 +269,22 @@ const inject_codex_first_run_bypass = ( raw ) => {
  * @param {Object} [options]
  * @param {string} [options.user_globals_path] - Host ~/.agents/AGENTS.md path
  * @param {boolean} [options.include_host_preferences=true] - Copy host config and globals
+ * @param {boolean} [options.include_user_globals=true] - Copy global instructions
  * @returns {{ tmpdir: string|null, provides_user_globals: boolean }}
  */
 export const build_codex_config_tmpdir = ( raw_config, {
     user_globals_path = join( AGENTS_DIR, `AGENTS.md` ),
     include_host_preferences = true,
+    include_user_globals = true,
 } = {} ) => {
 
     const files = {
         [`config.toml`]: inject_codex_first_run_bypass( include_host_preferences ? raw_config : `` ),
     }
 
-    const provides_user_globals = include_host_preferences && existsSync( user_globals_path )
+    const provides_user_globals = include_host_preferences
+        && include_user_globals
+        && existsSync( user_globals_path )
     if( provides_user_globals ) files[`AGENTS.md`] = readFileSync( user_globals_path, `utf-8` )
 
     return {
@@ -306,10 +312,12 @@ export const build_codex_config_tmpdir = ( raw_config, {
  *
  * @param {Object} [options]
  * @param {boolean} [options.include_host_preferences=true] - Copy host Codex config and globals
+ * @param {boolean} [options.auth_probe=false] - Keep provider config but omit instructions
  * @returns {{ host: string, container: string, provides_user_globals?: boolean }[]}
  */
 export const codex_extra_mounts = ( {
     include_host_preferences = true,
+    auth_probe = false,
 } = {} ) => {
 
     const host_config = join( expand_home_path( get_host_codex_home() ), `config.toml` )
@@ -318,6 +326,7 @@ export const codex_extra_mounts = ( {
         : ``
     const { tmpdir, provides_user_globals } = build_codex_config_tmpdir( raw, {
         include_host_preferences,
+        include_user_globals: !auth_probe,
     } )
 
     const mounts = []
@@ -342,11 +351,13 @@ export const codex_extra_mounts = ( {
  * @param {Object} [options]
  * @param {boolean} [options.include_host_preferences=true] - Copy non-authentication host state
  * @param {string} [options.gemini_dir] - Host Gemini directory, injectable for tests
+ * @param {boolean} [options.auth_probe=false] - Keep account selection but omit UI/trust state
  * @returns {{ host: string, container: string }[]}
  */
 export const gemini_extra_mounts = ( {
     include_host_preferences = true,
     gemini_dir = join( home, `.gemini` ),
+    auth_probe = false,
 } = {} ) => {
 
     const mounts = []
@@ -354,9 +365,11 @@ export const gemini_extra_mounts = ( {
     // The account cache participates in OAuth account selection. Installation
     // identity and persistent UI state are host preferences, so only copy them
     // when the user has not requested profile isolation.
-    const passthrough = include_host_preferences
-        ? [ `google_accounts.json`, `installation_id`, `state.json` ]
-        : [ `google_accounts.json` ]
+    const passthrough = auth_probe
+        ? [ `google_accounts.json` ]
+        : include_host_preferences
+            ? [ `google_accounts.json`, `installation_id`, `state.json` ]
+            : [ `google_accounts.json` ]
     for( const file of passthrough ) {
         const tmp = copy_host_file_to_tmpfile( join( gemini_dir, file ), `gemini` )
         if( tmp ) mounts.push( { host: tmp, container: `/home/node/.gemini/${ file }` } )
@@ -374,16 +387,18 @@ export const gemini_extra_mounts = ( {
     // create the file fresh if missing. The host's entries refer to host paths
     // (/home/sandbox/...) which don't apply inside the container; /workspace
     // is the only path the container actually sees.
-    const host_trust = join( gemini_dir, `trustedFolders.json` )
-    let trust_obj = {}
-    if( include_host_preferences && existsSync( host_trust ) ) {
-        try {
-            trust_obj = JSON.parse( readFileSync( host_trust, `utf-8` ) ) 
-        } catch { /* malformed → start fresh */ }
+    if( !auth_probe ) {
+        const host_trust = join( gemini_dir, `trustedFolders.json` )
+        let trust_obj = {}
+        if( include_host_preferences && existsSync( host_trust ) ) {
+            try {
+                trust_obj = JSON.parse( readFileSync( host_trust, `utf-8` ) )
+            } catch { /* malformed → start fresh */ }
+        }
+        trust_obj[ `/workspace` ] = `TRUST_FOLDER`
+        const trust_tmpfile = build_tmpfile( `gemini`, `trustedFolders.json`, JSON.stringify( trust_obj, null, 2 ) )
+        if( trust_tmpfile ) mounts.push( { host: trust_tmpfile, container: `/home/node/.gemini/trustedFolders.json` } )
     }
-    trust_obj[ `/workspace` ] = `TRUST_FOLDER`
-    const trust_tmpfile = build_tmpfile( `gemini`, `trustedFolders.json`, JSON.stringify( trust_obj, null, 2 ) )
-    if( trust_tmpfile ) mounts.push( { host: trust_tmpfile, container: `/home/node/.gemini/trustedFolders.json` } )
 
     return mounts
 

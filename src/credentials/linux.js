@@ -5,6 +5,8 @@ import { copy_host_file_to_private_tmpfile, private_credential_tmpdir } from '..
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
 
+const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
+
 /**
  * Set up credentials on Linux by copying credential files to tmpfiles
  * @param {Object} agent - Agent adapter
@@ -48,7 +50,11 @@ export const setup_linux_credentials = async ( agent, {
                 // Skipped when re-using an existing tmpfile — the foreground
                 // already pre-flighted, and the container is already running on
                 // that capture.
-                if( agent.credential_preflight ) run_command( `${ agent.bin } --version 2>/dev/null` )
+                if( agent.credential_preflight ) {
+                    run_command( `${ agent.bin } --version 2>/dev/null`, {
+                        timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS,
+                    } )
+                }
 
                 // Copy into a chmod-666 client-side sync file. Docker stages it
                 // before start and later pulls refreshed credentials back here.

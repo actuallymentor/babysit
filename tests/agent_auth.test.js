@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'bun:test'
 import { EventEmitter } from 'events'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { PassThrough } from 'stream'
 
 import { SUPPORTED_AGENTS, get_agent } from '../src/agents/index.js'
@@ -15,6 +18,7 @@ import {
     format_host_auth_status_message,
     format_utc_timestamp,
     last_nonempty_line,
+    resolve_host_auth_context_files,
     run_host_agent_auth_check,
     select_host_auth_check_agents,
     should_continue_with_unauthenticated_agents,
@@ -194,6 +198,61 @@ describe( `host agent auth checks`, () => {
             .toBe( `No agents configured for authentication checks; skipping authentication checks` )
     } )
 
+    it( `tracks the effective babysitrc authentication context`, () => {
+
+        expect( resolve_host_auth_context_files( {}, {
+            env: {},
+            babysit_rc_path: `/host/.babysitrc`,
+            path_exists: () => true,
+        } ) ).toEqual( { babysitrc: `/host/.babysitrc` } )
+
+        expect( resolve_host_auth_context_files( {}, {
+            env: { BABYSIT_HOST_BABYSITRC: `/outer/.babysitrc` },
+            path_exists: () => false,
+        } ) ).toEqual( { babysitrc: `/outer/.babysitrc` } )
+
+        expect( resolve_host_auth_context_files( { ignore_host_agents_md: true }, {
+            env: { BABYSIT_HOST_BABYSITRC: `/outer/.babysitrc` },
+        } ) ).toEqual( {} )
+
+    } )
+
+    it( `tracks provider and account config used by each probe profile`, () => {
+
+        const home_dir = mkdtempSync( join( tmpdir(), `babysit-auth-context-` ) )
+        const rc_path = join( home_dir, `.babysitrc` )
+
+        try {
+            mkdirSync( join( home_dir, `.codex` ) )
+            mkdirSync( join( home_dir, `.gemini` ) )
+            writeFileSync( rc_path, `CUSTOM_API_KEY=test\n` )
+            writeFileSync( join( home_dir, `.codex`, `config.toml` ), `model_provider = "custom"\n` )
+            writeFileSync( join( home_dir, `.gemini`, `settings.json` ), `{}` )
+            writeFileSync( join( home_dir, `.gemini`, `google_accounts.json` ), `{}` )
+
+            expect( resolve_host_auth_context_files( {}, {
+                agent: get_agent( `codex` ),
+                env: {},
+                home_dir,
+                babysit_rc_path: rc_path,
+            } ) ).toEqual( {
+                babysitrc: rc_path,
+                codex_config: join( home_dir, `.codex`, `config.toml` ),
+            } )
+            expect( resolve_host_auth_context_files( { ignore_host_agents_md: true }, {
+                agent: get_agent( `gemini` ),
+                env: {},
+                home_dir,
+            } ) ).toEqual( {
+                gemini_settings: join( home_dir, `.gemini`, `settings.json` ),
+                gemini_account: join( home_dir, `.gemini`, `google_accounts.json` ),
+            } )
+        } finally {
+            rmSync( home_dir, { recursive: true, force: true } )
+        }
+
+    } )
+
     it( `selects configured host auth-check agents`, () => {
         const agents = select_host_auth_check_agents( {
             read_config: () => ( {
@@ -335,7 +394,8 @@ describe( `host agent auth checks`, () => {
             signal: controller.signal,
             prepare_launch: async ( options, { signal } ) => {
                 expect( options.agent.name ).toBe( `codex` )
-                expect( signal ).toBe( controller.signal )
+                expect( signal ).toBeInstanceOf( AbortSignal )
+                expect( signal ).not.toBe( controller.signal )
                 preparing.resolve()
 
                 return new Promise( ( resolve, reject ) => {
@@ -355,6 +415,24 @@ describe( `host agent auth checks`, () => {
             status: `skipped`,
             authenticated: false,
             reason: `preparation aborted`,
+        } )
+
+    } )
+
+    it( `applies the authentication deadline during Docker preparation`, async () => {
+
+        const result = await run_host_agent_auth_check( get_agent( `codex` ), {
+            timeout_ms: 1,
+            prepare_launch: async ( _, { signal } ) => new Promise( ( _resolve, reject ) => {
+                signal.addEventListener( `abort`, () => reject( new Error( `preparation aborted` ) ), { once: true } )
+            } ),
+        } )
+
+        expect( result ).toEqual( {
+            name: `codex`,
+            status: `failed`,
+            authenticated: false,
+            reason: `timed out`,
         } )
 
     } )

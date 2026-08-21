@@ -39,6 +39,8 @@ export const sort_sessions_newest_first = ( sessions ) => [ ...sessions ].sort(
  *   from the credential capture handoff
  * @param {Object|null} [session.auth_cache_context] - Hash-only trust metadata
  *   used to preserve a fresh auth result across an in-session token rotation
+ * @param {Object|null} [session.auth_cache_contexts] - Per-agent hash-only
+ *   trust metadata for credentials available to nested coding-agent calls
  * @param {string|null} [session.agent_exit_sentinel] - Random token required
  *   to recognize the supervised entrypoint's early process-exit marker
  * @param {string|null} [session.container_id] - Docker container used for API credential sync

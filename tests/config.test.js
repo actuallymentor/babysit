@@ -85,7 +85,7 @@ describe( `babysit config`, () => {
 
         await cmd_config( { flags: {} }, { input, output } )
 
-        expect( rendered ).toContain( `Startup authentication: active agent` )
+        expect( rendered ).toContain( `Startup authentication: all supported agents` )
         expect( rendered ).toContain( `babysit doctor --auth` )
         expect( rendered ).toContain( `Legacy authentication selection: codex, claude` )
     } )

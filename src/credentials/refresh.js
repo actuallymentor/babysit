@@ -68,7 +68,7 @@ const REFRESH_INTERVAL_MS = 300_000
  * @param {string|null} [options.baseline_source_hash] - Hash of the host source when the tmpfile
  *   was captured by the foreground process
  * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the sync copy when captured
- * @returns {{ baseline: Function, set_transport: Function, stop: Function }} Sync controller
+ * @returns {{ baseline: Function, set_transport: Function, flush: Function, stop: Function }} Sync controller
  */
 export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null, options = {} ) => {
 
@@ -205,6 +205,11 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         set_transport: next_transport => {
             transport = next_transport
         },
+        // Reconcile an externally updated sync file without stopping the
+        // long-lived session controller. Auth probes use this immediately
+        // after pulling rotated credentials so another launch captures the
+        // refreshed host source instead of a consumed one-use token.
+        flush: async () => queue_tick( { throw_errors: true } ),
         // Stop the periodic loop and run one last tick. The final flush is
         // load-bearing: if the in-container agent refreshed its OAuth token
         // less than REFRESH_INTERVAL_MS before session end, that refresh would

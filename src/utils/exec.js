@@ -100,12 +100,18 @@ export const run = ( cmd, args = [], options = {}, timeout_ms = 30_000 ) => {
 /**
  * Run a command synchronously, returning stdout or null on failure
  * @param {string} cmd - Full command string
+ * @param {Object} [options]
+ * @param {number} [options.timeout_ms] - Optional wall-clock bound
  * @returns {string|null} stdout or null if command failed
  */
-export const run_sync = ( cmd ) => {
+export const run_sync = ( cmd, { timeout_ms = undefined } = {} ) => {
 
     try {
-        return execSync( cmd, { encoding: `utf-8`, stdio: [ `ignore`, `pipe`, `ignore` ] } ).trim()
+        return execSync( cmd, {
+            encoding: `utf-8`,
+            stdio: [ `ignore`, `pipe`, `ignore` ],
+            timeout: timeout_ms,
+        } ).trim()
     } catch {
         return null
     }

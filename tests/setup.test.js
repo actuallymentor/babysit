@@ -248,6 +248,18 @@ describe( `claude_extra_mounts`, () => {
 
     } )
 
+    it( `omits instructions and skills from an auth probe`, () => {
+
+        const targets = claude_extra_mounts( { auth_probe: true } )
+            .map( mount => mount.container )
+
+        expect( targets ).toEqual( [
+            `/home/node/.claude/settings.json`,
+            `/home/node/.claude/.claude.json`,
+        ] )
+
+    } )
+
 } )
 
 describe( `codex_extra_mounts`, () => {
@@ -279,6 +291,27 @@ describe( `codex_extra_mounts`, () => {
         expect( provides_user_globals ).toBe( false )
         expect( existsSync( join( codex_home, `AGENTS.md` ) ) ).toBe( false )
 
+        rmSync( codex_home, { recursive: true, force: true } )
+
+    } )
+
+    it( `keeps config but omits global instructions for an auth probe`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-codex-auth-profile-` ) )
+        const user_globals_path = join( dir, `AGENTS.md` )
+        writeFileSync( user_globals_path, `Do unrelated startup work.\n` )
+
+        const { tmpdir: codex_home, provides_user_globals } = build_codex_config_tmpdir(
+            `model_provider = "custom"\n`,
+            { user_globals_path, include_user_globals: false }
+        )
+
+        expect( provides_user_globals ).toBe( false )
+        expect( existsSync( join( codex_home, `AGENTS.md` ) ) ).toBe( false )
+        expect( readFileSync( join( codex_home, `config.toml` ), `utf-8` ) )
+            .toContain( `model_provider = "custom"` )
+
+        rmSync( dir, { recursive: true, force: true } )
         rmSync( codex_home, { recursive: true, force: true } )
 
     } )
@@ -509,6 +542,33 @@ describe( `gemini_extra_mounts`, () => {
         } finally {
             [ ...new Set( generated_mounts.map( mount => mount.host ) ) ]
                 .forEach( path => rmSync( path, { force: true } ) )
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `keeps only account selection files for an auth probe`, () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-gemini-auth-profile-` ) )
+        const generated_mounts = []
+
+        try {
+            [ `google_accounts.json`, `installation_id`, `state.json`, `trustedFolders.json` ]
+                .forEach( file => writeFileSync( join( dir, file ), `{}` ) )
+            writeFileSync( join( dir, `settings.json` ), JSON.stringify( {
+                security: { auth: { selectedType: `oauth` } },
+            } ) )
+
+            const mounts = gemini_extra_mounts( { gemini_dir: dir, auth_probe: true } )
+            generated_mounts.push( ...mounts )
+            const targets = mounts.map( mount => mount.container )
+
+            expect( targets ).toEqual( [
+                `/home/node/.gemini/google_accounts.json`,
+                `/home/node/.gemini/settings.json`,
+            ] )
+        } finally {
+            generated_mounts.forEach( mount => rmSync( mount.host, { force: true } ) )
             rmSync( dir, { recursive: true, force: true } )
         }
 

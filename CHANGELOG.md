@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.31.0 — 2026-08-21
+
+### ✨ Added
+- **Startup verifies every coding agent.** Claude, Codex, Gemini, and OpenCode
+  cache misses run concurrently so nested agent calls have real auth coverage.
+- **Concurrent launches share authentication work.** A cross-process lease
+  prevents duplicate refresh-token use and lets waiters reuse warm results.
+
+### 🐛 Fixed
+- **Auth probes stage only their own credentials.** Provider/account state and
+  `.babysitrc` remain intact while unrelated secrets and instructions stay out.
+- **Probe deadlines cover Docker preparation.** Host preflight and full probe
+  setup are bounded without abandoning credential recovery.
+- **Credential rotations reconcile before reuse.** Cache trust and source
+  replacement are tracked independently for every supported agent.
+
+### Changed
+- **Non-interactive startup now verifies cache misses and fails closed.** It no
+  longer silently launches without current all-agent authentication evidence.
+
 ## 0.30.1 — 2026-08-21
 
 ### 🐛 Fixed

@@ -130,9 +130,9 @@ export const aggregate_syncs = ( syncs, {
                 .filter( ( { controller, name } ) => name && controller.baseline )
                 .map( ( { controller, name } ) => [ name, controller.baseline() ] )
         ),
-        source_changed: () => active_syncs.some(
-            ( { controller } ) => controller.source_changed?.() === true
-        ),
+        source_changed: name => active_syncs
+            .filter( sync => !name || sync.name === name )
+            .some( ( { controller } ) => controller.source_changed?.() === true ),
         connect: container_id => {
             active_syncs.forEach( ( { controller, target } ) => {
                 controller.set_transport( create_transport( container_id, target ) )
@@ -141,6 +141,20 @@ export const aggregate_syncs = ( syncs, {
         cleanup: () => cleanup_ephemeral_credential_mounts(
             active_syncs.map( ( { cleanup_path } ) => ( { cleanup: cleanup_path } ) )
         ),
+        flush: async name => {
+            const selected_syncs = active_syncs.filter( sync => !name || sync.name === name )
+            const results = await Promise.allSettled(
+                selected_syncs.map( ( { controller } ) => controller.flush?.() )
+            )
+            const failures = results
+                .filter( result => result.status === `rejected` )
+                .map( result => result.reason )
+
+            if( failures.length === 1 ) throw failures[0]
+            if( failures.length > 1 ) {
+                throw new AggregateError( failures, `Failed to reconcile ${ failures.length } credential files` )
+            }
+        },
         stop: async () => {
             const results = await Promise.allSettled(
                 active_syncs.map( ( { controller } ) => controller.stop() )

@@ -69,6 +69,32 @@ describe( `aggregate credential sync`, () => {
 
     } )
 
+    it( `reconciles a probe rotation before the session controller stops`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-probe-sync-test-` ) )
+        const source = join( directory, `host-auth.json` )
+        const tmpfile = join( directory, `sync-auth.json` )
+
+        try {
+            writeFileSync( source, `before` )
+            writeFileSync( tmpfile, `before` )
+            const controller = start_credential_sync(
+                async () => readFileSync( source, `utf-8` ),
+                tmpfile,
+                async content => writeFileSync( source, content )
+            )
+
+            writeFileSync( tmpfile, `after-probe` )
+            await controller.flush()
+
+            expect( readFileSync( source, `utf-8` ) ).toBe( `after-probe` )
+            await controller.stop()
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
     it( `waits for every final flush before reporting a failure`, async () => {
 
         let slow_flush_completed = false
@@ -92,6 +118,25 @@ describe( `aggregate credential sync`, () => {
 
         await expect( sync.stop() ).rejects.toThrow( `flush failed` )
         expect( slow_flush_completed ).toBe( true )
+
+    } )
+
+    it( `reports host credential replacement per agent`, () => {
+
+        const sync = aggregate_syncs( [
+            {
+                name: `codex`,
+                controller: { source_changed: () => false },
+            },
+            {
+                name: `claude`,
+                controller: { source_changed: () => true },
+            },
+        ] )
+
+        expect( sync.source_changed( `codex` ) ).toBe( false )
+        expect( sync.source_changed( `claude` ) ).toBe( true )
+        expect( sync.source_changed() ).toBe( true )
 
     } )
 
