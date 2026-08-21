@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { PassThrough } from 'stream'
+import { fileURLToPath } from 'url'
 
 import { SUPPORTED_AGENTS, get_agent } from '../src/agents/index.js'
 import {
@@ -27,6 +28,10 @@ import {
     unauthenticated_agent_names,
 } from '../src/agents/auth.js'
 import { OPENCODE_DEFAULT_MODEL, resolve_opencode_model } from '../src/agents/opencode.js'
+
+const chrome_seccomp_profile_path = fileURLToPath(
+    new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
+)
 
 const fake_spawn = ( { code = 0, stdout = `ok\n`, stderr = `` } = {}, on_spawn = () => {} ) => (
     cmd,
@@ -190,6 +195,7 @@ describe( `host agent auth checks`, () => {
             workspace: `/tmp/project`,
             mode: { yolo: true },
             creds_mounts: [ { type: `env`, key: `CODEX_API_KEY`, value: `test-token` } ],
+            chrome_seccomp_profile_path,
         } )
 
         expect( args.slice( 0, 3 ) ).toEqual( [ `docker`, `run`, `--rm` ] )
@@ -223,6 +229,7 @@ describe( `host agent auth checks`, () => {
                 key: `ANTHROPIC_API_KEY`,
                 value: `test-token`,
             } ],
+            chrome_seccomp_profile_path,
         } )
 
         expect( args ).toContain( `ANTHROPIC_API_KEY=test-token` )

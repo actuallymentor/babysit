@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { EventEmitter } from 'events'
 import { existsSync, readFileSync } from 'fs'
+import { fileURLToPath } from 'url'
 
 import { opencode } from '../src/agents/opencode.js'
 import { build_docker_launch_plan, prepare_docker_launch } from '../src/docker/launch.js'
@@ -9,6 +10,9 @@ import { cleanup_ephemeral_credential_mounts } from '../src/credentials/index.js
 import { build_private_tmpfile } from '../src/utils/tmpfile.js'
 
 const CONTAINER_ID = `a`.repeat( 64 )
+const chrome_seccomp_profile_path = fileURLToPath(
+    new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
+)
 
 const make_options = copy_mount => ( {
     agent: opencode,
@@ -35,6 +39,7 @@ const make_options = copy_mount => ( {
     include_user_globals: false,
     include_loop_deadline: false,
     include_agent_state: false,
+    chrome_seccomp_profile_path,
 } )
 
 const private_transport = () => {
@@ -127,6 +132,8 @@ describe( `prepared Docker launch`, () => {
 
         const create_call = calls.find( call => call.args.includes( `create` ) )
         const copy_call = calls.find( call => call.args.includes( `cp` ) )
+        const security_option = create_call.args[ create_call.args.indexOf( `--security-opt` ) + 1 ]
+        const seccomp_profile_path = security_option.replace( `seccomp=`, `` )
 
         expect( create_call.command ).toBe( `docker` )
         expect( create_call.args ).not.toContain( `run` )
@@ -137,10 +144,35 @@ describe( `prepared Docker launch`, () => {
         expect( copy_call.args ).toContain( `${ CONTAINER_ID }:/tmp/.babysit-gh-hosts.yml` )
         expect( uploaded_profile ).toContain( `fake-token` )
         expect( existsSync( transport.directory ) ).toBe( false )
+        expect( seccomp_profile_path ).toStartWith( `/tmp/babysit-chrome-chrome-seccomp.json-` )
+        expect( existsSync( seccomp_profile_path ) ).toBe( false )
         expect( launch.command ).toBe( `docker start -ai ${ CONTAINER_ID }` )
 
         launch.handoff()
         expect( signals.listenerCount( `SIGINT` ) ).toBe( 0 )
+
+    } )
+
+    it( `retains a direct-run seccomp profile only until launch handoff`, async () => {
+
+        const options = make_options( {} )
+        options.creds_mounts = []
+        options.extra_mounts = []
+        const seccomp_transport = build_private_tmpfile(
+            `chrome-test`,
+            `chrome-seccomp.json`,
+            `{}`
+        )
+
+        const launch = await prepare_docker_launch( options, {
+            create_seccomp_profile: () => seccomp_transport,
+        } )
+
+        expect( launch.command ).toContain( `seccomp=${ seccomp_transport.file }` )
+        expect( existsSync( seccomp_transport.file ) ).toBe( true )
+
+        launch.handoff()
+        expect( existsSync( seccomp_transport.directory ) ).toBe( false )
 
     } )
 

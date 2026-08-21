@@ -13,8 +13,8 @@
   agent; `babysit update` pulls the refreshed runtime.
 - **Browser sessions receive stable shared-memory capacity.** Containers use a
   1 GiB `/dev/shm` and a Docker-default-derived seccomp profile that opens only
-  Chrome's namespace calls, without granting `SYS_ADMIN` or passing
-  `--no-sandbox`.
+  Chrome's required namespace calls from a private launch-scoped path, without
+  granting `SYS_ADMIN` or passing `--no-sandbox`.
 
 ## 0.31.1 — 2026-08-21
 

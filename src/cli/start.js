@@ -23,7 +23,6 @@ import {
     resolve_docker_socket_path,
 } from '../docker/run.js'
 import { prepare_docker_launch } from '../docker/launch.js'
-import { ensure_chrome_seccomp_profile } from '../docker/chrome-seccomp.js'
 import { warn_if_unrecognized_watchtower_is_running } from '../docker/watchtower.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import {
@@ -787,7 +786,6 @@ export const cmd_start = async ( cmd ) => {
     const session_display_name = resolve_session_display_name( flags, stored_resume_session )
 
     ensure_dirs()
-    ensure_chrome_seccomp_profile()
     const protected_session_credential_paths = list_stored_sessions()
         .flatMap( session => [
             session.creds_tmpfile,
