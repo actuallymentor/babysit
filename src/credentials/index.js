@@ -10,6 +10,7 @@ import { setup_linux_credentials } from './linux.js'
 import { create_docker_file_transport } from '../docker/file_transport.js'
 
 const EPHEMERAL_CREDENTIAL_PREFIXES = [
+    `babysit-chrome-chrome-seccomp.json-`,
     `babysit-gh-hosts.yml-`,
     `babysit-gh-credentials.env-`,
     `babysit-credentials-env-`,
@@ -48,7 +49,7 @@ export const cleanup_ephemeral_credential_mounts = ( mounts = [] ) => {
 }
 
 /**
- * Remove abandoned private GitHub credential transports from earlier crashes.
+ * Remove abandoned private launch transports from earlier crashes.
  * Fresh transports are left alone so concurrent Babysit launches cannot race.
  * @param {Object} [options]
  * @param {string} [options.directory=tmpdir()] - Temporary directory to sweep

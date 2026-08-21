@@ -9,6 +9,7 @@ import chrome_seccomp_profile from './chrome-seccomp.json' with { type: 'json' }
 // allowlist and security fixes, then add only the namespace calls Chrome needs
 // to establish its stricter renderer sandbox without CAP_SYS_ADMIN.
 export const CHROME_SECCOMP_SOURCE = `moby/moby@b612274c5489b546ff8b4a4f93f25a0b8952713a`
+export const CHROME_SECCOMP_SOURCE_SHA256 = `536529b665dd0972c37bfb569f5d4ac8a53592e7b00752bc39ff063ca9864c74`
 
 const chrome_seccomp_content = `${ JSON.stringify( chrome_seccomp_profile, null, 2 ) }\n`
 
