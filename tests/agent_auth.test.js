@@ -25,7 +25,10 @@ import {
     should_continue_with_unauthenticated_agents,
     unauthenticated_agent_names,
 } from '../src/agents/auth.js'
-import { OPENCODE_DEFAULT_MODEL, resolve_opencode_model } from '../src/agents/opencode.js'
+import {
+    OPENCODE_OPENROUTER_DEFAULT_MODEL,
+    resolve_opencode_model,
+} from '../src/agents/opencode.js'
 
 const chrome_seccomp_profile_path = fileURLToPath(
     new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
@@ -134,10 +137,12 @@ describe( `host agent auth checks`, () => {
             .toEqual( [ `exec`, `--ephemeral`, `--skip-git-repo-check`, `--color`, `never`, prompt ] )
         expect( build_host_auth_args( get_agent( `gemini` ), prompt ) )
             .toEqual( [ `--skip-trust`, `-p`, prompt ] )
-        expect( build_host_auth_args( get_agent( `opencode` ), prompt ) )
+        expect( build_host_auth_args( get_agent( `opencode` ), prompt, {
+            route: {},
+            path_exists: () => false,
+        } ) )
             .toEqual( [
                 `run`,
-                `--model`, OPENCODE_DEFAULT_MODEL,
                 `--agent`, `babysit-auth`,
                 prompt,
             ] )
@@ -149,7 +154,24 @@ describe( `host agent auth checks`, () => {
         expect( resolve_opencode_model( args ) ).toBe( `openai/second` )
         expect( resolve_opencode_model( [ `--model=google/gemini-pro` ] ) )
             .toBe( `google/gemini-pro` )
-        expect( resolve_opencode_model() ).toBe( OPENCODE_DEFAULT_MODEL )
+        expect( resolve_opencode_model( [], {
+            route: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        expect( resolve_opencode_model( [], {
+            route: { model: `anthropic/configured` },
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( `anthropic/configured` )
+        expect( resolve_opencode_model( [], {
+            route: {},
+            path_exists: () => false,
+        } ) ).toBeNull()
         expect( build_host_auth_args( get_agent( `opencode` ), `hello`, { agent_args: args } ) )
             .toEqual( [
                 `run`,
@@ -166,20 +188,35 @@ describe( `host agent auth checks`, () => {
 
     it( `pins OpenCode probes to the generated config profile`, async () => {
         let launch_options
+        const root = mkdtempSync( join( tmpdir(), `babysit-opencode-auth-home-` ) )
+        const auth_directory = join( root, `.local/share/opencode` )
+        mkdirSync( auth_directory, { recursive: true } )
+        writeFileSync(
+            join( auth_directory, `auth.json` ),
+            JSON.stringify( { openrouter: { type: `api`, key: `redacted` } } )
+        )
+        const previous_home = process.env.HOME
 
-        await run_host_agent_auth_check( get_agent( `opencode` ), {
-            prompt: `hello`,
-            prepare_launch: async options => {
-                launch_options = options
-                return {
-                    command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
-                    pull_synced_files: async () => {},
-                    abort: async () => {},
-                }
-            },
-            spawn_fn: fake_spawn(),
-            timeout_ms: 1_000,
-        } )
+        try {
+            process.env.HOME = root
+            await run_host_agent_auth_check( get_agent( `opencode` ), {
+                prompt: `hello`,
+                prepare_launch: async options => {
+                    launch_options = options
+                    return {
+                        command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                        pull_synced_files: async () => {},
+                        abort: async () => {},
+                    }
+                },
+                spawn_fn: fake_spawn(),
+                timeout_ms: 1_000,
+            } )
+        } finally {
+            if( previous_home === undefined ) delete process.env.HOME
+            else process.env.HOME = previous_home
+            rmSync( root, { recursive: true, force: true } )
+        }
 
         expect( launch_options.agent_command ).toEqual( [
             `env`,
@@ -188,7 +225,7 @@ describe( `host agent auth checks`, () => {
             `OPENCODE_CONFIG_DIR=/home/node/.config/opencode`,
             `opencode`,
             `run`,
-            `--model`, OPENCODE_DEFAULT_MODEL,
+            `--model`, OPENCODE_OPENROUTER_DEFAULT_MODEL,
             `--agent`, `babysit-auth`,
             `hello`,
         ] )

@@ -171,11 +171,20 @@ describe( `credential preflight`, () => {
 
 describe( `model defaults`, () => {
 
-    // OpenCode gets a current, concrete OpenAI catalog model. Gemini remains
-    // unpinned so its own router can choose a model supported by the account.
+    // OpenCode resolves a current model against the authenticated provider.
+    // Gemini remains unpinned so its own account router can choose.
 
-    it( `opencode pins the current OpenAI frontier model`, () => {
-        expect( get_agent( `opencode` ).defaults.model ).toBe( `openai/gpt-5.6-sol` )
+    it( `opencode resolves the frontier model through the authenticated provider`, () => {
+        const resolve_model = get_agent( `opencode` ).defaults.model
+
+        expect( typeof resolve_model ).toBe( `function` )
+        expect( resolve_model( {
+            route: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( `openrouter/openai/gpt-5.6-sol` )
     } )
 
     it( `gemini does not force a model`, () => {

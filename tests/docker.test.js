@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { createHash } from 'crypto'
-import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, readFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
@@ -794,7 +794,7 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `renders exact native-id resume commands for each agent`, () => {
+    it( `renders exact native-id resume commands for each agent`, async () => {
 
         const uuid = `019df81b-ce45-70f0-ab6e-3cbd64c83397`
 
@@ -813,10 +813,24 @@ describe( `build_docker_command`, () => {
             agent_args: gemini.flags.resume( uuid ),
         } ) ) ).toContain( ` gemini --approval-mode=yolo --skip-trust --resume ${ uuid }` )
 
-        expect( build_docker_command( make_options( {
-            agent: opencode,
-            agent_args: opencode.flags.resume( `ses_66a71b6f4ffeq796jvvOpJQ04m` ),
-        } ) ) ).toContain( ` opencode --dangerously-skip-permissions --model openai/gpt-5.6-sol --session ses_66a71b6f4ffeq796jvvOpJQ04m` )
+        const root = mkdtempSync( join( tmpdir(), `babysit-opencode-command-home-` ) )
+        const auth_directory = join( root, `.local/share/opencode` )
+        mkdirSync( auth_directory, { recursive: true } )
+        writeFileSync(
+            join( auth_directory, `auth.json` ),
+            JSON.stringify( { openrouter: { type: `api`, key: `redacted` } } )
+        )
+
+        try {
+            await with_env( { HOME: root }, () => {
+                expect( build_docker_command( make_options( {
+                    agent: opencode,
+                    agent_args: opencode.flags.resume( `ses_66a71b6f4ffeq796jvvOpJQ04m` ),
+                } ) ) ).toContain( ` opencode --dangerously-skip-permissions --model openrouter/openai/gpt-5.6-sol --session ses_66a71b6f4ffeq796jvvOpJQ04m` )
+            } )
+        } finally {
+            rmSync( root, { recursive: true, force: true } )
+        }
 
     } )
 

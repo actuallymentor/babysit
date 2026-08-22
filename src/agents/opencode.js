@@ -2,28 +2,94 @@
  * OpenCode adapter
  * CLI docs: https://opencode.ai/docs/cli/
  */
+import { existsSync, readFileSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+
 import { resolve_opencode_route_config } from './opencode_config.js'
 
 export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
+export const OPENCODE_OPENROUTER_DEFAULT_MODEL = `openrouter/openai/gpt-5.6-sol`
 export const OPENCODE_AUTH_AGENT = `babysit-auth`
 export const OPENCODE_AUTH_PROFILE_VERSION = `tool-free-v1`
+
+const PROVIDER_DEFAULT_MODELS = {
+    openai: OPENCODE_DEFAULT_MODEL,
+    openrouter: OPENCODE_OPENROUTER_DEFAULT_MODEL,
+}
+
+/**
+ * Read only the provider ids from OpenCode's credential store.
+ * @param {Object} [options]
+ * @param {string} [options.home_dir=homedir()] - Host home directory
+ * @param {Function} [options.path_exists=existsSync] - Filesystem seam
+ * @param {Function} [options.read_file=readFileSync] - File reader seam
+ * @returns {string[]} Authenticated provider ids without credential values
+ */
+export const resolve_opencode_auth_providers = ( {
+    home_dir = homedir(),
+    path_exists = existsSync,
+    read_file = path => readFileSync( path, `utf8` ),
+} = {} ) => {
+
+    const auth_path = join( home_dir, `.local`, `share`, `opencode`, `auth.json` )
+    if( !path_exists( auth_path ) ) return []
+
+    try {
+        const credentials = JSON.parse( read_file( auth_path ) )
+        if( !credentials || typeof credentials !== `object` || Array.isArray( credentials ) ) return []
+
+        return Object.entries( credentials )
+            .filter( ( [ , credential ] ) => credential
+                && typeof credential === `object`
+                && typeof credential.type === `string`
+            )
+            .map( ( [ provider ] ) => provider )
+    } catch {
+        return []
+    }
+
+}
+
+/**
+ * Resolve OpenCode's configured or provider-compatible default model.
+ * @param {Object} [options] - Workspace/profile context
+ * @returns {string|null} Model slug, or null when OpenCode should choose
+ */
+export const resolve_opencode_default_model = ( options = {} ) => {
+
+    const route = options.route || resolve_opencode_route_config( options )
+    if( typeof route.model === `string` && route.model ) return route.model
+
+    const providers = resolve_opencode_auth_providers( options )
+    const provider = Object.keys( PROVIDER_DEFAULT_MODELS ).find(
+        candidate => providers.includes( candidate )
+    )
+
+    return PROVIDER_DEFAULT_MODELS[ provider ] || null
+
+}
 
 /**
  * Resolve OpenCode's effective model from Babysit passthrough arguments.
  * OpenCode accepts long/short and separate/equals forms; the last flag wins.
  *
  * @param {string[]} agent_args - Arguments passed through to OpenCode
- * @returns {string} Effective provider/model slug
+ * @param {Object} [options] - Workspace/profile context
+ * @returns {string|null} Effective provider/model slug
  */
-export const resolve_opencode_model = ( agent_args = [] ) => agent_args.reduce(
-    ( model, argument, index ) => {
+export const resolve_opencode_model = ( agent_args = [], options = {} ) => {
+
+    const explicit_model = agent_args.reduce( ( model, argument, index ) => {
         if( [ `--model`, `-m` ].includes( argument ) ) return agent_args[ index + 1 ] || model
 
         const inline_model = argument.match( /^(?:--model|-m)=(.+)$/ )?.[1]
         return inline_model || model
-    },
-    OPENCODE_DEFAULT_MODEL
-)
+    }, null )
+
+    return explicit_model || resolve_opencode_default_model( options )
+
+}
 
 export const opencode = {
 
@@ -77,24 +143,31 @@ export const opencode = {
             `-u`, `OPENCODE_CONFIG_CONTENT`,
             `OPENCODE_CONFIG_DIR=/home/node/.config/opencode`,
         ],
-        args: ( prompt, { agent_args = [] } = {} ) => [
-            `run`,
-            `--model`, resolve_opencode_model( agent_args ),
-            `--agent`, OPENCODE_AUTH_AGENT,
-            prompt,
-        ],
-        cache_context: ( agent_args = [], options = {} ) => ( {
-            model: resolve_opencode_model( agent_args ),
-            profile: OPENCODE_AUTH_PROFILE_VERSION,
-            route: JSON.stringify( resolve_opencode_route_config( options ) ),
-        } ),
+        args: ( prompt, { agent_args = [], ...options } = {} ) => {
+            const model = resolve_opencode_model( agent_args, options )
+
+            return [
+                `run`,
+                ... model ? [ `--model`, model ] : [],
+                `--agent`, OPENCODE_AUTH_AGENT,
+                prompt,
+            ]
+        },
+        cache_context: ( agent_args = [], options = {} ) => {
+            const route = resolve_opencode_route_config( options )
+
+            return {
+                model: resolve_opencode_model( agent_args, { ...options, route } ) || `auto`,
+                profile: OPENCODE_AUTH_PROFILE_VERSION,
+                route: JSON.stringify( route ),
+            }
+        },
     },
 
-    // Keep OpenCode on a concrete model from its current OpenAI catalog rather
-    // than inheriting a provider-dependent built-in. Non-OpenAI providers override
-    // via `babysit opencode --model anthropic/claude-opus-4-7`.
+    // Keep the launch model on the provider the user authenticated. Explicit
+    // passthrough flags still win because they are appended after defaults.
     defaults: {
-        model: OPENCODE_DEFAULT_MODEL,
+        model: resolve_opencode_default_model,
     },
 
     // OpenCode session ids are commonly `ses_...`, not UUIDs. Capture its

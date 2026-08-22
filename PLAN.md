@@ -933,3 +933,10 @@ keeping model-backed verification and credential recovery intact.
    assertions. Update docs, changelog, version, and persistent notes.
 6. Run lint, focused tests, full tests, E2E, build, reflect/style review, and an
    independent post-commit review. Release target: v0.31.1.
+
+## 2026-08-22 — OpenCode authentication diagnosis
+
+1. Reproduce `babysit doctor --auth opencode --refresh` with redacted combined diagnostics and compare the effective provider/model to credential provider keys.
+2. Trace staged credential and route-profile transport, including environment paths that could redirect OpenCode's data/config homes.
+3. Fix the smallest root cause and cover provider mismatch, explicit model overrides, and result classification.
+4. Verify both doctor and startup production paths, then run the post-edit checklist and independent review.
