@@ -4,12 +4,12 @@
  */
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
 
 import { resolve_opencode_route_config } from './opencode_config.js'
 
 export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
 export const OPENCODE_OPENROUTER_DEFAULT_MODEL = `openrouter/openai/gpt-5.6-sol`
+export const OPENCODE_CREDENTIAL_FILE = `~/.local/share/opencode/auth.json`
 export const OPENCODE_AUTH_AGENT = `babysit-auth`
 export const OPENCODE_AUTH_PROFILE_VERSION = `tool-free-v1`
 
@@ -32,7 +32,7 @@ export const resolve_opencode_auth_providers = ( {
     read_file = path => readFileSync( path, `utf8` ),
 } = {} ) => {
 
-    const auth_path = join( home_dir, `.local`, `share`, `opencode`, `auth.json` )
+    const auth_path = OPENCODE_CREDENTIAL_FILE.replace( /^~(?=\/|$)/, () => home_dir )
     if( !path_exists( auth_path ) ) return []
 
     try {
@@ -62,11 +62,27 @@ export const resolve_opencode_default_model = ( options = {} ) => {
     if( typeof route.model === `string` && route.model ) return route.model
 
     const providers = resolve_opencode_auth_providers( options )
-    const provider = Object.keys( PROVIDER_DEFAULT_MODELS ).find(
-        candidate => providers.includes( candidate )
+    const disabled_providers = new Set(
+        Array.isArray( route.disabled_providers ) ? route.disabled_providers : []
+    )
+    const enabled_providers = Array.isArray( route.enabled_providers )
+        ? route.enabled_providers
+        : null
+    const preferred_providers = enabled_providers
+        ? enabled_providers
+        : providers.toReversed()
+    const provider = preferred_providers.find( candidate =>
+        providers.includes( candidate )
+        && PROVIDER_DEFAULT_MODELS[ candidate ]
+        && !disabled_providers.has( candidate )
     )
 
-    return PROVIDER_DEFAULT_MODELS[ provider ] || null
+    // No stored providers may still mean an API key is sourced later through
+    // ~/.babysitrc. Preserve Babysit's direct-OpenAI default for that path.
+    const direct_openai_allowed = !disabled_providers.has( `openai` )
+        && ( !enabled_providers || enabled_providers.includes( `openai` ) )
+    return PROVIDER_DEFAULT_MODELS[ provider ]
+        || ( !providers.length && direct_openai_allowed ? OPENCODE_DEFAULT_MODEL : null )
 
 }
 
@@ -98,10 +114,10 @@ export const opencode = {
 
     credentials: {
         darwin: {
-            file: `~/.local/share/opencode/auth.json`,
+            file: OPENCODE_CREDENTIAL_FILE,
         },
         linux: {
-            file: `~/.local/share/opencode/auth.json`,
+            file: OPENCODE_CREDENTIAL_FILE,
         },
     },
 
