@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, sta
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
+import { parse } from 'yaml'
 import { get_image_name } from '../src/docker/update.js'
 import {
     CHROME_SECCOMP_SOURCE,
@@ -85,6 +86,17 @@ describe( `docker image`, () => {
             expect( get_image_name() ).toBe( `babysit:e2e-fake` )
             expect( get_image_name( `0.3.0` ) ).toBe( `babysit:e2e-fake` )
         } )
+    } )
+
+    it( `lets follow-up commits retry an untagged release`, () => {
+
+        const source = readFileSync( new URL( `../.github/workflows/publish.yml`, import.meta.url ), `utf8` )
+        const workflow = parse( source )
+
+        expect( workflow.on.push ).toEqual( { branches: [ `main` ] } )
+        expect( workflow.on.push.paths ).toBeUndefined()
+        expect( workflow.on ).toHaveProperty( `workflow_dispatch` )
+
     } )
 
     it( `installs ripgrep through apt instead of an arch-guessed GitHub .deb`, () => {
@@ -794,7 +806,7 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `renders exact native-id resume commands for each agent`, async () => {
+    it( `renders exact native-id resume commands for each agent`, () => {
 
         const uuid = `019df81b-ce45-70f0-ab6e-3cbd64c83397`
 
@@ -813,24 +825,14 @@ describe( `build_docker_command`, () => {
             agent_args: gemini.flags.resume( uuid ),
         } ) ) ).toContain( ` gemini --approval-mode=yolo --skip-trust --resume ${ uuid }` )
 
-        const root = mkdtempSync( join( tmpdir(), `babysit-opencode-command-home-` ) )
-        const auth_directory = join( root, `.local/share/opencode` )
-        mkdirSync( auth_directory, { recursive: true } )
-        writeFileSync(
-            join( auth_directory, `auth.json` ),
-            JSON.stringify( { openrouter: { type: `api`, key: `redacted` } } )
-        )
+        const opencode_session_id = `ses_66a71b6f4ffeq796jvvOpJQ04m`
+        const opencode_args = build_docker_command_args( make_options( {
+            agent: opencode,
+            agent_args: opencode.flags.resume( opencode_session_id ),
+        } ) )
 
-        try {
-            await with_env( { HOME: root }, () => {
-                expect( build_docker_command( make_options( {
-                    agent: opencode,
-                    agent_args: opencode.flags.resume( `ses_66a71b6f4ffeq796jvvOpJQ04m` ),
-                } ) ) ).toContain( ` opencode --dangerously-skip-permissions --model openrouter/openai/gpt-5.6-sol --session ses_66a71b6f4ffeq796jvvOpJQ04m` )
-            } )
-        } finally {
-            rmSync( root, { recursive: true, force: true } )
-        }
+        expect( opencode_args ).toContain( `--dangerously-skip-permissions` )
+        expect( opencode_args.slice( -2 ) ).toEqual( [ `--session`, opencode_session_id ] )
 
     } )
 

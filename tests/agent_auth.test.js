@@ -287,7 +287,24 @@ describe( `host agent auth checks`, () => {
                 `--agent`, `babysit-auth`,
                 `hello`,
             ] )
-        expect( resolve_host_auth_context_values( get_agent( `opencode` ), args ) ).toEqual( {
+        expect( build_host_auth_args( get_agent( `opencode` ), `hello`, {
+            route: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toEqual( [
+            `run`,
+            `--print-logs`,
+            `--log-level`, `ERROR`,
+            `--model`, OPENCODE_OPENROUTER_DEFAULT_MODEL,
+            `--agent`, `babysit-auth`,
+            `hello`,
+        ] )
+        expect( resolve_host_auth_context_values( get_agent( `opencode` ), args, {
+            env: {},
+            path_exists: () => false,
+        } ) ).toEqual( {
             model: `openai/second`,
             profile: `tool-free-v1`,
             route: `{}`,
@@ -296,35 +313,21 @@ describe( `host agent auth checks`, () => {
 
     it( `pins OpenCode probes to the generated config profile`, async () => {
         let launch_options
-        const root = mkdtempSync( join( tmpdir(), `babysit-opencode-auth-home-` ) )
-        const auth_directory = join( root, `.local/share/opencode` )
-        mkdirSync( auth_directory, { recursive: true } )
-        writeFileSync(
-            join( auth_directory, `auth.json` ),
-            JSON.stringify( { openrouter: { type: `api`, key: `redacted` } } )
-        )
-        const previous_home = process.env.HOME
 
-        try {
-            process.env.HOME = root
-            await run_host_agent_auth_check( get_agent( `opencode` ), {
-                prompt: `hello`,
-                prepare_launch: async options => {
-                    launch_options = options
-                    return {
-                        command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
-                        pull_synced_files: async () => {},
-                        abort: async () => {},
-                    }
-                },
-                spawn_fn: fake_spawn(),
-                timeout_ms: 1_000,
-            } )
-        } finally {
-            if( previous_home === undefined ) delete process.env.HOME
-            else process.env.HOME = previous_home
-            rmSync( root, { recursive: true, force: true } )
-        }
+        await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prompt: `hello`,
+            agent_args: [ `--model`, OPENCODE_OPENROUTER_DEFAULT_MODEL ],
+            prepare_launch: async options => {
+                launch_options = options
+                return {
+                    command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                    pull_synced_files: async () => {},
+                    abort: async () => {},
+                }
+            },
+            spawn_fn: fake_spawn(),
+            timeout_ms: 1_000,
+        } )
 
         expect( launch_options.agent_command ).toEqual( [
             `env`,
