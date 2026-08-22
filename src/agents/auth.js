@@ -430,17 +430,11 @@ export const run_host_agent_auth_check = async ( agent, {
 
     return new Promise( resolve => {
 
-        const [ cmd, ...args ] = command_args
-        const child = spawn_fn( cmd, args, {
-            stdio: [ `ignore`, `pipe`, `pipe` ],
-            env: {
-                ...process.env,
-                NO_COLOR: `1`,
-            },
-        } )
-
         let stdout = ``
         let stderr = ``
+        let child = null
+        let child_running = false
+        let attempt = 0
         let settled = false
         let kill_timeout
         let termination_status = null
@@ -449,6 +443,7 @@ export const run_host_agent_auth_check = async ( agent, {
 
         const current_output = () => strip_ansi( stdout ).trim()
         const clear_kill_timeout = () => clearTimeout( kill_timeout )
+        const current_diagnostic = () => strip_ansi( `${ stderr }\n${ stdout }` ).trim()
 
         const finalise_launch = () => {
             if( finalise_task ) return finalise_task
@@ -503,6 +498,17 @@ export const run_host_agent_auth_check = async ( agent, {
             termination_status = status
             termination_reason = reason
             set_phase( agent.name, `recovering credentials` )
+
+            // A completed attempt may already be recovering credentials when
+            // cancellation arrives. There is no child left to signal.
+            if( !child_running ) {
+                finalise_launch().then( flush_error => finish( auth_result( agent.name, status, {
+                    reason: flush_error?.message || reason,
+                    output: current_output(),
+                } ) ) )
+                return
+            }
+
             child.kill?.( `SIGTERM` )
             kill_timeout = setTimeout( async () => {
                 child.kill?.( `SIGKILL` )
@@ -519,54 +525,112 @@ export const run_host_agent_auth_check = async ( agent, {
             authentication_abort_reason( auth_signal )
         )
 
-        child.stdout?.on( `data`, chunk => {
-            stdout += chunk.toString()
-        } )
+        auth_signal.addEventListener?.( `abort`, on_abort, { once: true } )
 
-        child.stderr?.on( `data`, chunk => {
-            stderr += chunk.toString()
-        } )
+        const start_attempt = () => {
 
-        child.on( `error`, async error => {
-            clear_kill_timeout()
-            const flush_error = await finalise_launch()
-            const status = termination_status || `failed`
-            finish( auth_result( agent.name, status, {
-                reason: flush_error?.message || termination_reason || error.message,
-                output: current_output(),
-            } ) )
-        } )
-
-        child.on( `close`, async code => {
-            clear_kill_timeout()
-            const flush_error = await finalise_launch()
-
-            const output = current_output()
-            const diagnostic = strip_ansi( stderr || stdout ).trim()
-            const authentication_diagnostic = strip_ansi( `${ stderr }\n${ stdout }` ).trim()
-            if( termination_status ) {
-                finish( auth_result( agent.name, termination_status, {
-                    reason: flush_error?.message || termination_reason,
-                    output,
-                } ) )
+            if( auth_signal.aborted ) {
+                on_abort()
                 return
             }
 
-            const is_authenticated = !flush_error && code === 0 && answered_ok( output )
-            const status = is_authenticated
-                ? `authenticated`
-                : is_authentication_failure( authentication_diagnostic ) ? `unauthenticated` : `failed`
-            const failure_reason = flush_error?.message || diagnostic || `exited with code ${ code }`
+            const [ cmd, ...args ] = command_args
+            stdout = ``
+            stderr = ``
+            attempt += 1
+            set_phase( agent.name, `checking` )
 
-            finish( auth_result( agent.name, status, {
-                reason: is_authenticated ? undefined : failure_reason,
-                output,
-            } ) )
-        } )
+            try {
+                child = spawn_fn( cmd, args, {
+                    stdio: [ `ignore`, `pipe`, `pipe` ],
+                    env: {
+                        ...process.env,
+                        NO_COLOR: `1`,
+                    },
+                } )
+                child_running = true
+            } catch ( error ) {
+                child_running = false
+                finalise_launch().then( flush_error => finish( auth_result( agent.name, `failed`, {
+                    reason: flush_error?.message || error.message,
+                    output: current_output(),
+                } ) ) )
+                return
+            }
 
-        set_phase( agent.name, `checking` )
-        auth_signal.addEventListener?.( `abort`, on_abort, { once: true } )
-        if( auth_signal.aborted ) on_abort()
+            let handled = false
+            child.stdout?.on( `data`, chunk => {
+                stdout += chunk.toString()
+            } )
+
+            child.stderr?.on( `data`, chunk => {
+                stderr += chunk.toString()
+            } )
+
+            child.on( `error`, async error => {
+                if( handled ) return
+
+                handled = true
+                child_running = false
+                clear_kill_timeout()
+                const flush_error = await finalise_launch()
+                const status = termination_status || `failed`
+                finish( auth_result( agent.name, status, {
+                    reason: flush_error?.message || termination_reason || error.message,
+                    output: current_output(),
+                } ) )
+            } )
+
+            child.on( `close`, async code => {
+                if( handled ) return
+
+                handled = true
+                child_running = false
+                clear_kill_timeout()
+
+                const output = current_output()
+                const diagnostic = strip_ansi( stderr || stdout ).trim()
+                const authentication_diagnostic = current_diagnostic()
+                const is_authenticated = code === 0 && answered_ok( output )
+                const retry_pattern = agent.auth_check?.retry_once_pattern
+                const should_retry = !is_authenticated
+                    && attempt === 1
+                    && retry_pattern?.test?.( authentication_diagnostic )
+                    && !is_authentication_failure( authentication_diagnostic )
+
+                // Reuse only this prepared probe container. The single outer
+                // deadline and one retry keep transient recovery bounded.
+                if( should_retry && !auth_signal.aborted ) {
+                    const error_reference = authentication_diagnostic.match( /\berr_[A-Za-z0-9]+\b/ )?.[0]
+                    log.info( `Retrying transient ${ agent.name } auth probe${ error_reference ? ` (${ error_reference })` : `` }` )
+                    start_attempt()
+                    return
+                }
+
+                const flush_error = await finalise_launch()
+                if( termination_status ) {
+                    finish( auth_result( agent.name, termination_status, {
+                        reason: flush_error?.message || termination_reason,
+                        output,
+                    } ) )
+                    return
+                }
+
+                const final_authenticated = !flush_error && is_authenticated
+                const status = final_authenticated
+                    ? `authenticated`
+                    : is_authentication_failure( authentication_diagnostic ) ? `unauthenticated` : `failed`
+                const failure_reason = flush_error?.message || diagnostic || `exited with code ${ code }`
+
+                finish( auth_result( agent.name, status, {
+                    reason: final_authenticated ? undefined : failure_reason,
+                    output,
+                } ) )
+            } )
+
+        }
+
+        start_attempt()
 
     } )
 

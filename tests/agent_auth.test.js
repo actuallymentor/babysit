@@ -144,6 +144,8 @@ describe( `host agent auth checks`, () => {
         } ) )
             .toEqual( [
                 `run`,
+                `--print-logs`,
+                `--log-level`, `ERROR`,
                 `--agent`, `babysit-auth`,
                 prompt,
             ] )
@@ -279,6 +281,8 @@ describe( `host agent auth checks`, () => {
         expect( build_host_auth_args( get_agent( `opencode` ), `hello`, { agent_args: args } ) )
             .toEqual( [
                 `run`,
+                `--print-logs`,
+                `--log-level`, `ERROR`,
                 `--model`, `openai/second`,
                 `--agent`, `babysit-auth`,
                 `hello`,
@@ -329,6 +333,8 @@ describe( `host agent auth checks`, () => {
             `OPENCODE_CONFIG_DIR=/home/node/.config/opencode`,
             `opencode`,
             `run`,
+            `--print-logs`,
+            `--log-level`, `ERROR`,
             `--model`, OPENCODE_OPENROUTER_DEFAULT_MODEL,
             `--agent`, `babysit-auth`,
             `hello`,
@@ -606,6 +612,123 @@ describe( `host agent auth checks`, () => {
 
         expect( result.status ).toBe( `failed` )
         expect( result.reason ).toBe( `Model does not support tool calls` )
+    } )
+
+    it( `retries OpenCode's transient server wrapper in the same probe container`, async () => {
+
+        const attempts = [
+            {
+                code: 1,
+                stderr: `Unexpected server error. Check server logs for details. ref err_first`,
+            },
+            { code: 0, stdout: `ok\n` },
+        ]
+        const spawns = []
+        const lifecycle = []
+        let prepared = 0
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => {
+                prepared += 1
+                return {
+                    command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                    pull_synced_files: async () => lifecycle.push( `pull` ),
+                    abort: async () => lifecycle.push( `abort` ),
+                }
+            },
+            spawn_fn: ( ...args ) => fake_spawn( attempts.shift(), call => spawns.push( call ) )( ...args ),
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `authenticated` )
+        expect( prepared ).toBe( 1 )
+        expect( spawns.map( ( { cmd, args } ) => [ cmd, ...args ] ) ).toEqual( [
+            [ `docker`, `start`, `-ai`, `probe-id` ],
+            [ `docker`, `start`, `-ai`, `probe-id` ],
+        ] )
+        expect( lifecycle ).toEqual( [ `pull`, `abort` ] )
+
+    } )
+
+    it( `fails after one OpenCode server-error retry`, async () => {
+
+        const attempts = [
+            { code: 1, stderr: `Unexpected server error. Check server logs for details. ref err_first` },
+            { code: 1, stderr: `Unexpected server error. Check server logs for details. ref err_second` },
+        ]
+        const lifecycle = []
+        let spawn_count = 0
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                pull_synced_files: async () => lifecycle.push( `pull` ),
+                abort: async () => lifecycle.push( `abort` ),
+            } ),
+            spawn_fn: ( ...args ) => {
+                spawn_count += 1
+                return fake_spawn( attempts.shift() )( ...args )
+            },
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `failed` )
+        expect( result.reason ).toContain( `err_second` )
+        expect( spawn_count ).toBe( 2 )
+        expect( lifecycle ).toEqual( [ `pull`, `abort` ] )
+
+    } )
+
+    it( `does not retry a wrapped OpenCode authentication failure`, async () => {
+
+        let spawn_count = 0
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: fake_prepared_launch(),
+            spawn_fn: ( ...args ) => {
+                spawn_count += 1
+                return fake_spawn( {
+                    code: 1,
+                    stderr: `API key expired\nUnexpected server error. Check server logs for details.`,
+                } )( ...args )
+            },
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `unauthenticated` )
+        expect( spawn_count ).toBe( 1 )
+
+    } )
+
+    it( `keeps the original deadline and terminates an OpenCode retry`, async () => {
+
+        const signals = []
+        const lifecycle = []
+        let spawn_count = 0
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                pull_synced_files: async () => lifecycle.push( `pull` ),
+                abort: async () => lifecycle.push( `abort` ),
+            } ),
+            spawn_fn: ( ...args ) => {
+                spawn_count += 1
+                if( spawn_count === 1 ) {
+                    return fake_spawn( {
+                        code: 1,
+                        stderr: `Unexpected server error. Check server logs for details.`,
+                    } )( ...args )
+                }
+
+                return fake_hanging_spawn( signal => signals.push( signal ) )( ...args )
+            },
+            timeout_ms: 1,
+            kill_grace_ms: 1,
+        } )
+
+        expect( result.status ).toBe( `failed` )
+        expect( result.reason ).toBe( `timed out` )
+        expect( spawn_count ).toBe( 2 )
+        expect( signals ).toEqual( [ `SIGTERM`, `SIGKILL` ] )
+        expect( lifecycle ).toEqual( [ `pull`, `abort` ] )
+
     } )
 
     it( `does not match authentication words embedded in longer identifiers`, async () => {

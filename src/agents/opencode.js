@@ -12,6 +12,7 @@ export const OPENCODE_OPENROUTER_DEFAULT_MODEL = `openrouter/openai/gpt-5.6-sol`
 export const OPENCODE_CREDENTIAL_FILE = `~/.local/share/opencode/auth.json`
 export const OPENCODE_AUTH_AGENT = `babysit-auth`
 export const OPENCODE_AUTH_PROFILE_VERSION = `tool-free-v1`
+export const OPENCODE_TRANSIENT_SERVER_ERROR = /Unexpected server error\. Check server logs for details\./i
 
 const PROVIDER_DEFAULT_MODELS = {
     openrouter: OPENCODE_OPENROUTER_DEFAULT_MODEL,
@@ -172,11 +173,16 @@ export const opencode = {
             `-u`, `OPENCODE_CONFIG_CONTENT`,
             `OPENCODE_CONFIG_DIR=/home/node/.config/opencode`,
         ],
+        // OpenCode otherwise collapses provider/network faults into a generic
+        // UnknownError. ERROR logs expose the real cause without DEBUG noise.
+        retry_once_pattern: OPENCODE_TRANSIENT_SERVER_ERROR,
         args: ( prompt, { agent_args = [], ...options } = {} ) => {
             const model = resolve_opencode_model( agent_args, options )
 
             return [
                 `run`,
+                `--print-logs`,
+                `--log-level`, `ERROR`,
                 ... model ? [ `--model`, model ] : [],
                 `--agent`, OPENCODE_AUTH_AGENT,
                 prompt,

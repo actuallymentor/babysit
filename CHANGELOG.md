@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.32.2 — 2026-08-22
+
+### 🐛 Fixed
+- **OpenCode auth probes recover from opaque server errors.** Probes print
+  error-level OpenCode logs and retry its exact generic server wrapper once in
+  the same prepared container. Explicit credential failures still fail
+  immediately, and one deadline bounds both attempts and credential recovery.
+
 ## 0.32.1 — 2026-08-22
 
 ### 🐛 Fixed

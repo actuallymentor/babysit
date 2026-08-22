@@ -940,3 +940,31 @@ keeping model-backed verification and credential recovery intact.
 2. Trace staged credential and route-profile transport, including environment paths that could redirect OpenCode's data/config homes.
 3. Fix the smallest root cause and cover provider mismatch, explicit model overrides, and result classification.
 4. Verify both doctor and startup production paths, then run the post-edit checklist and independent review.
+
+## 2026-08-22 — OpenCode server-error follow-up
+
+1. Preserve every existing Babysit tmux session and container. Use only read-only
+   inspection plus uniquely named disposable probe containers created by this
+   diagnosis; never invoke global cleanup, session close, or broad Docker removal.
+   Hash the shared host OpenCode credential file before and after wrapped probes;
+   direct comparison probes use a private read-only copy and never the live file.
+2. Reproduce the reported `UnknownError` against the source resolver and capture
+   the effective provider/model, OpenCode version, sanitized route, and provider
+   response classification without printing credential values. Record the host
+   Babysit version and immutable image id too. If the exact host binary is outside
+   this environment, give the user one redacted debug command. Enable verified
+   OpenCode debug logging and recover only diagnosis-owned logs before cleanup.
+3. Compare a direct OpenCode request, the tool-free auth profile, and Babysit's
+   wrapped probe. Determine whether the error is provider/model availability,
+   OpenCode server behavior, stale installed code/image, or Babysit's wrapper.
+   Include same-model-without-agent, auth-agent-without-model, and known-served-
+   model variants where the exact image supports the required flags.
+4. Fix the narrow proven cause. The current classifier already calls this
+   `failed`, not `unauthenticated`; address the startup gate with a bounded retry
+   and/or explicit transient status so one provider 5xx does not hard-fail a
+   non-interactive launch.
+5. Add regression coverage, run real probes sequentially and with a hard bound,
+   then complete full
+   reflect/style/changelog/test/build review and commit without pushing.
+   Existing sessions continue uninterrupted; new launches may wait on the shared
+   auth-check lease while each short-lived probe owns it.
