@@ -19,7 +19,7 @@ const PROVIDER_DEFAULT_MODELS = {
 }
 
 const is_literal_api_key = value => Boolean(
-    value && !( typeof value === `string` && /\{env:[^}]+\}/.test( value ) )
+    value && !( typeof value === `string` && /\{(?:env|file):[^}]+\}/.test( value ) )
 )
 
 /**
@@ -90,8 +90,8 @@ export const resolve_opencode_default_model = ( options = {} ) => {
     )
 
     // Host environment keys are not forwarded into the container. Keys sourced
-    // there through ~/.babysitrc, a project .env, or {env:...} config templates
-    // resolve only at exec time, so leave those routes unpinned for OpenCode.
+    // there through ~/.babysitrc, a project .env, or config templates resolve
+    // only at exec time, so leave those routes unpinned for OpenCode.
     return PROVIDER_DEFAULT_MODELS[ provider ] || null
 
 }

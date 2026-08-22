@@ -194,6 +194,15 @@ describe( `host agent auth checks`, () => {
         expect( resolve_opencode_model( [], {
             route: {
                 provider: {
+                    openrouter: { options: { apiKey: `{file:~/.secrets/openrouter}` } },
+                },
+            },
+            env: {},
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: {
+                provider: {
                     openrouter: { options: { apiKey: `redacted-literal` } },
                 },
             },
