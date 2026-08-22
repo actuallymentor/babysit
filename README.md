@@ -307,9 +307,11 @@ probe receives only its own credential descriptors and minimal provider/account
 config; the real session still receives all captured agent credentials.
 OpenCode probes pin the session's effective model, stage the same sanitized
 provider route, and use a tool-free profile so unsupported tool schemas cannot
-masquerade as a missing login. Concurrent launches share an auth lease, so one
-launch verifies while waiters reuse its reconciled credential rotation and warm
-results.
+masquerade as a missing login. OpenCode's opaque server-error wrapper is retried
+once within the same probe deadline; error-level logs preserve the underlying
+diagnostic when both attempts fail. Concurrent launches share an auth lease, so
+one launch verifies while waiters reuse its reconciled credential rotation and
+warm results.
 
 ```bash
 babysit doctor --auth             # all supported agents
