@@ -4,6 +4,28 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-08-22 — Credential-independent OpenCode CI
+
+Intent: make OpenCode command/auth tests deterministic on clean GitHub runners
+without weakening provider-aware behavior on authenticated hosts.
+
+1. Reproduce the workflow under a private credential-free `HOME` and capture
+   every failing assertion.
+2. Trace which tests accidentally inherit local OpenRouter evidence and make
+   provider/model inputs explicit at the narrowest test boundary.
+3. Cover both credential-backed fallback and credential-free deferred routing;
+   do not change production defaults merely to satisfy host-specific assertions.
+4. Run focused clean-home tests, the full suite, E2E, lint, build, and mandatory
+   reviews. Bump the patch release if test corrections expose a shipped defect.
+
+Outcome: Build & Release #55 contained two failed assertions plus the job-exit
+annotation. Bun retained the process-start home despite in-process `HOME`
+mutation, so developer credentials masked both tests. Tests now inject explicit
+model intent or assert only native resume arguments, with provider fallback kept
+at its existing filesystem seam. The release workflow now runs its cheap
+version/tag gate on every main push, allowing a test-only follow-up to retry an
+untagged failed release. No production or version change was required.
+
 ## 2026-08-22 — Prompt session-close latency
 
 Intent: make `/exit` close the attached window promptly after Babysit prints
