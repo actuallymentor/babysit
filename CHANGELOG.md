@@ -16,7 +16,7 @@
   Chrome's required namespace calls from a private launch-scoped path, without
   granting `SYS_ADMIN` or passing `--no-sandbox`. Every launch now crosses an
   acknowledged `docker create` boundary before deleting that private profile,
-  and cancelled creates reap their owned container name.
+  and cancelled creates reap only their Babysit-generated container name.
 
 ## 0.31.1 — 2026-08-21
 

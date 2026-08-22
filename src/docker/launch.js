@@ -494,10 +494,11 @@ export const prepare_docker_launch = async ( options, {
             handoff,
         }
     } catch ( error ) {
-        const create_may_have_completed = create_started
+        const should_reap_attempted_name = create_started
+            && !planned_options.container_name
             && ( interrupted || abort_controller.signal.aborted || error.code === `ETIMEDOUT` )
 
-        await abort( { include_attempted_name: create_may_have_completed } )
+        await abort( { include_attempted_name: should_reap_attempted_name } )
         throw error
     }
 

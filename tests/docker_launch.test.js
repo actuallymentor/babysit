@@ -532,6 +532,32 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
+    it( `does not reap a caller-supplied name when an aborted create conflicts`, async () => {
+
+        const options = make_options( {} )
+        options.container_name = `existing-container`
+        options.creds_mounts = []
+        options.extra_mounts = []
+        const controller = new AbortController()
+        const calls = []
+
+        await expect( prepare_docker_launch( options, {
+            signal: controller.signal,
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) {
+                    controller.abort( { code: `timeout` } )
+                    throw new Error( `name conflict` )
+                }
+                return ``
+            },
+        } ) ).rejects.toThrow( `name conflict` )
+
+        expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
+
+    } )
+
     it( `uses external cancellation to stop an in-flight Docker copy`, async () => {
 
         const { transport, mount } = private_transport()
