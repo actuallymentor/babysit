@@ -22,9 +22,10 @@ Outcome: Build & Release #55 contained two failed assertions plus the job-exit
 annotation. Bun retained the process-start home despite in-process `HOME`
 mutation, so developer credentials masked both tests. Tests now inject explicit
 model intent or assert only native resume arguments, with provider fallback kept
-at its existing filesystem seam. The release workflow now runs its cheap
-version/tag gate on every main push, allowing a test-only follow-up to retry an
-untagged failed release. No production or version change was required.
+at its existing filesystem seam and threaded through launch argv via an
+injectable context. The release workflow now runs its cheap version/tag gate on
+every main push, allowing a test-only follow-up to retry an untagged failed
+release. Production defaults and the version remain unchanged.
 
 ## 2026-08-22 — Prompt session-close latency
 
