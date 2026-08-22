@@ -18,10 +18,9 @@ const PROVIDER_DEFAULT_MODELS = {
     openai: OPENCODE_DEFAULT_MODEL,
 }
 
-const PROVIDER_API_KEY_ENV = {
-    openrouter: `OPENROUTER_API_KEY`,
-    openai: `OPENAI_API_KEY`,
-}
+const is_literal_api_key = value => Boolean(
+    value && !( typeof value === `string` && /\{env:[^}]+\}/.test( value ) )
+)
 
 /**
  * Read only the provider ids from OpenCode's credential store.
@@ -66,15 +65,13 @@ export const resolve_opencode_default_model = ( options = {} ) => {
     const route = options.route || resolve_opencode_route_config( options )
     if( typeof route.model === `string` && route.model ) return route.model
 
-    const env = options.env || process.env
     const stored_providers = resolve_opencode_auth_providers( options )
     const providers = new Set( [
         ...stored_providers,
         ...Object.keys( PROVIDER_DEFAULT_MODELS ).filter( candidate => {
             const configured_provider = route.provider?.[ candidate ]
                 || route.providers?.[ candidate ]
-            return env[ PROVIDER_API_KEY_ENV[ candidate ] ]
-                || configured_provider?.options?.apiKey
+            return is_literal_api_key( configured_provider?.options?.apiKey )
         } ),
     ] )
     const disabled_providers = new Set(
@@ -92,8 +89,9 @@ export const resolve_opencode_default_model = ( options = {} ) => {
         && !disabled_providers.has( candidate )
     )
 
-    // When auth arrives later through ~/.babysitrc or a project .env, leave the
-    // model unpinned so OpenCode can select from the providers it discovers.
+    // Host environment keys are not forwarded into the container. Keys sourced
+    // there through ~/.babysitrc, a project .env, or {env:...} config templates
+    // resolve only at exec time, so leave those routes unpinned for OpenCode.
     return PROVIDER_DEFAULT_MODELS[ provider ] || null
 
 }

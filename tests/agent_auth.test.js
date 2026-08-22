@@ -176,18 +176,25 @@ describe( `host agent auth checks`, () => {
         } ) ).toBeNull()
         expect( resolve_opencode_model( [], {
             route: {},
-            env: { OPENAI_API_KEY: `redacted` },
+            env: {
+                OPENAI_API_KEY: `host-only`,
+                OPENROUTER_API_KEY: `host-only`,
+            },
             path_exists: () => false,
-        } ) ).toBe( `openai/gpt-5.6-sol` )
-        expect( resolve_opencode_model( [], {
-            route: {},
-            env: { OPENROUTER_API_KEY: `redacted` },
-            path_exists: () => false,
-        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        } ) ).toBeNull()
         expect( resolve_opencode_model( [], {
             route: {
                 provider: {
                     openrouter: { options: { apiKey: `{env:OPENROUTER_API_KEY}` } },
+                },
+            },
+            env: {},
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: {
+                provider: {
+                    openrouter: { options: { apiKey: `redacted-literal` } },
                 },
             },
             env: {},

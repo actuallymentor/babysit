@@ -386,9 +386,10 @@ with `--model gpt-5.6-sol -c model_reasoning_effort="xhigh"`. OpenCode follows
 an explicit `--model` first, then its configured model, then a frontier model
 through the authenticated provider. OpenAI uses `openai/gpt-5.6-sol`; OpenRouter
 uses `openrouter/openai/gpt-5.6-sol`. Other providers retain OpenCode's own
-selection unless configured explicitly. Environment and provider-config API
-keys are detected without exposing their values. When auth is sourced later
-through `.babysitrc` or a project `.env`, OpenCode selects the available model.
+selection unless configured explicitly. Stored credentials and literal API keys
+in mounted provider config are detected without exposing their values. Keys
+resolved inside the container through `.babysitrc`, a project `.env`, or an
+`{env:...}` config template leave model selection to OpenCode.
 
 ## Logging tmux output
 
