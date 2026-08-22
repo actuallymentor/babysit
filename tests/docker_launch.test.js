@@ -558,6 +558,47 @@ describe( `prepared Docker launch`, () => {
 
     } )
 
+    it( `does not reap a caller-supplied name when a signal interrupts create`, async () => {
+
+        const options = make_options( {} )
+        options.container_name = `existing-container`
+        options.creds_mounts = []
+        options.extra_mounts = []
+        const signals = fake_signals()
+        const calls = []
+        const kill_calls = []
+        let create_started
+        const creating = new Promise( resolve => create_started = resolve )
+
+        const launch_task = prepare_docker_launch( options, {
+            kill_process: ( pid, signal ) => kill_calls.push( { pid, signal } ),
+            signal_target: signals,
+            run_command: async ( command, args, { signal } ) => {
+                calls.push( { command, args: [ ...args ] } )
+                if( args.includes( `create` ) ) {
+                    create_started()
+                    return new Promise( ( resolve, reject ) => {
+                        signal.addEventListener(
+                            `abort`,
+                            () => reject( new Error( `create aborted` ) ),
+                            { once: true }
+                        )
+                    } )
+                }
+                return ``
+            },
+        } )
+
+        await creating
+        signals.emit( `SIGTERM` )
+        await expect( launch_task ).rejects.toThrow( `create aborted` )
+        await new Promise( resolve => setTimeout( resolve, 0 ) )
+
+        expect( calls.some( call => call.args.includes( `rm` ) ) ).toBe( false )
+        expect( kill_calls ).toEqual( [ { pid: process.pid, signal: `SIGTERM` } ] )
+
+    } )
+
     it( `uses external cancellation to stop an in-flight Docker copy`, async () => {
 
         const { transport, mount } = private_transport()

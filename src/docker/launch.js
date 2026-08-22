@@ -288,7 +288,8 @@ export const prepare_docker_launch = async ( options, {
 
     const container_reference = ( { include_attempted_name = false } = {} ) => {
         if( container_id ) return container_id
-        if( container_owned || include_attempted_name ) return container_name
+        if( container_owned ) return container_name
+        if( include_attempted_name && !planned_options.container_name ) return container_name
         return null
     }
 
@@ -494,11 +495,10 @@ export const prepare_docker_launch = async ( options, {
             handoff,
         }
     } catch ( error ) {
-        const should_reap_attempted_name = create_started
-            && !planned_options.container_name
+        const create_may_have_completed = create_started
             && ( interrupted || abort_controller.signal.aborted || error.code === `ETIMEDOUT` )
 
-        await abort( { include_attempted_name: should_reap_attempted_name } )
+        await abort( { include_attempted_name: create_may_have_completed } )
         throw error
     }
 
