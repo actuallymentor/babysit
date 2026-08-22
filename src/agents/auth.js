@@ -199,10 +199,10 @@ export const select_host_auth_check_agents = ( {
  * @param {string[]} [options.agent_args=[]] - Effective agent CLI arguments
  * @returns {string[]|null} CLI args, or null when the adapter cannot be checked
  */
-export const build_host_auth_args = ( agent, prompt, { agent_args = [] } = {} ) => {
+export const build_host_auth_args = ( agent, prompt, { agent_args = [], ...options } = {} ) => {
 
     if( typeof agent?.auth_check?.args !== `function` ) return null
-    return agent.auth_check.args( prompt, { agent_args } )
+    return agent.auth_check.args( prompt, { agent_args, ...options } )
 
 }
 
@@ -258,7 +258,11 @@ const build_docker_auth_check_options = ( agent, {
     chrome_seccomp_profile_path = null,
 } = {} ) => {
 
-    const auth_args = build_host_auth_args( agent, prompt, { agent_args } )
+    const auth_args = build_host_auth_args( agent, prompt, {
+        agent_args,
+        workspace,
+        include_host_preferences: !mode.ignore_host_agents_md,
+    } )
     if( !agent?.bin || !auth_args ) return null
 
     const agent_extra_env = typeof agent.extra_env === `function`

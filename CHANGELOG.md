@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.32.1 — 2026-08-22
+
+### 🐛 Fixed
+- **OpenCode uses the provider that owns its credentials.** Explicit and
+  configured models still win; otherwise direct OpenAI and OpenRouter auth
+  select equivalent provider-qualified frontier models for both startup and
+  authentication probes.
+
 ## 0.32.0 — 2026-08-21
 
 ### ✨ Added

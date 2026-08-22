@@ -638,7 +638,10 @@ export const build_docker_command_args = ( options ) => {
     flags.push( get_image_name() )
 
     // Agent command with flags
-    const agent_cmd = agent_command || build_agent_command( agent, mode, agent_args )
+    const agent_cmd = agent_command || build_agent_command( agent, mode, agent_args, {
+        workspace,
+        include_host_preferences: include_host_agent_context,
+    } )
     flags.push( ...agent_cmd )
 
     return flags
@@ -664,9 +667,10 @@ export const build_docker_command = ( options ) => {
  * @param {Object} agent - Agent adapter
  * @param {Object} mode - Mode flags
  * @param {string[]} agent_args - Extra args for the agent
+ * @param {Object} [options] - Host context for dynamic defaults
  * @returns {string[]} Command parts
  */
-const build_agent_command = ( agent, mode, agent_args ) => {
+const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
 
     const parts = [ agent.bin ]
 
@@ -682,8 +686,11 @@ const build_agent_command = ( agent, mode, agent_args ) => {
     }
 
     // Max model and effort
-    if( agent.defaults?.model && agent.flags.model ) {
-        const flag = agent.flags.model( agent.defaults.model )
+    const default_model = typeof agent.defaults?.model === `function`
+        ? agent.defaults.model( { ...options, agent_args, mode } )
+        : agent.defaults?.model
+    if( default_model && agent.flags.model ) {
+        const flag = agent.flags.model( default_model )
         if( Array.isArray( flag ) ) parts.push( ...flag )
         else parts.push( flag )
     }
