@@ -29,7 +29,7 @@ import {
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
 import { gemini } from '../src/agents/gemini.js'
-import { opencode } from '../src/agents/opencode.js'
+import { OPENCODE_OPENROUTER_DEFAULT_MODEL, opencode } from '../src/agents/opencode.js'
 
 const chrome_seccomp_profile_path = fileURLToPath(
     new URL( `../src/docker/chrome-seccomp.json`, import.meta.url )
@@ -70,6 +70,20 @@ const with_env = async ( values, fn ) => {
 
 }
 
+describe( `release workflow`, () => {
+
+    it( `lets follow-up commits retry an untagged release`, () => {
+
+        const source = readFileSync( new URL( `../.github/workflows/publish.yml`, import.meta.url ), `utf8` )
+        const workflow = parse( source )
+
+        expect( workflow.on.push ).toEqual( { branches: [ `main` ] } )
+        expect( workflow.on ).toHaveProperty( `workflow_dispatch` )
+
+    } )
+
+} )
+
 describe( `docker image`, () => {
 
     it( `points at the published image (actuallymentor/babysit)`, () => {
@@ -86,17 +100,6 @@ describe( `docker image`, () => {
             expect( get_image_name() ).toBe( `babysit:e2e-fake` )
             expect( get_image_name( `0.3.0` ) ).toBe( `babysit:e2e-fake` )
         } )
-    } )
-
-    it( `lets follow-up commits retry an untagged release`, () => {
-
-        const source = readFileSync( new URL( `../.github/workflows/publish.yml`, import.meta.url ), `utf8` )
-        const workflow = parse( source )
-
-        expect( workflow.on.push ).toEqual( { branches: [ `main` ] } )
-        expect( workflow.on.push.paths ).toBeUndefined()
-        expect( workflow.on ).toHaveProperty( `workflow_dispatch` )
-
     } )
 
     it( `installs ripgrep through apt instead of an arch-guessed GitHub .deb`, () => {
@@ -829,10 +832,21 @@ describe( `build_docker_command`, () => {
         const opencode_args = build_docker_command_args( make_options( {
             agent: opencode,
             agent_args: opencode.flags.resume( opencode_session_id ),
+            agent_context: {
+                route: {},
+                path_exists: () => true,
+                read_file: () => JSON.stringify( {
+                    openrouter: { type: `api`, key: `redacted` },
+                } ),
+            },
         } ) )
 
-        expect( opencode_args ).toContain( `--dangerously-skip-permissions` )
-        expect( opencode_args.slice( -2 ) ).toEqual( [ `--session`, opencode_session_id ] )
+        expect( opencode_args.slice( -6 ) ).toEqual( [
+            `opencode`,
+            `--dangerously-skip-permissions`,
+            `--model`, OPENCODE_OPENROUTER_DEFAULT_MODEL,
+            `--session`, opencode_session_id,
+        ] )
 
     } )
 

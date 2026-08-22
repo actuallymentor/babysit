@@ -384,6 +384,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {string|null} [options.exit_sentinel=null] - Per-session exit marker token
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
+ * @param {Object} [options.agent_context={}] - Injectable host context for dynamic agent defaults
  * @param {string} [options.chrome_seccomp_profile_path] - Materialized Chrome seccomp profile
  * @returns {string[]} Docker argv
  */
@@ -413,6 +414,7 @@ export const build_docker_command_args = ( options ) => {
         exit_sentinel = randomUUID(),
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
         agent_command = null,
+        agent_context = {},
         chrome_seccomp_profile_path = null,
     } = options
     if( !chrome_seccomp_profile_path ) {
@@ -639,6 +641,7 @@ export const build_docker_command_args = ( options ) => {
 
     // Agent command with flags
     const agent_cmd = agent_command || build_agent_command( agent, mode, agent_args, {
+        ...agent_context,
         workspace,
         include_host_preferences: include_host_agent_context,
     } )
