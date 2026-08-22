@@ -383,13 +383,14 @@ babysit claude --yolo --model sonnet --effort high
 
 By default, Babysit starts Claude with `--model best --effort xhigh` and Codex
 with `--model gpt-5.6-sol -c model_reasoning_effort="xhigh"`. OpenCode follows
-an explicit `--model` first, then its configured model, then a frontier model
-through the authenticated provider. OpenAI uses `openai/gpt-5.6-sol`; OpenRouter
-uses `openrouter/openai/gpt-5.6-sol`. Other providers retain OpenCode's own
-selection unless configured explicitly. Stored credentials and literal API keys
-in mounted provider config are detected without exposing their values. Keys
-resolved inside the container through `.babysitrc`, a project `.env`, or an
-`{env:...}` / `{file:...}` config template leave model selection to OpenCode.
+an explicit `--model` first, then its configured literal model, then a frontier
+model through the authenticated provider. OpenAI uses `openai/gpt-5.6-sol`;
+OpenRouter uses `openrouter/openai/gpt-5.6-sol`. Other providers retain
+OpenCode's own selection unless configured explicitly. Stored credentials and
+literal API keys in mounted provider config are detected without exposing their
+values. Models or keys resolved inside the container through `.babysitrc`, a
+project `.env`, or an `{env:...}` / `{file:...}` config template remain unpinned
+so OpenCode can resolve them itself.
 
 ## Logging tmux output
 

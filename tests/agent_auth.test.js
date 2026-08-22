@@ -170,6 +170,19 @@ describe( `host agent auth checks`, () => {
             } ),
         } ) ).toBe( `anthropic/configured` )
         expect( resolve_opencode_model( [], {
+            route: { model: `{env:OPENCODE_MODEL}` },
+            env: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: { model: `{file:~/.config/opencode/model}` },
+            env: {},
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
             route: {},
             env: {},
             path_exists: () => false,
