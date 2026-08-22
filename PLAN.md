@@ -4,6 +4,27 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-08-22 — Prompt session-close latency
+
+Intent: make `/exit` close the attached window promptly after Babysit prints
+the reattach hint, without weakening detached credential recovery or touching
+unrelated sessions.
+
+1. Distinguish the `Detached. Re-attach with` and `To resume this session` paths,
+   then measure hint-to-process-exit separately from the earlier marker, tmux,
+   Docker, and monitor phases.
+2. Reproduce the foreground handle leak under a real PTY. Auth progress resumes
+   a fresh TTY whose initial `readableFlowing` state is `null`; restoring only an
+   explicitly paused stream leaves that TTY active after the resume hint.
+3. Restore stdin according to whether it was already flowing. Preserve raw mode,
+   Enter/Ctrl+C handling, the random exit marker, final credential pull, recovery
+   retention, and detached cleanup.
+4. Add regression coverage for fresh, paused, and already-flowing TTY input. Run
+   focused tests, the full suite, lint, build, and an isolated PTY process-exit
+   flow without enumerating, attaching to, or closing other Babysit sessions.
+5. Update public documentation/versioning if behavior changes, commit in YOLO
+   mode, then request an independent post-commit review.
+
 ## 2026-08-21 — Bundled Chrome and Puppeteer
 
 Intent: give every coding agent a ready-to-use, multi-arch Puppeteer browser
