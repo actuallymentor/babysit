@@ -143,6 +143,7 @@ describe( `host agent auth checks`, () => {
         } ) )
             .toEqual( [
                 `run`,
+                `--model`, `openai/gpt-5.6-sol`,
                 `--agent`, `babysit-auth`,
                 prompt,
             ] )
@@ -171,6 +172,41 @@ describe( `host agent auth checks`, () => {
         expect( resolve_opencode_model( [], {
             route: {},
             path_exists: () => false,
+        } ) ).toBe( `openai/gpt-5.6-sol` )
+        expect( resolve_opencode_model( [], {
+            route: { disabled_providers: [ `openai` ] },
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openai: { type: `oauth`, access: `redacted` },
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        expect( resolve_opencode_model( [], {
+            route: { enabled_providers: [ `openrouter`, `openai` ] },
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openai: { type: `oauth`, access: `redacted` },
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        expect( resolve_opencode_model( [], {
+            route: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openai: { type: `oauth`, access: `redacted` },
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        expect( resolve_opencode_model( [], {
+            route: { disabled_providers: [ `openai` ] },
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                anthropic: { type: `api`, key: `redacted` },
+            } ),
         } ) ).toBeNull()
         expect( build_host_auth_args( get_agent( `opencode` ), `hello`, { agent_args: args } ) )
             .toEqual( [
