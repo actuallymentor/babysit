@@ -73,7 +73,7 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
     const animated = Boolean( output.isTTY && env.TERM !== `dumb` )
     const can_read_keys = Boolean( allow_skip && input.isTTY && typeof input.on === `function` )
     const was_raw = Boolean( input.isRaw )
-    const was_paused = input.isPaused?.() ?? false
+    const was_flowing = input.readableFlowing === true
     let frame_index = 0
     let interrupted = false
     let skipped = false
@@ -122,20 +122,22 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
         }
     }
 
-    if( can_read_keys ) {
-        input.setRawMode?.( true )
-        input.resume?.()
-        input.on( `data`, on_data )
-    }
-
-    render()
-    if( animated ) {
-        interval = set_interval( render, 100 )
-        interval.unref?.()
-    }
-
     let results
     try {
+        // Keep every TTY mutation inside the cleanup boundary. Rendering or
+        // timer setup can fail after stdin has already entered flowing mode.
+        if( can_read_keys ) {
+            input.setRawMode?.( true )
+            input.resume?.()
+            input.on( `data`, on_data )
+        }
+
+        render()
+        if( animated ) {
+            interval = set_interval( render, 100 )
+            interval.unref?.()
+        }
+
         results = await run_checks( { signal: controller.signal, on_state } )
         results.forEach( result => {
             const final_state = final_state_for( result )
@@ -157,7 +159,10 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
         if( can_read_keys ) {
             input.removeListener( `data`, on_data )
             input.setRawMode?.( was_raw )
-            if( was_paused ) input.pause?.()
+
+            // A fresh TTY starts with readableFlowing=null, not paused=true.
+            // resume() would otherwise keep Node alive after the session ends.
+            if( !was_flowing ) input.pause?.()
         }
         if( animated ) output.write( `\r\x1b[2K` )
     }

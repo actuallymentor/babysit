@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.32.3 — 2026-08-22
+
+### 🐛 Fixed
+- **Session windows close promptly after `/exit`.** Authentication progress
+  restores fresh terminal input to a non-flowing state, so the foreground CLI
+  no longer stays alive after printing its resume hint.
+
 ## 0.32.2 — 2026-08-22
 
 ### 🐛 Fixed

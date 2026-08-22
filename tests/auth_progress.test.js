@@ -129,9 +129,54 @@ describe( `authentication progress`, () => {
 
         expect( raw_modes ).toEqual( [ true, false ] )
         expect( input.listenerCount( `data` ) ).toBe( 0 )
+        expect( input.isPaused() ).toBe( true )
         expect( timer.unref_calls ).toBe( 1 )
         expect( cleared_timers ).toEqual( [ timer ] )
         expect( rendered() ).toContain( `Authentication checks skipped: codex skipped` )
+
+    } )
+
+    it( `preserves input that was already flowing`, async () => {
+
+        const { input } = fake_tty_input()
+        const { output } = collect_output()
+
+        input.resume()
+
+        await run_auth_checks_with_progress(
+            [ { name: `codex` } ],
+            async () => [ { name: `codex`, status: `authenticated`, authenticated: true } ],
+            { input, output, env: { TERM: `dumb` }, now: () => 1_000 }
+        )
+
+        expect( input.isPaused() ).toBe( false )
+        expect( input.listenerCount( `data` ) ).toBe( 0 )
+        input.pause()
+
+    } )
+
+    it( `restores fresh TTY input when progress setup fails`, async () => {
+
+        const { input, raw_modes } = fake_tty_input()
+        const { output } = collect_output( { is_tty: true } )
+
+        await expect( run_auth_checks_with_progress(
+            [ { name: `codex` } ],
+            async () => [ { name: `codex`, status: `authenticated`, authenticated: true } ],
+            {
+                input,
+                output,
+                env: { TERM: `xterm-256color` },
+                now: () => 1_000,
+                set_interval: () => {
+                    throw new Error( `timer setup failed` )
+                },
+            }
+        ) ).rejects.toThrow( `timer setup failed` )
+
+        expect( raw_modes ).toEqual( [ true, false ] )
+        expect( input.isPaused() ).toBe( true )
+        expect( input.listenerCount( `data` ) ).toBe( 0 )
 
     } )
 
