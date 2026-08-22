@@ -139,11 +139,11 @@ describe( `host agent auth checks`, () => {
             .toEqual( [ `--skip-trust`, `-p`, prompt ] )
         expect( build_host_auth_args( get_agent( `opencode` ), prompt, {
             route: {},
+            env: {},
             path_exists: () => false,
         } ) )
             .toEqual( [
                 `run`,
-                `--model`, `openai/gpt-5.6-sol`,
                 `--agent`, `babysit-auth`,
                 prompt,
             ] )
@@ -171,8 +171,28 @@ describe( `host agent auth checks`, () => {
         } ) ).toBe( `anthropic/configured` )
         expect( resolve_opencode_model( [], {
             route: {},
+            env: {},
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: {},
+            env: { OPENAI_API_KEY: `redacted` },
             path_exists: () => false,
         } ) ).toBe( `openai/gpt-5.6-sol` )
+        expect( resolve_opencode_model( [], {
+            route: {},
+            env: { OPENROUTER_API_KEY: `redacted` },
+            path_exists: () => false,
+        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        expect( resolve_opencode_model( [], {
+            route: {
+                provider: {
+                    openrouter: { options: { apiKey: `{env:OPENROUTER_API_KEY}` } },
+                },
+            },
+            env: {},
+            path_exists: () => false,
+        } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
         expect( resolve_opencode_model( [], {
             route: { disabled_providers: [ `openai` ] },
             path_exists: () => true,
@@ -199,7 +219,26 @@ describe( `host agent auth checks`, () => {
         } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
         expect( resolve_opencode_model( [], {
             route: { disabled_providers: [ `openai` ] },
+            env: {},
             path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: { enabled_providers: [ `openrouter` ] },
+            env: {},
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: { enabled_providers: [] },
+            env: { OPENROUTER_API_KEY: `redacted` },
+            path_exists: () => false,
+        } ) ).toBeNull()
+        expect( resolve_opencode_model( [], {
+            route: { enabled_providers: [ `openrouter` ] },
+            env: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openai: { type: `api`, key: `redacted` },
+            } ),
         } ) ).toBeNull()
         expect( resolve_opencode_model( [], {
             route: {},

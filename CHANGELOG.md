@@ -7,7 +7,8 @@
   configured models still win; otherwise direct OpenAI and OpenRouter auth
   select equivalent provider-qualified frontier models for both startup and
   authentication probes. Provider enable/disable lists are honored, while the
-  direct-OpenAI fallback remains available for `.babysitrc` API keys.
+  unpinned fallback lets OpenCode route keys loaded later from `.babysitrc` or
+  project `.env` files.
 
 ## 0.32.0 — 2026-08-21
 
