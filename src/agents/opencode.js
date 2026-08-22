@@ -18,9 +18,10 @@ const PROVIDER_DEFAULT_MODELS = {
     openai: OPENCODE_DEFAULT_MODEL,
 }
 
-const is_literal_api_key = value => Boolean(
-    value && !( typeof value === `string` && /\{(?:env|file):[^}]+\}/.test( value ) )
-)
+const has_config_template = value => typeof value === `string`
+    && /\{(?:env|file):[^}]+\}/.test( value )
+
+const is_literal_api_key = value => Boolean( value && !has_config_template( value ) )
 
 /**
  * Read only the provider ids from OpenCode's credential store.
@@ -63,7 +64,9 @@ export const resolve_opencode_auth_providers = ( {
 export const resolve_opencode_default_model = ( options = {} ) => {
 
     const route = options.route || resolve_opencode_route_config( options )
-    if( typeof route.model === `string` && route.model ) return route.model
+    if( typeof route.model === `string` && route.model ) {
+        return has_config_template( route.model ) ? null : route.model
+    }
 
     const stored_providers = resolve_opencode_auth_providers( options )
     const providers = new Set( [
