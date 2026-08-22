@@ -697,6 +697,69 @@ describe( `host agent auth checks`, () => {
 
     } )
 
+    it( `does not restart a probe with one-shot environment credentials`, async () => {
+
+        let spawn_count = 0
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            creds_mounts: [ {
+                type: `secret_env`,
+                key: `OPENROUTER_API_KEY`,
+                value: `redacted`,
+            } ],
+            prepare_launch: fake_prepared_launch(),
+            spawn_fn: ( ...args ) => {
+                spawn_count += 1
+                return fake_spawn( {
+                    code: 1,
+                    stderr: `Unexpected server error. Check server logs for details.`,
+                } )( ...args )
+            },
+            timeout_ms: 1_000,
+        } )
+
+        expect( result.status ).toBe( `failed` )
+        expect( spawn_count ).toBe( 1 )
+
+    } )
+
+    it( `does not retry when the deadline terminates the first attempt`, async () => {
+
+        const signals = []
+        const lifecycle = []
+        let spawn_count = 0
+        const result = await run_host_agent_auth_check( get_agent( `opencode` ), {
+            prepare_launch: async () => ( {
+                command_args: [ `docker`, `start`, `-ai`, `probe-id` ],
+                pull_synced_files: async () => lifecycle.push( `pull` ),
+                abort: async () => lifecycle.push( `abort` ),
+            } ),
+            spawn_fn: () => {
+                spawn_count += 1
+                const child = new EventEmitter()
+                child.stdout = new PassThrough()
+                child.stderr = new PassThrough()
+                child.kill = signal => {
+                    signals.push( signal )
+                    if( signal === `SIGTERM` ) queueMicrotask( () => {
+                        child.stderr.write( `Unexpected server error. Check server logs for details.` )
+                        child.emit( `close`, 1 )
+                    } )
+                    return true
+                }
+                return child
+            },
+            timeout_ms: 1,
+            kill_grace_ms: 20,
+        } )
+
+        expect( result.status ).toBe( `failed` )
+        expect( result.reason ).toBe( `timed out` )
+        expect( spawn_count ).toBe( 1 )
+        expect( signals ).toEqual( [ `SIGTERM` ] )
+        expect( lifecycle ).toEqual( [ `pull`, `abort` ] )
+
+    } )
+
     it( `keeps the original deadline and terminates an OpenCode retry`, async () => {
 
         const signals = []

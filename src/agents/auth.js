@@ -427,6 +427,12 @@ export const run_host_agent_auth_check = async ( agent, {
     }
 
     const { command_args } = prepared_launch
+    // Strict-profile env credentials are copied into a bootstrap that the
+    // entrypoint consumes on first start. File credentials survive a restart;
+    // conservatively keep env-backed probes single-attempt.
+    const can_restart_probe = !creds_mounts.some(
+        mount => [ `env`, `secret_env` ].includes( mount.type )
+    )
 
     return new Promise( resolve => {
 
@@ -595,6 +601,7 @@ export const run_host_agent_auth_check = async ( agent, {
                 const retry_pattern = agent.auth_check?.retry_once_pattern
                 const should_retry = !is_authenticated
                     && attempt === 1
+                    && can_restart_probe
                     && retry_pattern?.test?.( authentication_diagnostic )
                     && !is_authentication_failure( authentication_diagnostic )
 
