@@ -389,7 +389,7 @@ uses `openrouter/openai/gpt-5.6-sol`. Other providers retain OpenCode's own
 selection unless configured explicitly. Stored credentials and literal API keys
 in mounted provider config are detected without exposing their values. Keys
 resolved inside the container through `.babysitrc`, a project `.env`, or an
-`{env:...}` config template leave model selection to OpenCode.
+`{env:...}` / `{file:...}` config template leave model selection to OpenCode.
 
 ## Logging tmux output
 
