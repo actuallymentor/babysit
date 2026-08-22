@@ -14,8 +14,13 @@ export const OPENCODE_AUTH_AGENT = `babysit-auth`
 export const OPENCODE_AUTH_PROFILE_VERSION = `tool-free-v1`
 
 const PROVIDER_DEFAULT_MODELS = {
-    openai: OPENCODE_DEFAULT_MODEL,
     openrouter: OPENCODE_OPENROUTER_DEFAULT_MODEL,
+    openai: OPENCODE_DEFAULT_MODEL,
+}
+
+const PROVIDER_API_KEY_ENV = {
+    openrouter: `OPENROUTER_API_KEY`,
+    openai: `OPENAI_API_KEY`,
 }
 
 /**
@@ -61,7 +66,17 @@ export const resolve_opencode_default_model = ( options = {} ) => {
     const route = options.route || resolve_opencode_route_config( options )
     if( typeof route.model === `string` && route.model ) return route.model
 
-    const providers = resolve_opencode_auth_providers( options )
+    const env = options.env || process.env
+    const stored_providers = resolve_opencode_auth_providers( options )
+    const providers = new Set( [
+        ...stored_providers,
+        ...Object.keys( PROVIDER_DEFAULT_MODELS ).filter( candidate => {
+            const configured_provider = route.provider?.[ candidate ]
+                || route.providers?.[ candidate ]
+            return env[ PROVIDER_API_KEY_ENV[ candidate ] ]
+                || configured_provider?.options?.apiKey
+        } ),
+    ] )
     const disabled_providers = new Set(
         Array.isArray( route.disabled_providers ) ? route.disabled_providers : []
     )
@@ -70,19 +85,16 @@ export const resolve_opencode_default_model = ( options = {} ) => {
         : null
     const preferred_providers = enabled_providers
         ? enabled_providers
-        : providers.toReversed()
+        : Object.keys( PROVIDER_DEFAULT_MODELS )
     const provider = preferred_providers.find( candidate =>
-        providers.includes( candidate )
+        providers.has( candidate )
         && PROVIDER_DEFAULT_MODELS[ candidate ]
         && !disabled_providers.has( candidate )
     )
 
-    // No stored providers may still mean an API key is sourced later through
-    // ~/.babysitrc. Preserve Babysit's direct-OpenAI default for that path.
-    const direct_openai_allowed = !disabled_providers.has( `openai` )
-        && ( !enabled_providers || enabled_providers.includes( `openai` ) )
-    return PROVIDER_DEFAULT_MODELS[ provider ]
-        || ( !providers.length && direct_openai_allowed ? OPENCODE_DEFAULT_MODEL : null )
+    // When auth arrives later through ~/.babysitrc or a project .env, leave the
+    // model unpinned so OpenCode can select from the providers it discovers.
+    return PROVIDER_DEFAULT_MODELS[ provider ] || null
 
 }
 
