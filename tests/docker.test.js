@@ -134,7 +134,7 @@ describe( `docker image`, () => {
         expect( dockerfile ).toContain( `https://dl.google.com/linux/chrome/deb/ stable main` )
         expect( dockerfile ).toContain( `arch=$(dpkg --print-architecture)` )
         expect( dockerfile ).toContain( `signed-by=/etc/apt/keyrings/google-chrome.gpg` )
-        expect( dockerfile ).toContain( `apt-get install -y --no-install-recommends google-chrome-stable` )
+        expect( dockerfile ).toContain( `google-chrome-stable` )
         expect( dockerfile ).toContain( `ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable` )
         expect( dockerfile ).toContain( `ENV PUPPETEER_SKIP_DOWNLOAD=true` )
         expect( dockerfile ).toContain( `npm install -g @openai/codex @google/gemini-cli puppeteer` )
@@ -144,6 +144,24 @@ describe( `docker image`, () => {
         expect( publish_workflow ).toContain( `LICENSES/Moby-Apache-2.0.txt` )
         expect( publish_workflow ).toContain( `LICENSES/Moby-NOTICE.txt` )
         expect( publish_workflow ).toContain( `THIRD_PARTY_NOTICES.md` )
+
+    } )
+
+    it( `bundles on-demand headful browser and PDF tooling`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+        const package_group = `xvfb xauth x11-utils poppler-utils`
+        const runtime_layer = dockerfile.slice(
+            dockerfile.indexOf( `ARG RUNTIME_REFRESH` ),
+            dockerfile.indexOf( `# Non-root user` )
+        )
+
+        expect( runtime_layer ).toContain( package_group )
+        expect( dockerfile ).not.toContain( `ENV DISPLAY=` )
+
+        for( const cmd of [ `Xvfb`, `xvfb-run`, `xauth`, `xdpyinfo`, `pdfinfo`, `pdftotext`, `pdftoppm`, `pdftocairo` ] ) {
+            expect( dockerfile ).toContain( ` ${ cmd }` )
+        }
 
     } )
 

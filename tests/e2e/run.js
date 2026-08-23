@@ -321,18 +321,35 @@ const build_images = async () => {
 
 const run_puppeteer_browser = async () => {
     const browser_script = `
+        import { execFileSync } from 'child_process'
+        import { statSync } from 'fs'
         import puppeteer from 'puppeteer'
 
+        const pdf_path = '/tmp/babysit-e2e.pdf'
+        const preview_path = '/tmp/babysit-e2e-preview'
         const browser = await puppeteer.launch()
+        let result
+
         try {
             const page = await browser.newPage()
             await page.setContent( '<button>Browse</button><output>idle</output><script>document.querySelector("button").addEventListener("click", () => document.querySelector("output").textContent = "clicked")</script>' )
             await page.click( 'button' )
-            const result = await page.$eval( 'output', element => element.textContent )
-            console.log( \`PUPPETEER_E2E_\${ result }\` )
+            result = await page.$eval( 'output', element => element.textContent )
+            await page.pdf( { path: pdf_path, format: 'A4' } )
         } finally {
             await browser.close()
         }
+
+        const metadata = execFileSync( 'pdfinfo', [ pdf_path ], { encoding: 'utf8' } )
+        const text = execFileSync( 'pdftotext', [ pdf_path, '-' ], { encoding: 'utf8' } )
+        execFileSync( 'pdftoppm', [ '-f', '1', '-singlefile', '-png', pdf_path, preview_path ] )
+
+        if( !metadata.includes( 'Pages:' ) ) throw new Error( 'pdfinfo returned no page count' )
+        if( !text.includes( 'Browse' ) ) throw new Error( 'pdftotext returned no page text' )
+        if( statSync( \`\${ preview_path }.png\` ).size === 0 ) throw new Error( 'pdftoppm returned an empty preview' )
+
+        console.log( \`PUPPETEER_E2E_\${ result }\` )
+        console.log( 'POPPLER_E2E_pdf' )
     `
     const { stdout } = await docker( [
         `run`, `--rm`, `--init`, `--shm-size=1g`,
@@ -343,6 +360,42 @@ const run_puppeteer_browser = async () => {
     ], { timeout_ms: 120_000 } )
 
     ensure( stdout.includes( `PUPPETEER_E2E_clicked` ), `Puppeteer did not drive bundled Chrome` )
+    ensure( stdout.includes( `POPPLER_E2E_pdf` ), `Poppler did not inspect the browser-generated PDF` )
+}
+
+const run_puppeteer_headful_browser = async () => {
+    const browser_script = `
+        import { execFileSync } from 'child_process'
+        import puppeteer from 'puppeteer'
+
+        if( process.getuid() === 0 ) throw new Error( 'Headful browser ran as root' )
+
+        const display = execFileSync( 'xdpyinfo', [], { encoding: 'utf8' } )
+        if( !/dimensions:\\s+1920x1080 pixels/.test( display ) ) {
+            throw new Error( 'xdpyinfo returned the wrong display size' )
+        }
+
+        const browser = await puppeteer.launch( { headless: false } )
+        try {
+            const page = await browser.newPage()
+            await page.setContent( '<button>Browse</button><output>idle</output><script>document.querySelector("button").addEventListener("click", () => document.querySelector("output").textContent = "clicked")</script>' )
+            await page.click( 'button' )
+            const result = await page.$eval( 'output', element => element.textContent )
+            console.log( \`XVFB_E2E_\${ result }\` )
+        } finally {
+            await browser.close()
+        }
+    `
+    const { stdout } = await docker( [
+        `run`, `--rm`, `--init`, `--shm-size=1g`,
+        `--security-opt`, `seccomp=${ browser_seccomp_profile }`,
+        base_image,
+        `xvfb-run`, `-a`,
+        `--server-args=-screen 0 1920x1080x24 -nolisten tcp`,
+        `node`, `--input-type=module`, `-e`, browser_script,
+    ], { timeout_ms: 120_000 } )
+
+    ensure( stdout.includes( `XVFB_E2E_clicked` ), `Xvfb did not drive headful bundled Chrome` )
 }
 
 const run_submit_parity_sessions = async () => {
@@ -530,6 +583,7 @@ try {
 
     await build_images()
     await run_puppeteer_browser()
+    await run_puppeteer_headful_browser()
 
     await run_submit_parity_sessions()
     await run_default_session()

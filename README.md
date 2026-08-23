@@ -60,7 +60,7 @@ babysit doctor --auth opencode --refresh
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
 2. **Host auth check** — before the main session starts, babysit verifies the active agent plus supported non-active agent CLIs found on host PATH. Cache misses run concurrently; a successful check is reused for 12 hours while its hashed auth inputs and local Docker image identity remain unchanged. Press Enter to skip the entire auth decision for one interactive launch. Non-interactive launches verify misses and fail closed. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
-3. **Docker container** — babysit starts a container with all four agent CLIs, Google Chrome Stable, and Puppeteer preinstalled; credentials for every supported agent plus host `gh` auth are passed through, and your workspace is mounted at `/workspace`
+3. **Docker container** — babysit starts a container with all four agent CLIs, Google Chrome Stable, Puppeteer, Xvfb, and Poppler PDF tools preinstalled; credentials for every supported agent plus host `gh` auth are passed through, and your workspace is mounted at `/workspace`
 4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor. Terminal input is released before the resume hint so the foreground CLI can exit immediately
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
@@ -245,6 +245,17 @@ await page.goto( `https://example.com` )
 await browser.close()
 ```
 
+Puppeteer defaults to headless mode and needs no virtual display. For headful
+Chrome, launch with `headless: false` and run the script through Xvfb:
+
+```bash
+xvfb-run -a --server-args="-screen 0 1920x1080x24 -nolisten tcp" node browser.js
+```
+
+The image also includes `x11-utils` for display diagnostics and Poppler's
+`pdfinfo`, `pdftotext`, `pdftoppm`, and `pdftocairo` tools for inspecting or
+rendering PDFs.
+
 Babysit gives each container a 1 GB `/dev/shm` ceiling for browser renderer
 stability. Chrome runs as the non-root `node` user with its sandbox enabled;
 do not add `--no-sandbox` when browsing untrusted pages. Babysit retains
@@ -412,7 +423,7 @@ Updates are explicit. Run `babysit update` to refresh everything in one sweep:
 
 1. `git pull` on the babysit repo (or download the latest GitHub-release binary, for compiled installs)
 2. `git pull` on `~/.agents` (if it exists)
-3. `docker pull` the latest container image, refreshing the bundled coding agents, Chrome, and Puppeteer
+3. `docker pull` the latest container image, refreshing the bundled coding agents, browser stack, and PDF tools
 4. Upgrades each host-installed agent CLI (`claude`, `codex`, `gemini`, `opencode`) using the agent's built-in self-update if available, otherwise the matching package manager (npm or brew, auto-detected from the binary's install path). Agents not on PATH are skipped.
 
 ## Building from source
