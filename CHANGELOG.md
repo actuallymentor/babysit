@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.33.0 — 2026-08-23
+
+### ✨ Added
+- **Headful browser automation works out of the box.** The image includes Xvfb,
+  X authentication, and X11 diagnostics for sandboxed Puppeteer sessions.
+- **Coding agents can inspect and render PDFs.** Poppler's command-line tools
+  are preinstalled alongside the browser stack.
+
 ## 0.32.3 — 2026-08-22
 
 ### 🐛 Fixed

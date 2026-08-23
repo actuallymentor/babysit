@@ -9,7 +9,7 @@ The core functionality is that when run, `babysit` will:
 - Start a `babysit` docker container that will contain the LLM coding agent cli
 - The container mounts the current PWD in /workspace, so the LLM coding agent cli can read/write files in the current directory
 - By default, mounts the host ~/.agents to the container ~/.agents. With `--ignore-host-agents-md`, host-global agent instructions, skills, loop instructions, and preferences are omitted while credentials remain available.
-- The container installs the dependencies that sir-claudius has in the image as well (look at that dockerfile), plus common coding-agent tools including fzf, the latest multi-arch Google Chrome Stable, and globally importable Puppeteer configured to reuse that browser
+- The container installs the dependencies that sir-claudius has in the image as well (look at that dockerfile), plus common coding-agent tools including fzf, the latest multi-arch Google Chrome Stable, globally importable Puppeteer configured to reuse that browser, Xvfb/X11 utilities for headful automation, and Poppler PDF utilities
 - Start the coding agent in the container
 - Importantly, the container has passwordlless sudo, and has all coding clis preinstalled, with the host credentials for these agents passed through in a platform-specific manner (we support OSX and Ubuntu Linux)
 - Run mode is passed to the container through the environment variable AGENT_AUTONOMY_MODE, which can be `sandbox`, `mudbox`, `yolo`, or empty for default. The system prompt of the coding agent is configured based on this mode to give the agent appropriate instructions and limitations.
@@ -71,7 +71,7 @@ The coding agent is provided this system prompt:
 ```
 You are running inside a Docker container — an isolated sandbox built for coding agents. You have passwordless sudo for any operation that needs root, this is safe for you to use at will. Your workspace is /workspace (bind-mounted from the host). Always read ~/.agents/AGENTS.md if it exists.
 
-Google Chrome and Puppeteer are preinstalled for browser automation. Import `puppeteer` from Node.js and launch it without `--no-sandbox`.
+Google Chrome, Puppeteer, Xvfb, and Poppler PDF utilities are preinstalled for browser automation. Import `puppeteer` from Node.js; its default headless mode works directly. For headful Chrome, launch with `headless: false` and run the script through `xvfb-run -a`. Never add `--no-sandbox`.
 
 Do NOT add Co-Authored-By lines to git commit messages. The git author identity is already configured via environment variables.
 ```

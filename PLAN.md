@@ -4,6 +4,23 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-08-23 — Xvfb and PDF tooling
+
+Intent: make headful Chrome automation and PDF inspection available in every
+Babysit container without adding a persistent display daemon or desktop stack.
+
+1. Install `xvfb`, explicit `xauth`, `x11-utils`, and `poppler-utils` beside
+   Chrome in the daily-refreshed runtime layer while retaining
+   `--no-install-recommends`.
+2. Verify the shipped commands statically, document on-demand `xvfb-run` usage,
+   and distinguish headful automation from Puppeteer's default headless mode.
+3. Extend Dockerfile assertions and native-architecture E2E coverage with two
+   production-like paths: sandboxed headful Chrome under Xvfb, and headless
+   Chrome generating a PDF that Poppler then inspects and renders.
+4. Update the specification, changelog, version metadata, and persistent notes;
+   then run mandatory reviews, focused/full tests, lint, build, and the real
+   Docker flow before release commit.
+
 ## 2026-08-22 — Credential-independent OpenCode CI
 
 Intent: make OpenCode command/auth tests deterministic on clean GitHub runners

@@ -113,12 +113,12 @@ RUN set -eux; \
     rm /tmp/install-uv.sh
 
 # The published image rebuilds daily. The workflow changes this value on every
-# run so BuildKit cannot serve stale network-install layers for Chrome or the
-# coding agents merely because their Dockerfile instructions are unchanged.
+# run so BuildKit cannot serve stale network-install layers for browser, PDF,
+# or coding-agent tooling merely because the instructions are unchanged.
 ARG RUNTIME_REFRESH=manual
 
-# Google Chrome Stable — use Google's signed apt repository, which publishes
-# native packages for both architectures in Babysit's multi-arch image.
+# Browser and document runtime — Google's signed apt repository publishes
+# native Chrome packages for both architectures in Babysit's multi-arch image.
 RUN set -eux; \
     echo "Runtime refresh: ${RUNTIME_REFRESH}"; \
     install -m 0755 -d /etc/apt/keyrings; \
@@ -128,7 +128,9 @@ RUN set -eux; \
         "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
         > /etc/apt/sources.list.d/google-chrome.list; \
     apt-get update; \
-    apt-get install -y --no-install-recommends google-chrome-stable; \
+    apt-get install -y --no-install-recommends \
+        google-chrome-stable \
+        xvfb xauth x11-utils poppler-utils; \
     rm -rf /var/lib/apt/lists/*; \
     google-chrome-stable --version
 
@@ -220,6 +222,7 @@ RUN set -eux; \
         rsync tar zip unzip gzip xz zstd patch bwrap htop strace lsof ps file find \
         nc dig ip ping vim nano less shellcheck sqlite3 tree rg just gh docker fd bat \
         fzf yq scc uv uvx bun corepack pnpm yarn google-chrome-stable puppeteer \
+        Xvfb xvfb-run xauth xdpyinfo pdfinfo pdftotext pdftoppm pdftocairo \
         codex gemini claude opencode \
     ; do \
         command -v "$cmd"; \
