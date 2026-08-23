@@ -156,6 +156,7 @@ describe( `docker image`, () => {
             dockerfile.indexOf( `# Non-root user` )
         )
 
+        expect( runtime_layer ).toContain( `apt-get install -y --no-install-recommends` )
         expect( runtime_layer ).toContain( package_group )
         expect( dockerfile ).not.toContain( `ENV DISPLAY=` )
 

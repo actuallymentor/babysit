@@ -94,7 +94,9 @@ describe( `build_system_prompt`, () => {
     it( `returns the spec base prompt when no mode flags are set`, () => {
         const prompt = build_system_prompt( {} )
         expect( prompt ).toContain( `running inside a Docker container` )
-        expect( prompt ).toContain( `Google Chrome, Puppeteer, Xvfb, and Poppler PDF utilities are preinstalled` )
+        expect( prompt ).toContain( `Google Chrome, Puppeteer, and Xvfb are preinstalled` )
+        expect( prompt ).toContain( `pdfinfo` )
+        expect( prompt ).toContain( `pdftotext` )
         expect( prompt ).toContain( `xvfb-run -a` )
         expect( prompt ).toContain( `Never add \`--no-sandbox\`` )
         expect( prompt ).toContain( `Do NOT add Co-Authored-By lines` )
