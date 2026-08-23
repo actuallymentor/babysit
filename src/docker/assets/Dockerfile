@@ -119,6 +119,7 @@ ARG RUNTIME_REFRESH=manual
 
 # Browser and document runtime — Google's signed apt repository publishes
 # native Chrome packages for both architectures in Babysit's multi-arch image.
+# `x11-utils` intentionally keeps xdpyinfo despite its Mesa/LLVM footprint.
 RUN set -eux; \
     echo "Runtime refresh: ${RUNTIME_REFRESH}"; \
     install -m 0755 -d /etc/apt/keyrings; \
