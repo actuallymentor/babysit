@@ -1029,3 +1029,20 @@ keeping model-backed verification and credential recovery intact.
    reflect/style/changelog/test/build review and commit without pushing.
    Existing sessions continue uninterrupted; new launches may wait on the shared
    auth-check lease while each short-lived probe owns it.
+
+## 2026-08-24 — High-value agent tooling
+
+Intent: preinstall the ten small, broadly useful tools explicitly selected by
+the user so coding agents do not repeatedly install them per session.
+
+1. Add `pkgconf`, `psmisc`, `socat`, `acl`, `inotify-tools`, `entr`, `shfmt`,
+   `git-filter-repo`, and `universal-ctags` to the Debian base layer with
+   `--no-install-recommends`; keep the document-facing `qpdf` parser beside
+   Poppler after `RUNTIME_REFRESH`. Retain amd64/arm64 package resolution.
+2. Gate the image build on their public commands, including `pkg-config`, ACL
+   and inotify commands, and exercise every tool as the non-root runtime user.
+   Run `qpdf --check` against the browser-generated PDF alongside Poppler.
+3. Surface the bundled tools in the system prompt, README, and specification;
+   cover Dockerfile and prompt contracts with focused tests.
+4. Record the feature as v0.34.0, update persistent notes, then run mandatory
+   reflect/style/changelog/test/build/E2E review before a gitmoji commit.

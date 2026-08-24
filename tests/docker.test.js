@@ -125,6 +125,50 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `bundles high-value agent tooling from multi-arch Debian packages`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+        const base_apt_layer = dockerfile.slice(
+            dockerfile.indexOf( `RUN apt-get update && apt-get install` ),
+            dockerfile.indexOf( `# GitHub CLI` )
+        )
+        const base_packages = base_apt_layer
+            .split( `\n` )
+            .filter( line => !line.trimStart().startsWith( `#` ) )
+            .join( ` ` )
+            .split( /[\s\\]+/ )
+        const runtime_layer = dockerfile.slice(
+            dockerfile.indexOf( `ARG RUNTIME_REFRESH` ),
+            dockerfile.indexOf( `# Non-root user` )
+        )
+        const command_gate = dockerfile.slice(
+            dockerfile.indexOf( `RUN set -eux; \\\n    for cmd in` ),
+            dockerfile.indexOf( `WORKDIR /workspace` )
+        )
+
+        for( const package_name of [
+            `pkgconf`, `psmisc`, `socat`, `acl`, `inotify-tools`, `entr`,
+            `shfmt`, `git-filter-repo`, `universal-ctags`,
+        ] ) {
+            expect( base_packages ).toContain( package_name )
+        }
+
+        expect( base_packages ).not.toContain( `qpdf` )
+        expect( runtime_layer ).toContain( `xvfb xauth x11-utils poppler-utils qpdf` )
+        expect( command_gate ).toContain( `gosu node sh -c 'command -v "$1"' babysit-command "$cmd"` )
+
+        for( const cmd of [
+            `pkgconf`, `pkg-config`, `pstree`, `fuser`, `killall`, `socat`,
+            `getfacl`, `setfacl`, `inotifywait`, `inotifywatch`, `entr`, `shfmt`,
+            `git-filter-repo`, `ctags`, `ctags-universal`, `readtags`, `qpdf`,
+        ] ) {
+            expect( command_gate ).toContain( ` ${ cmd }` )
+        }
+
+        expect( command_gate ).toContain( `ctags --version | grep -F 'Universal Ctags'` )
+
+    } )
+
     it( `bundles multi-arch Google Chrome and globally resolvable Puppeteer`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
@@ -150,7 +194,7 @@ describe( `docker image`, () => {
     it( `bundles on-demand headful browser and PDF tooling`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
-        const package_group = `xvfb xauth x11-utils poppler-utils`
+        const package_group = `xvfb xauth x11-utils poppler-utils qpdf`
         const runtime_layer = dockerfile.slice(
             dockerfile.indexOf( `ARG RUNTIME_REFRESH` ),
             dockerfile.indexOf( `# Non-root user` )
@@ -226,7 +270,7 @@ describe( `docker image`, () => {
         for ( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `gh`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `docker`, `codex`, `gemini`, `claude`, `opencode` ] ) {
             expect( dockerfile ).toContain( ` ${ cmd }` )
         }
-        expect( dockerfile ).toContain( `command -v "$cmd"` )
+        expect( dockerfile ).toContain( `command -v "$1"' babysit-command "$cmd"` )
         expect( dockerfile ).toContain( `docker compose version` )
         expect( dockerfile ).toContain( `docker buildx version` )
 

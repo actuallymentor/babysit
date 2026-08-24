@@ -20,6 +20,8 @@ Agent model defaults and container tool pins last verified against primary sourc
 - Current pinned releases: fd 10.4.2, bat 0.26.1, fzf 0.74.1, yq 4.53.3, scc 3.7.0, just 1.58.0, Bun 1.3.14, and nvm 0.40.6.
 - Both amd64 and arm64 artifact URLs were checked before updating the Dockerfile. Pin scc to a versioned release URL rather than the floating `latest/download` path so builds remain reproducible.
 - The release workflow uses actions/cache v6 and the same Bun 1.3.14 version as the image build.
+- Verified 2026-08-24 against Debian Bookworm and Trixie metadata: `pkgconf`, `psmisc`, `socat`, `acl`, `inotify-tools`, `entr`, `shfmt`, `universal-ctags`, and `qpdf` publish amd64 and arm64 packages; `git-filter-repo` is architecture-independent. `pkgconf` supplies the compatible `pkg-config` entry point, while Universal Ctags owns `ctags-universal` and registers the ordinary `ctags` name through Debian alternatives. Keep `qpdf` after `RUNTIME_REFRESH` beside Poppler so scheduled builds refresh both document parsers.
+- Direct Bookworm/amd64 installation downloaded 3.8 MB and added 13.5 MB. Non-root semantic smoke passed custom pkg-config resolution, process-tree inspection, a socat relay, ACL round-tripping on `/dev/shm`, inotify events, one-shot entr execution, shfmt idempotence, git-filter-repo history removal, Universal Ctags JSON output, and qpdf validation of a Chrome-generated PDF. The host's overlay filesystem rejected POSIX ACL writes, so ACL fixtures must use tmpfs.
 
 ## Docker-outside-of-Docker
 - Verified against Docker docs on 2026-05-05.
