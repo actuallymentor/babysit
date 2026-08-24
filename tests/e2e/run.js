@@ -395,9 +395,39 @@ const run_agent_tooling = async () => {
         rm "$acl_file"
 
         touch watch.txt
-        ( sleep 0.1; printf x >> watch.txt ) &
-        inotifywait -q -t 5 -e close_write watch.txt
-        printf '%s\\n' "$tooling_tmp/watch.txt" | entr -n -z /bin/true
+        inotifywait -t 5 -e close_write --format '%e' watch.txt \
+            > inotify.event 2> inotify.ready &
+        inotify_pid=$!
+        for attempt in {1..50}; do
+            grep -Fq 'Watches established.' inotify.ready && break
+            kill -0 "$inotify_pid" 2> /dev/null || break
+            sleep 0.1
+        done
+        grep -Fq 'Watches established.' inotify.ready
+        printf x >> watch.txt
+        wait "$inotify_pid"
+        grep -Fq 'CLOSE_WRITE' inotify.event
+
+        touch entr-watch.txt
+        entr_marker="$tooling_tmp/entr.marker"
+        printf '%s\\n' "$tooling_tmp/entr-watch.txt" \
+        | entr -n sh -c 'printf x >> "$1"' babysit-entr "$entr_marker" &
+        entr_pid=$!
+        for attempt in {1..50}; do
+            test -s "$entr_marker" && break
+            kill -0 "$entr_pid" 2> /dev/null || break
+            sleep 0.1
+        done
+        test -s "$entr_marker"
+        printf x >> entr-watch.txt
+        for attempt in {1..50}; do
+            test "$(wc -c < "$entr_marker")" -ge 2 && break
+            kill -0 "$entr_pid" 2> /dev/null || break
+            sleep 0.1
+        done
+        test "$(wc -c < "$entr_marker")" -ge 2
+        kill "$entr_pid"
+        wait "$entr_pid" || true
 
         unformatted='if true;then echo ok;fi'
         formatted=$(printf '%s\\n' "$unformatted" | shfmt)

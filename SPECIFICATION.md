@@ -73,7 +73,7 @@ You are running inside a Docker container — an isolated sandbox built for codi
 
 Google Chrome, Puppeteer, and Xvfb are preinstalled for browser automation; Poppler's `pdfinfo`, `pdftotext`, `pdftoppm`, and `pdftocairo` commands plus `qpdf` are available for PDFs. Import `puppeteer` from Node.js; its default headless mode works directly. For headful Chrome, launch with `headless: false` and run the script through `xvfb-run -a`. Never add `--no-sandbox`.
 
-Common build, process, filesystem, and code tools are also preinstalled: `pkg-config`, `pstree`, `fuser`, `socat`, `getfacl`, `setfacl`, `inotifywait`, `entr`, `shfmt`, `git filter-repo`, and Universal Ctags.
+Common build, process, filesystem, and code tools are also preinstalled: `pkgconf`/`pkg-config`, `pstree`, `fuser`, `killall`, `socat`, `getfacl`, `setfacl`, `inotifywait`, `inotifywatch`, `entr`, `shfmt`, `git filter-repo`, and Universal Ctags (`ctags`, `ctags-universal`, and `readtags`).
 
 Do NOT add Co-Authored-By lines to git commit messages. The git author identity is already configured via environment variables.
 ```
