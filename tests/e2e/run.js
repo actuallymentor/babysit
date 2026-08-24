@@ -343,6 +343,7 @@ const run_puppeteer_browser = async () => {
         const metadata = execFileSync( 'pdfinfo', [ pdf_path ], { encoding: 'utf8' } )
         const text = execFileSync( 'pdftotext', [ pdf_path, '-' ], { encoding: 'utf8' } )
         execFileSync( 'pdftoppm', [ '-f', '1', '-singlefile', '-png', pdf_path, preview_path ] )
+        execFileSync( 'qpdf', [ '--check', pdf_path ] )
 
         if( !metadata.includes( 'Pages:' ) ) throw new Error( 'pdfinfo returned no page count' )
         if( !text.includes( 'Browse' ) ) throw new Error( 'pdftotext returned no page text' )
@@ -350,6 +351,7 @@ const run_puppeteer_browser = async () => {
 
         console.log( \`PUPPETEER_E2E_\${ result }\` )
         console.log( 'POPPLER_E2E_pdf' )
+        console.log( 'QPDF_E2E_pdf' )
     `
     const { stdout } = await docker( [
         `run`, `--rm`, `--init`, `--shm-size=1g`,
@@ -361,6 +363,76 @@ const run_puppeteer_browser = async () => {
 
     ensure( stdout.includes( `PUPPETEER_E2E_clicked` ), `Puppeteer did not drive bundled Chrome` )
     ensure( stdout.includes( `POPPLER_E2E_pdf` ), `Poppler did not inspect the browser-generated PDF` )
+    ensure( stdout.includes( `QPDF_E2E_pdf` ), `qpdf did not validate the browser-generated PDF` )
+}
+
+const run_agent_tooling = async () => {
+    const tooling_script = `
+        set -eu
+        test "$(id -u)" -ne 0
+
+        tooling_tmp=$(mktemp -d)
+        trap 'rm -rf "$tooling_tmp"' EXIT
+        cd "$tooling_tmp"
+
+        mkdir pkgconfig
+        printf '%s\\n' \
+            'Name: babysit-smoke' \
+            'Description: Babysit pkgconf smoke test' \
+            'Version: 1.2.3' \
+            > pkgconfig/babysit-smoke.pc
+        export PKG_CONFIG_PATH="$tooling_tmp/pkgconfig"
+        test "$(pkgconf --modversion babysit-smoke)" = '1.2.3'
+        test "$(pkg-config --modversion babysit-smoke)" = '1.2.3'
+
+        test -n "$(pstree -p $$)"
+        test "$(printf 'SOCAT_OK\\n' | socat - EXEC:/bin/cat)" = 'SOCAT_OK'
+
+        acl_file=/dev/shm/babysit-agent-tooling-acl-$$
+        touch "$acl_file"
+        setfacl -m u:root:r-- "$acl_file"
+        getfacl -cp "$acl_file" | grep -Fx 'user:root:r--'
+        rm "$acl_file"
+
+        touch watch.txt
+        ( sleep 0.1; printf x >> watch.txt ) &
+        inotifywait -q -t 5 -e close_write watch.txt
+        printf '%s\\n' "$tooling_tmp/watch.txt" | entr -n -z /bin/true
+
+        unformatted='if true;then echo ok;fi'
+        formatted=$(printf '%s\\n' "$unformatted" | shfmt)
+        test "$formatted" != "$unformatted"
+        test "$formatted" = "$(printf '%s\\n' "$formatted" | shfmt)"
+
+        mkdir filter-repo
+        cd filter-repo
+        git init -q
+        git config user.name 'Babysit E2E'
+        git config user.email 'babysit-e2e@example.invalid'
+        printf keep > keep.txt
+        printf secret > secret.txt
+        git add keep.txt secret.txt
+        git commit -qm seed
+        git filter-repo --force --path secret.txt --invert-paths
+        test -f keep.txt
+        test ! -e secret.txt
+        if git rev-list --objects --all | grep -Fq secret.txt; then exit 1; fi
+        cd ..
+
+        printf '%s\\n' 'static int smoke(void) { return 0; }' > source.c
+        ctags --options=NONE --output-format=json -f - source.c \
+        | jq -e 'select(.name == "smoke")' > /dev/null
+        ctags --version | grep -F 'Universal Ctags' > /dev/null
+
+        printf 'AGENT_TOOLING_E2E_ready\\n'
+    `
+    const { stdout } = await docker( [
+        `run`, `--rm`, `--init`,
+        base_image,
+        `bash`, `-lc`, tooling_script,
+    ], { timeout_ms: 120_000 } )
+
+    ensure( stdout.includes( `AGENT_TOOLING_E2E_ready` ), `Bundled agent tooling smoke failed` )
 }
 
 const run_puppeteer_headful_browser = async () => {
@@ -582,6 +654,7 @@ try {
     ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
 
     await build_images()
+    await run_agent_tooling()
     await run_puppeteer_browser()
     await run_puppeteer_headful_browser()
 

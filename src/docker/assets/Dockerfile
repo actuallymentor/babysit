@@ -34,6 +34,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Debian here because upstream only publishes .deb assets for amd64; the
     # apt package is arch-correct for both amd64 and arm64 images.
     shellcheck sqlite3 tree ripgrep \
+    # Small, general-purpose tools that coding agents otherwise install on
+    # demand for native builds, repository work, and runtime diagnostics.
+    pkgconf psmisc socat acl inotify-tools entr \
+    shfmt git-filter-repo universal-ctags \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI — agents working in repos need `gh` for PR/issue/auth flows.
@@ -131,7 +135,7 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         google-chrome-stable \
-        xvfb xauth x11-utils poppler-utils; \
+        xvfb xauth x11-utils poppler-utils qpdf; \
     rm -rf /var/lib/apt/lists/*; \
     google-chrome-stable --version
 
@@ -224,12 +228,19 @@ RUN set -eux; \
         nc dig ip ping vim nano less shellcheck sqlite3 tree rg just gh docker fd bat \
         fzf yq scc uv uvx bun corepack pnpm yarn google-chrome-stable puppeteer \
         Xvfb xvfb-run xauth xdpyinfo pdfinfo pdftotext pdftoppm pdftocairo \
+        pkgconf pkg-config pstree fuser killall socat getfacl setfacl \
+        inotifywait inotifywatch entr shfmt git-filter-repo \
+        ctags ctags-universal readtags qpdf \
         codex gemini claude opencode \
     ; do \
-        command -v "$cmd"; \
+        gosu node sh -c 'command -v "$1"' babysit-command "$cmd"; \
     done; \
     docker compose version; \
     docker buildx version; \
+    gosu node pkgconf --version; \
+    gosu node pkg-config --version; \
+    gosu node git filter-repo --version; \
+    gosu node ctags --version | grep -F 'Universal Ctags'; \
     google-chrome-stable --version; \
     gosu node node -e 'const p = require("puppeteer"); if (typeof p.launch !== "function") process.exit(1)'; \
     gosu node node --input-type=module -e 'import p from "puppeteer"; if (typeof p.launch !== "function") process.exit(1)'; \

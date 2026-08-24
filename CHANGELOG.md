@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.34.0 — 2026-08-24
+
+### ✨ Added
+- **Common coding-agent tools are ready in every container.** The image now
+  bundles native-build, process, socket, ACL, filesystem-watch, shell-format,
+  Git history, source-index, and PDF-structure utilities.
+
 ## 0.33.0 — 2026-08-23
 
 ### ✨ Added
