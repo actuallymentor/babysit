@@ -29,4 +29,15 @@ describe( `CLI help`, () => {
 
     } )
 
+    it( `documents workspace-aware resume history and its --all escape hatch`, () => {
+
+        show_help()
+
+        const help = lines.join( `\n` )
+        expect( help ).toContain( `List this workspace's sessions or resume one` )
+        expect( help ).toContain( `with "resume", show every workspace` )
+        expect( help ).toContain( `babysit resume --all` )
+
+    } )
+
 } )

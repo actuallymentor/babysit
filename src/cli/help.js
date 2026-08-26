@@ -15,7 +15,7 @@ Usage:
   babysit <agent> resume <id> [flags]  Resume a previous session
   babysit list [--all]                 List active sessions and launch flags
   babysit open [id|name|number]        Attach to an active session
-  babysit resume [session_id] [flags]  List resumable sessions or resume one
+  babysit resume [session_id] [flags]  List this workspace's sessions or resume one
   babysit config                       Configure babysit settings
   babysit doctor --auth [agent|all]    Verify real agent authentication
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
@@ -34,7 +34,7 @@ Flags:
   --port H:C      Publish host port H to container port C
   --auth          With "babysit doctor", make real model-backed auth checks
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
-  --all           With "babysit list", show IDs and full tmux session names
+  --all           With "list", show full details; with "resume", show every workspace
   --loop          Override idle action with LOOP.md or "Keep going"
   --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)
   -h, --help      Show this help
@@ -54,6 +54,7 @@ Examples:
   babysit list
   babysit list --all
   babysit resume
+  babysit resume --all
   babysit open
   babysit open 2
   babysit open "feature 1"

@@ -8,6 +8,7 @@ import {
     merge_resume_flags,
     print_resumable_sessions_table,
     resolve_resume_target,
+    select_resumable_sessions,
 } from '../src/cli/resume.js'
 import {
     cleanup_failed_launch_credentials,
@@ -85,7 +86,7 @@ describe( `cmd_resume session listing`, () => {
         },
     ]
 
-    it( `lists Babysit, Codex, and Claude ids when no selector is provided`, async () => {
+    it( `lists every session when the current workspace has no history`, async () => {
 
         let rendered_sessions = null
         let start_called = false
@@ -95,6 +96,7 @@ describe( `cmd_resume session listing`, () => {
             print_sessions: value => {
                 rendered_sessions = value
             },
+            get_cwd: () => `/workspace/untracked-project`,
             start: async () => {
                 start_called = true
             },
@@ -102,6 +104,53 @@ describe( `cmd_resume session listing`, () => {
 
         expect( rendered_sessions ).toBe( sessions )
         expect( start_called ).toBe( false )
+
+    } )
+
+    it( `lists only sessions from the current workspace by default`, async () => {
+
+        let rendered_sessions = null
+
+        await cmd_resume( { session_id: null }, {
+            list_stored_sessions_fn: () => sessions,
+            print_sessions: value => {
+                rendered_sessions = value
+            },
+            get_cwd: () => `/workspace/claude-project/`,
+        } )
+
+        expect( rendered_sessions ).toEqual( [ sessions[1] ] )
+
+    } )
+
+    it( `lists every workspace when --all is provided`, async () => {
+
+        let rendered_sessions = null
+
+        await cmd_resume( { session_id: null, flags: { all: true } }, {
+            list_stored_sessions_fn: () => sessions,
+            print_sessions: value => {
+                rendered_sessions = value
+            },
+            get_cwd: () => `/workspace/claude-project`,
+        } )
+
+        expect( rendered_sessions ).toBe( sessions )
+
+    } )
+
+    it( `keeps every matching launch from the current workspace`, () => {
+
+        const duplicate_workspace_session = {
+            ...sessions[0],
+            babysit_id: `20260801-120000-f00d`,
+            pwd: `/workspace/claude-project`,
+        }
+
+        expect( select_resumable_sessions(
+            [ ...sessions, duplicate_workspace_session ],
+            `/workspace/claude-project`
+        ) ).toEqual( [ sessions[1], duplicate_workspace_session ] )
 
     } )
 

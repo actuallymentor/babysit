@@ -44,6 +44,7 @@ export const parse_args = ( argv ) => {
 
     const positionals = args._
     const verb = positionals[0] || null
+    const is_resume_history_listing = verb === `resume` && !positionals[1]
     const flags = {
         help: args.help || false,
         version: args.version || false,
@@ -53,9 +54,9 @@ export const parse_args = ( argv ) => {
         loop: args.loop || false,
         docker: args.docker || false,
         ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
-        // Command-scoped: `babysit list --all` consumes it, while agent
-        // commands retain the raw unknown flag in passthrough below.
-        all: verb === `list` && ( args.all || false ),
+        // Command-scoped: list and selector-less resume consume `--all`, while
+        // agent commands retain the raw flag in passthrough below.
+        all: ( verb === `list` || is_resume_history_listing ) && ( args.all || false ),
         name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.
@@ -114,7 +115,12 @@ export const parse_args = ( argv ) => {
             agent: null,
             session_id,
             flags,
-            passthrough: collect_passthrough( prepared, null, session_id ),
+            passthrough: collect_passthrough(
+                prepared,
+                null,
+                session_id,
+                is_resume_history_listing ? [ `all` ] : []
+            ),
         }
     }
 
@@ -174,9 +180,10 @@ const normalise_session_name = ( value ) => {
  * @param {string[]} argv - Raw argv
  * @param {string} agent_name - The agent name (to skip)
  * @param {string|null} [session_id] - Resume session id to drop from passthrough
+ * @param {string[]} [command_flags] - Extra flags consumed by this command
  * @returns {string[]}
  */
-const collect_passthrough = ( argv, agent_name, session_id = null ) => {
+const collect_passthrough = ( argv, agent_name, session_id = null, command_flags = [] ) => {
 
     const passthrough = []
     let skip_next = false
@@ -201,7 +208,7 @@ const collect_passthrough = ( argv, agent_name, session_id = null ) => {
         // we also need to drop the following token — otherwise `--log foo.log`
         // leaks `foo.log` into the agent's argv.
         const [ clean ] = arg.replace( /^-+/, `` ).split( `=` )
-        if( KNOWN_FLAGS.includes( clean ) ) {
+        if( KNOWN_FLAGS.includes( clean ) || command_flags.includes( clean ) ) {
             if( VALUE_FLAGS.has( clean ) && !arg.includes( `=` ) ) skip_next = true
             continue
         }
