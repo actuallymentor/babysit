@@ -89,12 +89,14 @@ describe( `cmd_resume session listing`, () => {
     it( `lists every session when the current workspace has no history`, async () => {
 
         let rendered_sessions = null
+        let rendered_options = null
         let start_called = false
 
         await cmd_resume( { session_id: null }, {
             list_stored_sessions_fn: () => sessions,
-            print_sessions: value => {
+            print_sessions: ( value, options ) => {
                 rendered_sessions = value
+                rendered_options = options
             },
             get_cwd: () => `/workspace/untracked-project`,
             start: async () => {
@@ -103,6 +105,7 @@ describe( `cmd_resume session listing`, () => {
         } )
 
         expect( rendered_sessions ).toBe( sessions )
+        expect( rendered_options ).toEqual( { workspace: null } )
         expect( start_called ).toBe( false )
 
     } )
@@ -129,16 +132,19 @@ describe( `cmd_resume session listing`, () => {
     it( `lists every workspace when --all is provided`, async () => {
 
         let rendered_sessions = null
+        let rendered_options = null
 
         await cmd_resume( { session_id: null, flags: { all: true } }, {
             list_stored_sessions_fn: () => sessions,
-            print_sessions: value => {
+            print_sessions: ( value, options ) => {
                 rendered_sessions = value
+                rendered_options = options
             },
             get_cwd: () => `/workspace/claude-project`,
         } )
 
         expect( rendered_sessions ).toBe( sessions )
+        expect( rendered_options ).toEqual( { workspace: null } )
 
     } )
 
