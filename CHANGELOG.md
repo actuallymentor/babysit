@@ -5,7 +5,8 @@
 ### ✨ Added
 - **Resume history is workspace-aware.** Bare `babysit resume` prefers sessions
   from the current workspace, falls back to all history when none match, and
-  `babysit resume --all` always shows every workspace.
+  labels filtered output with its workspace. `babysit resume --all` always
+  shows every workspace.
 
 ## 0.34.0 — 2026-08-24
 

@@ -60,15 +60,21 @@ export const select_resumable_sessions = ( sessions, cwd ) => {
  * visible as the canonical resume handle because they restore the agent,
  * workspace, and launch modes; native IDs are shown separately for clarity.
  * @param {Object[]} sessions - Stored Babysit session metadata, newest first
+ * @param {Object} [options]
+ * @param {string|null} [options.workspace=null] - Workspace scope when rows are filtered
  */
-export const print_resumable_sessions_table = ( sessions ) => {
+export const print_resumable_sessions_table = ( sessions, { workspace = null } = {} ) => {
 
     if( sessions.length === 0 ) {
         console.log( `No resumable babysit sessions.` )
         return
     }
 
-    console.log( `\nResumable babysit sessions:\n` )
+    const heading = workspace
+        ? `Resumable babysit sessions for ${ workspace }:`
+        : `Resumable babysit sessions:`
+
+    console.log( `\n${ heading }\n` )
     console.log( `  ${ pad( `BABYSIT ID`, 24 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `AGENT SESSION ID`, 38 ) }  ${ pad( `STARTED`, 19 ) }  WORKSPACE` )
     console.log( `  ${ `-`.repeat( 147 ) }` )
 
@@ -81,6 +87,8 @@ export const print_resumable_sessions_table = ( sessions ) => {
         console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ session.pwd || `-` }` )
 
     } )
+
+    if( workspace ) console.log( `\nShow every workspace with: babysit resume --all` )
 
     console.log( `\nResume one with: babysit resume <babysit_id>\n` )
 
@@ -184,11 +192,15 @@ export const cmd_resume = async ( cmd, {
 
     if( !session_id ) {
         const sessions = list_stored_sessions_fn()
+        const current_cwd = flags.all ? null : get_cwd()
         const visible_sessions = flags.all
             ? sessions
-            : select_resumable_sessions( sessions, get_cwd() )
+            : select_resumable_sessions( sessions, current_cwd )
+        const workspace = visible_sessions.length < sessions.length
+            ? resolve( current_cwd )
+            : null
 
-        print_sessions( visible_sessions )
+        print_sessions( visible_sessions, { workspace } )
         return
     }
 
