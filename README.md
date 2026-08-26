@@ -29,8 +29,11 @@ babysit codex --name "feature 1"
 # Gemini with read-only workspace
 babysit gemini --mudbox
 
-# List resumable sessions with their Babysit and native agent IDs
+# List resumable sessions for the current workspace
 babysit resume
+
+# List resumable sessions from every workspace
+babysit resume --all
 
 # Resume a previous session by its Babysit ID
 babysit resume <session_id> --yolo
@@ -65,7 +68,7 @@ babysit doctor --auth opencode --refresh
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
 7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
-8. **Resume state** — agent-native session history is kept in persistent Docker volumes, while a host-side registry keeps each Babysit ID, captured native agent ID, workspace, and launch settings. Run `babysit resume` to list that history, then resume Claude, Codex, Gemini, or OpenCode after its container exits
+8. **Resume state** — agent-native session history is kept in persistent Docker volumes, while a host-side registry keeps each Babysit ID, captured native agent ID, workspace, and launch settings. Run `babysit resume` to list history for the current workspace, or add `--all` to list every workspace, then resume Claude, Codex, Gemini, or OpenCode after its container exits
 
 ### Watchtower protection
 
@@ -370,7 +373,7 @@ babysit <agent> [flags]              Start a new session
 babysit <agent> resume <id> [flags]  Resume a previous session
 babysit list [--all]                 List active sessions and launch flags
 babysit open [id|name|number]        Attach to an active session
-babysit resume [session_id] [flags]  List resumable sessions or resume one
+babysit resume [session_id] [flags]  List this workspace's sessions or resume one
 babysit config                       Configure babysit settings
 babysit update                       Refresh babysit, ~/.agents, and the docker image
 ```
@@ -393,9 +396,11 @@ that numbered row, or `babysit open "feature 1"` to open an active session by
 its exact name. Quote names containing spaces.
 
 Run `babysit resume` without a session id to list persistent Babysit-managed
-history, newest first. Each row shows the canonical Babysit ID alongside the
-captured native Codex, Claude, Gemini, or OpenCode session ID. Use the Babysit
-ID with `babysit resume <session_id>` so Babysit can restore the original agent,
+history, newest first. When the current workspace has history, only its sessions
+are shown; otherwise the full registry remains visible. Add `--all` to always
+show every workspace. Each row shows the canonical Babysit ID alongside the
+captured native Codex, Claude, Gemini, or OpenCode session ID. Use the Babysit ID
+with `babysit resume <session_id>` so Babysit can restore the original agent,
 workspace, modes, ports, and name. If Babysit did not capture a native agent ID
 before exit, it resumes the latest agent session from the original workspace.
 

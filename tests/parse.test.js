@@ -8,12 +8,18 @@ describe( `parse_args`, () => {
         expect( cmd.verb ).toBe( `list` )
     } )
 
-    it( `recognises --all only as a list display flag`, () => {
+    it( `recognises --all as a list and selector-less resume display flag`, () => {
         const list_cmd = parse_args( [ `list`, `--all` ] )
+        const resume_cmd = parse_args( [ `resume`, `--all` ] )
+        const selected_resume_cmd = parse_args( [ `resume`, `abc-123`, `--all` ] )
         const agent_cmd = parse_args( [ `codex`, `--all` ] )
 
         expect( list_cmd.flags.all ).toBe( true )
         expect( list_cmd.passthrough ).toEqual( [] )
+        expect( resume_cmd.flags.all ).toBe( true )
+        expect( resume_cmd.passthrough ).toEqual( [] )
+        expect( selected_resume_cmd.flags.all ).toBe( false )
+        expect( selected_resume_cmd.passthrough ).toContain( `--all` )
         expect( agent_cmd.flags.all ).toBe( false )
         expect( agent_cmd.passthrough ).toContain( `--all` )
     } )

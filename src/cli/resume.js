@@ -1,4 +1,5 @@
 import { existsSync } from 'fs'
+import { resolve } from 'path'
 import { log } from '../utils/log.js'
 import { list_stored_sessions, load_session } from '../sessions/store.js'
 import { has_session } from '../tmux/session.js'
@@ -34,6 +35,24 @@ const format_started_at = ( started_at ) => {
  * @returns {boolean} Whether the command only reads the local session registry
  */
 export const is_resume_listing = ( cmd ) => cmd.verb === `resume` && !cmd.agent && !cmd.session_id
+
+/**
+ * Prefer sessions launched from the current workspace. When the workspace has
+ * no history, retain the full registry so bare resume remains useful anywhere.
+ * @param {Object[]} sessions - Stored session records, newest first
+ * @param {string} cwd - Current working directory
+ * @returns {Object[]} Workspace sessions when present, otherwise every session
+ */
+export const select_resumable_sessions = ( sessions, cwd ) => {
+
+    const resolved_cwd = resolve( cwd )
+    const workspace_sessions = sessions.filter( ( { pwd } ) =>
+        typeof pwd === `string` && resolve( pwd ) === resolved_cwd
+    )
+
+    return workspace_sessions.length > 0 ? workspace_sessions : sessions
+
+}
 
 
 /**
@@ -147,6 +166,7 @@ export const resolve_resume_target = ( session ) => {
  * @param {Function} [options.load_session_fn=load_session] - Session metadata loader
  * @param {Function} [options.list_stored_sessions_fn=list_stored_sessions] - Session history loader
  * @param {Function} [options.print_sessions=print_resumable_sessions_table] - Session history renderer
+ * @param {Function} [options.get_cwd=process.cwd] - Current workspace loader
  * @param {Function} [options.has_session_fn=has_session] - Active tmux session check
  * @param {Function} [options.open_session=cmd_open] - Active session attach delegate
  */
@@ -155,6 +175,7 @@ export const cmd_resume = async ( cmd, {
     load_session_fn = load_session,
     list_stored_sessions_fn = list_stored_sessions,
     print_sessions = print_resumable_sessions_table,
+    get_cwd = process.cwd,
     has_session_fn = has_session,
     open_session = cmd_open,
 } = {} ) => {
@@ -162,7 +183,12 @@ export const cmd_resume = async ( cmd, {
     const { session_id, flags = {}, passthrough = [] } = cmd
 
     if( !session_id ) {
-        print_sessions( list_stored_sessions_fn() )
+        const sessions = list_stored_sessions_fn()
+        const visible_sessions = flags.all
+            ? sessions
+            : select_resumable_sessions( sessions, get_cwd() )
+
+        print_sessions( visible_sessions )
         return
     }
 
