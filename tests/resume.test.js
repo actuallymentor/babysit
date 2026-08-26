@@ -110,16 +110,19 @@ describe( `cmd_resume session listing`, () => {
     it( `lists only sessions from the current workspace by default`, async () => {
 
         let rendered_sessions = null
+        let rendered_options = null
 
         await cmd_resume( { session_id: null }, {
             list_stored_sessions_fn: () => sessions,
-            print_sessions: value => {
+            print_sessions: ( value, options ) => {
                 rendered_sessions = value
+                rendered_options = options
             },
             get_cwd: () => `/workspace/claude-project/`,
         } )
 
         expect( rendered_sessions ).toEqual( [ sessions[1] ] )
+        expect( rendered_options ).toEqual( { workspace: `/workspace/claude-project` } )
 
     } )
 
@@ -191,6 +194,19 @@ describe( `cmd_resume session listing`, () => {
         expect( output ).toContain( `claude` )
         expect( output ).toContain( `20260802-120000-babe` )
         expect( output ).toContain( `Resume one with: babysit resume <babysit_id>` )
+
+    } )
+
+    it( `labels workspace-filtered output and exposes the --all escape hatch`, async () => {
+
+        const output = await capture_console( async () => {
+            print_resumable_sessions_table( [ sessions[1] ], {
+                workspace: `/workspace/claude-project`,
+            } )
+        } )
+
+        expect( output ).toContain( `Resumable babysit sessions for /workspace/claude-project:` )
+        expect( output ).toContain( `Show every workspace with: babysit resume --all` )
 
     } )
 
