@@ -1,5 +1,39 @@
 import { log as mentie_log } from 'mentie'
 
+let live_log_line = null
+
+/**
+ * Keep diagnostics separate from a live terminal line such as a spinner.
+ * The returned disposer only removes its own registration.
+ *
+ * @param {Object} line - Live terminal line controls
+ * @param {Function} line.clear - Clear the live line before logging
+ * @param {Function} line.render - Restore the live line after logging
+ * @returns {Function} Registration disposer
+ */
+export const register_live_log_line = line => {
+
+    live_log_line = line
+
+    return () => {
+        if( live_log_line === line ) live_log_line = null
+    }
+
+}
+
+const wrap_log_method = method => ( ...messages ) => {
+
+    const current_line = live_log_line
+    current_line?.clear()
+
+    try {
+        return method( ...messages )
+    } finally {
+        if( live_log_line === current_line ) current_line?.render()
+    }
+
+}
+
 /**
  * Make BABYSIT_DEBUG=1 reveal info diagnostics unless the user chose an
  * explicit Mentie log level.
@@ -16,10 +50,22 @@ export const enable_babysit_debug_logging = ( env = process.env ) => {
 
 enable_babysit_debug_logging()
 
-// Re-export mentie log with babysit prefix
+// Wrap Mentie once so every Babysit diagnostic respects active terminal UI.
 mentie_log.prefix = `babysit`
 
-export const log = mentie_log
+/**
+ * Log through Mentie while respecting any active terminal progress line.
+ * @param {...any} messages - Values to log
+ * @returns {void}
+ */
+export const log = wrap_log_method( mentie_log )
+log.insane = wrap_log_method( mentie_log.insane )
+log.debug = wrap_log_method( mentie_log.debug )
+log.info = wrap_log_method( mentie_log.info )
+log.warn = wrap_log_method( mentie_log.warn )
+log.error = wrap_log_method( mentie_log.error )
+log.loglevel = mentie_log.loglevel
+log.prefix = mentie_log.prefix
 
 /**
  * Print a user-facing CLI error without mentie's developer stack trace.

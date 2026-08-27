@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.35.1 — 2026-08-27
+
+### 🐛 Fixed
+- **Startup diagnostics stay separate from authentication progress.** Debug,
+  warning, error, stack-trace, and multiline output now clear and restore the
+  live spinner instead of joining its current line or duplicating progress.
+
 ## 0.35.0 — 2026-08-26
 
 ### ✨ Added

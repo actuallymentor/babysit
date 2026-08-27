@@ -1,3 +1,5 @@
+import { register_live_log_line } from '../utils/log.js'
+
 const SPINNER_FRAMES = [ `⠋`, `⠙`, `⠹`, `⠸`, `⠼`, `⠴`, `⠦`, `⠧`, `⠇`, `⠏` ]
 const ACTIVE_STATES = new Set( [ `preparing`, `checking`, `recovering credentials` ] )
 
@@ -79,6 +81,7 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
     let skipped = false
     let interval = null
     let run_error = null
+    let unregister_live_log_line = null
 
     const render = () => {
         const line = format_auth_progress_line( states, {
@@ -134,6 +137,10 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
 
         render()
         if( animated ) {
+            unregister_live_log_line = register_live_log_line( {
+                clear: () => output.write( `\r\x1b[2K` ),
+                render,
+            } )
             interval = set_interval( render, 100 )
             interval.unref?.()
         }
@@ -156,6 +163,7 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
         run_error = error
     } finally {
         if( interval ) clear_interval( interval )
+        unregister_live_log_line?.()
         if( can_read_keys ) {
             input.removeListener( `data`, on_data )
             input.setRawMode?.( was_raw )
