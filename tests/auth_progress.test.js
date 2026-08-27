@@ -101,6 +101,7 @@ describe( `authentication progress`, () => {
             env: {
                 ...process.env,
                 LOG_LEVEL: `debug`,
+                LOGLEVEL: ``,
                 LOG_ANNOTATIONS: ``,
                 TERM: `xterm-256color`,
             },
