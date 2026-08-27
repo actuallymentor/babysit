@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import { spawnSync } from 'child_process'
 import { PassThrough } from 'stream'
 
 import {
@@ -69,6 +70,49 @@ describe( `authentication progress`, () => {
             unicode: false,
             allow_skip: false,
         } ) ).toBe( `Checking authentication 1.5s — codex ... checking, claude ok` )
+
+    } )
+
+    it( `keeps multiline diagnostics separate from the live TTY line`, () => {
+
+        const source = `
+            import { run_auth_checks_with_progress } from './src/cli/auth_progress.js'
+            import { log } from './src/utils/log.js'
+
+            const output = {
+                isTTY: true,
+                write: chunk => process.stdout.write( chunk ),
+            }
+
+            await run_auth_checks_with_progress(
+                [ { name: 'codex' } ],
+                async () => {
+                    log.debug( 'Workspace mount disabled\\nfor docker command' )
+                    return [ { name: 'codex', status: 'authenticated', authenticated: true } ]
+                },
+                { output, allow_skip: false }
+            )
+
+            log.debug( 'after progress' )
+        `
+        const result = spawnSync( `node`, [ `--input-type=module`, `--eval`, source ], {
+            cwd: process.cwd(),
+            encoding: `utf8`,
+            env: {
+                ...process.env,
+                LOG_LEVEL: `debug`,
+                TERM: `xterm-256color`,
+            },
+        } )
+
+        expect( result.status ).toBe( 0 )
+        expect( result.stdout ).toContain(
+            `codex ⠋ preparing\r\x1b[2K🐛  Workspace mount disabled\nfor docker command\n\r\x1b[2KChecking authentication`
+        )
+        expect( result.stdout ).not.toContain( `preparing🐛` )
+        expect( result.stdout ).toEndWith(
+            `Authentication checks complete: codex authenticated\n🐛  after progress\n`
+        )
 
     } )
 
