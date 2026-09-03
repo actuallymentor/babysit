@@ -616,6 +616,71 @@ babysit: []
 
 }
 
+const run_clone_session = async () => {
+    const workspace = make_workspace( `clone`, `config:
+    initial_prompt: "BABYSIT_E2E_CLONE_CHECK. Explicitly write the original marker requested by this test."
+    isolate_dependencies: false
+babysit: []
+`, {
+        'e2e-original-sentinel.txt': `source`,
+        'node_modules/copied-sentinel.txt': `copied dependency`,
+    } )
+
+    await run( `git`, [ `-C`, workspace, `init`, `-q` ] )
+    await run( `git`, [ `-C`, workspace, `config`, `user.name`, `Babysit E2E` ] )
+    await run( `git`, [ `-C`, workspace, `config`, `user.email`, `babysit-e2e@example.invalid` ] )
+    await run( `git`, [ `-C`, workspace, `add`, `.` ] )
+    await run( `git`, [ `-C`, workspace, `commit`, `-qm`, `seed` ] )
+
+    const { stdout: original_branch_output } = await run(
+        `git`, [ `-C`, workspace, `branch`, `--show-current` ]
+    )
+    const original_branch = original_branch_output.trim()
+    const session = await launch_babysit( workspace, [
+        `--clone`, `--yes`, `--name`, `feature 1`, `--yolo`,
+    ] )
+
+    ensure( session.clone === true, `clone session metadata did not preserve clone mode` )
+    ensure( session.original_pwd === workspace, `clone session metadata lost the original workspace` )
+    ensure( session.clone_path !== workspace, `clone session reused the original workspace` )
+    ensure( session.clone_path === join( home, `.babysit/clones`, session.clone_id ), `clone path is outside the configured clone root` )
+    ensure( existsSync( join( session.clone_path, `node_modules/copied-sentinel.txt` ) ), `clone omitted node_modules` )
+
+    await wait_until( `clone boundary marker`, () =>
+        existsSync( join( session.clone_path, `e2e-clone-boundaries.json` ) )
+    )
+    const boundaries = JSON.parse(
+        readFileSync( join( session.clone_path, `e2e-clone-boundaries.json` ), `utf8` )
+    )
+    const prompt = readFileSync( join( session.clone_path, `e2e-initial-prompt.txt` ), `utf8` )
+    const { stdout: clone_branch_output } = await run(
+        `git`, [ `-C`, session.clone_path, `branch`, `--show-current` ]
+    )
+    const { stdout: original_branch_after_output } = await run(
+        `git`, [ `-C`, workspace, `branch`, `--show-current` ]
+    )
+
+    ensure( boundaries.clone_visible, `source files are missing from /workspace` )
+    ensure( boundaries.original_visible, `source workspace is missing from /original` )
+    ensure( existsSync( join( workspace, `e2e-explicit-original-write.txt` ) ), `/original is not writable` )
+    ensure( prompt.includes( `/workspace is a copy of /original` ), `clone prompt omitted the workspace boundary` )
+    ensure( clone_branch_output.trim() === `babysit/feature-1-${ session.clone_id }`, `clone branch name is incorrect` )
+    ensure( original_branch_after_output.trim() === original_branch, `clone launch changed the original Git branch` )
+
+    await stop_session( session )
+
+    const resumed = await launch_babysit_command( workspace, [
+        `resume`, session.babysit_id, `--yes`,
+    ] )
+    ensure( resumed.clone_path === session.clone_path, `resume created a different clone workspace` )
+    await wait_until(
+        `clone resume args marker`,
+        () => existsSync( join( session.clone_path, `e2e-resume-args.txt` ) )
+    )
+    await stop_session( resumed )
+
+}
+
 const run_mudbox_session = async () => {
     const workspace = make_workspace( `mudbox`, `config:
     initial_prompt: "BABYSIT_E2E_WRITE_ATTEMPT"
@@ -691,6 +756,11 @@ try {
     await run_submit_parity_sessions()
     await run_default_session()
     await run_resume_session()
+    if( process.env.BABYSIT_DOCKER === `1` || process.env.BABYSIT_HOST_WORKSPACE ) {
+        console.log( `Skipping clone E2E inside a Docker-enabled Babysit session` )
+    } else {
+        await run_clone_session()
+    }
     await run_mudbox_session()
     await run_sandbox_session()
     await run_dependency_session()

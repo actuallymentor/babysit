@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { PassThrough } from 'stream'
@@ -184,6 +184,32 @@ babysit:
             expect( config.initial_prompt ).toContain( `Host-global coding-agent instructions` )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `loads clone-local config instead of the original workspace`, () => {
+
+        const root = mkdtempSync( join( tmpdir(), `babysit-monitor-clone-` ) )
+        const original = join( root, `original` )
+        const clone = join( root, `clone` )
+
+        try {
+            mkdirSync( original )
+            mkdirSync( clone )
+            writeFileSync( join( original, `babysit.yaml` ), `config:\n    idle_timeout_s: 10\nbabysit: []\n` )
+            writeFileSync( join( clone, `babysit.yaml` ), `config:\n    idle_timeout_s: 99\nbabysit: []\n` )
+
+            const { config } = load_monitor_config( {
+                pwd: original,
+                clone_path: clone,
+                modifiers: [ `clone` ],
+            } )
+
+            expect( config.idle_timeout_s ).toBe( 99 )
+            expect( config.initial_prompt ).toContain( `/workspace is a copy of /original` )
+        } finally {
+            rmSync( root, { recursive: true, force: true } )
         }
 
     } )

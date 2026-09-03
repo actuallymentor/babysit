@@ -7,6 +7,7 @@ const home = homedir()
 
 export const BABYSIT_DIR = join( home, `.babysit` )
 export const SESSIONS_DIR = join( BABYSIT_DIR, `sessions` )
+export const CLONES_DIR = join( BABYSIT_DIR, `clones` )
 export const CREDENTIAL_RECOVERY_DIR = join( BABYSIT_DIR, `credential-recovery` )
 export const AGENTS_DIR = join( home, `.agents` )
 export const TMUX_SOCKET = process.env.BABYSIT_TMUX_SOCKET || `babysit`

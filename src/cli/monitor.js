@@ -1,7 +1,7 @@
 import { existsSync } from 'fs'
 
 import { log } from '../utils/log.js'
-import { load_session, update_session } from '../sessions/store.js'
+import { load_session, session_workspace, update_session } from '../sessions/store.js'
 import { load_config } from '../babysit/yaml.js'
 import { get_agent } from '../agents/index.js'
 import { get_patterns } from '../patterns/index.js'
@@ -31,6 +31,7 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
+    clone: modifiers.includes( `clone` ),
     ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
 } )
 
@@ -39,7 +40,7 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
  * @param {Object} session - Stored session metadata
  * @returns {{ config: Object, rules: Array }} Parsed config and rules
  */
-export const load_monitor_config = ( session = {} ) => load_config( session.pwd, {
+export const load_monitor_config = ( session = {} ) => load_config( session_workspace( session ), {
     default_initial_prompt: build_system_prompt( mode_from_modifiers( session.modifiers ) ),
 } )
 
@@ -125,16 +126,28 @@ export const cmd_monitor = async ( cmd ) => {
         process.exit( 1 )
     }
 
+    if( session.monitor_token && cmd.monitor_token !== session.monitor_token ) {
+        log.error( `Internal: monitor token mismatch for ${ session_id }` )
+        process.exit( 1 )
+    }
+
     // Restore the original working directory so cwd-relative paths in
     // babysit.yaml (./IDLE.md, ./LOOP.md) resolve the same way the
     // foreground saw them when it parsed the rules.
-    if( session.pwd && existsSync( session.pwd ) ) {
+    const workspace = session_workspace( session )
+    if( workspace && existsSync( workspace ) ) {
         try {
-            process.chdir( session.pwd )
+            process.chdir( workspace )
         } catch ( e ) {
-            log.warn( `Could not chdir to ${ session.pwd }: ${ e.message }` )
+            log.warn( `Could not chdir to ${ workspace }: ${ e.message }` )
         }
     }
+
+    update_session( session.babysit_id, {
+        monitor_pid: process.pid,
+        monitor_started_at: new Date().toISOString(),
+        status: `active`,
+    } )
 
     const agent = get_agent( session.agent )
     const existing_tmpfiles = session.creds_tmpfiles || (
@@ -262,7 +275,7 @@ export const cmd_monitor = async ( cmd ) => {
         // override mutates `rules` in place, so the monitor sees the same
         // LOOP.md action as the foreground process.
         if( session.modifiers?.includes( `loop` ) ) {
-            apply_loop( rules, session.pwd, {
+            apply_loop( rules, workspace, {
                 include_global_loop: !session.modifiers.includes( `ignore-host-agents-md` ),
             } )
         }
@@ -291,8 +304,22 @@ export const cmd_monitor = async ( cmd ) => {
         } )
 
     } finally {
-        if( await cleanup_credentials() ) await cleanup_container()
+        const credentials_recovered = await cleanup_credentials()
+        const container_removed = credentials_recovered
+            ? await cleanup_container()
+            : false
         stop_caffeinate( caffeinate )
+
+        // Do not clear a newer monitor spawned during recovery.
+        const latest = load_session( session.babysit_id )
+        if( latest?.monitor_pid === process.pid ) {
+            update_session( session.babysit_id, {
+                container_cleaned: container_removed,
+                credentials_cleaned: credentials_recovered,
+                monitor_pid: null,
+                status: `exited`,
+            } )
+        }
     }
 
     log.info( `Monitor exited for session ${ session.babysit_id }` )

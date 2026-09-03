@@ -2,12 +2,42 @@ import { describe, expect, it } from 'bun:test'
 
 import {
     create_docker_file_transport,
+    inspect_docker_container_state,
     normalise_local_sync_file,
     remove_docker_container,
+    stop_docker_container,
     wait_for_docker_container_stopped,
 } from '../src/docker/file_transport.js'
 
 describe( `Docker credential file transport`, () => {
+
+    it( `inspects and stops a surviving named container`, async () => {
+
+        const calls = []
+        const run_command = async ( command, args ) => {
+            calls.push( [ command, ...args ] )
+            return args.includes( `inspect` ) ? `running` : ``
+        }
+
+        expect( await inspect_docker_container_state( `babysit-session`, { run_command } ) ).toBe( `running` )
+        expect( await stop_docker_container( `babysit-session`, { run_command } ) ).toBe( true )
+        expect( calls ).toEqual( [
+            [ `docker`, `inspect`, `--format`, `{{.State.Status}}`, `babysit-session` ],
+            [ `docker`, `stop`, `--time`, `10`, `babysit-session` ],
+        ] )
+
+    } )
+
+    it( `treats an already-removed container as recovered`, async () => {
+
+        const run_command = async () => {
+            throw new Error( `docker exited with code 1: Error: No such container: missing` )
+        }
+
+        expect( await inspect_docker_container_state( `missing`, { run_command } ) ).toBeNull()
+        expect( await stop_docker_container( `missing`, { run_command } ) ).toBe( false )
+
+    } )
 
     it( `pulls and pushes through docker cp using client-local paths`, async () => {
 

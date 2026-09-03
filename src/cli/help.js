@@ -28,7 +28,7 @@ Flags:
   --mudbox        Read-only workspace mount
   --clone         Work in a copy while mounting the original at /original
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
-  --yes           Skip safety confirmation prompts
+  --yes           Skip clone safety confirmation prompts
   --ignore-host-agents-md
                   Keep host agent instructions, skills, and preferences out of the container
   --name NAME     Give the session a human-readable name
