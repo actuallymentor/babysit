@@ -127,6 +127,13 @@ describe( `build_system_prompt`, () => {
         expect( prompt ).toContain( `READ-ONLY` )
     } )
 
+    it( `describes clone workspace boundaries`, () => {
+        const prompt = build_system_prompt( { clone: true } )
+        expect( prompt ).toContain( `/workspace is a copy of /original` )
+        expect( prompt ).toContain( `Work in /workspace` )
+        expect( prompt ).toContain( `only touch /original when the user gives explicit instructions` )
+    } )
+
     it( `combines yolo and mudbox fragments`, () => {
         const prompt = build_system_prompt( { yolo: true, mudbox: true } )
         expect( prompt ).toContain( `READ-ONLY` )

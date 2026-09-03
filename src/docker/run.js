@@ -362,7 +362,8 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {Object} options
  * @param {Object} options.agent - Agent adapter
  * @param {string} options.workspace - Host working directory
- * @param {Object} options.mode - Mode config { yolo, sandbox, mudbox }
+ * @param {string|null} [options.original_workspace=null] - Original host working directory for clone mode
+ * @param {Object} options.mode - Mode config { yolo, sandbox, mudbox, clone }
  * @param {string[]} options.agent_args - Extra args to pass to the agent CLI
  * @param {Object} options.creds_mounts - Credential mount specs from credentials module
  * @param {Object} options.config - babysit.yaml config section
@@ -393,6 +394,7 @@ export const build_docker_command_args = ( options ) => {
     const {
         agent,
         workspace,
+        original_workspace = null,
         mode = {},
         agent_args = [],
         creds_mounts = [],
@@ -473,6 +475,11 @@ export const build_docker_command_args = ( options ) => {
     } else {
         // Default / yolo: read-write
         flags.push( `-v`, `${ workspace_source }:/workspace` )
+    }
+
+    if( mount_workspace && mode.clone && original_workspace ) {
+        const original_workspace_source = resolve_workspace_mount_source( original_workspace )
+        flags.push( `-v`, `${ original_workspace_source }:/original` )
     }
 
     // Mount ~/.agents read-write so agents can persist memories, skills, and

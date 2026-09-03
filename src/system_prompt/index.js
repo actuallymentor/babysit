@@ -14,6 +14,8 @@ export const sandbox = `You are running in SANDBOX mode (AGENT_AUTONOMY_MODE=san
 
 export const mudbox = `You are running in MUDBOX mode (AGENT_AUTONOMY_MODE=mudbox). The workspace at /workspace is mounted READ-ONLY from the host. You can read and explore all project files but cannot modify them. Use this mode for code review, analysis, exploration, or generating patches. Any files you need to create must go in a container-local directory outside /workspace.`
 
+export const clone = `You are running in CLONE mode. /workspace is a copy of /original. Work in /workspace. You may only touch /original when the user gives explicit instructions to do so.`
+
 export const docker_mode = `Docker-outside-of-Docker is enabled. The host Docker API socket is mounted in this container and DOCKER_HOST points at it. Docker commands you run here create sibling containers on the host Docker daemon, not nested containers inside this container. The original host workspace path is available as BABYSIT_HOST_WORKSPACE for nested Babysit runs. This capability can bypass sandbox/mudbox filesystem expectations because Docker can start containers with host bind mounts.`
 
 export const host_agent_context_ignored = `Host-global coding-agent instructions, skills, and preferences are intentionally unavailable in this session. Project-local instructions inside /workspace still apply, and host credentials are still available for authentication.`
