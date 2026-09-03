@@ -9,8 +9,10 @@ const KNOWN_FLAGS = [
     `yolo`,
     `sandbox`,
     `mudbox`,
+    `clone`,
     `loop`,
     `docker`,
+    `yes`,
     `ignore-host-agents-md`,
     `name`,
     `log`,
@@ -37,7 +39,7 @@ export const parse_args = ( argv ) => {
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `loop`, `docker`, `ignore-host-agents-md`, `all`, `auth`, `refresh` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `auth`, `refresh` ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -51,8 +53,10 @@ export const parse_args = ( argv ) => {
         yolo: args.yolo || false,
         sandbox: args.sandbox || false,
         mudbox: args.mudbox || false,
+        clone: args.clone || false,
         loop: args.loop || false,
         docker: args.docker || false,
+        yes: args.yes || false,
         ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
         // Command-scoped: list and selector-less resume consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
@@ -74,6 +78,10 @@ export const parse_args = ( argv ) => {
     // rather than silently picking one in docker/run.js.
     if( flags.sandbox && flags.mudbox ) {
         throw new Error( `--sandbox and --mudbox are mutually exclusive` )
+    }
+
+    if( flags.clone && ( flags.sandbox || flags.mudbox ) ) {
+        throw new Error( `--clone cannot be combined with --sandbox or --mudbox` )
     }
 
     // Determine what the user wants to do

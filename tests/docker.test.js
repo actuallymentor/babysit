@@ -585,6 +585,29 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `mounts clone and original workspaces at distinct paths`, () => {
+
+        const args = build_docker_command_args( make_options( {
+            workspace: `/tmp/babysit-clone`,
+            original_workspace: `/tmp/original-project`,
+            mode: { clone: true },
+            modifiers: [ `clone` ],
+            container_name: `babysit-codex-session-id`,
+        } ) )
+
+        expect( args ).toContain( `/tmp/babysit-clone:/workspace` )
+        expect( args ).toContain( `/tmp/original-project:/original` )
+        expect( args ).not.toContain( `/tmp/original-project:/workspace` )
+        expect( args[ args.indexOf( `--name` ) + 1 ] ).toBe( `babysit-codex-session-id` )
+
+        const without_original = build_docker_command_args( make_options( {
+            workspace: `/tmp/babysit-clone`,
+            mode: { clone: true },
+        } ) )
+        expect( without_original.some( arg => arg.endsWith( `:/original` ) ) ).toBe( false )
+
+    } )
+
     it( `isolates host agent profiles while preserving credential mounts`, () => {
 
         for ( const agent of [ claude, codex, gemini, opencode ] ) {

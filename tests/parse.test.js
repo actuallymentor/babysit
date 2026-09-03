@@ -154,6 +154,14 @@ describe( `parse_args`, () => {
         expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
     } )
 
+    it( `recognises clone safety flags without passing them to the agent`, () => {
+        const cmd = parse_args( [ `codex`, `--clone`, `--yes`, `--model`, `gpt-5.6-sol` ] )
+
+        expect( cmd.flags.clone ).toBe( true )
+        expect( cmd.flags.yes ).toBe( true )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `gpt-5.6-sol` ] )
+    } )
+
     it( `recognises --ignore-host-agents-md without passing it to the agent`, () => {
         const cmd = parse_args( [
             `codex`,
@@ -210,6 +218,15 @@ describe( `parse_args`, () => {
         // The mount strategies are contradictory — better to fail fast
         expect( () => parse_args( [ `claude`, `--sandbox`, `--mudbox` ] ) ).toThrow(
             /mutually exclusive/
+        )
+    } )
+
+    it( `rejects clone with sandboxed workspace modes`, () => {
+        expect( () => parse_args( [ `claude`, `--clone`, `--sandbox` ] ) ).toThrow(
+            /--clone cannot be combined with --sandbox or --mudbox/
+        )
+        expect( () => parse_args( [ `claude`, `--clone`, `--mudbox` ] ) ).toThrow(
+            /--clone cannot be combined with --sandbox or --mudbox/
         )
     } )
 
