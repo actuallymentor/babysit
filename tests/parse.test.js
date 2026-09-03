@@ -254,9 +254,10 @@ describe( `parse_args`, () => {
         // __monitor is the daemon spawned by cmd_start so the supervision loop
         // outlives the foreground process. Not in --help, but the dispatcher
         // must still route to it.
-        const cmd = parse_args( [ `__monitor`, `abc-123` ] )
+        const cmd = parse_args( [ `__monitor`, `abc-123`, `monitor-token` ] )
         expect( cmd.verb ).toBe( `__monitor` )
         expect( cmd.session_id ).toBe( `abc-123` )
+        expect( cmd.monitor_token ).toBe( `monitor-token` )
     } )
 
     describe( `--log flag`, () => {

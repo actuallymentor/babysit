@@ -1,7 +1,7 @@
 import { spawn, execSync } from 'child_process'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'fs'
+import { join, resolve } from 'path'
 import { createInterface } from 'readline/promises'
 import { wait } from 'mentie'
 
@@ -23,8 +23,14 @@ import {
     resolve_docker_socket_path,
 } from '../docker/run.js'
 import { prepare_docker_launch } from '../docker/launch.js'
+import {
+    inspect_docker_container_state,
+    remove_docker_container,
+    stop_docker_container,
+} from '../docker/file_transport.js'
 import { warn_if_unrecognized_watchtower_is_running } from '../docker/watchtower.js'
 import { build_system_prompt } from '../modes/prompt.js'
+import { clone as clone_prompt } from '../system_prompt/index.js'
 import {
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
@@ -47,21 +53,156 @@ import {
 import { acquire_host_auth_lease } from '../agents/auth_lease.js'
 import { run_auth_checks_with_progress } from './auth_progress.js'
 import { apply_loop } from '../modes/loop.js'
-import { create_session, make_session_name, has_session } from '../tmux/session.js'
+import { create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
 import { capture_pane, stop_pipe_pane } from '../tmux/capture.js'
-import { save_session, load_session, list_stored_sessions, generate_session_id } from '../sessions/store.js'
+import {
+    save_session,
+    load_session,
+    list_stored_sessions,
+    generate_session_id,
+    session_original_workspace,
+    session_workspace,
+    update_session,
+} from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
 import { command_exists } from '../utils/exec.js'
+import { acquire_clone_lock, prepare_clone_workspace } from '../clone.js'
+import { cmd_monitor } from './monitor.js'
+import { is_monitor_alive } from './monitor_process.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
 const STARTUP_EXIT_GRACE_MS = 750
 const STARTUP_LOG_TAIL_LINES = 80
 const monotonic_now = () => performance.now()
+
+/**
+ * Canonicalize an existing workspace while retaining a stable fallback for
+ * legacy or temporarily unavailable session paths.
+ * @param {string} path - Workspace path
+ * @returns {string} Canonical absolute path
+ */
+export const canonical_workspace = path => {
+
+    try {
+        return realpathSync.native( path )
+    } catch {
+        return resolve( path )
+    }
+
+}
+
+/**
+ * Classify live sessions associated with an original host workspace.
+ * @param {string} original_workspace - Canonical original workspace
+ * @param {Object[]} tmux_sessions - Live Babysit tmux sessions
+ * @param {Object[]} stored_sessions - Durable Babysit session metadata
+ * @returns {{ clones: Object[], direct: Object[] }} Active clone/direct records
+ */
+export const active_sessions_for_original = ( original_workspace, tmux_sessions, stored_sessions ) => {
+
+    const active_names = new Set( tmux_sessions.map( session => session.name ) )
+    const matches = stored_sessions.filter( session => {
+        const original = session_original_workspace( session )
+        return original
+            && active_names.has( session.tmux_session )
+            && canonical_workspace( original ) === original_workspace
+    } )
+
+    return {
+        clones: matches.filter( session => session.clone_path || session.modifiers?.includes( `clone` ) ),
+        direct: matches.filter( session => !session.clone_path && !session.modifiers?.includes( `clone` ) ),
+    }
+
+}
+
+/**
+ * Parse a default-yes safety answer.
+ * @param {string} answer - User-entered answer
+ * @returns {boolean} Whether the user chose to continue
+ */
+export const allows_default_yes = ( answer = `` ) => /^(?:y(?:es)?)?$/i.test( answer.trim() )
+
+/**
+ * Ask a default-yes question while failing closed when stdin is non-interactive.
+ * @param {string} question - Prompt ending in [Y/n]
+ * @param {Object} [io]
+ * @param {NodeJS.ReadableStream} [io.input=process.stdin] - Prompt input
+ * @param {NodeJS.WritableStream} [io.output=process.stdout] - Prompt output
+ * @returns {Promise<boolean>} Whether the user chose to continue
+ */
+export const confirm_default_yes = async ( question, {
+    input = process.stdin,
+    output = process.stdout,
+} = {} ) => {
+
+    if( !input.isTTY ) {
+        log.error( `Cannot confirm safety on non-interactive stdin; pass --yes to continue.` )
+        return false
+    }
+
+    const rl = createInterface( { input, output } )
+    try {
+        return allows_default_yes( await rl.question( question ) )
+    } finally {
+        rl.close()
+    }
+
+}
+
+/**
+ * Finalize a container left behind when tmux or the host stopped abruptly.
+ * Credential recovery reuses the normal monitor cleanup before relaunch.
+ * @param {Object} session - Stored clone session
+ * @param {Object} [dependencies] - Injectable recovery seams
+ * @param {Function} [dependencies.inspect_container] - Docker state reader
+ * @param {Function} [dependencies.remove_container] - Docker container remover
+ * @param {Function} [dependencies.stop_container] - Docker container stopper
+ * @param {Function} [dependencies.recover_session] - Credential-safe finalizer
+ * @param {Function} [dependencies.update_session_fn] - Session record updater
+ * @param {Function} [dependencies.monitor_alive] - Token-aware monitor probe
+ * @returns {Promise<boolean>} Whether a surviving container was reconciled
+ */
+export const recover_clone_container = async ( session = {}, {
+    inspect_container = inspect_docker_container_state,
+    remove_container = remove_docker_container,
+    stop_container = stop_docker_container,
+    recover_session = cmd_monitor,
+    update_session_fn = update_session,
+    monitor_alive = is_monitor_alive,
+} = {} ) => {
+
+    const container = session.container_id || session.container_name
+    const state = await inspect_container( container )
+    if( !state ) return false
+
+    if( monitor_alive( session.monitor_pid, session.monitor_token ) ) {
+        throw new Error( `Session cleanup is still running for ${ session.babysit_id }; retry shortly.` )
+    }
+
+    log.warn( `Recovering ${ state } Docker container from the previous clone launch.` )
+    if( session.credentials_cleaned ) {
+        await remove_container( container )
+        update_session_fn( session.babysit_id, { container_cleaned: true } )
+        return true
+    }
+
+    if( [ `running`, `paused`, `restarting` ].includes( state ) ) {
+        await stop_container( container )
+    }
+
+    update_session_fn( session.babysit_id, { container_id: container } )
+    await recover_session( {
+        session_id: session.babysit_id,
+        monitor_token: session.monitor_token || null,
+    } )
+    return true
+
+}
 
 /**
  * Resolve the prompt babysit types into the agent pane once the TUI launches.
@@ -74,6 +215,20 @@ export const resolve_initial_prompt = ( config = {} ) => {
     if( config.initial_prompt === `` ) return ``
 
     return config.initial_prompt
+
+}
+
+/**
+ * Clone safety is mandatory because /original stays writable for deliberate
+ * merge-back work. Existing custom or empty prompts still receive the guard.
+ * @param {string} prompt - Configured launch prompt
+ * @param {Object} mode - Active launch mode
+ * @returns {string} Prompt with clone safety instructions when required
+ */
+export const ensure_clone_safety_prompt = ( prompt, mode = {} ) => {
+
+    if( !mode.clone || prompt.includes( clone_prompt ) ) return prompt
+    return [ prompt, clone_prompt ].filter( Boolean ).join( `\n\n` )
 
 }
 
@@ -765,19 +920,29 @@ export const cmd_start = async ( cmd ) => {
     // id or a Babysit metadata id. When the id maps to stored metadata, restore
     // the original workspace before loading babysit.yaml and before hashing
     // workspace-scoped Docker state volumes.
-    const stored_resume_session = cmd.metadata_resolved
-        ? null
-        : resolve_stored_agent_resume_session( cmd, agent )
+    const stored_resume_session = cmd.stored_session || (
+        cmd.metadata_resolved
+            ? null
+            : resolve_stored_agent_resume_session( cmd, agent )
+    )
     if( stored_resume_session?.agent_mismatch ) {
         log.error( `Session ${ cmd.session_id } belongs to ${ stored_resume_session.agent_mismatch }, not ${ agent.name }` )
         process.exit( 1 )
     }
 
-    if( stored_resume_session?.pwd && existsSync( stored_resume_session.pwd ) ) {
-        log.debug( `Restoring cwd: ${ stored_resume_session.pwd }` )
-        process.chdir( stored_resume_session.pwd )
-    } else if( stored_resume_session?.pwd ) {
-        log.warn( `Original session pwd no longer exists: ${ stored_resume_session.pwd }` )
+    const stored_is_clone = Boolean(
+        stored_resume_session?.clone_path
+        || stored_resume_session?.modifiers?.includes( `clone` )
+    )
+    if( flags.clone && stored_resume_session && !stored_is_clone ) {
+        log.error( `--clone cannot be added while resuming a non-clone session; start a new clone session instead.` )
+        process.exit( 1 )
+    }
+
+    if( stored_is_clone && await has_session( stored_resume_session.tmux_session ) ) {
+        log.error( `Clone session is already active: ${ stored_resume_session.babysit_id }` )
+        log.error( `Attach with: babysit open ${ stored_resume_session.babysit_id }` )
+        process.exit( 1 )
     }
 
     // A resumed session keeps its human-readable label unless the user gives
@@ -808,7 +973,19 @@ export const cmd_start = async ( cmd ) => {
         sandbox: flags.sandbox,
         mudbox: flags.mudbox,
         docker: flags.docker,
+        clone: Boolean( flags.clone || stored_is_clone ),
         ignore_host_agents_md: should_ignore_host_agent_context( flags, stored_resume_session ),
+    }
+
+    if( mode.clone && cmd.verb === `resume` && !stored_resume_session ) {
+        log.error( `--clone resume requires a Babysit session ID so the existing clone can be restored.` )
+        process.exit( 1 )
+    }
+
+    if( mode.clone && ( process.env.BABYSIT_DOCKER === `1` || process.env.BABYSIT_HOST_WORKSPACE ) ) {
+        log.error( `--clone is not supported from inside a Docker-enabled Babysit session.` )
+        log.error( `Run the clone session from the Docker host so ~/.babysit/clones is host-visible.` )
+        process.exit( 1 )
     }
 
     const docker_socket_path = mode.docker ? resolve_docker_socket_path() : null
@@ -839,7 +1016,156 @@ export const cmd_start = async ( cmd ) => {
         }
     }
 
-    const workspace = process.cwd()
+    const launch_cwd = canonical_workspace( process.cwd() )
+    const stored_original = session_original_workspace( stored_resume_session )
+    const original_workspace = canonical_workspace( stored_original || launch_cwd )
+    const original_exists = existsSync( original_workspace )
+    let original_mount = original_exists ? original_workspace : null
+
+    if( mode.clone && stored_resume_session && !original_exists ) {
+        log.warn( `Original workspace no longer exists: ${ original_workspace }` )
+        log.warn( `The saved clone can still resume, but /original will not be mounted.` )
+
+        const confirmed = flags.yes || await confirm_default_yes( `Resume from the clone without /original? [Y/n] ` )
+        if( !confirmed ) {
+            log.error( `Aborted clone-only resume.` )
+            process.exit( 1 )
+        }
+    }
+
+    if( !stored_resume_session ) {
+        const active = active_sessions_for_original(
+            original_workspace,
+            await list_sessions(),
+            list_stored_sessions()
+        )
+
+        if( active.clones.length ) {
+            log.info( `This folder has ${ active.clones.length } agents working on clones` )
+        }
+
+        if( mode.clone && active.direct.length ) {
+            log.warn( `This folder has ${ active.direct.length } active agents working directly in it.` )
+            log.warn( `Files may change while the clone is being copied.` )
+
+            const confirmed = flags.yes || await confirm_default_yes( `Continue with --clone? [Y/n] ` )
+            if( !confirmed ) {
+                log.error( `Aborted clone session.` )
+                process.exit( 1 )
+            }
+        }
+    }
+
+    const babysit_id = generate_session_id()
+    const clone_id = stored_resume_session?.clone_id
+        || ( stored_is_clone ? stored_resume_session.babysit_id : null )
+        || babysit_id
+    let clone_branch = stored_resume_session?.clone_branch || null
+    let clone_git_repository = stored_resume_session?.clone_git_repository || false
+    let workspace = original_exists ? original_workspace : launch_cwd
+
+    if( mode.clone ) {
+        if( stored_resume_session ) {
+            const stored_clone_path = session_workspace( stored_resume_session )
+            if( !stored_clone_path || !existsSync( stored_clone_path ) ) {
+                throw new Error( `Saved clone workspace no longer exists: ${ stored_clone_path || `unknown` }` )
+            }
+
+            if( original_mount ) {
+                const prepared_clone = prepare_clone_workspace( {
+                    source: original_workspace,
+                    clone_id,
+                    name: stored_resume_session.name,
+                } )
+                if( prepared_clone.clone_path !== resolve( stored_clone_path ) ) {
+                    throw new Error( `Stored clone path does not match clone ownership metadata: ${ stored_clone_path }` )
+                }
+                const {
+                    workspace: prepared_workspace,
+                    clone_branch: prepared_branch,
+                    git_repository: prepared_git_repository,
+                } = prepared_clone
+                workspace = prepared_workspace
+                clone_branch = prepared_branch
+                clone_git_repository = prepared_git_repository
+            } else {
+                workspace = canonical_workspace( stored_clone_path )
+            }
+        } else {
+            log.info( `Copying ${ original_workspace } into clone ${ clone_id }` )
+            const prepared_clone = prepare_clone_workspace( {
+                source: original_workspace,
+                clone_id,
+                name: session_display_name,
+            } )
+            const {
+                workspace: prepared_workspace,
+                clone_branch: prepared_branch,
+                git_repository: prepared_git_repository,
+            } = prepared_clone
+            workspace = prepared_workspace
+            clone_branch = prepared_branch
+            clone_git_repository = prepared_git_repository
+            log.info( `Clone ready: ${ workspace }` )
+            if( clone_branch ) log.info( `Clone branch: ${ clone_branch }` )
+        }
+
+        if( clone_git_repository ) {
+            log.warn( `Clone preserves the original Git remotes; pushes still target those remotes.` )
+        }
+    }
+
+    const release_clone_lock = mode.clone ? acquire_clone_lock( workspace ) : null
+    process.chdir( workspace )
+
+    // Compute immutable launch identity before authentication or Docker create
+    // so a power loss leaves enough metadata to recover the clone.
+    const modifiers = Object.entries( mode )
+        .filter( ( [ , value ] ) => value )
+        .map( ( [ key ] ) => key === `ignore_host_agents_md` ? `ignore-host-agents-md` : key )
+    if( flags.loop ) modifiers.push( `loop` )
+
+    const session_name = make_session_name( workspace, agent.name )
+    const container_name = `babysit-${ babysit_id }`
+    const monitor_token = randomUUID()
+    const started_at = new Date().toISOString()
+    const base_session_data = {
+        babysit_id,
+        name: session_display_name,
+        agent: agent.name,
+        agent_session_id: stored_resume_session?.agent_session_id || null,
+        tmux_session: session_name,
+        pwd: original_workspace,
+        original_pwd: original_workspace,
+        workspace,
+        clone: mode.clone,
+        clone_id: mode.clone ? clone_id : null,
+        clone_path: mode.clone ? workspace : null,
+        clone_branch,
+        clone_git_repository,
+        modifiers,
+        monitor_token,
+        ports: flags.ports || [],
+        container_name,
+        status: `preparing`,
+        resumed_from: stored_resume_session?.babysit_id || null,
+        started_at,
+    }
+    const mark_clone_launch_failed = () => {
+        if( mode.clone ) update_session( babysit_id, { status: `failed` } )
+    }
+
+    if( mode.clone ) save_session( base_session_data )
+
+    if( mode.clone && stored_resume_session ) {
+        try {
+            await recover_clone_container( stored_resume_session )
+        } catch ( error ) {
+            mark_clone_launch_failed()
+            release_clone_lock?.()
+            throw error
+        }
+    }
 
     // Serialize before capture. A waiting launch then observes any refresh
     // token reconciled by the leader and reuses its warm verification instead
@@ -877,6 +1203,8 @@ export const cmd_start = async ( cmd ) => {
                 context: `authentication setup failure`,
             } )
         }
+        mark_clone_launch_failed()
+        release_clone_lock?.()
         throw error
     } finally {
         auth_lease.release()
@@ -915,6 +1243,8 @@ export const cmd_start = async ( cmd ) => {
                 recovery_id: foreground_recovery_id,
                 context: `authentication abort`,
             } )
+            mark_clone_launch_failed()
+            release_clone_lock?.()
             log.error( `Aborted because host agent authentication is incomplete.` )
             process.exit( 1 )
         }
@@ -927,12 +1257,6 @@ export const cmd_start = async ( cmd ) => {
         default_initial_prompt: build_system_prompt( mode ),
     } )
 
-    // Compute the modifier list for the statusline + session metadata
-    const modifiers = Object.entries( mode )
-        .filter( ( [ , value ] ) => value )
-        .map( ( [ key ] ) => key === `ignore_host_agents_md` ? `ignore-host-agents-md` : key )
-    if( flags.loop ) modifiers.push( `loop` )
-
     // Initialize the loop deadline file before docker mounts it.
     // "idle" tells the statusline there's no active countdown yet.
     write_loop_deadline( `idle` )
@@ -944,9 +1268,11 @@ export const cmd_start = async ( cmd ) => {
         include_global_loop: !mode.ignore_host_agents_md,
     } )
 
-    // Build the launch prompt that babysit types into the agent's TUI.
-    // Null or an empty string intentionally disables startup typing.
-    const initial_prompt = should_send_initial_prompt( cmd ) ? resolve_initial_prompt( config ) : ``
+    // /original remains writable for deliberate merge-back work, so clone
+    // safety cannot be disabled by a custom or empty configured prompt.
+    const initial_prompt = should_send_initial_prompt( cmd )
+        ? ensure_clone_safety_prompt( resolve_initial_prompt( config ), mode )
+        : ``
 
     // Get agent-specific extra env
     const extra_env = agent.extra_env ? agent.extra_env( mode ) : {}
@@ -957,6 +1283,8 @@ export const cmd_start = async ( cmd ) => {
         const resume_target = resolve_agent_resume_target( cmd, agent )
 
         if( resume_target.agent_mismatch ) {
+            mark_clone_launch_failed()
+            release_clone_lock?.()
             log.error( `Session ${ cmd.session_id } belongs to ${ resume_target.agent_mismatch }, not ${ agent.name }` )
             process.exit( 1 )
         }
@@ -984,7 +1312,6 @@ export const cmd_start = async ( cmd ) => {
     }
 
     // Create tmux session (detached — we'll attach the foreground in a moment)
-    const session_name = make_session_name( workspace, agent.name )
     const agent_exit_sentinel = randomUUID()
     const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
 
@@ -1002,7 +1329,7 @@ export const cmd_start = async ( cmd ) => {
 
     try {
         prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
-            agent, workspace, mode,
+            agent, workspace, original_workspace: original_mount, mode,
             agent_args,
             creds_mounts: all_creds_mounts,
             config,
@@ -1010,6 +1337,7 @@ export const cmd_start = async ( cmd ) => {
             modifiers,
             ports: flags.ports || [],
             docker_socket_path,
+            container_name,
             exit_sentinel: agent_exit_sentinel,
         } ) )
 
@@ -1061,6 +1389,8 @@ export const cmd_start = async ( cmd ) => {
             recovery_id: foreground_recovery_id,
             context: `launch failure`,
         } )
+        mark_clone_launch_failed()
+        release_clone_lock?.()
         throw e
     }
 
@@ -1073,10 +1403,11 @@ export const cmd_start = async ( cmd ) => {
             context: `startup failure`,
         } )
         if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
+        mark_clone_launch_failed()
+        release_clone_lock?.()
         process.exit( 1 )
     }
 
-    let babysit_id
     let session_data
 
     try {
@@ -1134,16 +1465,8 @@ export const cmd_start = async ( cmd ) => {
         // Save durable ownership metadata before spawning the monitor. The
         // prepared launch keeps its signal/error cleanup until the detached
         // monitor process has acknowledged that it spawned successfully.
-        babysit_id = generate_session_id()
         session_data = {
-            babysit_id,
-            name: session_display_name,
-            agent: agent.name,
-            agent_session_id: null,
-            tmux_session: session_name,
-            pwd: workspace,
-            modifiers,
-            ports: flags.ports || [],
+            ...base_session_data,
             creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
             creds_tmpfiles,
             creds_sync_baseline: monitor_sync_baseline,
@@ -1152,13 +1475,19 @@ export const cmd_start = async ( cmd ) => {
             auth_cache_contexts,
             agent_exit_sentinel,
             container_id: prepared_launch.container_id,
-            started_at: new Date().toISOString(),
+            status: `active`,
         }
         save_session( session_data )
         clear_credential_recovery( foreground_recovery_id )
 
-        await time_phase( `monitor handoff`, () => spawn_monitor_daemon( babysit_id ) )
+        const monitor_pid = await time_phase(
+            `monitor handoff`,
+            () => spawn_monitor_daemon( babysit_id, monitor_token )
+        )
+        update_session( babysit_id, { monitor_pid } )
+        session_data.monitor_pid = monitor_pid
         prepared_launch.handoff()
+        release_clone_lock?.()
     } catch ( error ) {
         await cleanup_failed_launch_credentials( {
             creds_sync,
@@ -1166,6 +1495,8 @@ export const cmd_start = async ( cmd ) => {
             recovery_id: foreground_recovery_id,
             context: `monitor handoff failure`,
         } )
+        mark_clone_launch_failed()
+        release_clone_lock?.()
         throw error
     }
 
@@ -1207,35 +1538,40 @@ export const cmd_start = async ( cmd ) => {
  * Works for both `node src/index.js` and bun-compiled binaries by detecting
  * which one is running and re-spawning accordingly.
  * @param {string} babysit_id - The session id to monitor
+ * @param {string|null} monitor_token - Per-launch monitor identity token
  */
-const spawn_monitor_daemon = ( babysit_id ) => new Promise( ( resolve_spawn, reject_spawn ) => {
+export function spawn_monitor_daemon( babysit_id, monitor_token = null ) {
 
-    // Bun-compiled binaries set process.argv[1] to a synthetic /$bunfs path;
-    // a real node script puts the .js file there. process.execPath points at
-    // the binary or `node` respectively in both cases — re-spawning it with
-    // the right args runs the same babysit code path.
-    const argv1 = process.argv[1] || ``
-    const is_compiled = argv1.startsWith( `/$bunfs` ) || argv1 === ``
+    return new Promise( ( resolve_spawn, reject_spawn ) => {
 
-    const cmd = process.execPath
-    const args = is_compiled
-        ? [ `__monitor`, babysit_id ]
-        : [ argv1, `__monitor`, babysit_id ]
+        // Bun-compiled binaries set process.argv[1] to a synthetic /$bunfs path;
+        // a real node script puts the .js file there. process.execPath points at
+        // the binary or `node` respectively in both cases — re-spawning it with
+        // the right args runs the same babysit code path.
+        const argv1 = process.argv[1] || ``
+        const is_compiled = argv1.startsWith( `/$bunfs` ) || argv1 === ``
 
-    const child = spawn( cmd, args, {
-        detached: true,
-        stdio: `ignore`,
-        env: { ...process.env },
+        const cmd = process.execPath
+        const args = is_compiled
+            ? [ `__monitor`, babysit_id, monitor_token ].filter( Boolean )
+            : [ argv1, `__monitor`, babysit_id, monitor_token ].filter( Boolean )
+
+        const child = spawn( cmd, args, {
+            detached: true,
+            stdio: `ignore`,
+            env: { ...process.env },
+        } )
+
+        const handle_error = error => reject_spawn( error )
+        child.once( `error`, handle_error )
+        child.once( `spawn`, () => {
+            child.removeListener( `error`, handle_error )
+            child.on( `error`, error => log.debug( `Monitor daemon error: ${ error.message }` ) )
+            child.unref()
+            log.debug( `Monitor daemon spawned (pid ${ child.pid })` )
+            resolve_spawn( child.pid )
+        } )
+
     } )
 
-    const handle_error = error => reject_spawn( error )
-    child.once( `error`, handle_error )
-    child.once( `spawn`, () => {
-        child.removeListener( `error`, handle_error )
-        child.on( `error`, error => log.debug( `Monitor daemon error: ${ error.message }` ) )
-        child.unref()
-        log.debug( `Monitor daemon spawned (pid ${ child.pid })` )
-        resolve_spawn( child.pid )
-    } )
-
-} )
+}

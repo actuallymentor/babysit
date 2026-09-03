@@ -1,10 +1,19 @@
 import { existsSync } from 'fs'
 import { resolve } from 'path'
 import { log } from '../utils/log.js'
-import { list_stored_sessions, load_session } from '../sessions/store.js'
+import {
+    list_stored_sessions,
+    load_session,
+    session_original_workspace,
+    session_workspace,
+    update_session,
+} from '../sessions/store.js'
 import { has_session } from '../tmux/session.js'
 import { cmd_open } from './open.js'
-import { cmd_start } from './start.js'
+import { cmd_start, spawn_monitor_daemon } from './start.js'
+import { is_monitor_alive } from './monitor_process.js'
+
+export { is_monitor_alive } from './monitor_process.js'
 
 /**
  * Pad a value to a fixed width for the resume-history table.
@@ -46,9 +55,10 @@ export const is_resume_listing = ( cmd ) => cmd.verb === `resume` && !cmd.agent 
 export const select_resumable_sessions = ( sessions, cwd ) => {
 
     const resolved_cwd = resolve( cwd )
-    const workspace_sessions = sessions.filter( ( { pwd } ) =>
-        typeof pwd === `string` && resolve( pwd ) === resolved_cwd
-    )
+    const workspace_sessions = sessions.filter( session => [
+        session_original_workspace( session ),
+        session_workspace( session ),
+    ].filter( Boolean ).some( path => resolve( path ) === resolved_cwd ) )
 
     return workspace_sessions.length > 0 ? workspace_sessions : sessions
 
@@ -84,7 +94,8 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null } =
         const agent_session_id = session.agent_session_id || `-`
         const started_at = format_started_at( session.started_at )
 
-        console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ session.pwd || `-` }` )
+        const workspace = session_workspace( session )
+        console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ workspace || `-` }` )
 
     } )
 
@@ -104,6 +115,7 @@ const rebuild_flags = ( modifiers = [], session = {} ) => ( {
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
+    clone: modifiers.includes( `clone` ),
     loop: modifiers.includes( `loop` ),
     ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
     name: session.name || false,
@@ -177,6 +189,9 @@ export const resolve_resume_target = ( session ) => {
  * @param {Function} [options.get_cwd=process.cwd] - Current workspace loader
  * @param {Function} [options.has_session_fn=has_session] - Active tmux session check
  * @param {Function} [options.open_session=cmd_open] - Active session attach delegate
+ * @param {Function} [options.monitor_is_alive=is_monitor_alive] - Monitor PID probe
+ * @param {Function} [options.spawn_monitor=spawn_monitor_daemon] - Detached monitor restarter
+ * @param {Function} [options.update_session_fn=update_session] - Session metadata updater
  */
 export const cmd_resume = async ( cmd, {
     start = cmd_start,
@@ -186,6 +201,9 @@ export const cmd_resume = async ( cmd, {
     get_cwd = process.cwd,
     has_session_fn = has_session,
     open_session = cmd_open,
+    monitor_is_alive = is_monitor_alive,
+    spawn_monitor = spawn_monitor_daemon,
+    update_session_fn = update_session,
 } = {} ) => {
 
     const { session_id, flags = {}, passthrough = [] } = cmd
@@ -209,6 +227,14 @@ export const cmd_resume = async ( cmd, {
 
     if( session ) {
 
+        const was_clone = Boolean(
+            session.clone_path
+            || session.modifiers?.includes( `clone` )
+        )
+        if( flags.clone && !was_clone ) {
+            throw new Error( `--clone cannot be added while resuming a non-clone session; start a new clone session instead.` )
+        }
+
         const merged_flags = merge_resume_flags( session.modifiers, flags, session )
 
         // A live container cannot gain a stricter mount boundary after it has
@@ -222,6 +248,15 @@ export const cmd_resume = async ( cmd, {
                 )
             }
 
+            if( was_clone && !monitor_is_alive( session.monitor_pid, session.monitor_token ) ) {
+                log.warn( `Session monitor is not running; restarting it before attach.` )
+                const monitor_pid = await spawn_monitor(
+                    session.babysit_id,
+                    session.monitor_token
+                )
+                update_session_fn( session.babysit_id, { monitor_pid } )
+            }
+
             log.info( `Session still active, attaching...` )
             await open_session( { session_id: session.tmux_session } )
             return
@@ -232,15 +267,15 @@ export const cmd_resume = async ( cmd, {
         // so the user can add --loop or --yolo when resuming an older session.
         log.info( `Resuming ${ session.agent } session: ${ session_id }` )
 
-        // chdir to the session's original working directory so cmd_start picks up
-        // the right babysit.yaml and resolves cwd-relative paths (./IDLE.md,
-        // ./LOOP.md) the same way the original session did. Otherwise running
-        // `babysit resume <id>` from /home loads the wrong config.
-        if( session.pwd && existsSync( session.pwd ) ) {
-            log.debug( `Restoring cwd: ${ session.pwd }` )
-            process.chdir( session.pwd )
-        } else if( session.pwd ) {
-            log.warn( `Original session pwd no longer exists: ${ session.pwd }` )
+        // Clone sessions keep config, loop actions, and native agent state tied
+        // to their durable copy. Legacy records continue to use pwd.
+        const workspace = session_workspace( session )
+        if( workspace && existsSync( workspace ) ) {
+            log.debug( `Restoring cwd: ${ workspace }` )
+            process.chdir( workspace )
+        } else if( workspace ) {
+            if( was_clone ) throw new Error( `Session workspace no longer exists: ${ workspace }` )
+            log.warn( `Original session pwd no longer exists: ${ workspace }` )
         }
 
         const resume_target = resolve_resume_target( session )
@@ -249,6 +284,7 @@ export const cmd_resume = async ( cmd, {
             verb: `resume`,
             agent: session.agent,
             metadata_resolved: true,
+            stored_session: session,
             ...resume_target,
             flags: merged_flags,
             passthrough,

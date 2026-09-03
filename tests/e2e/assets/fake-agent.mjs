@@ -179,6 +179,17 @@ const handle_prompt = ( line ) => {
         write_marker( `${ workspace }/e2e-node-modules.txt`, leaked ? `leaked` : `isolated` )
     }
 
+    if( line.includes( `BABYSIT_E2E_CLONE_CHECK` ) ) {
+        const boundaries = {
+            clone_visible: existsSync( `${ workspace }/e2e-original-sentinel.txt` ),
+            original_visible: existsSync( `/original/e2e-original-sentinel.txt` ),
+        }
+
+        write_marker( `${ workspace }/e2e-initial-prompt.txt`, line )
+        write_marker( `${ workspace }/e2e-clone-boundaries.json`, JSON.stringify( boundaries ) )
+        write_marker( `/original/e2e-explicit-original-write.txt`, `writable` )
+    }
+
     if( line.includes( `BABYSIT_E2E_DOCKER` ) ) run_sibling_container()
     if( line.includes( `BABYSIT_E2E_ROTATE_CREDS` ) ) rotate_credentials()
 

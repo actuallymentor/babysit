@@ -9,6 +9,7 @@ const DOCKER_INSPECT_TIMEOUT_MS = 5_000
 const DOCKER_STOP_WAIT_TIMEOUT_MS = 45_000
 const DOCKER_STOP_POLL_INTERVAL_MS = 100
 const STOPPED_CONTAINER_STATES = new Set( [ `created`, `dead`, `exited` ] )
+const MISSING_CONTAINER_PATTERN = /no such (?:container|object)/i
 
 const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
 
@@ -101,6 +102,66 @@ export const create_docker_file_transport = ( container_id, container_path, {
             {},
             DOCKER_COPY_TIMEOUT_MS
         ),
+    }
+
+}
+
+/**
+ * Read a Docker container state without treating an already-removed container
+ * as a recovery failure.
+ * @param {string|null} container - Docker id or deterministic Babysit name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
+ * @returns {Promise<string|null>} Docker state, or null when no container exists
+ */
+export const inspect_docker_container_state = async ( container, {
+    run_command = run,
+} = {} ) => {
+
+    if( !container ) return null
+
+    const [ command, ...prefix_args ] = docker_command_prefix()
+
+    try {
+        return await run_command(
+            command,
+            [ ...prefix_args, `inspect`, `--format`, `{{.State.Status}}`, container ],
+            {},
+            DOCKER_INSPECT_TIMEOUT_MS
+        )
+    } catch ( error ) {
+        if( MISSING_CONTAINER_PATTERN.test( error.message ) ) return null
+        throw error
+    }
+
+}
+
+/**
+ * Stop a surviving session container before its credential state is recovered.
+ * @param {string|null} container - Docker id or deterministic Babysit name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
+ * @returns {Promise<boolean>} Whether Docker stopped an existing container
+ */
+export const stop_docker_container = async ( container, {
+    run_command = run,
+} = {} ) => {
+
+    if( !container ) return false
+
+    const [ command, ...prefix_args ] = docker_command_prefix()
+
+    try {
+        await run_command(
+            command,
+            [ ...prefix_args, `stop`, `--time`, `10`, container ],
+            {},
+            DOCKER_CLEANUP_TIMEOUT_MS
+        )
+        return true
+    } catch ( error ) {
+        if( MISSING_CONTAINER_PATTERN.test( error.message ) ) return false
+        throw error
     }
 
 }

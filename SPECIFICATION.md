@@ -7,7 +7,7 @@ The core functionality is that when run, `babysit` will:
 - Run subcommands in a tmux session, so that the user can detach and re-attach to the session as needed
 - The babysit tmux sessions have their own -L, have history set to 10000, have `set -g mouse on`, and are named `babysit_$(pwd)_<agent_name>_<timestamp>` for easy identification
 - Start a `babysit` docker container that will contain the LLM coding agent cli
-- The container mounts the current PWD in /workspace, so the LLM coding agent cli can read/write files in the current directory
+- The container mounts the current PWD in /workspace, so the LLM coding agent cli can read/write files in the current directory. With `--clone`, it instead mounts a durable copy from `~/.babysit/clones/<session-id>` at `/workspace` and mounts the original PWD read-write at `/original` for explicit merge-back work
 - By default, mounts the host ~/.agents to the container ~/.agents. With `--ignore-host-agents-md`, host-global agent instructions, skills, loop instructions, and preferences are omitted while credentials remain available.
 - The container installs the dependencies that sir-claudius has in the image as well (look at that dockerfile), plus common coding-agent tools including fzf, pkgconf, psmisc, socat, ACL/inotify utilities, entr, shfmt, git-filter-repo, Universal Ctags, qpdf, the latest multi-arch Google Chrome Stable, globally importable Puppeteer configured to reuse that browser, Xvfb/X11 utilities for headful automation, and Poppler PDF utilities
 - Start the coding agent in the container
@@ -90,6 +90,12 @@ In mudbox mode this is APPENDED:
 You are running in MUDBOX mode (AGENT_AUTONOMY_MODE=mudbox). The workspace at /workspace is mounted READ-ONLY from the host. You can read and explore all project files but cannot modify them. Use this mode for code review, analysis, exploration, or generating patches. Any files you need to create must go in a container-local directory outside /workspace.
 ```
 
+In clone mode this is APPENDED, including when `initial_prompt` is empty or custom:
+
+```
+You are running in CLONE mode. /workspace is a copy of /original. Work in /workspace. You may only touch /original when the user gives explicit instructions to do so.
+```
+
 In yolo mode this is APPENDED:
 
 ```
@@ -107,6 +113,7 @@ Host-global coding-agent instructions, skills, and preferences are intentionally
 `--yolo` add --dangerously-skip-permissions or equivalent flag to the coding cli, also inject AGENT_AUTONOMY_MODE='yolo' into the container env. Also passes adds the following to the system prompt of the agent: `
 `--sandbox` do not mount any host directory into the container, the fs inside the container is ephermal
 `--mudbox` mount the current pwd as read only, so the coding agent can read files but not write them
+`--clone` transactionally copy the full current PWD, including hidden files, symlinks, and dependency folders, to `~/.babysit/clones/<session-id>`; mount the copy read-write at `/workspace` and the original read-write at `/original`. Reject combinations with sandbox/mudbox and nested Babysit Docker launches
 `--ignore-host-agents-md` omit host-global agent instruction files, skills, loop instructions, executable `~/.babysitrc` setup, and preferences while retaining credentials from supported agent files, keychains, and environment variables, minimal authentication state, and project-local instructions under `/workspace`; sanitized GitHub profiles are uploaded to a stopped container through `docker cp` before launch so profile host/account tokens do not enter Docker environment or bind-mount metadata
 `--loop` overrides the `on: idle` in the babysit.yaml to run `./LOOP.md` if it exists, otherwise `~/.agents/LOOP.md` if it exists, otherwise it types "Keep going" into the session. Example `LOOP.md`, note that === lines denote "wait for idle" within the `LOOP.md` execution:
 
@@ -123,6 +130,7 @@ Check if the specification is fully implemented
 `babysit claude --yolo` - starts a claude session, sets AGENT_AUTONOMY_MODE to yolo, and configures the system prompt and sets "dangerously skip permissions" or equivalent for maximum agent autonomy.
 `babysit codex --sandbox --loop` - starts a codex session in sandbox mode, so no host files are mounted and the agent is fully isolated, adds mudbox info to the system prompt. Also configures the babysit instructions to run either `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" every time the agent is idle.
 `babysit codex --name "feature 1"` - starts a named session. The name is shown by `babysit list` and can be used with `babysit open "feature 1"`.
+`babysit codex --clone --name "feature 1"` - copies the current directory into a durable clone and, for a standalone Git root, checks out `babysit/feature-1-<session-id>` without changing the source repository refs.
 `babysit codex --ignore-host-agents-md` - starts a codex session without host-global agent instructions, skills, or preferences. Host credentials remain mounted, and project-local instructions inside `/workspace` still apply.
 `babysit gemini --mudbox --yolo` - starts a gemini session in mudbox mode, so the current directory is mounted read-only and the agent can explore files but not modify them. Also sets AGENT_AUTONOMY_MODE to yolo, sets system prompt accordingly, and sets dangerourly skip permissions or equivalent for maximum agent autonomy.
 `babysit opencode resume xxxx-xxxx-xxxx-xxxx --yolo` - resumes a opencode session with the given id, in yolo mode (AGENT_AUTONOMY_MODE=yolo, system prompt configured accordingly, and maximum agent autonomy permissions enabled).
@@ -134,6 +142,8 @@ Check if the specification is fully implemented
 - session close returns promptly when the supervised agent exits. Babysit's container entrypoint emits an internal exit marker, the monitor closes tmux, and Docker stop detection plus the final credential pull/removal continue in the detached cleanup owner
 - normal startup verifies the active coding agent plus supported non-active CLIs installed on the host. Uncached checks run concurrently and receive only their own credentials plus auth-relevant provider/account state; successful checks are cached for 12 hours against hash-only auth inputs and immutable image identity. OpenCode checks pin the effective model/provider route and disable tools, while login failures remain distinct from model/configuration failures. Concurrent launches serialize capture/check/reconciliation so one-use refresh tokens cannot race. Enter skips the entire interactive auth decision, non-interactive misses verify and fail closed, and `babysit doctor --auth [agent|all] [--refresh]` remains exhaustive
 - startup prompt injection waits for a verified per-agent composer-ready screen, bracket-pastes the message, lets paste handling settle, and sends Enter exactly once. Loading, update, onboarding, authentication, provider-selection, and model-error screens time out without receiving the prompt; resume never injects it again
+- clone launches report other live clones of the source. A live non-clone editor requires a default-yes `[Y/n]` confirmation; non-interactive use requires `--yes`. Clone copies are retained indefinitely, preserve Git remotes with a warning, reject external Git metadata/worktrees, and treat repository subdirectories as plain folders with a warning
+- clone session metadata is written atomically before Docker launch. Resume reuses the clone and clone-local config, restarts a missing monitor for live tmux sessions, and finalizes a surviving container before relaunch after abrupt shutdown. A missing original requires a warning and `[Y/n]` confirmation, then resumes without `/original`; a missing clone is fatal
 - `babysit resume` without an id lists persistent Babysit-managed session history newest first, including each Babysit ID, coding agent, captured native Codex/Claude session ID, start time, and workspace. When the current workspace has history, only its sessions are shown; otherwise the full registry remains visible. `babysit resume --all` always shows every workspace. The Babysit ID is the canonical resume selector because it restores the agent and launch context.
 - `babysit list` command to list and number active sessions with name-or-id, coding-agent `running`/`idle` status, tmux attachment status, agent, comma-separated launch flags, and the deepest two working-directory levels. Sessions without recorded flags show `-`. `babysit list --all` also shows the separate session ID and full tmux session name.
 - `babysit open <session_id|name|number>` command to open a tmux session attached to the given session id, exact human-readable name, or numbered row from `babysit list`. With no selector it attaches to the only active session for the current directory; when several match, it prints those sessions with their global list numbers so they can be selected with `babysit open N`. Note that `babysit resume` is used to resume exited sessions and uses the session id as the coding agent knows it, but `babysit open` is used to connect to active tmux sessions.

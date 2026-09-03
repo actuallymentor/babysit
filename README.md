@@ -26,6 +26,9 @@ babysit codex --sandbox --loop
 # Give a session a memorable name
 babysit codex --name "feature 1"
 
+# Work in a durable copy; mount the source separately at /original
+babysit codex --clone --name "feature 1"
+
 # Gemini with read-only workspace
 babysit gemini --mudbox
 
@@ -63,7 +66,7 @@ babysit doctor --auth opencode --refresh
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
 2. **Host auth check** — before the main session starts, babysit verifies the active agent plus supported non-active agent CLIs found on host PATH. Cache misses run concurrently; a successful check is reused for 12 hours while its hashed auth inputs and local Docker image identity remain unchanged. Press Enter to skip the entire auth decision for one interactive launch. Non-interactive launches verify misses and fail closed. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
-3. **Docker container** — babysit starts a container with all four agent CLIs, common coding-agent tools, Google Chrome Stable, Puppeteer, Xvfb, Poppler, and qpdf preinstalled; credentials for every supported agent plus host `gh` auth are passed through, and your workspace is mounted at `/workspace`
+3. **Docker container** — babysit starts a container with all four agent CLIs, common coding-agent tools, Google Chrome Stable, Puppeteer, Xvfb, Poppler, and qpdf preinstalled; credentials for every supported agent plus host `gh` auth are passed through, and your workspace is mounted at `/workspace`. With `--clone`, `/workspace` is a durable copy and the source is also mounted read-write at `/original` for explicit merge-back work
 4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor. Terminal input is released before the resume hint so the foreground CLI can exit immediately
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
@@ -129,7 +132,8 @@ babysit:
 `config.initial_prompt` is typed into the agent screen once the session starts.
 New `babysit.yaml` files include Babysit's default launch prompt here. Existing
 configs that omit it use the generated default prompt. Set it to `null` or `""`
-to disable startup prompt typing. Babysit waits for each supported TUI's real
+to disable startup prompt typing. Clone sessions always append the clone safety
+message, even when this setting is empty or custom. Babysit waits for each supported TUI's real
 composer-ready screen, bracket-pastes the text, lets the paste handler settle,
 then sends Enter exactly once. A changed or blocked screen times out without
 sending the prompt early.
@@ -167,13 +171,42 @@ Supports `SS`, `MM:SS`, or `HH:MM:SS`. Overrides `idle_timeout_s` per rule.
 | `--yolo` | read-write mount | Skip agent permissions, set `AGENT_AUTONOMY_MODE=yolo` |
 | `--sandbox` | no mount | Ephemeral container, no host files |
 | `--mudbox` | read-only mount | Agent can read but not modify files |
+| `--clone` | copied workspace + original | Copy the current directory to `~/.babysit/clones/<session-id>`, mount it at `/workspace`, and mount the source at `/original` |
 | `--docker` | *(additive)* | Mount the host Docker socket so Docker commands can run from inside the Babysit container |
 | `--ignore-host-agents-md` | *(additive)* | Keep host-global agent instructions, skills, and preferences out of the container; credentials remain available |
 | `--port PORT` | *(additive)* | Publish a host port to the same container port |
 | `--port HOST:CONTAINER` | *(additive)* | Publish a host port to a different container port |
 | `--loop` | *(additive)* | Override `on: idle` with `./LOOP.md` or `~/.agents/LOOP.md` or "Keep going" |
 
-Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. The exception is `--sandbox` and `--mudbox` together — they describe contradictory mount strategies, so babysit rejects the combination.
+Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max autonomy and loop. `--clone` cannot combine with `--sandbox` or `--mudbox`. Clone launches from inside a Docker-enabled Babysit session are also rejected because the host clone root is not available reliably.
+
+### Clone mode
+
+`--clone` copies the complete current directory, including hidden files,
+symlinks, `node_modules`, and other dependency folders. The copy is prepared
+transactionally and kept indefinitely at `~/.babysit/clones/<session-id>`.
+Babysit prints its path at launch and shows it in resume history.
+
+For a standalone Git repository root, the copy checks out
+`babysit/<name>-<session-id>` or `babysit/<session-id>` when no `--name` is
+given. Spaces and unsafe ref characters in the name become dashes. The source
+repository's branch and refs are not changed. Git remotes remain configured in
+the copy, so Babysit warns that a push still targets the same remotes. Linked
+worktrees and repositories whose Git metadata lives outside the copied folder
+are rejected. Starting from a repository subdirectory copies it as a plain
+folder and prints a warning.
+
+Before copying, Babysit reports how many live agents already use clones of the
+same source. If a live non-clone agent is editing the source, Babysit warns and
+asks `Continue with --clone? [Y/n]`. Non-interactive launches fail closed unless
+`--yes` is passed.
+
+`babysit resume <id>` reuses the same clone, branch, and clone-local config. A
+detached live tmux session is simply reattached; if its monitor died, Babysit
+restarts it. After an abrupt shutdown, Babysit stops and finalizes any surviving
+container before launching the agent again. If `/original` disappeared but the
+clone remains, resume warns and asks before continuing without that mount.
+Clone paths are never pruned automatically.
 
 Use `--ignore-host-agents-md` when a session should see the repository's own
 instructions without inheriting your host coding-agent profile. It omits the
@@ -401,8 +434,10 @@ are shown; otherwise the full registry remains visible. Add `--all` to always
 show every workspace. Each row shows the canonical Babysit ID alongside the
 captured native Codex, Claude, Gemini, or OpenCode session ID. Use the Babysit ID
 with `babysit resume <session_id>` so Babysit can restore the original agent,
-workspace, modes, ports, and name. If Babysit did not capture a native agent ID
-before exit, it resumes the latest agent session from the original workspace.
+workspace, modes, ports, and name. Clone sessions restore their durable copy;
+other sessions restore the original workspace. If Babysit did not capture a
+native agent ID before exit, it resumes the latest agent session from the
+restored workspace.
 
 Unrecognised flags are passed through to the coding agent CLI:
 

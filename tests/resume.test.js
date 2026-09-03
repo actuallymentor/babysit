@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import {
     cmd_resume,
+    is_monitor_alive,
     is_resume_listing,
     merge_resume_flags,
     print_resumable_sessions_table,
@@ -203,6 +204,25 @@ describe( `cmd_resume session listing`, () => {
 
     } )
 
+    it( `shows a clone's active workspace path`, async () => {
+
+        const output = await capture_console( async () => {
+            print_resumable_sessions_table( [ {
+                babysit_id: `clone-session`,
+                name: null,
+                agent: `codex`,
+                agent_session_id: `native-clone`,
+                pwd: `/projects/original`,
+                clone_path: `/home/user/.babysit/clones/clone-session`,
+                started_at: `2026-09-03T12:00:00.000Z`,
+            } ] )
+        } )
+
+        expect( output ).toContain( `/home/user/.babysit/clones/clone-session` )
+        expect( output ).not.toContain( `/projects/original` )
+
+    } )
+
     it( `labels workspace-filtered output and exposes the --all escape hatch`, async () => {
 
         const output = await capture_console( async () => {
@@ -330,6 +350,56 @@ describe( `cmd_resume cwd handling`, () => {
 
     } )
 
+    it( `restores a clone workspace while retaining original session metadata`, async () => {
+
+        const original_workspace = mkdtempSync( join( tmpdir(), `babysit-original-` ) )
+        const session = {
+            ...make_session( original_workspace ),
+            clone_path: temp_workspace,
+            clone_id: `clone-id`,
+            modifiers: [ `clone` ],
+        }
+        let resumed_command = null
+
+        await cmd_resume( {
+            session_id: session.babysit_id,
+            flags: {},
+            passthrough: [],
+        }, {
+            load_session_fn: () => session,
+            has_session_fn: async () => false,
+            start: async command => {
+                resumed_command = command
+            },
+        } )
+
+        expect( process.cwd() ).toBe( temp_workspace )
+        expect( resumed_command.stored_session ).toBe( session )
+        expect( resumed_command.flags.clone ).toBe( true )
+
+        rmSync( original_workspace, { recursive: true, force: true } )
+
+    } )
+
+    it( `fails rather than recreating a missing clone`, async () => {
+
+        const missing_clone = join( tmpdir(), `babysit-missing-clone-${ Date.now() }` )
+        const session = {
+            ...make_session( temp_workspace ),
+            clone_path: missing_clone,
+            modifiers: [ `clone` ],
+        }
+
+        await expect( cmd_resume( {
+            session_id: session.babysit_id,
+            flags: {},
+        }, {
+            load_session_fn: () => session,
+            has_session_fn: async () => false,
+        } ) ).rejects.toThrow( `Session workspace no longer exists` )
+
+    } )
+
 } )
 
 describe( `cmd_resume live isolation`, () => {
@@ -381,6 +451,75 @@ describe( `cmd_resume live isolation`, () => {
 
 } )
 
+describe( `cmd_resume live clone recovery`, () => {
+
+    const clone_session = {
+        babysit_id: `20260903-120000-clone`,
+        agent: `codex`,
+        tmux_session: `babysit-clone-live`,
+        pwd: `/workspace/original`,
+        clone_path: `/tmp/clone`,
+        modifiers: [ `clone` ],
+        monitor_pid: 123,
+        monitor_token: `monitor-token`,
+    }
+
+    it( `restarts a dead clone monitor before attaching`, async () => {
+
+        const calls = []
+
+        await cmd_resume( {
+            session_id: clone_session.babysit_id,
+            flags: {},
+        }, {
+            load_session_fn: () => clone_session,
+            has_session_fn: async () => true,
+            monitor_is_alive: () => false,
+            spawn_monitor: async ( id, token ) => {
+                calls.push( [ `spawn`, id, token ] )
+                return 456
+            },
+            update_session_fn: ( id, updates ) => calls.push( [ `update`, id, updates ] ),
+            open_session: async command => calls.push( [ `open`, command ] ),
+        } )
+
+        expect( calls ).toEqual( [
+            [ `spawn`, clone_session.babysit_id, clone_session.monitor_token ],
+            [ `update`, clone_session.babysit_id, { monitor_pid: 456 } ],
+            [ `open`, { session_id: clone_session.tmux_session } ],
+        ] )
+
+    } )
+
+    it( `does not add clone mode to a non-clone conversation`, async () => {
+        await expect( cmd_resume( {
+            session_id: clone_session.babysit_id,
+            flags: { clone: true },
+        }, {
+            load_session_fn: () => ( { ...clone_session, clone_path: null, modifiers: [] } ),
+        } ) ).rejects.toThrow( `cannot be added while resuming a non-clone session` )
+    } )
+
+    it( `checks persisted monitor pids and rejects reused processes`, () => {
+        expect( is_monitor_alive( 123, null, { kill: ( pid, signal ) => {
+            expect( [ pid, signal ] ).toEqual( [ 123, 0 ] )
+        } } ) ).toBe( true )
+        expect( is_monitor_alive( null ) ).toBe( false )
+        expect( is_monitor_alive( 123, null, {
+            kill: () => { throw new Error( `missing` ) },
+        } ) ).toBe( false )
+        expect( is_monitor_alive( 123, `expected-token`, {
+            kill: () => {},
+            read_command: () => `node babysit __monitor session expected-token`,
+        } ) ).toBe( true )
+        expect( is_monitor_alive( 123, `expected-token`, {
+            kill: () => {},
+            read_command: () => `unrelated process`,
+        } ) ).toBe( false )
+    } )
+
+} )
+
 describe( `merge_resume_flags`, () => {
 
     it( `keeps logging disabled when resume did not pass --log`, () => {
@@ -395,6 +534,7 @@ describe( `merge_resume_flags`, () => {
             sandbox: false,
             mudbox: false,
             docker: false,
+            clone: false,
             loop: false,
             ignore_host_agents_md: false,
             name: false,

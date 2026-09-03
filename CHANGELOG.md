@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.36.0 — 2026-09-03
+
+### ✨ Added
+- **Clone sessions isolate active work in durable copies.** `--clone` copies the
+  full workspace to `~/.babysit/clones`, mounts it at `/workspace`, exposes the
+  source at `/original`, and creates an isolated Git branch when applicable.
+- **Clone resumes survive detached and interrupted sessions.** Durable metadata,
+  token-aware monitor ownership, and container recovery preserve the same clone
+  across ordinary exits, monitor loss, and abrupt host shutdowns.
+
+### 🐛 Fixed
+- **Session records are replaced atomically.** Resume readers no longer observe
+  partial JSON when foreground and monitor processes update launch state.
+
 ## 0.35.1 — 2026-08-27
 
 ### 🐛 Fixed
