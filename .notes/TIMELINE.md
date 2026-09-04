@@ -1,5 +1,7 @@
 # Timeline
 
+- 2026-09-04: Added explicit clone inventory/pruning design: 30-day default, all-unused/custom retention choices, size listing, strict activity exclusion, clone-family age tracking, and journaled quarantine deletion.
+
 - **2026-09-03 (durable clone workspaces)**: Added `--clone` with transactional full-directory copies under `~/.babysit/clones`, distinct `/workspace` and writable `/original` mounts, isolated Git branches, source-concurrency prompts, durable clone metadata, and crash-aware monitor/container recovery. Clone resumes retain their copy and clone-local config; missing originals require confirmation and missing clones fail closed. Prepared v0.36.0.
 - **2026-08-27 (startup diagnostic formatting)**: Coordinated Mentie diagnostics with the live authentication spinner so debug, timing, warning, error, stack-trace, and multiline output clears the progress line before writing and restores it afterward. Added a real child-process regression for the shared TTY byte stream. Prepared v0.35.1.
 - **2026-08-26 (workspace-aware resume history)**: Bare `babysit resume` now prefers every stored launch from the current workspace, falls back to the full registry when that workspace has no history, and accepts `--all` to show every workspace explicitly. Agent commands retain their own raw `--all` passthrough. The full Docker E2E suite passed on the local Docker host, closing the pending v0.34.0 release gate. Prepared v0.35.0.

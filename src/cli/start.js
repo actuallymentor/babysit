@@ -930,6 +930,11 @@ export const cmd_start = async ( cmd ) => {
         process.exit( 1 )
     }
 
+    if( stored_resume_session?.clone_pruned_at ) {
+        log.error( `Clone workspace was pruned at ${ stored_resume_session.clone_pruned_at }: ${ stored_resume_session.clone_path }` )
+        process.exit( 1 )
+    }
+
     const stored_is_clone = Boolean(
         stored_resume_session?.clone_path
         || stored_resume_session?.modifiers?.includes( `clone` )

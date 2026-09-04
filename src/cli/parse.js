@@ -39,7 +39,7 @@ export const parse_args = ( argv ) => {
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `auth`, `refresh` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh` ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -61,6 +61,7 @@ export const parse_args = ( argv ) => {
         // Command-scoped: list and selector-less resume consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
         all: ( verb === `list` || is_resume_history_listing ) && ( args.all || false ),
+        list: verb === `prune` && ( args.list || false ),
         name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.
@@ -90,6 +91,18 @@ export const parse_args = ( argv ) => {
 
     // babysit config
     if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }
+
+    // babysit prune [--list]
+    if( verb === `prune` ) {
+        const allowed = new Set( [ `--list`, `--help`, `-h`, `--version`, `-v` ] )
+        const unexpected = prepared.slice( 1 ).filter( argument => !allowed.has( argument ) )
+
+        if( unexpected.length ) {
+            throw new Error( `Unknown prune argument: ${ unexpected[0] }` )
+        }
+
+        return { verb: `prune`, agent: null, flags, passthrough: [] }
+    }
 
     // babysit doctor --auth [agent|all] [--refresh]
     if( verb === `doctor` ) {

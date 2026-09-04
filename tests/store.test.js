@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'bun:test'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
     generate_session_id,
+    inspect_stored_sessions,
     load_session,
     save_session,
     session_original_workspace,
@@ -112,6 +113,44 @@ describe( `stored session persistence`, () => {
             const path = join( directory, `${ id }.json` )
             writeFileSync( path, `{ incomplete`, `utf-8` )
             expect( load_session( id, { directory } ) ).toBeNull()
+        } )
+
+    } )
+
+    it( `reports malformed records and retains valid record mtimes`, () => {
+
+        with_session_directory( directory => {
+            save_session( {
+                babysit_id: `valid-session`,
+                started_at: `2026-09-04T12:00:00.000Z`,
+            }, { directory } )
+            writeFileSync( join( directory, `broken.json` ), `{ incomplete`, `utf-8` )
+
+            const inspected = inspect_stored_sessions( { directory } )
+
+            expect( inspected.records ).toHaveLength( 1 )
+            expect( inspected.records[0].session.babysit_id ).toBe( `valid-session` )
+            expect( Date.parse( inspected.records[0].updated_at ) ).toBeNumber()
+            expect( inspected.invalid_files ).toEqual( [ join( directory, `broken.json` ) ] )
+        } )
+
+    } )
+
+    it( `rejects redirected and mismatched session records`, () => {
+
+        with_session_directory( directory => {
+            const external = join( directory, `external-session.data` )
+            writeFileSync( external, JSON.stringify( { babysit_id: `redirected` } ) )
+            symlinkSync( external, join( directory, `redirected.json` ) )
+            writeFileSync(
+                join( directory, `wrong-name.json` ),
+                JSON.stringify( { babysit_id: `different-id` } )
+            )
+
+            const inspected = inspect_stored_sessions( { directory } )
+
+            expect( inspected.records ).toEqual( [] )
+            expect( inspected.invalid_files ).toHaveLength( 2 )
         } )
 
     } )

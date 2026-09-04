@@ -40,4 +40,15 @@ describe( `CLI help`, () => {
 
     } )
 
+    it( `documents clone pruning and its noninteractive inventory`, () => {
+
+        show_help()
+
+        const help = lines.join( `\n` )
+        expect( help ).toContain( `babysit prune [--list]` )
+        expect( help ).toContain( `Remove unused clone workspaces` )
+        expect( help ).toContain( `list clone workspaces and directory sizes` )
+
+    } )
+
 } )

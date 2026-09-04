@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, renameSync, rmSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, readdirSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync } from 'fs'
+import { basename, join } from 'path'
 import { SESSIONS_DIR, ensure_dirs } from '../utils/paths.js'
 import { log } from '../utils/log.js'
 
@@ -119,6 +119,50 @@ export const update_session = ( babysit_id, updates, { directory = SESSIONS_DIR 
 }
 
 /**
+ * Inspect stored session files while retaining record mtimes and malformed-file details.
+ * Destructive maintenance uses invalid_files to fail closed instead of silently
+ * treating an unreadable registry as inactive.
+ * @param {Object} [options]
+ * @param {string} [options.directory] - Session directory override for isolated callers
+ * @returns {{ records: Array<{ session: Object, path: string, updated_at: string }>, invalid_files: string[] }}
+ */
+export const inspect_stored_sessions = ( { directory = SESSIONS_DIR } = {} ) => {
+
+    if( directory === SESSIONS_DIR ) ensure_dirs()
+    else mkdirSync( directory, { recursive: true } )
+
+    const files = readdirSync( directory ).filter( file => file.endsWith( `.json` ) )
+    const invalid_files = []
+    const records = files.flatMap( file => {
+        const path = join( directory, file )
+
+        try {
+            const entry = lstatSync( path )
+            if( entry.isSymbolicLink() || !entry.isFile() ) {
+                throw new Error( `Session record must be a regular file` )
+            }
+
+            const session = JSON.parse( readFileSync( path, `utf-8` ) )
+            if( !session || typeof session !== `object` || Array.isArray( session ) ) {
+                throw new Error( `Session record must be an object` )
+            }
+            if( typeof session.babysit_id !== `string` || basename( file, `.json` ) !== session.babysit_id ) {
+                throw new Error( `Session id must match its filename` )
+            }
+
+            const updated_at = entry.mtime.toISOString()
+            return [ { session, path, updated_at } ]
+        } catch {
+            invalid_files.push( path )
+            return []
+        }
+    } ).sort( ( a, b ) => session_started_at_ms( b.session ) - session_started_at_ms( a.session ) )
+
+    return { records, invalid_files }
+
+}
+
+/**
  * List all stored sessions
  * @param {Object} [options]
  * @param {string} [options.directory] - Session directory override for isolated callers
@@ -126,22 +170,7 @@ export const update_session = ( babysit_id, updates, { directory = SESSIONS_DIR 
  */
 export const list_stored_sessions = ( { directory = SESSIONS_DIR } = {} ) => {
 
-    if( directory === SESSIONS_DIR ) ensure_dirs()
-    else mkdirSync( directory, { recursive: true } )
-
-    const files = readdirSync( directory ).filter( f => f.endsWith( `.json` ) )
-
-    const sessions = files.map( file => {
-        try {
-            return JSON.parse( readFileSync( join( directory, file ), `utf-8` ) )
-        } catch {
-            return null
-        }
-    } ).filter( Boolean )
-
-    // Invalid or missing legacy timestamps fall to the end without making the
-    // listing fail.
-    return sort_sessions_newest_first( sessions )
+    return inspect_stored_sessions( { directory } ).records.map( ( { session } ) => session )
 
 }
 

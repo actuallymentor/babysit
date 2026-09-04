@@ -44,6 +44,10 @@ babysit resume <session_id> --yolo
 # List active sessions with numbers, names, and launch flags
 babysit list
 
+# Review clone disk usage or interactively prune unused copies
+babysit prune --list
+babysit prune
+
 # Include IDs and full tmux session names
 babysit list --all
 
@@ -184,7 +188,8 @@ Modes combine: `--mudbox --yolo --loop` gives a read-only workspace with max aut
 
 `--clone` copies the complete current directory, including hidden files,
 symlinks, `node_modules`, and other dependency folders. The copy is prepared
-transactionally and kept indefinitely at `~/.babysit/clones/<session-id>`.
+transactionally and kept at `~/.babysit/clones/<session-id>` until explicitly
+pruned.
 Babysit prints its path at launch and shows it in resume history.
 
 For a standalone Git repository root, the copy checks out
@@ -207,6 +212,20 @@ restarts it. After an abrupt shutdown, Babysit stops and finalizes any surviving
 container before launching the agent again. If `/original` disappeared but the
 clone remains, resume warns and asks before continuing without that mount.
 Clone paths are never pruned automatically.
+
+`babysit prune` reports how many managed clones exist, then asks whether to
+remove copies unused for 30 days (the default), every copy not in use, or copies
+older than a custom number of days. It previews the matching copies and their
+combined size, then requires an explicit `[y/N]` confirmation. Live tmux,
+monitor, container, and launch activity is excluded. Clones with pending
+recovery, unreadable contents, nested mounts, uncertain activity, or invalid
+ownership metadata are also protected.
+
+`babysit prune --list` is noninteractive and lists every managed clone with its
+name, ID, last-use date, age, status, allocated directory size, and path. Size
+counts the clone directory only; Docker volumes and container layers are not
+included. Unknown folders in the clone root are reported but never deleted.
+Interrupted confirmed prunes resume safely the next time interactive prune runs.
 
 Use `--ignore-host-agents-md` when a session should see the repository's own
 instructions without inheriting your host coding-agent profile. It omits the
@@ -407,6 +426,7 @@ babysit <agent> resume <id> [flags]  Resume a previous session
 babysit list [--all]                 List active sessions and launch flags
 babysit open [id|name|number]        Attach to an active session
 babysit resume [session_id] [flags]  List this workspace's sessions or resume one
+babysit prune [--list]               Remove unused clone workspaces
 babysit config                       Configure babysit settings
 babysit update                       Refresh babysit, ~/.agents, and the docker image
 ```

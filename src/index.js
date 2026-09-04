@@ -14,6 +14,7 @@ import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
 import { cmd_config } from './cli/config.js'
 import { cmd_doctor } from './cli/doctor.js'
+import { cmd_prune } from './cli/prune.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
 
@@ -84,6 +85,10 @@ const main = async () => {
 
     case `config`:
         await cmd_config( cmd )
+        break
+
+    case `prune`:
+        await cmd_prune( cmd )
         break
 
     case `doctor`:

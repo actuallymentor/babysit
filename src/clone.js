@@ -19,8 +19,8 @@ import { log } from './utils/log.js'
 import { CLONES_DIR } from './utils/paths.js'
 
 const STATE_DIR_NAME = `.babysit-state`
-const STATE_MAGIC = `babysit-clone`
-const STATE_VERSION = 1
+export const CLONE_STATE_MAGIC = `babysit-clone`
+export const CLONE_STATE_VERSION = 1
 const DEFAULT_STALE_PARTIAL_MS = 24 * 60 * 60 * 1_000
 const CLONE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 
@@ -85,7 +85,12 @@ const ensure_private_directory = path => {
 
 }
 
-const state_paths = clones_dir => {
+/**
+ * Create and return the private external state directories for clone workspaces.
+ * @param {string} clones_dir - Canonical clone root
+ * @returns {Object} Clone root and private state paths
+ */
+export const clone_state_paths = clones_dir => {
 
     const root = ensure_private_directory( clones_dir )
     const state = ensure_private_directory( join( root, STATE_DIR_NAME ) )
@@ -97,6 +102,8 @@ const state_paths = clones_dir => {
         partials: ensure_private_directory( join( state, `partials` ) ),
         locks: ensure_private_directory( join( state, `locks` ) ),
         hooks: ensure_private_directory( join( state, `empty-hooks` ) ),
+        trash: ensure_private_directory( join( state, `trash` ) ),
+        prune_journals: ensure_private_directory( join( state, `prune-journals` ) ),
     }
 
 }
@@ -160,7 +167,7 @@ const process_is_alive = pid => {
 
 const remove_dead_lock = ( lock_path, owner, is_process_alive ) => {
 
-    if( owner?.magic !== STATE_MAGIC || owner?.version !== STATE_VERSION ) return false
+    if( owner?.magic !== CLONE_STATE_MAGIC || owner?.version !== CLONE_STATE_VERSION ) return false
     if( owner.hostname !== hostname() || is_process_alive( owner.pid ) ) return false
 
     const quarantine = `${ lock_path }.stale-${ randomUUID() }`
@@ -200,12 +207,12 @@ export const acquire_clone_lock = ( clone_path, {
         throw new Error( `Clone lock target must be a direct child of ${ clone_root }` )
     }
 
-    const paths = state_paths( clone_root )
+    const paths = clone_state_paths( clone_root )
     const lock_path = join( paths.locks, lock_name_for( target ) )
     const token = randomUUID()
     const owner = {
-        magic: STATE_MAGIC,
-        version: STATE_VERSION,
+        magic: CLONE_STATE_MAGIC,
+        version: CLONE_STATE_VERSION,
         token,
         pid: process.pid,
         hostname: hostname(),
@@ -254,6 +261,39 @@ export const acquire_clone_lock = ( clone_path, {
 
 }
 
+/**
+ * Inspect a clone launch lock without mutating it.
+ * Same-host dead owners are reported as stale; final acquisition performs the
+ * existing token-checked cleanup before destructive work begins.
+ * @param {string} clone_path - Direct child of the clone root
+ * @param {Object} [options]
+ * @param {string} [options.clones_dir] - Clone root, injectable for tests
+ * @param {Function} [options.is_process_alive] - Lock-owner liveness probe
+ * @returns {'unlocked'|'locked'|'stale'|'unknown'} Lock state
+ */
+export const clone_lock_status = ( clone_path, {
+    clones_dir = dirname( resolve( clone_path ) ),
+    is_process_alive = process_is_alive,
+} = {} ) => {
+
+    const clone_root = canonical_target_path( clones_dir )
+    const target = canonical_target_path( clone_path )
+    if( dirname( target ) !== clone_root ) return `unknown`
+
+    const paths = clone_state_paths( clone_root )
+    const lock_path = join( paths.locks, lock_name_for( target ) )
+    const entry = path_entry( lock_path )
+    if( !entry ) return `unlocked`
+    if( entry.isSymbolicLink() || !entry.isFile() ) return `unknown`
+
+    const owner = read_json( lock_path )
+    if( owner?.magic !== CLONE_STATE_MAGIC || owner?.version !== CLONE_STATE_VERSION ) return `unknown`
+    if( owner.clone_path !== target || owner.hostname !== hostname() ) return `unknown`
+
+    return is_process_alive( owner.pid ) ? `locked` : `stale`
+
+}
+
 const clone_is_locked = ( clone_path, paths ) => path_exists(
     join( paths.locks, lock_name_for( clone_path ) )
 )
@@ -274,7 +314,7 @@ export const sweep_stale_clone_partials = ( {
     now = Date.now(),
 } = {} ) => {
 
-    const paths = state_paths( canonical_target_path( clones_dir ) )
+    const paths = clone_state_paths( canonical_target_path( clones_dir ) )
     const removed = []
 
     for( const file of readdirSync( paths.partials ) ) {
@@ -285,7 +325,7 @@ export const sweep_stale_clone_partials = ( {
         if( !sidecar_entry?.isFile() || sidecar_entry.isSymbolicLink() ) continue
 
         const marker = read_json( sidecar_path )
-        if( marker?.magic !== STATE_MAGIC || marker?.version !== STATE_VERSION ) continue
+        if( marker?.magic !== CLONE_STATE_MAGIC || marker?.version !== CLONE_STATE_VERSION ) continue
         if( marker.kind !== `partial` || basename( marker.partial_name || `` ) !== marker.partial_name ) continue
         if( !Number.isFinite( marker.created_at_ms ) || now - marker.created_at_ms < max_age_ms ) continue
 
@@ -505,8 +545,8 @@ const completed_clone = ( clone_path, manifest_path, { source, clone_id } ) => {
     }
 
     const manifest = read_json( manifest_path )
-    const valid = manifest?.magic === STATE_MAGIC
-        && manifest.version === STATE_VERSION
+    const valid = manifest?.magic === CLONE_STATE_MAGIC
+        && manifest.version === CLONE_STATE_VERSION
         && manifest.status === `complete`
         && manifest.clone_id === clone_id
         && manifest.original_workspace === source
@@ -560,7 +600,7 @@ export const prepare_clone_workspace = ( {
         throw new Error( `Clone source cannot contain the clone root: ${ clone_root }` )
     }
 
-    const paths = state_paths( clone_root )
+    const paths = clone_state_paths( clone_root )
     sweep_stale_clone_partials( {
         clones_dir: clone_root,
         max_age_ms: stale_partial_ms,
@@ -587,8 +627,8 @@ export const prepare_clone_workspace = ( {
         const partial_path = join( paths.partials, partial_name )
         const sidecar_path = join( paths.partials, `${ partial_name }.json` )
         const partial_marker = {
-            magic: STATE_MAGIC,
-            version: STATE_VERSION,
+            magic: CLONE_STATE_MAGIC,
+            version: CLONE_STATE_VERSION,
             kind: `partial`,
             clone_id,
             partial_name,
@@ -607,8 +647,8 @@ export const prepare_clone_workspace = ( {
             }
 
             const manifest = {
-                magic: STATE_MAGIC,
-                version: STATE_VERSION,
+                magic: CLONE_STATE_MAGIC,
+                version: CLONE_STATE_VERSION,
                 status: `complete`,
                 clone_id,
                 clone_path,

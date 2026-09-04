@@ -149,6 +149,39 @@ describe( `cmd_resume session listing`, () => {
 
     } )
 
+    it( `hides pruned clone sessions from resume history`, async () => {
+
+        let rendered_sessions = null
+        const pruned = {
+            ...sessions[0],
+            babysit_id: `pruned-clone`,
+            clone_path: `/home/user/.babysit/clones/pruned-clone`,
+            clone_pruned_at: `2026-09-04T12:00:00.000Z`,
+        }
+
+        await cmd_resume( { session_id: null, flags: { all: true } }, {
+            list_stored_sessions_fn: () => [ pruned, ...sessions ],
+            print_sessions: value => { rendered_sessions = value },
+        } )
+
+        expect( rendered_sessions ).toEqual( sessions )
+
+    } )
+
+    it( `explains when an explicitly selected clone was pruned`, async () => {
+
+        const pruned = {
+            ...sessions[0],
+            clone_path: `/home/user/.babysit/clones/pruned-clone`,
+            clone_pruned_at: `2026-09-04T12:00:00.000Z`,
+        }
+
+        await expect( cmd_resume( { session_id: pruned.babysit_id }, {
+            load_session_fn: () => pruned,
+        } ) ).rejects.toThrow( `Clone workspace was pruned at 2026-09-04T12:00:00.000Z` )
+
+    } )
+
     it( `keeps every matching launch from the current workspace`, () => {
 
         const duplicate_workspace_session = {

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.37.0 — 2026-09-04
+
+### ✨ Added
+- **Clone copies can be inspected and pruned safely.** `babysit prune --list`
+  reports clone sizes and activity, while interactive prune supports a 30-day
+  default, all-unused cleanup, and custom retention periods.
+- **Confirmed prune operations survive interruption.** Clone-family liveness,
+  strict ownership checks, final lock-time revalidation, and journaled
+  quarantine deletion keep active or uncertain workspaces protected.
+
+### 🐛 Fixed
+- **Pruned sessions no longer appear resumable.** Explicit resume attempts now
+  explain when their clone was removed, and normal exits record last-use time.
+
 ## 0.36.0 — 2026-09-03
 
 ### ✨ Added
