@@ -30,6 +30,23 @@ describe( `parse_args`, () => {
         expect( cmd.agent ).toBeNull()
     } )
 
+    it( `recognises prune and scopes --list to that command`, () => {
+        const prune = parse_args( [ `prune` ] )
+        const preview = parse_args( [ `prune`, `--list` ] )
+        const agent = parse_args( [ `codex`, `--list` ] )
+
+        expect( prune ).toMatchObject( { verb: `prune`, agent: null, flags: { list: false } } )
+        expect( preview ).toMatchObject( { verb: `prune`, agent: null, flags: { list: true } } )
+        expect( agent.flags.list ).toBe( false )
+        expect( agent.passthrough ).toContain( `--list` )
+    } )
+
+    it( `rejects unknown prune arguments before destructive interaction`, () => {
+        expect( () => parse_args( [ `prune`, `--lsit` ] ) ).toThrow( `Unknown prune argument: --lsit` )
+        expect( () => parse_args( [ `prune`, `all` ] ) ).toThrow( `Unknown prune argument: all` )
+        expect( () => parse_args( [ `prune`, `--list=false` ] ) ).toThrow( `Unknown prune argument: --list=false` )
+    } )
+
     it( `recognises babysit config`, () => {
         const cmd = parse_args( [ `config`, `--auth-check-agents`, `codex,claude` ] )
         expect( cmd.verb ).toBe( `config` )

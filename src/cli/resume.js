@@ -209,7 +209,10 @@ export const cmd_resume = async ( cmd, {
     const { session_id, flags = {}, passthrough = [] } = cmd
 
     if( !session_id ) {
-        const sessions = list_stored_sessions_fn()
+        const stored_sessions = list_stored_sessions_fn()
+        const sessions = stored_sessions.some( session => session.clone_pruned_at )
+            ? stored_sessions.filter( session => !session.clone_pruned_at )
+            : stored_sessions
         const current_cwd = flags.all ? null : get_cwd()
         const visible_sessions = flags.all
             ? sessions
@@ -226,6 +229,10 @@ export const cmd_resume = async ( cmd, {
     const session = load_session_fn( session_id )
 
     if( session ) {
+
+        if( session.clone_pruned_at ) {
+            throw new Error( `Clone workspace was pruned at ${ session.clone_pruned_at }: ${ session.clone_path }` )
+        }
 
         const was_clone = Boolean(
             session.clone_path

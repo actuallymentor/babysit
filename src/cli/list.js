@@ -39,7 +39,7 @@ export const format_session_flags = ( modifiers ) =>
  * @param {Array<Array<string|number>>} rows - Values to display
  * @returns {{ header: string, divider: string, rows: string[] }}
  */
-const format_table = ( headers, rows ) => {
+export const format_table = ( headers, rows ) => {
 
     const column_widths = headers.map( ( header, index ) => Math.max(
         String( header ).length,

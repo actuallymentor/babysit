@@ -157,12 +157,15 @@ export const set_agent_status = async ( session_name, status ) => {
 
 /**
  * List all babysit tmux sessions
+ * @param {Object} [options]
+ * @param {boolean} [options.strict=false] - Surface inspection failures except an absent tmux server
+ * @param {Function} [options.run_command=run] - Injectable command runner
  * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string }>>}
  */
-export const list_sessions = async () => {
+export const list_sessions = async ( { strict = false, run_command = run } = {} ) => {
 
     try {
-        const output = await run( `tmux`, [
+        const output = await run_command( `tmux`, [
             `-L`, TMUX_SOCKET,
             `list-sessions`, `-F`,
             `#{session_name}\t#{?session_attached,attached,detached}\t#{session_created}\t#{${ AGENT_STATUS_OPTION }}`,
@@ -176,7 +179,9 @@ export const list_sessions = async () => {
                 return { name, attached: tmux_status === `attached`, created, agent_status }
             } )
 
-    } catch {
+    } catch ( error ) {
+        const no_server = /no server running|no sessions|error connecting to .*\(No such file or directory\)/i.test( error.message )
+        if( strict && !no_server ) throw error
         return []
     }
 

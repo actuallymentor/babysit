@@ -16,6 +16,7 @@ Usage:
   babysit list [--all]                 List active sessions and launch flags
   babysit open [id|name|number]        Attach to an active session
   babysit resume [session_id] [flags]  List this workspace's sessions or resume one
+  babysit prune [--list]               Remove unused clone workspaces
   babysit config                       Configure babysit settings
   babysit doctor --auth [agent|all]    Verify real agent authentication
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
@@ -37,6 +38,7 @@ Flags:
   --auth          With "babysit doctor", make real model-backed auth checks
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
   --all           With "list", show full details; with "resume", show every workspace
+  --list          With "prune", list clone workspaces and directory sizes
   --loop          Override idle action with LOOP.md or "Keep going"
   --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)
   -h, --help      Show this help
@@ -58,6 +60,8 @@ Examples:
   babysit list --all
   babysit resume
   babysit resume --all
+  babysit prune
+  babysit prune --list
   babysit open
   babysit open 2
   babysit open "feature 1"

@@ -313,9 +313,12 @@ export const cmd_monitor = async ( cmd ) => {
         // Do not clear a newer monitor spawned during recovery.
         const latest = load_session( session.babysit_id )
         if( latest?.monitor_pid === process.pid ) {
+            const ended_at = new Date().toISOString()
             update_session( session.babysit_id, {
                 container_cleaned: container_removed,
                 credentials_cleaned: credentials_recovered,
+                ended_at,
+                last_used_at: ended_at,
                 monitor_pid: null,
                 status: `exited`,
             } )
