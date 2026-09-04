@@ -71,7 +71,7 @@ babysit doctor --auth opencode --refresh
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not
 2. **Host auth check** — before the main session starts, babysit verifies the active agent plus supported non-active agent CLIs found on host PATH. Cache misses run concurrently; a successful check is reused for 12 hours while its hashed auth inputs and local Docker image identity remain unchanged. Press Enter to skip the entire auth decision for one interactive launch. Non-interactive launches verify misses and fail closed. `babysit doctor --auth [agent|all]` performs explicit checks, and `--refresh` bypasses the cache
 3. **Docker container** — babysit starts a container with all four agent CLIs, common coding-agent tools, Google Chrome Stable, Puppeteer, Xvfb, Poppler, and qpdf preinstalled; credentials for every supported agent plus host `gh` auth are passed through, and your workspace is mounted at `/workspace`. With `--clone`, `/workspace` is a durable copy and the source is also mounted read-write at `/original` for explicit merge-back work
-4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Detach with Ctrl+B d to exit the cli; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor. Terminal input is released before the resume hint so the foreground CLI can exit immediately
+4. **Tmux session** — the container runs inside a tmux session that babysit attaches you to. Its bottom bar shows the optional session name, the parent/current source directory, and active launch flags. Detach with Ctrl+B d to exit the cli and print the refreshed `babysit list`; the agent and supervisor keep running in the background. Re-attach with `babysit open` from the original workspace, or `babysit open <id|name|number>` from anywhere. When the agent exits, an internal exit marker closes tmux promptly while Docker finishes its slower bookkeeping and credential-safe cleanup in the detached monitor. Terminal input is released before the resume hint so the foreground CLI can exit immediately
 5. **Monitor daemon** — a detached background process watches the tmux output and takes actions based on your `babysit.yaml` rules. Outlives your foreground cli, so the agent stays supervised after you detach
 6. **macOS caffeine** — on macOS, the monitor runs `caffeinate` while a session is active so the system does not sleep mid-run
 7. **Credential sync** — mounted host credentials are refreshed in the background so long-running sessions and nested agent calls don't lose auth
@@ -446,7 +446,9 @@ monitor interval without a change shows `idle`. This is independent from
 Babysit's idle supervision timeout. Add `--all` to include the separate ID and
 full tmux session name. Run `babysit open <number>` from any directory to open
 that numbered row, or `babysit open "feature 1"` to open an active session by
-its exact name. Quote names containing spaces.
+its exact name. Quote names containing spaces. New sessions show the same name,
+compact source directory, and flags in a per-session tmux bar at the bottom.
+Detaching from a launch, `open`, or live resume prints the refreshed active list.
 
 Run `babysit resume` without a session id to list persistent Babysit-managed
 history, newest first. When the current workspace has history, only its sessions

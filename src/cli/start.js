@@ -73,6 +73,7 @@ import { command_exists } from '../utils/exec.js'
 import { acquire_clone_lock, prepare_clone_workspace } from '../clone.js'
 import { cmd_monitor } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
+import { cmd_list, format_session_status_label } from './list.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
@@ -1356,6 +1357,11 @@ export const cmd_start = async ( cmd ) => {
         const { pipe_started: started_pipe } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
             log_path,
             startup_log_path: log_path ? null : diagnostic_log_path,
+            status_label: format_session_status_label( {
+                name: session_display_name,
+                pwd: original_workspace,
+                modifiers,
+            } ),
         } ) )
         pipe_started = started_pipe
 
@@ -1526,7 +1532,9 @@ export const cmd_start = async ( cmd ) => {
     // agent up from session metadata, so we don't need to pre-pend the agent
     // name.
     if( await has_session( session_name ) ) {
-        console.log( `\nDetached. Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
+        console.log( `\nDetached.` )
+        await cmd_list()
+        console.log( `Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
     } else {
         // Prefer the agent's own session id when the daemon captured it —
         // that's what the agent's CLI accepts for its native --resume flag,

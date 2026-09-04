@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.38.0 — 2026-09-04
+
+### ✨ Added
+- **Tmux sessions show their launch context.** A bottom status bar displays the
+  optional session name, compact source directory, and active launch flags.
+
+### ♻️ Changed
+- **Detaching prints the current active-session list.** Fresh launches,
+  `babysit open`, and live resumes reuse the normal `babysit list` output.
+
 ## 0.37.0 — 2026-09-04
 
 ### ✨ Added

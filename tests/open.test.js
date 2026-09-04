@@ -211,6 +211,46 @@ describe( `cmd_open without a session id`, () => {
 
 describe( `cmd_open with a session id`, () => {
 
+    it( `runs the list command after the user detaches`, async () => {
+
+        const events = []
+        let list_arguments = null
+
+        await cmd_open( { session_id: `babysit_direct_codex_1` }, {
+            has_session_fn: async () => {
+                events.push( `live` )
+                return true
+            },
+            attach_session_fn: async () => {
+                events.push( `attach` )
+                return true
+            },
+            list_after_detach_fn: async ( ...args ) => {
+                events.push( `list` )
+                list_arguments = args
+            },
+        } )
+
+        expect( events ).toEqual( [ `live`, `attach`, `live`, `list` ] )
+        expect( list_arguments ).toEqual( [] )
+
+    } )
+
+    it( `does not list when the attached session ended`, async () => {
+
+        const live_results = [ true, false ]
+        let list_calls = 0
+
+        await cmd_open( { session_id: `babysit_direct_codex_1` }, {
+            has_session_fn: async () => live_results.shift(),
+            attach_session_fn: () => true,
+            list_after_detach_fn: async () => list_calls++,
+        } )
+
+        expect( list_calls ).toBe( 0 )
+
+    } )
+
     it( `attaches through a numbered active-list selection from any directory`, async () => {
 
         const { tmux_sessions, stored_sessions } = session_fixtures()

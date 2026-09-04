@@ -38,9 +38,16 @@ export const make_session_name = ( pwd, agent_name ) => {
  * @param {Object} [options]
  * @param {string|null} [options.log_path] - Optional host path for pipe-pane logging
  * @param {string|null} [options.startup_log_path] - Optional short-lived startup diagnostic log path
+ * @param {string|null} [options.status_label] - Literal session identity for the bottom status bar
+ * @param {Function} [options.run_command] - Injectable command runner
  * @returns {Promise<{pipe_started: boolean}>}
  */
-export const create_session = async ( session_name, command, { log_path = null, startup_log_path = null } = {} ) => {
+export const create_session = async ( session_name, command, {
+    log_path = null,
+    startup_log_path = null,
+    status_label = null,
+    run_command = run,
+} = {} ) => {
 
     const pipe_log_path = log_path || startup_log_path
 
@@ -53,7 +60,7 @@ export const create_session = async ( session_name, command, { log_path = null, 
         ? [ `sh`, `-c`, boot_shell, `sh`, command ]
         : [ `sh`, `-c`, command ]
 
-    await run( `tmux`, [
+    await run_command( `tmux`, [
         `-L`, TMUX_SOCKET,
         `new-session`, `-d`,
         `-s`, session_name,
@@ -63,10 +70,24 @@ export const create_session = async ( session_name, command, { log_path = null, 
 
     // Configure session defaults
     await Promise.all( [
-        run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `history-limit`, `10000` ] ),
-        run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `mouse`, `on` ] ),
-        run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, AGENT_STATUS_OPTION, `running` ] ),
+        run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `history-limit`, `10000` ] ),
+        run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `mouse`, `on` ] ),
+        run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, AGENT_STATUS_OPTION, `running` ] ),
     ] )
+
+    if( status_label ) {
+        try {
+            await Promise.all( [
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `@babysit_status_label`, status_label ] ),
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status`, `on` ] ),
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-position`, `bottom` ] ),
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left`, `#[bold]#{@babysit_status_label}#[default] ` ] ),
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left-length`, String( status_label.length + 1 ) ] ),
+            ] )
+        } catch ( error ) {
+            log.warn( `Could not configure the tmux status bar: ${ error.message }` )
+        }
+    }
 
     let pipe_started = false
 
@@ -83,7 +104,7 @@ export const create_session = async ( session_name, command, { log_path = null, 
         // attach, otherwise fast startup output can escape diagnostics. The
         // real command is held as a shell argument so it is not echoed into
         // the user's terminal/log.
-        await run( `tmux`, [ `-L`, TMUX_SOCKET, `send-keys`, `-t`, session_name, `Enter` ] )
+        await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `send-keys`, `-t`, session_name, `Enter` ] )
 
     }
 
@@ -126,14 +147,17 @@ export const kill_session = async ( session_name ) => {
 }
 
 /**
- * Attach to an existing tmux session (replaces current process)
+ * Attach to an existing tmux session.
  * @param {string} session_name - The session name
+ * @returns {true} Indicates that the foreground tmux client has exited
  */
 export const attach_session = ( session_name ) => {
 
     execSync( `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`, {
         stdio: `inherit`,
     } )
+
+    return true
 
 }
 
