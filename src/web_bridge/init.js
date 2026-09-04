@@ -60,7 +60,7 @@ export const initialize_web_bridge = ( {
 } = {} ) => {
 
     const paths = web_bridge_paths( directory )
-    const directories = [ paths.root, paths.state, paths.requests, paths.inflight ]
+    const directories = [ paths.root, paths.access_dir, paths.state, paths.requests, paths.inflight ]
 
     directories.forEach( ensure_private_directory )
 

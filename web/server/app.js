@@ -82,11 +82,11 @@ const valid_unsafe_origin = ( request, config ) => {
     return host === config.public_origin.host
 }
 
-const secure_cookie = ( request, config ) => {
-    if( config.allow_insecure_http ) return false
-    if( config.public_origin?.protocol === `https:` ) return true
-    if( config.trust_proxy && forwarded_value( request, `x-forwarded-proto` ) === `https` ) return true
-    return process.env.NODE_ENV === `production`
+const secure_cookie = ( _, config ) => !config.allow_insecure_http
+
+const client_address = ( request, config ) => {
+    const forwarded_addresses = config.trust_proxy ? request.headers[ `x-forwarded-for` ]?.split( `,` ) : null
+    return forwarded_addresses?.at( -1 )?.trim() || request.socket.remoteAddress || `unknown`
 }
 
 const session_cookie = ( token, request, config ) => [
@@ -152,11 +152,14 @@ const api_route = async ( request, response, pathname, stores, config ) => {
     if( request.method === `POST` && !valid_unsafe_origin( request, config ) ) return json( response, 403, { error: `Origin is not allowed` } )
 
     if( request.method === `POST` && pathname === `/api/login` ) {
-        if( !limiter.consume() ) return json( response, 429, { error: `Too many login attempts. Try again shortly.` } )
+        if( !limiter.consume( client_address( request, config ) ) ) return json( response, 429, { error: `Too many login attempts. Try again shortly.` } )
 
         const body = await request_body( request )
         const identity = access.authenticate( typeof body.token === `string` ? body.token : `` )
         if( !identity ) return json( response, 401, { error: `Invalid access key` } )
+        if( secure_cookie( request, config ) && new URL( request_origin( request, config ) ).protocol !== `https:` ) {
+            return json( response, 400, { error: `HTTPS is required. Set BABYSIT_WEB_ALLOW_INSECURE_HTTP=1 only for local development.` } )
+        }
 
         const token = sessions.create( identity )
         return json( response, 200, { role: identity.role }, { 'Set-Cookie': session_cookie( token, request, config ) } )
@@ -190,7 +193,7 @@ const api_route = async ( request, response, pathname, stores, config ) => {
         if( state.busy ) return json( response, 409, { error: `Session is busy` } )
 
         const body = await request_body( request )
-        return json( response, 202, bridge.send( { screen_revision: body.screen_revision, session: state, text: body.text } ) )
+        return json( response, 202, bridge.send( { session: state, text: body.text } ) )
     }
 
     return json( response, 404, { error: `Not found` } )

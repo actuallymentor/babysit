@@ -25,7 +25,7 @@ export const cmd_web = async ( cmd, {
     print( `Run actuallymentor/babysit-web as the same host user:` )
     print( `  user: "${ uid }:${ gid }"` )
     print( `  volumes:` )
-    print( `    - ${ paths.access }:/bridge/access.json:ro` )
+    print( `    - ${ paths.access_dir }:/bridge/access:ro` )
     print( `    - ${ paths.state }:/bridge/state:ro` )
     print( `    - ${ paths.requests }:/bridge/requests:rw` )
     print( `` )

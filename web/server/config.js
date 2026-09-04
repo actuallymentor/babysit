@@ -20,7 +20,7 @@ const configured_origin = value => {
  * @returns {Object} Validated server configuration
  */
 export const read_config = ( environment=process.env ) => ( {
-    access_file: resolve( environment.BABYSIT_WEB_ACCESS_FILE || `/bridge/access.json` ),
+    access_file: resolve( environment.BABYSIT_WEB_ACCESS_FILE || `/bridge/access/access.json` ),
     allow_insecure_http: environment.BABYSIT_WEB_ALLOW_INSECURE_HTTP === `1`,
     heartbeat_ttl_ms: positive_integer( environment.BABYSIT_WEB_HEARTBEAT_TTL_MS, 15_000 ),
     login_limit: positive_integer( environment.BABYSIT_WEB_LOGIN_LIMIT, 8 ),

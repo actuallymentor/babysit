@@ -122,7 +122,7 @@ export class BridgeStore {
         return this.sessions().find( state => state.session_id === session_id ) || null
     }
 
-    send( { screen_revision, session, text } ) {
+    send( { session, text } ) {
         this.cleanup_pending()
         if( readdirSync( this.request_dir ).length >= MAX_QUEUED_REQUESTS ) {
             throw Object.assign( new Error( `Message queue is full. Try again shortly.` ), { status_code: 429 } )
@@ -138,7 +138,6 @@ export class BridgeStore {
             kind: `text`,
             protocol: 1,
             request_id,
-            screen_revision: Number.isSafeInteger( screen_revision ) ? screen_revision : session.revision,
             session_id: session.session_id,
             text: message,
         }

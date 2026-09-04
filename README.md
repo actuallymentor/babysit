@@ -97,8 +97,8 @@ docker compose -f examples/compose.web.yml up -d
 
 The proxy can reach `http://babysit-web:3000` on the shared network. The example
 does not publish a host port. Terminate TLS at the proxy and preserve
-`X-Forwarded-Proto`; `BABYSIT_WEB_PUBLIC_ORIGIN` pins browser requests to the
-expected origin.
+`X-Forwarded-Proto` and `X-Forwarded-For`; `BABYSIT_WEB_PUBLIC_ORIGIN` pins
+browser requests to the expected origin.
 
 For local HTTP development, build the image and publish only loopback:
 
@@ -110,7 +110,7 @@ docker run --rm --name babysit-web-local \
     --security-opt no-new-privileges \
     -e BABYSIT_WEB_ALLOW_INSECURE_HTTP=1 \
     -p 127.0.0.1:3000:3000 \
-    -v "$HOME/.babysit/web-bridge/access.json:/bridge/access.json:ro" \
+    -v "$HOME/.babysit/web-bridge/access:/bridge/access:ro" \
     -v "$HOME/.babysit/web-bridge/state:/bridge/state:ro" \
     -v "$HOME/.babysit/web-bridge/requests:/bridge/requests:rw" \
     actuallymentor/babysit-web:local

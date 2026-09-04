@@ -58,10 +58,10 @@ const Message = styled.article`
     a { color: #285d69; font-weight: 700; }
 `
 
-const safe_link = ( { children, href, ...properties } ) => {
+const safe_link = ( { children, href, title } ) => {
     const allowed_href = defaultUrlTransform( href || `` )
     if( !allowed_href ) return <span>{ children }</span>
-    return <a { ...properties } href={ allowed_href } rel="noreferrer" target="_blank">{ children }</a>
+    return <a href={ allowed_href } rel="noreferrer" target="_blank" title={ title }>{ children }</a>
 }
 
 /** Renders a deliberately restricted Markdown subset without raw HTML or images. */

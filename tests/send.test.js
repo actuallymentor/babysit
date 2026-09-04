@@ -25,6 +25,7 @@ describe( `send_text`, () => {
 
         expect( calls.map( c => c.cmd ) ).toEqual( [ `tmux`, `tmux`, `tmux` ] )
         expect( calls[0].args ).toContain( `set-buffer` )
+        expect( calls[0].args.at( -2 ) ).toBe( `--` )
         expect( calls[0].args.at( -1 ) ).toBe( `Use $HOME wisely` )
         expect( calls[1].args ).toContain( `paste-buffer` )
         expect( calls[1].args ).toContain( `-pr` )
@@ -32,6 +33,16 @@ describe( `send_text`, () => {
         expect( calls[1].args ).toContain( `session` )
         expect( calls[2].args.at( -1 ) ).toBe( `Enter` )
         expect( waits ).toEqual( [ 150 ] )
+
+    } )
+
+    it( `keeps dash-prefixed text separate from tmux options`, async () => {
+
+        const { calls, runner, wait_fn } = collect_calls()
+
+        await send_text( `session`, `-a note`, { runner, wait_fn } )
+
+        expect( calls[0].args.slice( -2 ) ).toEqual( [ `--`, `-a note` ] )
 
     } )
 
