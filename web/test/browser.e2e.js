@@ -98,6 +98,7 @@ try {
 
     const manifest = await page.evaluate( async () => fetch( document.querySelector( `link[rel="manifest"]` ).href ).then( response => response.json() ) )
     assert.deepEqual( manifest.icons.map( icon => icon.sizes ), [ `192x192`, `512x512` ] )
+    assert.equal( await page.$eval( `link[rel="apple-touch-icon"]`, element => new URL( element.href ).pathname ), `/icon-192.png` )
     const icon_type = await page.evaluate( async () => fetch( `/icon-192.png` ).then( response => response.headers.get( `content-type` ) ) )
     assert.equal( icon_type, `image/png` )
     const worker_cache = await page.evaluate( async () => fetch( `/sw.js` ).then( response => response.headers.get( `cache-control` ) ) )

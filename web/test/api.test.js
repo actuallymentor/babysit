@@ -31,8 +31,8 @@ const session_document = ( overrides={} ) => ( {
     ...overrides,
 } )
 
-const api_request = async ( origin, path, { body, cookie, method=`GET`, request_origin=origin }={} ) => {
-    const headers = {}
+const api_request = async ( origin, path, { body, cookie, method=`GET`, request_headers={}, request_origin=origin }={} ) => {
+    const headers = { ...request_headers }
     if( body ) headers[ `Content-Type` ] = `application/json`
     if( cookie ) headers.Cookie = cookie
     if( method === `POST` ) headers.Origin = request_origin
@@ -65,15 +65,15 @@ test( `authenticated bridge API`, async () => {
         access_file,
         allow_insecure_http: true,
         heartbeat_ttl_ms: 5_000,
-        login_limit: 100,
+        login_limit: 1,
         login_window_ms: 60_000,
         public_origin: null,
         request_dir,
-        request_ttl_ms: 60,
+        request_ttl_ms: 500,
         session_ttl_ms: 60_000,
         state_dir,
         static_dir: join( fixture, `static` ),
-        trust_proxy: false,
+        trust_proxy: true,
     } )
     await new Promise( resolve_listen => server.listen( 0, `127.0.0.1`, resolve_listen ) )
     const origin = `http://127.0.0.1:${ server.address().port }`
@@ -85,10 +85,25 @@ test( `authenticated bridge API`, async () => {
         const foreign_origin = await api_request( origin, `/api/login`, { body: { token: `correct horse` }, method: `POST`, request_origin: `https://attacker.example` } )
         assert.equal( foreign_origin.status, 403 )
 
-        const wrong_login = await api_request( origin, `/api/login`, { body: { token: `wrong` }, method: `POST` } )
+        const wrong_login = await api_request( origin, `/api/login`, {
+            body: { token: `wrong` },
+            method: `POST`,
+            request_headers: { 'X-Forwarded-For': `198.51.100.1` },
+        } )
         assert.equal( wrong_login.status, 401 )
 
-        const login = await api_request( origin, `/api/login`, { body: { token: `correct horse` }, method: `POST` } )
+        const limited_login = await api_request( origin, `/api/login`, {
+            body: { token: `correct horse` },
+            method: `POST`,
+            request_headers: { 'X-Forwarded-For': `198.51.100.1` },
+        } )
+        assert.equal( limited_login.status, 429 )
+
+        const login = await api_request( origin, `/api/login`, {
+            body: { token: `correct horse` },
+            method: `POST`,
+            request_headers: { 'X-Forwarded-For': `198.51.100.2` },
+        } )
         assert.equal( login.status, 200 )
         assert.equal( login.body.role, `write` )
         assert.match( login.headers.get( `set-cookie` ), /HttpOnly; SameSite=Strict/ )
@@ -105,8 +120,17 @@ test( `authenticated bridge API`, async () => {
         const detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
         assert.equal( detail.body.session.last_message, `## Finished\n\n- one\n- two` )
 
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { busy: true } ) ) )
+        const busy_send = await api_request( origin, `/api/sessions/session-1/messages`, {
+            body: { text: `Wait for the action` },
+            cookie: login.cookie,
+            method: `POST`,
+        } )
+        assert.equal( busy_send.status, 409 )
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document() ) )
+
         const sent = await api_request( origin, `/api/sessions/session-1/messages`, {
-            body: { screen_revision: 7, text: `Continue\ncarefully` },
+            body: { text: `Continue\ncarefully` },
             cookie: login.cookie,
             method: `POST`,
         } )
@@ -118,7 +142,6 @@ test( `authenticated bridge API`, async () => {
             kind: `text`,
             protocol: 1,
             request_id: sent.body.request_id,
-            screen_revision: 7,
             session_id: `session-1`,
             text: `Continue\ncarefully`,
         } )
@@ -137,7 +160,7 @@ test( `authenticated bridge API`, async () => {
             method: `POST`,
         } )
         assert.equal( expiring.status, 202 )
-        await new Promise( resolve_wait => setTimeout( resolve_wait, 150 ) )
+        await new Promise( resolve_wait => setTimeout( resolve_wait, 1_100 ) )
         assert.deepEqual( readdirSync( request_dir ), [ `host-owned.txt` ] )
 
         const queue_files = Array.from( { length: 63 }, ( _, index ) => join( request_dir, `queue-${ index }.tmp` ) )
@@ -157,13 +180,66 @@ test( `authenticated bridge API`, async () => {
         const revoked = await api_request( origin, `/api/me`, { cookie: login.cookie } )
         assert.equal( revoked.status, 401 )
 
-        const read_login = await api_request( origin, `/api/login`, { body: { token: `viewer key` }, method: `POST` } )
+        const read_login = await api_request( origin, `/api/login`, {
+            body: { token: `viewer key` },
+            method: `POST`,
+            request_headers: { 'X-Forwarded-For': `198.51.100.3` },
+        } )
         const read_send = await api_request( origin, `/api/sessions/session-1/messages`, {
             body: { text: `Should fail` },
             cookie: read_login.cookie,
             method: `POST`,
         } )
         assert.equal( read_send.status, 403 )
+    } finally {
+        await new Promise( resolve_close => server.close( resolve_close ) )
+        rmSync( fixture, { force: true, recursive: true } )
+    }
+} )
+
+test( `production proxy and HTTP cookie policy`, async () => {
+    const fixture = mkdtempSync( join( tmpdir(), `babysit-web-proxy-` ) )
+    const state_dir = join( fixture, `state` )
+    const request_dir = join( fixture, `requests` )
+    const access_file = join( fixture, `access.json` )
+    mkdirSync( state_dir )
+    mkdirSync( request_dir )
+    writeFileSync( access_file, access_document( `proxy key` ) )
+
+    const server = create_app( {
+        access_file,
+        allow_insecure_http: false,
+        heartbeat_ttl_ms: 5_000,
+        login_limit: 8,
+        login_window_ms: 60_000,
+        public_origin: null,
+        request_dir,
+        request_ttl_ms: 20_000,
+        session_ttl_ms: 60_000,
+        state_dir,
+        static_dir: join( fixture, `static` ),
+        trust_proxy: true,
+    } )
+    await new Promise( resolve_listen => server.listen( 0, `127.0.0.1`, resolve_listen ) )
+    const origin = `http://127.0.0.1:${ server.address().port }`
+
+    try {
+        const plain_http = await api_request( origin, `/api/login`, { body: { token: `proxy key` }, method: `POST` } )
+        assert.equal( plain_http.status, 400 )
+        assert.match( plain_http.body.error, /HTTPS is required/ )
+
+        const proxied_https = await api_request( origin, `/api/login`, {
+            body: { token: `proxy key` },
+            method: `POST`,
+            request_headers: {
+                'X-Forwarded-For': `198.51.100.4`,
+                'X-Forwarded-Host': `babysit.example.com`,
+                'X-Forwarded-Proto': `https`,
+            },
+            request_origin: `https://babysit.example.com`,
+        } )
+        assert.equal( proxied_https.status, 200 )
+        assert.match( proxied_https.headers.get( `set-cookie` ), /Secure/ )
     } finally {
         await new Promise( resolve_close => server.close( resolve_close ) )
         rmSync( fixture, { force: true, recursive: true } )

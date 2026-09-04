@@ -55,7 +55,7 @@ const paste_text = async ( session_name, text, { runner = run } = {} ) => {
 
     const buffer_name = make_buffer_name()
 
-    await run_tmux( runner, [ `set-buffer`, `-b`, buffer_name, text ] )
+    await run_tmux( runner, [ `set-buffer`, `-b`, buffer_name, `--`, text ] )
 
     try {
         await run_tmux( runner, [ `paste-buffer`, `-pr`, `-d`, `-b`, buffer_name, `-t`, session_name ] )

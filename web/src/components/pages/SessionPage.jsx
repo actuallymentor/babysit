@@ -104,7 +104,7 @@ export function SessionPage( { role } ) {
 
         try {
             await api( `/api/sessions/${ session_id }/messages`, {
-                body: JSON.stringify( { screen_revision: session.revision, text: message } ),
+                body: JSON.stringify( { text: message } ),
                 method: `POST`,
             } )
             set_message( `` )

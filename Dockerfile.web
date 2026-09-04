@@ -15,7 +15,7 @@ FROM node:24-alpine AS runtime
 
 ENV NODE_ENV=production \
     PORT=3000 \
-    BABYSIT_WEB_ACCESS_FILE=/bridge/access.json \
+    BABYSIT_WEB_ACCESS_FILE=/bridge/access/access.json \
     BABYSIT_WEB_STATE_DIR=/bridge/state \
     BABYSIT_WEB_REQUEST_DIR=/bridge/requests
 

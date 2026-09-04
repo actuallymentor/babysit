@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/
+const MAX_LOGIN_CLIENTS = 1_024
 
 const parse_access = raw_access => {
     const parsed = JSON.parse( raw_access )
@@ -76,16 +77,20 @@ export class LoginLimiter {
     constructor( { limit, window_ms } ) {
         this.limit = limit
         this.window_ms = window_ms
-        this.attempts = []
+        this.attempts = new Map()
     }
 
-    consume() {
+    consume( key ) {
         const cutoff = Date.now() - this.window_ms
-        this.attempts = this.attempts.filter( timestamp => timestamp > cutoff )
+        const attempts = ( this.attempts.get( key ) || [] ).filter( timestamp => timestamp > cutoff )
 
-        if( this.attempts.length >= this.limit ) return false
+        if( attempts.length >= this.limit ) return false
 
-        this.attempts.push( Date.now() )
+        if( !this.attempts.has( key ) && this.attempts.size >= MAX_LOGIN_CLIENTS ) {
+            this.attempts.delete( this.attempts.keys().next().value )
+        }
+        attempts.push( Date.now() )
+        this.attempts.set( key, attempts )
         return true
     }
 }

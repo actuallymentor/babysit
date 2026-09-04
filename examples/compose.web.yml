@@ -12,8 +12,8 @@ services:
       - "3000"
     volumes:
       - type: bind
-        source: ${HOME}/.babysit/web-bridge/access.json
-        target: /bridge/access.json
+        source: ${HOME}/.babysit/web-bridge/access
+        target: /bridge/access
         read_only: true
         bind:
           create_host_path: false

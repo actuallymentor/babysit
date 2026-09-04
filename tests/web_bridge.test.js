@@ -48,7 +48,6 @@ const make_request = ( overrides = {} ) => ( {
     session_id: `20260904-120000-abcdef123456`,
     epoch: `launch-epoch`,
     request_id: `123e4567-e89b-12d3-a456-426614174000`,
-    screen_revision: 1,
     kind: `text`,
     text: `Please continue\nwith the fix`,
     ...overrides,
@@ -75,8 +74,8 @@ describe( `web bridge initialization`, () => {
             role: `write`,
             token_sha256: `56d5fa7333f6d747db42c239407e5da4c32f4c79f35d092b134fd35a402d9c5c`,
         } )
-        expect( [ first.paths.root, first.paths.state, first.paths.requests, first.paths.inflight ]
-            .map( path => lstatSync( path ).mode & 0o777 ) ).toEqual( [ 0o700, 0o700, 0o700, 0o700 ] )
+        expect( [ first.paths.root, first.paths.access_dir, first.paths.state, first.paths.requests, first.paths.inflight ]
+            .map( path => lstatSync( path ).mode & 0o777 ) ).toEqual( [ 0o700, 0o700, 0o700, 0o700, 0o700 ] )
         expect( lstatSync( first.paths.access ).mode & 0o777 ).toBe( 0o600 )
         expect( web_bridge_initialized( directory ) ).toBe( true )
 
@@ -165,7 +164,7 @@ describe( `per-session web bridge`, () => {
         const { bridge, directory, sent } = setup()
         await bridge.publish( { output: `ready`, activity: `idle` } )
         const request = make_request()
-        write_request( directory, request )
+        write_request( directory, request, { mtime: new Date( Date.now() + 10_000 ) } )
 
         const result = await bridge.process_requests()
         const state = JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
@@ -211,6 +210,7 @@ describe( `per-session web bridge`, () => {
         const cases = [
             { request: make_request( { text: `unsafe\u001binput` } ), expected: `unsafe control` },
             { request: make_request( { request_id: `expired`, text: `old` } ), mtime: new Date( Date.now() - 21_000 ), expected: `expired` },
+            { request: make_request( { request_id: `future` } ), mtime: new Date( Date.now() + 31_000 ), expected: `expired` },
             { request: { ...make_request( { request_id: `extra` } ), tmux_session: `victim` }, expected: `schema` },
         ]
 

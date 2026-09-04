@@ -27,6 +27,7 @@ const MAX_SCREEN_CHARACTERS = 65_536
 const MAX_REQUESTS_PER_TICK = 8
 const MAX_DIRECTORY_ENTRIES_PER_TICK = 32
 const REQUEST_TTL_MS = 20_000
+const MAX_FUTURE_SKEW_MS = 30_000
 const MAX_RESULTS = 20
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/
 const TOKEN_HASH = /^[a-f0-9]{64}$/
@@ -86,7 +87,7 @@ const private_directory = path => {
 export const web_bridge_initialized = ( directory = WEB_BRIDGE_DIR ) => {
 
     const paths = web_bridge_paths( directory )
-    const directories_safe = [ paths.root, paths.state, paths.requests, paths.inflight ]
+    const directories_safe = [ paths.root, paths.access_dir, paths.state, paths.requests, paths.inflight ]
         .every( private_directory )
 
     if( !directories_safe || !private_regular_file( paths.access ) ) return false
@@ -143,7 +144,7 @@ const read_claimed_request = ( path, now_ms ) => {
         if( entry.size <= 0 || entry.size > MAX_REQUEST_BYTES ) throw new RejectedRequest( `Request is too large` )
 
         const age_ms = now_ms - entry.mtimeMs
-        if( age_ms < -2_000 || age_ms > REQUEST_TTL_MS ) throw new RejectedRequest( `Request expired` )
+        if( age_ms < -MAX_FUTURE_SKEW_MS || age_ms > REQUEST_TTL_MS ) throw new RejectedRequest( `Request expired` )
 
         // Read at most cap+1 from the already-validated descriptor. If the file
         // changes after fstat, it still cannot make this allocation unbounded.
@@ -170,7 +171,7 @@ const read_claimed_request = ( path, now_ms ) => {
 
 const validate_request = ( request, expected ) => {
 
-    const required_keys = [ `protocol`, `session_id`, `epoch`, `request_id`, `screen_revision`, `kind`, `text` ]
+    const required_keys = [ `protocol`, `session_id`, `epoch`, `request_id`, `kind`, `text` ]
     const allowed_keys = new Set( [ ...required_keys, `created_at` ] )
     const keys = request && typeof request === `object` && !Array.isArray( request )
         ? Object.keys( request )
@@ -187,9 +188,6 @@ const validate_request = ( request, expected ) => {
     if( request.kind !== `text` ) throw new RejectedRequest( `Unsupported request kind` )
     if( request.created_at !== undefined && typeof request.created_at !== `string` ) {
         throw new RejectedRequest( `Invalid creation time` )
-    }
-    if( !Number.isSafeInteger( request.screen_revision ) || request.screen_revision < 0 ) {
-        throw new RejectedRequest( `Invalid screen revision` )
     }
     if( typeof request.text !== `string` || !request.text.trim() ) throw new RejectedRequest( `Message is empty` )
     if( Buffer.byteLength( request.text, `utf8` ) > MAX_TEXT_BYTES ) throw new RejectedRequest( `Message is too large` )
