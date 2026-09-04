@@ -34,19 +34,27 @@ export const format_session_flags = ( modifiers ) =>
     Array.isArray( modifiers ) && modifiers.length ? modifiers.join( `,` ) : `-`
 
 /**
- * Replace terminal control characters before storing text in a tmux option.
+ * Replace terminal controls and tmux style markers before storing display text.
  * @param {*} value - Value to make safe for display
  * @returns {string} Single-line display text
  */
-const sanitize_status_value = value => Array.from( String( value ), character => {
+const sanitize_status_value = value => {
 
-    const code_point = character.codePointAt( 0 )
-    const is_ascii_control = code_point < 32
-    const is_extended_control = code_point >= 127 && code_point <= 159
-    const is_control = is_ascii_control || is_extended_control
-    return is_control ? `?` : character
+    const single_line_value = Array.from( String( value ), character => {
 
-} ).join( `` )
+        const code_point = character.codePointAt( 0 )
+        const is_ascii_control = code_point < 32
+        const is_extended_control = code_point >= 127 && code_point <= 159
+        const is_control = is_ascii_control || is_extended_control
+        return is_control ? `?` : character
+
+    } ).join( `` )
+
+    // User-option values are not recursively expanded as formats, but tmux
+    // still parses style markers such as #[fg=red] when it draws status-left.
+    return single_line_value.replaceAll( `#[`, `?[` )
+
+}
 
 /**
  * Build the compact identity shown in a Babysit tmux status bar.

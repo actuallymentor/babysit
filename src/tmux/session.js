@@ -82,7 +82,9 @@ export const create_session = async ( session_name, command, {
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status`, `on` ] ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-position`, `bottom` ] ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left`, `#[bold]#{@babysit_status_label}#[default] ` ] ),
-                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left-length`, String( status_label.length + 1 ) ] ),
+                // Tmux measures this limit in terminal columns. Two columns
+                // per UTF-16 code unit safely covers CJK and emoji labels.
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left-length`, String( status_label.length * 2 + 1 ) ] ),
             ] )
         } catch ( error ) {
             log.warn( `Could not configure the tmux status bar: ${ error.message }` )
@@ -149,13 +151,21 @@ export const kill_session = async ( session_name ) => {
 /**
  * Attach to an existing tmux session.
  * @param {string} session_name - The session name
+ * @param {Object} [options]
+ * @param {Function} [options.exec_command] - Injectable synchronous command runner
  * @returns {true} Indicates that the foreground tmux client has exited
  */
-export const attach_session = ( session_name ) => {
+export const attach_session = ( session_name, { exec_command = execSync } = {} ) => {
 
-    execSync( `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`, {
-        stdio: `inherit`,
-    } )
+    try {
+        exec_command( `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`, {
+            stdio: `inherit`,
+        } )
+    } catch ( error ) {
+        // Tmux can exit non-zero after a normal detach. Callers re-check the
+        // target session to distinguish that case from a natural session end.
+        log.debug( `tmux attach exited: ${ error.message }` )
+    }
 
     return true
 

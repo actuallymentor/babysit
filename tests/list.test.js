@@ -233,12 +233,12 @@ describe( `format_session_status_label`, () => {
         } ) ).toBe( `workspace/project` )
     } )
 
-    it( `filters name modifiers and neutralizes terminal controls`, () => {
+    it( `filters name modifiers and neutralizes unsafe status text`, () => {
         expect( format_session_status_label( {
-            name: `unsafe\nname`,
+            name: `unsafe\nname#[fg=red]`,
             pwd: `/work\tspace/project`,
             modifiers: [ `name`, `yolo\u007fmode` ],
-        } ) ).toBe( `unsafe?name · work?space/project · [yolo?mode]` )
+        } ) ).toBe( `unsafe?name?[fg=red] · work?space/project · [yolo?mode]` )
     } )
 
 } )
