@@ -14,19 +14,19 @@ services:
       - "127.0.0.1:3000:3000"
     volumes:
       - type: bind
-        source: ${HOME}/.babysit/web-bridge/access
+        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/access
         target: /bridge/access
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${HOME}/.babysit/web-bridge/state
+        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/state
         target: /bridge/state
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${HOME}/.babysit/web-bridge/requests
+        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/requests
         target: /bridge/requests
         bind:
           create_host_path: false

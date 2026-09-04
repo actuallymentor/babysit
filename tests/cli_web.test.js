@@ -50,8 +50,11 @@ describe( `babysit web init`, () => {
 
         expect( production.services[ `babysit-web` ].networks ).toEqual( [ `proxy` ] )
         expect( production.networks.proxy.external ).toBe( true )
+        expect( production.services[ `babysit-web` ].environment.BABYSIT_WEB_PUBLIC_ORIGIN ).toContain( `:?Set the public HTTPS origin` )
+        expect( production.services[ `babysit-web` ].volumes[ 0 ].source ).toContain( `BABYSIT_WEB_BRIDGE_DIR` )
         expect( local.services[ `babysit-web` ].ports ).toEqual( [ `127.0.0.1:3000:3000` ] )
         expect( local.services[ `babysit-web` ].environment.BABYSIT_WEB_ALLOW_INSECURE_HTTP ).toBe( `1` )
+        expect( local.services[ `babysit-web` ].volumes[ 0 ].source ).toContain( `BABYSIT_WEB_BRIDGE_DIR` )
     } )
 
 } )
