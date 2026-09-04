@@ -11,6 +11,7 @@ import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
 import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import { open_web_bridge } from '../web_bridge/bridge.js'
 import {
     clear_host_auth_cache,
     refresh_file_credential_parts,
@@ -281,6 +282,7 @@ export const cmd_monitor = async ( cmd ) => {
         }
 
         const agent_patterns = get_patterns( session.agent )
+        const web_bridge = await open_web_bridge( { session } )
 
         log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
         caffeinate = start_caffeinate()
@@ -291,6 +293,7 @@ export const cmd_monitor = async ( cmd ) => {
             rules,
             agent_patterns,
             agent,
+            web_bridge,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_session_id: ( id ) => {
                 update_session( session.babysit_id, { agent_session_id: id } )

@@ -51,4 +51,14 @@ describe( `CLI help`, () => {
 
     } )
 
+    it( `documents web bridge initialization`, () => {
+
+        show_help()
+
+        const help = lines.join( `\n` )
+        expect( help ).toContain( `babysit web init` )
+        expect( help ).toContain( `Initialize or rotate babysit-web access` )
+
+    } )
+
 } )

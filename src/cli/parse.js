@@ -92,6 +92,21 @@ export const parse_args = ( argv ) => {
     // babysit config
     if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }
 
+    // babysit web init — creates or rotates the host/sidecar capability.
+    if( verb === `web` ) {
+        const web_verb = positionals[1]
+        const allowed = new Set( [ `--help`, `-h`, `--version`, `-v` ] )
+        const unexpected = prepared.slice( 2 ).filter( argument => !allowed.has( argument ) )
+
+        if( !web_verb && ( flags.help || flags.version ) ) {
+            return { verb: `web`, web_verb: null, agent: null, flags, passthrough: [] }
+        }
+        if( web_verb !== `init` ) throw new Error( `Unknown web command: ${ web_verb || `(missing)` }` )
+        if( unexpected.length ) throw new Error( `Unknown web argument: ${ unexpected[0] }` )
+
+        return { verb: `web`, web_verb, agent: null, flags, passthrough: [] }
+    }
+
     // babysit prune [--list]
     if( verb === `prune` ) {
         const allowed = new Set( [ `--list`, `--help`, `-h`, `--version`, `-v` ] )

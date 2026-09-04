@@ -30,6 +30,17 @@ describe( `parse_args`, () => {
         expect( cmd.agent ).toBeNull()
     } )
 
+    it( `recognises only the web init command`, () => {
+        expect( parse_args( [ `web`, `init` ] ) ).toMatchObject( {
+            verb: `web`,
+            web_verb: `init`,
+            agent: null,
+            passthrough: [],
+        } )
+        expect( () => parse_args( [ `web` ] ) ).toThrow( `Unknown web command` )
+        expect( () => parse_args( [ `web`, `init`, `--token`, `nope` ] ) ).toThrow( `Unknown web argument` )
+    } )
+
     it( `recognises prune and scopes --list to that command`, () => {
         const prune = parse_args( [ `prune` ] )
         const preview = parse_args( [ `prune`, `--list` ] )

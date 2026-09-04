@@ -300,3 +300,98 @@ describe( `supervised agent exit`, () => {
     } )
 
 } )
+
+describe( `web bridge coordination`, () => {
+
+    it( `keeps publishing while an action runs and rejects interleaved web input`, async () => {
+        const busy_states = []
+        const request_states = []
+        let action_done
+        let alive_checks = 0
+        let wait_count = 0
+        const capture_targets = []
+        const action_targets = []
+
+        const action = new Promise( resolve => { action_done = resolve } )
+        const web_bridge = {
+            publish: async ( { busy } ) => busy_states.push( busy ),
+            process_requests: async ( { busy } ) => {
+                request_states.push( busy )
+                return { sent: false, processed: 0 }
+            },
+            close: async () => busy_states.push( `closed` ),
+            tmux_target: `%42`,
+        }
+
+        await start_monitor( {
+            session_name: `babysit_test`,
+            config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
+            rules: [ make_rule() ],
+            agent_patterns: null,
+            agent: null,
+            web_bridge,
+            has_session_fn: async () => ++alive_checks <= 2,
+            capture_pane_fn: async target => {
+                capture_targets.push( target )
+                return `error`
+            },
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            execute_action_fn: async target => {
+                action_targets.push( target )
+                return action
+            },
+            write_loop_deadline_fn: () => null,
+            wait_fn: async () => {
+                wait_count += 1
+                if( wait_count === 2 ) action_done()
+            },
+        } )
+
+        expect( busy_states ).toEqual( [ false, true, `closed` ] )
+        expect( request_states ).toEqual( [ false, true ] )
+        expect( capture_targets ).toEqual( [ `%42`, `%42` ] )
+        expect( action_targets ).toEqual( [ `%42` ] )
+    } )
+
+    it( `does not match a second rule against the screen captured as an action finishes`, async () => {
+        let action_done
+        let publish_count = 0
+        let alive_checks = 0
+        let action_count = 0
+        const action = new Promise( resolve => { action_done = resolve } )
+        const web_bridge = {
+            tmux_target: `%7`,
+            publish: async () => {
+                publish_count += 1
+                if( publish_count === 2 ) {
+                    action_done()
+                    await action
+                    await Promise.resolve()
+                }
+            },
+            process_requests: async () => ( { sent: false, processed: 0 } ),
+            close: async () => null,
+        }
+
+        await start_monitor( {
+            session_name: `babysit_test`,
+            config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
+            rules: [ make_rule(), make_rule() ],
+            agent_patterns: null,
+            agent: null,
+            web_bridge,
+            has_session_fn: async () => ++alive_checks <= 2,
+            capture_pane_fn: async () => `error`,
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            execute_action_fn: async () => {
+                action_count += 1
+                return action
+            },
+            write_loop_deadline_fn: () => null,
+            wait_fn: async () => null,
+        } )
+
+        expect( action_count ).toBe( 1 )
+    } )
+
+} )

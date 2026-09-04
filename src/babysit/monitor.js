@@ -133,6 +133,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Array} options.rules - Parsed babysit rules
  * @param {Object} options.agent_patterns - Agent-specific plan/choice patterns
  * @param {Object} options.agent - Agent adapter
+ * @param {Object|null} [options.web_bridge] - Optional filesystem bridge controller
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
@@ -143,6 +144,7 @@ export const start_monitor = async ( {
     rules,
     agent_patterns,
     agent,
+    web_bridge = null,
     on_session_id,
     on_exit,
     agent_exit_sentinel = null,
@@ -159,6 +161,35 @@ export const start_monitor = async ( {
     let session_id_captured = false
     let last_written_deadline = null
     let last_agent_status = null
+    let action_task = null
+    let action_busy = false
+    let reset_after_action = false
+    const agent_target = web_bridge?.tmux_target || session_name
+
+    const begin_action = ( rule, now ) => {
+
+        log.info( `Rule matched: on=${ rule.on.type }${ rule.on.value ? ` (${ rule.on.value })` : `` }` )
+        rule.last_fired_at = now
+        rule.first_matched_at = null
+        action_busy = true
+
+        // Long segmented actions wait for the agent between messages. Keep the
+        // monitor heartbeat and pane publishing alive while that happens, but
+        // give the action exclusive ownership of tmux input.
+        action_task = Promise.resolve()
+            .then( () => execute_action_fn( agent_target, rule.do, config ) )
+            .catch( error => log.error( `Action failed: ${ error.message }` ) )
+            .finally( () => {
+                action_busy = false
+                reset_after_action = true
+            } )
+
+    }
+
+    const finish_action = async () => {
+        if( action_task ) await action_task
+        action_task = null
+    }
 
     // Find the idle rule once — used to publish the countdown for the statusline
     const idle_rule = rules.find( r => r.on.type === `idle` )
@@ -167,106 +198,149 @@ export const start_monitor = async ( {
     log.info( `Monitoring session: ${ session_name }` )
     log.debug( `${ rules.length } rules loaded, polling every ${ POLL_INTERVAL_MS }ms` )
 
-    while( true ) {
+    try {
 
-        // Check if session is still alive
-        const alive = await has_session_fn( session_name )
-        if( !alive ) {
-            log.info( `Session ended: ${ session_name }` )
-            write_loop_deadline_fn( `idle` )
-            if( on_exit ) await on_exit()
-            break
-        }
+        while( true ) {
 
-        // Capture pane output
-        let raw_output
-        try {
-            raw_output = await capture_pane_fn( session_name )
-        } catch {
-            log.debug( `Failed to capture pane, session may be closing` )
-            await wait_fn( POLL_INTERVAL_MS )
-            continue
-        }
-
-        // Clean ANSI sequences
-        const clean_output = strip_ansi( raw_output )
-
-        // Track idle state
-        const idle_seconds = idle_tracker.update( clean_output )
-        const agent_status = agent_status_for_idle( idle_seconds )
-
-        // Store activity with the tmux session itself. Only transitions issue
-        // a command, keeping the one-second monitor poll cheap. Failed writes
-        // stay pending so a transient tmux error is retried on the next tick.
-        last_agent_status = await publish_agent_status_fn( {
-            session_name,
-            agent_status,
-            last_agent_status,
-        } )
-
-        // Publish the idle countdown deadline for the statusline (only when it changes)
-        if( idle_rule ) {
-            const deadline = idle_tracker.get_deadline( idle_timeout_s )
-            if( deadline !== null && deadline !== last_written_deadline ) {
-                write_loop_deadline_fn( deadline )
-                last_written_deadline = deadline
+            if( reset_after_action ) {
+                idle_tracker.reset()
+                reset_after_action = false
+                action_task = null
             }
-        }
 
-        // Try to capture session ID from agent output (one-time)
-        if( !session_id_captured && agent?.session_id_pattern ) {
-            const captured_id = extract_session_id( clean_output, agent.session_id_pattern )
-            if( captured_id ) {
-                session_id_captured = true
-                log.info( `Captured agent session ID: ${ captured_id }` )
-                if( on_session_id ) on_session_id( captured_id )
+            // Check if session is still alive
+            const alive = await has_session_fn( session_name )
+            if( !alive ) {
+                log.info( `Session ended: ${ session_name }` )
+                write_loop_deadline_fn( `idle` )
+                await finish_action()
+                if( on_exit ) await on_exit()
+                break
             }
-        }
 
-        // The entrypoint knows when the coding agent exits before Docker's
-        // daemon finishes its bounded stream/task cleanup. Capture the native
-        // session id first, then end tmux so the foreground CLI can return while
-        // the detached monitor finalises credentials safely.
-        const exit_status = agent_exit_status( clean_output, agent_exit_sentinel )
-        if( exit_status !== null ) {
-            const exit_started_at = Date.now()
-
-            log_shutdown_timing( `Shutdown: agent exited with status ${ exit_status }; releasing tmux foreground` )
-            write_loop_deadline_fn( `idle` )
-            await kill_session_fn( session_name )
-            log_shutdown_timing( `Shutdown: tmux released in ${ Date.now() - exit_started_at }ms` )
-            if( on_exit ) await on_exit()
-            break
-        }
-
-        // Evaluate rules in order — first match wins
-        const now = Date.now()
-        const context = { output: clean_output, idle_seconds, agent_patterns, config }
-
-        for( const rule of rules ) {
-
-            if( !should_fire_rule( rule, context, now ) ) continue
-
-            log.info( `Rule matched: on=${ rule.on.type }${ rule.on.value ? ` (${ rule.on.value })` : `` }` )
-            rule.last_fired_at = now
-            rule.first_matched_at = null  // re-arm for the next cycle
-
+            // Capture pane output
+            let raw_output
             try {
-                await execute_action_fn( session_name, rule.do, config )
-            } catch ( e ) {
-                log.error( `Action failed: ${ e.message }` )
+                raw_output = await capture_pane_fn( agent_target )
+            } catch {
+                log.debug( `Failed to capture pane, session may be closing` )
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
             }
 
-            // Reset idle tracker after firing an action (we just sent input)
-            idle_tracker.reset()
+            // Clean ANSI sequences
+            const clean_output = strip_ansi( raw_output )
 
-            // First match wins — stop evaluating further rules
-            break
+            // Track idle state
+            const idle_seconds = idle_tracker.update( clean_output )
+            const agent_status = agent_status_for_idle( idle_seconds )
+
+            // Store activity with the tmux session itself. Only transitions issue
+            // a command, keeping the one-second monitor poll cheap. Failed writes
+            // stay pending so a transient tmux error is retried on the next tick.
+            last_agent_status = await publish_agent_status_fn( {
+                session_name,
+                agent_status,
+                last_agent_status,
+            } )
+
+            // Publish the idle countdown deadline for the statusline (only when it changes)
+            if( idle_rule ) {
+                const deadline = idle_tracker.get_deadline( idle_timeout_s )
+                if( deadline !== null && deadline !== last_written_deadline ) {
+                    write_loop_deadline_fn( deadline )
+                    last_written_deadline = deadline
+                }
+            }
+
+            // Try to capture session ID from agent output (one-time)
+            if( !session_id_captured && agent?.session_id_pattern ) {
+                const captured_id = extract_session_id( clean_output, agent.session_id_pattern )
+                if( captured_id ) {
+                    session_id_captured = true
+                    log.info( `Captured agent session ID: ${ captured_id }` )
+                    if( on_session_id ) on_session_id( captured_id )
+                }
+            }
+
+            // The entrypoint knows when the coding agent exits before Docker's
+            // daemon finishes its bounded stream/task cleanup. Capture the native
+            // session id first, then end tmux so the foreground CLI can return while
+            // the detached monitor finalises credentials safely.
+            const exit_status = agent_exit_status( clean_output, agent_exit_sentinel )
+            if( exit_status !== null ) {
+                const exit_started_at = Date.now()
+
+                log_shutdown_timing( `Shutdown: agent exited with status ${ exit_status }; releasing tmux foreground` )
+                write_loop_deadline_fn( `idle` )
+                await kill_session_fn( session_name )
+                log_shutdown_timing( `Shutdown: tmux released in ${ Date.now() - exit_started_at }ms` )
+                await finish_action()
+                if( on_exit ) await on_exit()
+                break
+            }
+
+            // Publish first, then claim a bounded request batch. An in-flight
+            // Babysit action keeps ownership of the pane and rejects web input
+            // explicitly instead of interleaving keystrokes.
+            let bridge_sent = false
+            if( web_bridge ) {
+                try {
+                    await web_bridge.publish( {
+                        output: clean_output,
+                        activity: agent_status,
+                        busy: action_busy,
+                    } )
+                    const bridge_result = await web_bridge.process_requests( { busy: action_busy } )
+                    bridge_sent = bridge_result.sent
+                } catch ( error ) {
+                    log.debug( `Web bridge tick failed for ${ session_name }: ${ error.message }` )
+                }
+            }
+
+            if( bridge_sent ) {
+                idle_tracker.reset()
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
+            }
+
+            // A long action can finish while this tick is awaiting tmux or
+            // bridge I/O. Reset before evaluating the captured pre-finish
+            // screen so it cannot immediately trigger another rule.
+            if( reset_after_action ) {
+                idle_tracker.reset()
+                reset_after_action = false
+                action_task = null
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
+            }
+
+            if( action_busy ) {
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
+            }
+
+            // Evaluate rules in order — first match wins
+            const now = Date.now()
+            const context = { output: clean_output, idle_seconds, agent_patterns, config }
+
+            for( const rule of rules ) {
+
+                if( !should_fire_rule( rule, context, now ) ) continue
+
+                begin_action( rule, now )
+
+                // First match wins — stop evaluating further rules
+                break
+
+            }
+
+            await wait_fn( POLL_INTERVAL_MS )
 
         }
-
-        await wait_fn( POLL_INTERVAL_MS )
-
+    } finally {
+        await finish_action()
+        if( web_bridge ) await web_bridge.close()
     }
 
 }

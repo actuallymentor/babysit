@@ -1,0 +1,13 @@
+.git
+.github
+.notes
+.env*
+node_modules
+web/node_modules
+dist
+web/dist
+*.pem
+*.key
+credentials.json
+auth.json
+.babysit-e2e-*

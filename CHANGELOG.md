@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.39.0 — 2026-09-04
+
+### ✨ Added
+- **Babysit now has a mobile web companion.** The separately published
+  `actuallymentor/babysit-web` PWA lists live sessions, renders their latest
+  stable output as restricted Markdown, and sends text back to the exact agent
+  pane through a narrow host filesystem bridge.
+- **`babysit web init` creates the bridge capability.** It prints a
+  cryptographically random access key once, stores only its hash, and prepares
+  private state, request, and host-only inflight directories for Compose.
+
+### 🔒 Security
+- **The web container receives no machine-level control surface.** It mounts
+  sanitized session state read-only and a validated request queue read-write;
+  tmux, Docker, home, workspace, session-registry, and inflight access remain
+  on the host.
+- **Browser and request boundaries fail closed.** Rotatable read/write access,
+  short-lived secure cookies, same-origin writes, rate limits, strict request
+  schemas, bounded queues, exact pane targeting, and control-character
+  filtering protect both the web app and tmux delivery path.
+
+### ♻️ Changed
+- **Long Babysit actions no longer pause monitor heartbeats.** The monitor keeps
+  capturing the pinned agent pane while serialized actions own its input.
+
 ## 0.38.0 — 2026-09-04
 
 ### ✨ Added
