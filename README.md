@@ -82,7 +82,8 @@ babysit web init
 The token is printed once. Running the command again rotates it. The bridge
 lives at `~/.babysit/web-bridge`; keep that directory private. New sessions and
 monitors started after initialization publish to the bridge. Restart or resume
-older monitors after upgrading before expecting them in the web list.
+older monitors after upgrading before expecting them in the web list. Set
+`BABYSIT_WEB_BRIDGE_DIR` for both the CLI and Compose when using another root.
 
 Use [`examples/compose.web.yml`](examples/compose.web.yml) directly, or copy its
 service into an existing Compose stack:
@@ -97,8 +98,9 @@ docker compose -f examples/compose.web.yml up -d
 
 The proxy can reach `http://babysit-web:3000` on the shared network. The example
 does not publish a host port. Terminate TLS at the proxy and preserve
-`X-Forwarded-Proto` and `X-Forwarded-For`; `BABYSIT_WEB_PUBLIC_ORIGIN` pins
-browser requests to the expected origin.
+`X-Forwarded-Proto`, `X-Forwarded-For`, and the original host through `Host` or
+`X-Forwarded-Host`; `BABYSIT_WEB_PUBLIC_ORIGIN` pins browser requests to the
+expected origin.
 
 For local HTTP development, use the loopback-only Compose file:
 
