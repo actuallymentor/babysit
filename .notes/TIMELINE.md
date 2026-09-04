@@ -1,5 +1,7 @@
 # Timeline
 
+- **2026-09-04 (tmux session context)**: Added a per-session bottom status bar with the optional session name, compact original workspace, and launch modifiers. Foreground launch, `open`, and live-resume attachments now print the active `babysit list` after user detach while leaving natural agent exits unchanged. Real tmux and Docker E2E checks passed; clone E2E remained skipped inside nested Docker.
+
 - 2026-09-04: Added explicit clone inventory/pruning design: 30-day default, all-unused/custom retention choices, size listing, strict activity exclusion, clone-family age tracking, and journaled quarantine deletion.
 
 - **2026-09-03 (durable clone workspaces)**: Added `--clone` with transactional full-directory copies under `~/.babysit/clones`, distinct `/workspace` and writable `/original` mounts, isolated Git branches, source-concurrency prompts, durable clone metadata, and crash-aware monitor/container recovery. Clone resumes retain their copy and clone-local config; missing originals require confirmation and missing clones fail closed. Prepared v0.36.0.

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import {
     cmd_list,
     format_session_directory,
+    format_session_status_label,
     print_active_sessions_table,
 } from '../src/cli/list.js'
 
@@ -211,6 +212,33 @@ describe( `format_session_directory`, () => {
         expect( format_session_directory( `/workspace` ) ).toBe( `workspace` )
         expect( format_session_directory( `/` ) ).toBe( `/` )
         expect( format_session_directory() ).toBe( `-` )
+    } )
+
+} )
+
+describe( `format_session_status_label`, () => {
+
+    it( `shows the name, compact original directory, and active flags`, () => {
+        expect( format_session_status_label( {
+            name: `Check out settings`,
+            pwd: `/home/mentor/dev/benchmark-server-PRIVATE`,
+            modifiers: [ `yolo`, `docker`, `clone` ],
+        } ) ).toBe( `Check out settings · dev/benchmark-server-PRIVATE · [yolo, docker, clone]` )
+    } )
+
+    it( `omits unavailable names and empty flag groups`, () => {
+        expect( format_session_status_label( {
+            pwd: `/workspace/project`,
+            modifiers: [],
+        } ) ).toBe( `workspace/project` )
+    } )
+
+    it( `filters name modifiers and neutralizes terminal controls`, () => {
+        expect( format_session_status_label( {
+            name: `unsafe\nname`,
+            pwd: `/work\tspace/project`,
+            modifiers: [ `name`, `yolo\u007fmode` ],
+        } ) ).toBe( `unsafe?name · work?space/project · [yolo?mode]` )
     } )
 
 } )

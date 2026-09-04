@@ -209,7 +209,7 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 360_000 ) =
     // In a non-TTY test process, Babysit's foreground tmux attach exits
     // immediately after cmd_start has saved session metadata. The E2E harness
     // intentionally uses that metadata to keep driving the detached tmux pane.
-    await run( `node`, [ join( repo_root, `src/index.js` ), ...args ], {
+    const launch_result = await run( `node`, [ join( repo_root, `src/index.js` ), ...args ], {
         cwd: workspace,
         env: e2e_env(),
         timeout_ms,
@@ -225,7 +225,11 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 360_000 ) =
         }
     }, 10_000 )
 
-    return session
+    return {
+        ...session,
+        launch_stdout: launch_result.stdout,
+        launch_stderr: launch_result.stderr,
+    }
 }
 
 const launch_agent = async ( workspace, agent, args, timeout_ms = 360_000 ) => launch_babysit_command(
@@ -562,6 +566,19 @@ babysit:
     const session = await launch_babysit( workspace, [ `--name`, `feature 1`, `--yolo`, `--docker`, `--log`, log_path ] )
 
     ensure( session.name === `feature 1`, `session metadata did not preserve --name` )
+    const { stdout: status_label } = await tmux( [
+        `show-options`, `-v`, `-t`, session.tmux_session, `@babysit_status_label`,
+    ] )
+    const { stdout: status_position } = await tmux( [
+        `show-options`, `-v`, `-t`, session.tmux_session, `status-position`,
+    ] )
+    ensure(
+        status_label.trim() === `feature 1 · workspaces/default · [yolo, docker]`,
+        `tmux status bar has the wrong session identity: ${ status_label.trim() }`
+    )
+    ensure( status_position.trim() === `bottom`, `tmux status bar is not at the bottom` )
+    ensure( session.launch_stdout.includes( `Active babysit sessions:` ), `detach did not run babysit list` )
+    ensure( session.launch_stdout.includes( `feature 1` ), `detach list omitted the current session` )
 
     await wait_until( `initial prompt marker`, () => existsSync( join( workspace, `e2e-initial-prompt.txt` ) ) )
     await wait_until( `monitor command marker`, () => existsSync( join( workspace, `e2e-monitor-command.txt` ) ) )
@@ -645,6 +662,13 @@ babysit: []
     ensure( session.clone_path !== workspace, `clone session reused the original workspace` )
     ensure( session.clone_path === join( home, `.babysit/clones`, session.clone_id ), `clone path is outside the configured clone root` )
     ensure( existsSync( join( session.clone_path, `node_modules/copied-sentinel.txt` ) ), `clone omitted node_modules` )
+    const { stdout: status_label } = await tmux( [
+        `show-options`, `-v`, `-t`, session.tmux_session, `@babysit_status_label`,
+    ] )
+    ensure(
+        status_label.trim() === `feature 1 · workspaces/clone · [yolo, clone]`,
+        `clone status bar did not use the original workspace: ${ status_label.trim() }`
+    )
 
     await wait_until( `clone boundary marker`, () =>
         existsSync( join( session.clone_path, `e2e-clone-boundaries.json` ) )

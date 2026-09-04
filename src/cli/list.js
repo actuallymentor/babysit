@@ -34,6 +34,43 @@ export const format_session_flags = ( modifiers ) =>
     Array.isArray( modifiers ) && modifiers.length ? modifiers.join( `,` ) : `-`
 
 /**
+ * Replace terminal control characters before storing text in a tmux option.
+ * @param {*} value - Value to make safe for display
+ * @returns {string} Single-line display text
+ */
+const sanitize_status_value = value => Array.from( String( value ), character => {
+
+    const code_point = character.codePointAt( 0 )
+    const is_ascii_control = code_point < 32
+    const is_extended_control = code_point >= 127 && code_point <= 159
+    const is_control = is_ascii_control || is_extended_control
+    return is_control ? `?` : character
+
+} ).join( `` )
+
+/**
+ * Build the compact identity shown in a Babysit tmux status bar.
+ * @param {Object} session - Session identity
+ * @param {string|null} [session.name] - Optional human-readable session name
+ * @param {string} session.pwd - Original working directory
+ * @param {string[]} [session.modifiers] - Active launch modifiers
+ * @returns {string} Literal-safe status label
+ */
+export const format_session_status_label = ( { name = null, pwd, modifiers = [] } ) => {
+
+    const flags = modifiers
+        .filter( modifier => modifier && modifier !== `name` )
+        .map( sanitize_status_value )
+
+    return [
+        name ? sanitize_status_value( name ) : null,
+        sanitize_status_value( format_session_directory( pwd ) ),
+        flags.length ? `[${ flags.join( `, ` ) }]` : null,
+    ].filter( Boolean ).join( ` · ` )
+
+}
+
+/**
  * Format rows with widths derived from the visible table values.
  * @param {string[]} headers - Column labels
  * @param {Array<Array<string|number>>} rows - Values to display

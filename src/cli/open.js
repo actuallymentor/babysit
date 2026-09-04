@@ -1,7 +1,7 @@
 import { log } from '../utils/log.js'
 import { has_session, list_sessions, attach_session } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
-import { print_active_sessions_table } from './list.js'
+import { cmd_list, print_active_sessions_table } from './list.js'
 
 /**
  * Find active tmux sessions whose stored Babysit metadata points at a working directory.
@@ -29,12 +29,26 @@ export const active_sessions_for_pwd = ( pwd, tmux_sessions, stored_sessions ) =
  * interpolating it would let metacharacters in unusual session names
  * break out of the tmux argument.
  * @param {string} session_name - Tmux session name
- * @param {Function} attach_session_fn - Tmux attach helper
+ * @param {Object} deps - Attach dependencies
+ * @param {Function} deps.attach_session_fn - Tmux attach helper
+ * @param {Function} deps.has_session_fn - Tmux existence check
+ * @param {Function} deps.list_after_detach_fn - Active session list command
  */
-const attach = ( session_name, attach_session_fn ) => {
+const attach = async ( session_name, {
+    attach_session_fn,
+    has_session_fn,
+    list_after_detach_fn,
+} ) => {
 
     log.info( `Attaching to session: ${ session_name }` )
-    attach_session_fn( session_name )
+    const client_exited = await attach_session_fn( session_name )
+
+    // The production attach helper returns true after the foreground tmux
+    // client exits. Re-checking the target distinguishes a user detach from
+    // the agent ending and taking its tmux session with it.
+    if( client_exited === true && await has_session_fn( session_name ) ) {
+        await list_after_detach_fn()
+    }
 
 }
 
@@ -61,7 +75,7 @@ const open_current_directory_session = async ( {
     const matches = active_sessions_for_pwd( cwd, active, stored )
 
     if( matches.length === 1 ) {
-        attach( matches[0].name, attach_session_fn )
+        await attach_session_fn( matches[0].name )
         return
     }
 
@@ -95,6 +109,7 @@ const open_current_directory_session = async ( {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.attach_session_fn] - Tmux attach helper
+ * @param {Function} [deps.list_after_detach_fn] - Active session list command
  * @param {Function} [deps.exit_fn] - Process exit helper
  * @param {string} [deps.cwd] - Directory used for zero-arg matching
  */
@@ -103,18 +118,24 @@ export const cmd_open = async ( cmd, {
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     attach_session_fn = attach_session,
+    list_after_detach_fn = cmd_list,
     exit_fn = process.exit,
     cwd = process.cwd(),
 } = {} ) => {
 
     const { session_id } = cmd
+    const attach_selected_session = session_name => attach( session_name, {
+        attach_session_fn,
+        has_session_fn,
+        list_after_detach_fn,
+    } )
 
     if( !session_id ) {
         await open_current_directory_session( {
             cwd,
             list_sessions_fn,
             list_stored_sessions_fn,
-            attach_session_fn,
+            attach_session_fn: attach_selected_session,
             exit_fn,
         } )
         return
@@ -136,7 +157,7 @@ export const cmd_open = async ( cmd, {
         const selected = active[ Number( session_id ) - 1 ]
 
         if( selected ) {
-            attach( selected.name, attach_session_fn )
+            await attach_selected_session( selected.name )
             return
         }
 
@@ -151,7 +172,7 @@ export const cmd_open = async ( cmd, {
 
     // Try direct tmux session name match
     if( await has_session_fn( session_id ) ) {
-        attach( session_id, attach_session_fn )
+        await attach_selected_session( session_id )
         return
     }
 
@@ -164,7 +185,7 @@ export const cmd_open = async ( cmd, {
     )
 
     if( id_match && await has_session_fn( id_match.tmux_session ) ) {
-        attach( id_match.tmux_session, attach_session_fn )
+        await attach_selected_session( id_match.tmux_session )
         return
     }
 
@@ -180,7 +201,7 @@ export const cmd_open = async ( cmd, {
     const named_matches = active.filter( session => named_tmux_sessions.has( session.name ) )
 
     if( named_matches.length === 1 ) {
-        attach( named_matches[0].name, attach_session_fn )
+        await attach_selected_session( named_matches[0].name )
         return
     }
 
@@ -198,7 +219,7 @@ export const cmd_open = async ( cmd, {
     const tmux_match = stored.find( session => session.tmux_session?.includes( session_id ) )
 
     if( tmux_match && await has_session_fn( tmux_match.tmux_session ) ) {
-        attach( tmux_match.tmux_session, attach_session_fn )
+        await attach_selected_session( tmux_match.tmux_session )
         return
     }
 
@@ -206,7 +227,7 @@ export const cmd_open = async ( cmd, {
     const fuzzy = active.find( s => s.name.includes( session_id ) )
 
     if( fuzzy ) {
-        attach( fuzzy.name, attach_session_fn )
+        await attach_selected_session( fuzzy.name )
         return
     }
 
