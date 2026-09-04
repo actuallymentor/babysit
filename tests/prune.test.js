@@ -235,6 +235,22 @@ describe( `clone prune storage`, () => {
 
     } )
 
+    it( `limits focused revalidation to the requested clone family`, async () => {
+
+        const first = create_clone( `first-clone` )
+        create_clone( `second-clone` )
+        const inventory = await inspect_clone_inventory( {
+            clones_dir,
+            sessions_dir,
+            clone_ids: [ first.clone_id ],
+            get_cwd: () => directory,
+            list_tmux: async () => [],
+        } )
+
+        expect( inventory.clones.map( ( { clone_id } ) => clone_id ) ).toEqual( [ first.clone_id ] )
+
+    } )
+
     it( `quarantines a clone and marks every family session as pruned`, async () => {
 
         const clone = create_clone()
@@ -261,10 +277,12 @@ describe( `clone prune storage`, () => {
         )
         const result = await prune_managed_clone( {
             clone: managed,
-            session_ids: [ `session-one`, `session-two` ],
+            session_ids: [ `session-one` ],
             clones_dir,
             mark_sessions,
-            revalidate: async () => null,
+            revalidate: async () => ( {
+                session_ids: [ `session-one`, `session-two` ],
+            } ),
         } )
 
         expect( result.pruned ).toBe( true )
@@ -298,12 +316,18 @@ describe( `clone prune storage`, () => {
 
     } )
 
-    it( `finishes an interrupted prune from its owned journal`, async () => {
+    it( `recovers long clone ids through a symlinked root ancestor`, async () => {
 
-        const clone = create_clone()
+        const actual_parent = join( directory, `actual-parent` )
+        const linked_parent = join( directory, `linked-parent` )
+        mkdirSync( actual_parent )
+        symlinkSync( actual_parent, linked_parent, `dir` )
+        clones_dir = join( linked_parent, `clones` )
+
+        const clone = create_clone( `a`.repeat( 100 ) )
         const [ managed ] = list_managed_clones( { clones_dir } ).clones
         const paths = clone_state_paths( clones_dir )
-        const trash_name = `${ clone.clone_id }-interrupted`
+        const trash_name = `${ clone.clone_id }-${ `b`.repeat( 36 ) }`
         const journal_path = join( paths.prune_journals, `interrupted.json` )
         renameSync( clone.clone_path, join( paths.trash, trash_name ) )
         writeFileSync( journal_path, JSON.stringify( {
@@ -330,6 +354,42 @@ describe( `clone prune storage`, () => {
         expect( existsSync( join( paths.trash, trash_name ) ) ).toBe( false )
         expect( existsSync( managed.manifest_path ) ).toBe( false )
         expect( existsSync( journal_path ) ).toBe( false )
+
+    } )
+
+    it( `does not consume a journal owned by another prune process`, async () => {
+
+        const clone = create_clone()
+        const [ managed ] = list_managed_clones( { clones_dir } ).clones
+        const paths = clone_state_paths( clones_dir )
+        const trash_name = `${ clone.clone_id }-pending`
+        const journal_path = join( paths.prune_journals, `pending.json` )
+        writeFileSync( journal_path, JSON.stringify( {
+            magic: CLONE_STATE_MAGIC,
+            version: CLONE_STATE_VERSION,
+            kind: `prune`,
+            clone_id: clone.clone_id,
+            clone_path: clone.clone_path,
+            manifest_path: managed.manifest_path,
+            trash_name,
+            session_ids: [],
+            pruned_at: new Date().toISOString(),
+        } ) )
+        const release = acquire_clone_lock( clone.clone_path, { clones_dir } )
+
+        try {
+            const recovery = await recover_prune_operations( {
+                clones_dir,
+                mark_sessions: async () => {},
+            } )
+
+            expect( recovery.recovered ).toEqual( [] )
+            expect( recovery.failed ).toHaveLength( 1 )
+            expect( recovery.failed[0].error.code ).toBe( `BABYSIT_CLONE_LOCKED` )
+            expect( existsSync( journal_path ) ).toBe( true )
+        } finally {
+            release()
+        }
 
     } )
 
@@ -481,6 +541,43 @@ describe( `prune command interaction`, () => {
             } )
             expect( calls ).toBe( 1 )
         }
+
+    } )
+
+    it( `treats custom zero as all unused and tombstones fresh family records`, async () => {
+
+        const { output } = output_collector()
+        const unknown_age = { ...clone, last_used_at: null }
+        const fresh_clone = {
+            ...unknown_age,
+            records: [
+                ...unknown_age.records,
+                { session: { babysit_id: `new-session` } },
+            ],
+        }
+        const answers = [ `3`, `0`, `y` ]
+        const inventory_calls = []
+
+        await cmd_prune( { flags: {} }, {
+            input: { isTTY: true },
+            output,
+            ask: async () => answers.shift(),
+            inspect_inventory: async options => {
+                inventory_calls.push( options )
+                return inventory_calls.length === 1
+                    ? { ...inventory, clones: [ unknown_age ] }
+                    : { ...inventory, clones: [ fresh_clone ] }
+            },
+            recover_prunes: async () => ( { recovered: [], failed: [] } ),
+            prune_clone: async options => {
+                const validation = await options.revalidate( options.clone )
+                expect( validation.session_ids ).toEqual( [ `old-session`, `new-session` ] )
+                return { pruned: true, clone_id: options.clone.clone_id }
+            },
+            now: () => now,
+        } )
+
+        expect( inventory_calls[1].clone_ids ).toEqual( [ `old-clone` ] )
 
     } )
 

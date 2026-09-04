@@ -160,6 +160,7 @@ const inspect_clone_size = clone => {
  * @param {Function} [options.inspect_container] - Docker state reader
  * @param {Function} [options.monitor_alive] - Monitor liveness reader
  * @param {Function} [options.get_cwd] - Current directory reader
+ * @param {string[]} [options.clone_ids] - Optional clone ids for focused revalidation
  * @returns {Promise<Object>} Clone inventory and safety diagnostics
  */
 export const inspect_clone_inventory = async ( {
@@ -170,6 +171,7 @@ export const inspect_clone_inventory = async ( {
     monitor_alive = is_monitor_alive,
     get_cwd = process.cwd,
     inspect_locks = true,
+    clone_ids = null,
 } = {} ) => {
 
     const managed = list_managed_clones( { clones_dir } )
@@ -192,7 +194,11 @@ export const inspect_clone_inventory = async ( {
             ? `session ownership unknown`
             : null
     const current_workspace = canonical_path( get_cwd() )
-    const clones = await Promise.all( managed.clones.map( async clone => {
+    const selected_ids = clone_ids ? new Set( clone_ids ) : null
+    const selected_clones = selected_ids
+        ? managed.clones.filter( ( { clone_id } ) => selected_ids.has( clone_id ) )
+        : managed.clones
+    const clones = await Promise.all( selected_clones.map( async clone => {
         const records = clone_session_records( clone, stored.records )
         const last_used_at = clone_last_used_at( clone, records )
         const { size_bytes, size_error } = inspect_clone_size( clone )
@@ -362,6 +368,7 @@ const choose_policy = async ( question, output ) => {
 
         while( true ) {
             const days = parse_prune_days( await question( `Unused for how many days? (0 means all not in use): ` ) )
+            if( days === 0 ) return { mode: `all` }
             if( days !== null ) return { mode: `days`, days }
             write_line( output, `Enter a whole number of days, zero or greater.` )
         }
@@ -467,13 +474,18 @@ export const cmd_prune = async ( cmd, {
                         const fresh = await inspect_inventory( {
                             ...inventory_options,
                             inspect_locks: false,
+                            clone_ids: [ current.clone_id ],
                         } )
                         const refreshed = fresh.clones.find( item => item.clone_id === current.clone_id )
                         if( !refreshed ) return `clone ownership changed`
                         if( !select_prune_candidates( [ refreshed ], policy, now() ).length ) {
                             return refreshed.status === `available` ? `clone no longer meets age policy` : refreshed.status
                         }
-                        return null
+                        return {
+                            session_ids: refreshed.records
+                                .map( ( { session } ) => session.babysit_id )
+                                .filter( Boolean ),
+                        }
                     },
                 } )
 

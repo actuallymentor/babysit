@@ -20,6 +20,7 @@ import {
 import { CLONES_DIR } from './utils/paths.js'
 
 const CLONE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
+const TRASH_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,164}$/
 const PRUNE_JOURNAL_KIND = `prune`
 
 const path_entry = path => {
@@ -232,11 +233,11 @@ const valid_prune_marker = ( marker, paths ) => {
     if( marker.kind !== PRUNE_JOURNAL_KIND || typeof marker.clone_id !== `string` ) return false
     if( !CLONE_ID_PATTERN.test( marker.clone_id ) || typeof marker.trash_name !== `string` ) return false
     if( basename( marker.trash_name ) !== marker.trash_name ) return false
-    if( !CLONE_ID_PATTERN.test( marker.trash_name ) || !marker.trash_name.startsWith( `${ marker.clone_id }-` ) ) return false
+    if( !TRASH_NAME_PATTERN.test( marker.trash_name ) || !marker.trash_name.startsWith( `${ marker.clone_id }-` ) ) return false
     if( !Array.isArray( marker.session_ids ) ) return false
     if( !marker.session_ids.every( id => typeof id === `string` && CLONE_ID_PATTERN.test( id ) ) ) return false
 
-    return marker.clone_path === join( paths.root, marker.clone_id )
+    return marker.clone_path === join( realpathSync( paths.root ), marker.clone_id )
         && marker.manifest_path === join( paths.manifests, `${ marker.clone_id }.json` )
 
 }
@@ -293,10 +294,13 @@ export const recover_prune_operations = async ( {
             continue
         }
 
-        const clone_exists = Boolean( path_entry( marker.clone_path ) )
-        const trash_exists = Boolean( path_entry( join( paths.trash, marker.trash_name ) ) )
+        let release_lock = null
 
         try {
+            release_lock = acquire_clone_lock( marker.clone_path, { clones_dir } )
+            const clone_exists = Boolean( path_entry( marker.clone_path ) )
+            const trash_exists = Boolean( path_entry( join( paths.trash, marker.trash_name ) ) )
+
             if( clone_exists && !trash_exists ) {
                 rmSync( journal_path, { force: true } )
                 continue
@@ -307,6 +311,8 @@ export const recover_prune_operations = async ( {
             recovered.push( marker.clone_id )
         } catch ( error ) {
             failed.push( { path: journal_path, error } )
+        } finally {
+            release_lock?.()
         }
     }
 
@@ -318,8 +324,8 @@ export const recover_prune_operations = async ( {
  * Revalidate, atomically quarantine, and remove one managed clone.
  * @param {Object} options
  * @param {Object} options.clone - Inventory record to remove
- * @param {string[]} options.session_ids - Every stored launch in this clone family
- * @param {Function} options.revalidate - Async final activity/safety check
+ * @param {string[]} options.session_ids - Initially known launches in this clone family
+ * @param {Function} options.revalidate - Final safety check; may return fresh session ids
  * @param {Function} options.mark_sessions - Idempotent session tombstone writer
  * @param {string} [options.clones_dir] - Clone root, injectable for tests
  * @param {number} [options.now] - Epoch milliseconds for the prune timestamp
@@ -340,8 +346,12 @@ export const prune_managed_clone = async ( {
         const current = load_managed_clone( clone.clone_id, { clones_dir } )
         if( !current ) throw new Error( `Clone ownership changed before pruning: ${ clone.clone_id }` )
 
-        const reason = await revalidate( current )
+        const validation = await revalidate( current )
+        const reason = typeof validation === `string` ? validation : validation?.reason
         if( reason ) return { pruned: false, reason, clone_id: clone.clone_id }
+        const current_session_ids = Array.isArray( validation?.session_ids )
+            ? validation.session_ids
+            : session_ids
 
         const paths = clone_state_paths( clones_dir )
         const token = randomUUID()
@@ -355,7 +365,7 @@ export const prune_managed_clone = async ( {
             clone_path: clone.clone_path,
             manifest_path: current.manifest_path,
             trash_name,
-            session_ids: [ ...new Set( session_ids ) ],
+            session_ids: [ ...new Set( current_session_ids ) ],
             pruned_at: new Date( now ).toISOString(),
         }
         let quarantined = false
