@@ -3,30 +3,30 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile.web
-    image: ${BABYSIT_WEB_IMAGE:-actuallymentor/babysit-web:local}
-    restart: unless-stopped
+    image: actuallymentor/babysit-web:local
+    restart: "no"
     init: true
     user: "${BABYSIT_WEB_UID:?Set BABYSIT_WEB_UID to the host user id}:${BABYSIT_WEB_GID:?Set BABYSIT_WEB_GID to the host group id}"
     environment:
       PORT: "3000"
       BABYSIT_WEB_ALLOW_INSECURE_HTTP: "1"
     ports:
-      - "${BABYSIT_WEB_BIND:-127.0.0.1:3000}:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       - type: bind
-        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/access
+        source: ${HOME}/.babysit/web-bridge/access
         target: /bridge/access
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/state
+        source: ${HOME}/.babysit/web-bridge/state
         target: /bridge/state
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/requests
+        source: ${HOME}/.babysit/web-bridge/requests
         target: /bridge/requests
         bind:
           create_host_path: false
@@ -38,9 +38,3 @@ services:
     security_opt:
       - no-new-privileges:true
     pids_limit: 100
-    healthcheck:
-      test: [ "CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))" ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s

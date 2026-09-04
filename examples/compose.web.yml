@@ -12,19 +12,19 @@ services:
       - "3000"
     volumes:
       - type: bind
-        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/access
+        source: ${HOME}/.babysit/web-bridge/access
         target: /bridge/access
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/state
+        source: ${HOME}/.babysit/web-bridge/state
         target: /bridge/state
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${BABYSIT_WEB_BRIDGE_DIR:-${HOME}/.babysit/web-bridge}/requests
+        source: ${HOME}/.babysit/web-bridge/requests
         target: /bridge/requests
         bind:
           create_host_path: false
