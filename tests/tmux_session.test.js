@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { create_session } from '../src/tmux/session.js'
+import { attach_session, create_session } from '../src/tmux/session.js'
 
 describe( `create_session status bar`, () => {
 
@@ -32,6 +32,9 @@ describe( `create_session status bar`, () => {
         expect( status_calls.find( call => call.args.includes( `status-position` ) ).args.at( -1 ) ).toBe( `bottom` )
         expect( status_calls.find( call => call.args.includes( `status-left` ) ).args.at( -1 ) )
             .toBe( `#[bold]#{@babysit_status_label}#[default] ` )
+        expect( Number(
+            status_calls.find( call => call.args.includes( `status-left-length` ) ).args.at( -1 )
+        ) ).toBeGreaterThan( status_label.length )
 
     } )
 
@@ -46,6 +49,20 @@ describe( `create_session status bar`, () => {
             status_label: `workspace/project`,
             run_command,
         } ) ).resolves.toEqual( { pipe_started: false } )
+
+    } )
+
+} )
+
+describe( `attach_session`, () => {
+
+    it( `returns control after tmux reports a non-zero detach exit`, () => {
+
+        const exec_command = () => {
+            throw new Error( `detached` )
+        }
+
+        expect( attach_session( `babysit_test`, { exec_command } ) ).toBe( true )
 
     } )
 
