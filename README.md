@@ -66,6 +66,62 @@ babysit doctor --auth
 babysit doctor --auth opencode --refresh
 ```
 
+## Mobile web companion
+
+[`actuallymentor/babysit-web`](https://hub.docker.com/r/actuallymentor/babysit-web)
+is a small companion container for checking sessions and sending text from a
+phone. Session messages render a safe Markdown subset. Raw HTML and external
+images are not rendered.
+
+Create the host bridge and its access token first:
+
+```bash
+babysit web init
+```
+
+The token is printed once. Running the command again rotates it. The bridge
+lives at `~/.babysit/web-bridge`; keep that directory private. New sessions and
+monitors started after initialization publish to the bridge. Restart or resume
+older monitors after upgrading before expecting them in the web list.
+
+Use [`examples/compose.web.yml`](examples/compose.web.yml) directly, or copy its
+service into an existing Compose stack:
+
+```bash
+BABYSIT_WEB_UID="$(id -u)" \
+BABYSIT_WEB_GID="$(id -g)" \
+BABYSIT_WEB_PROXY_NETWORK="proxy" \
+BABYSIT_WEB_PUBLIC_ORIGIN="https://babysit.example.com" \
+docker compose -f examples/compose.web.yml up -d
+```
+
+The proxy can reach `http://babysit-web:3000` on the shared network. The example
+does not publish a host port. Terminate TLS at the proxy and preserve
+`X-Forwarded-Proto`; `BABYSIT_WEB_PUBLIC_ORIGIN` pins browser requests to the
+expected origin.
+
+For local HTTP development, build the image and publish only loopback:
+
+```bash
+docker build -f Dockerfile.web -t actuallymentor/babysit-web:local .
+docker run --rm --name babysit-web-local \
+    --user "$(id -u):$(id -g)" \
+    --read-only --tmpfs /tmp --cap-drop ALL \
+    --security-opt no-new-privileges \
+    -e BABYSIT_WEB_ALLOW_INSECURE_HTTP=1 \
+    -p 127.0.0.1:3000:3000 \
+    -v "$HOME/.babysit/web-bridge/access.json:/bridge/access.json:ro" \
+    -v "$HOME/.babysit/web-bridge/state:/bridge/state:ro" \
+    -v "$HOME/.babysit/web-bridge/requests:/bridge/requests:rw" \
+    actuallymentor/babysit-web:local
+```
+
+Open `http://127.0.0.1:3000` and sign in with the token from `babysit web init`.
+Only the sanitized state, access file, and request queue are mounted. The web
+container does not receive the tmux socket, Docker socket, home directory,
+workspaces, session registry, or the host-only `inflight` queue. The host
+Babysit monitor validates each request before it types into tmux.
+
 ## How it works
 
 1. **Docker preflight** — before tmux starts, babysit verifies that the Docker daemon is reachable and prints the Docker connection error if it is not

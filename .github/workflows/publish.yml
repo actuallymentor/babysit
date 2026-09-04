@@ -69,6 +69,28 @@ jobs:
       - name: Run tests
         run: bun test
 
+  test-web:
+    needs: check-version
+    if: needs.check-version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci --prefix web
+
+      - name: Test web API
+        run: npm test --prefix web
+
+      - name: Test web app in Chrome
+        run: npm run test:e2e --prefix web
+
   build:
     needs: [check-version, test]
     if: needs.check-version.outputs.should_release == 'true'
@@ -113,7 +135,7 @@ jobs:
           path: dist/babysit-*
 
   release:
-    needs: [check-version, build]
+    needs: [check-version, build, test-web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -149,5 +171,13 @@ jobs:
     needs: release
     uses: ./.github/workflows/docker.yml
     with:
+      publish-version-tag: true
+    secrets: inherit
+
+  deploy-web:
+    needs: release
+    uses: ./.github/workflows/web-docker.yml
+    with:
+      push-image: true
       publish-version-tag: true
     secrets: inherit

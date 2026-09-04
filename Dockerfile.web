@@ -1,0 +1,37 @@
+FROM node:24-alpine AS build
+
+WORKDIR /app
+
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/index.html web/vite.config.js ./
+COPY web/public ./public
+COPY web/scripts ./scripts
+COPY web/src ./src
+RUN npm run build
+
+FROM node:24-alpine AS runtime
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    BABYSIT_WEB_ACCESS_FILE=/bridge/access.json \
+    BABYSIT_WEB_STATE_DIR=/bridge/state \
+    BABYSIT_WEB_REQUEST_DIR=/bridge/requests
+
+WORKDIR /app
+
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts \
+    && npm cache clean --force
+
+COPY --from=build /app/dist ./dist
+COPY web/server ./server
+
+USER 1000:1000
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1:3000/healthz >/dev/null || exit 1
+
+CMD [ "node", "server/index.js" ]

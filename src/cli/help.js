@@ -18,6 +18,7 @@ Usage:
   babysit resume [session_id] [flags]  List this workspace's sessions or resume one
   babysit prune [--list]               Remove unused clone workspaces
   babysit config                       Configure babysit settings
+  babysit web init                     Initialize or rotate babysit-web access
   babysit doctor --auth [agent|all]    Verify real agent authentication
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
@@ -62,6 +63,7 @@ Examples:
   babysit resume --all
   babysit prune
   babysit prune --list
+  babysit web init
   babysit open
   babysit open 2
   babysit open "feature 1"

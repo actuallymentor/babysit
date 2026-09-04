@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { attach_session, create_session } from '../src/tmux/session.js'
+import { attach_session, create_session, get_session_pane, has_session, kill_session } from '../src/tmux/session.js'
 
 describe( `create_session status bar`, () => {
 
@@ -54,6 +54,29 @@ describe( `create_session status bar`, () => {
 
 } )
 
+describe( `get_session_pane`, () => {
+
+    it( `uses exact tmux targeting and validates the pane id`, async () => {
+        const calls = []
+        const result = await get_session_pane( `babysit_one`, {
+            run_command: async ( command, args ) => {
+                calls.push( { command, args } )
+                return `%12\tdetached\n`
+            },
+        } )
+
+        expect( result ).toEqual( { pane_id: `%12`, attachment: `detached` } )
+        expect( calls[0].args ).toContain( `=babysit_one:` )
+    } )
+
+    it( `rejects non-pane targets`, async () => {
+        expect( get_session_pane( `babysit_one`, {
+            run_command: async () => `babysit_one\tdetached`,
+        } ) ).rejects.toThrow( `exact tmux pane` )
+    } )
+
+} )
+
 describe( `attach_session`, () => {
 
     it( `returns control after tmux reports a non-zero detach exit`, () => {
@@ -64,6 +87,31 @@ describe( `attach_session`, () => {
 
         expect( attach_session( `babysit_test`, { exec_command } ) ).toBe( true )
 
+    } )
+
+    it( `requires an exact tmux session name`, () => {
+        const commands = []
+
+        attach_session( `babysit_test`, {
+            exec_command: command => commands.push( command ),
+        } )
+
+        expect( commands[0] ).toContain( `attach -t "=babysit_test"` )
+    } )
+
+} )
+
+describe( `exact session lifecycle targets`, () => {
+
+    it( `does not allow tmux prefix matching for liveness or termination`, async () => {
+        const calls = []
+        const run_command = async ( command, args ) => calls.push( { command, args } )
+
+        expect( await has_session( `babysit_one`, { run_command } ) ).toBe( true )
+        await kill_session( `babysit_one`, { run_command } )
+
+        expect( calls ).toHaveLength( 2 )
+        expect( calls.every( call => call.args.includes( `=babysit_one` ) ) ).toBe( true )
     } )
 
 } )

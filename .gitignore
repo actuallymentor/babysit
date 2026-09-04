@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.local
 .babysit-e2e-*
 *.pem
 *.key

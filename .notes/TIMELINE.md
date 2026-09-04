@@ -1,5 +1,7 @@
 # Timeline
 
+- **2026-09-04 (mobile web companion)**: Added a separate, non-root `babysit-web` PWA and a narrow filesystem bridge for listing live Babysit sessions, rendering their latest pane output as restricted Markdown, and sending bounded messages into the exact tmux pane. Authentication uses hash-only read/write tokens and short-lived secure cookies. The container receives only read-only state/access mounts plus a writable request spool; it has no Docker socket, tmux socket, session registry, home, or workspace access. Prepared v0.39.0 with API, browser, tmux, Docker, and multi-architecture release coverage.
+
 - **2026-09-04 (tmux session context)**: Added a per-session bottom status bar with the optional session name, compact original workspace, and launch modifiers. Foreground launch, `open`, and live-resume attachments now print the active `babysit list` after user detach while leaving natural agent exits unchanged. Real tmux and Docker E2E checks passed; clone E2E remained skipped inside nested Docker.
 
 - 2026-09-04: Added explicit clone inventory/pruning design: 30-day default, all-unused/custom retention choices, size listing, strict activity exclusion, clone-family age tracking, and journaled quarantine deletion.

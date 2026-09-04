@@ -81,15 +81,18 @@ const paste_text = async ( session_name, text, { runner = run } = {} ) => {
  * @param {Function} [options.runner=run] - Command runner, injected by tests
  * @param {Function} [options.wait_fn=wait] - Sleep helper, injected by tests
  * @param {number} [options.settle_ms=150] - Paste commit delay before Enter
+ * @param {boolean} [options.redact=false] - Do not include input text in debug logs
  * @returns {Promise<void>}
  */
 export const send_text = async ( session_name, text, {
     runner = run,
     wait_fn = wait,
     settle_ms = PASTE_SETTLE_MS,
+    redact = false,
 } = {} ) => {
 
-    log.debug( `Sending text to session: ${ text.slice( 0, 80 ) }...` )
+    const description = redact ? `${ Buffer.byteLength( text, `utf8` ) } bytes` : `${ text.slice( 0, 80 ) }...`
+    log.debug( `Sending text to session: ${ description }` )
 
     await paste_text( session_name, text, { runner } )
 

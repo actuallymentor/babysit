@@ -119,12 +119,14 @@ export const create_session = async ( session_name, command, {
 /**
  * Check if a tmux session is still alive
  * @param {string} session_name - The session name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
  * @returns {Promise<boolean>}
  */
-export const has_session = async ( session_name ) => {
+export const has_session = async ( session_name, { run_command = run } = {} ) => {
 
     try {
-        await run( `tmux`, [ `-L`, TMUX_SOCKET, `has-session`, `-t`, session_name ] )
+        await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `has-session`, `-t`, `=${ session_name }` ] )
         return true
     } catch {
         return false
@@ -135,12 +137,14 @@ export const has_session = async ( session_name ) => {
 /**
  * Kill a tmux session
  * @param {string} session_name - The session name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
  * @returns {Promise<void>}
  */
-export const kill_session = async ( session_name ) => {
+export const kill_session = async ( session_name, { run_command = run } = {} ) => {
 
     try {
-        await run( `tmux`, [ `-L`, TMUX_SOCKET, `kill-session`, `-t`, session_name ] )
+        await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `kill-session`, `-t`, `=${ session_name }` ] )
         log.info( `Killed tmux session: ${ session_name }` )
     } catch {
         log.debug( `Session already gone: ${ session_name }` )
@@ -158,7 +162,7 @@ export const kill_session = async ( session_name ) => {
 export const attach_session = ( session_name, { exec_command = execSync } = {} ) => {
 
     try {
-        exec_command( `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`, {
+        exec_command( `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( `=${ session_name }` ) }`, {
             stdio: `inherit`,
         } )
     } catch ( error ) {
@@ -180,12 +184,66 @@ export const attach_session = ( session_name, { exec_command = execSync } = {} )
 export const set_agent_status = async ( session_name, status ) => {
 
     try {
-        await run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, AGENT_STATUS_OPTION, status ] )
+        await run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, `=${ session_name }`, AGENT_STATUS_OPTION, status ] )
         return true
     } catch ( error ) {
         log.debug( `Could not publish ${ session_name } agent status: ${ error.message }` )
         return false
     }
+
+}
+
+/**
+ * Resolve the single pane owned by a Babysit session.
+ *
+ * The leading `=` makes tmux require an exact session-name match. The returned
+ * pane id is then safe to use as the input target even when another session
+ * happens to share a name prefix.
+ *
+ * @param {string} session_name - Exact Babysit tmux session name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
+ * @returns {Promise<{ pane_id: string, attachment: 'attached'|'detached' }>}
+ */
+export const get_session_pane = async ( session_name, { run_command = run } = {} ) => {
+
+    const exact_target = `=${ session_name }:`
+    const output = await run_command( `tmux`, [
+        `-L`, TMUX_SOCKET,
+        `display-message`, `-p`, `-t`, exact_target,
+        `#{pane_id}\t#{?session_attached,attached,detached}`,
+    ] )
+    const [ pane_id, attachment ] = output.trim().split( `\t` )
+
+    if( !/^%\d+$/.test( pane_id ) || ![ `attached`, `detached` ].includes( attachment ) ) {
+        throw new Error( `Could not resolve an exact tmux pane for ${ session_name }` )
+    }
+
+    return { pane_id, attachment }
+
+}
+
+/**
+ * Read whether an exact tmux session currently has an attached client.
+ * @param {string} session_name - Exact Babysit tmux session name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Injectable command runner
+ * @returns {Promise<'attached'|'detached'>}
+ */
+export const get_session_attachment = async ( session_name, { run_command = run } = {} ) => {
+
+    const output = await run_command( `tmux`, [
+        `-L`, TMUX_SOCKET,
+        `display-message`, `-p`, `-t`, `=${ session_name }:`,
+        `#{?session_attached,attached,detached}`,
+    ] )
+    const attachment = output.trim()
+
+    if( ![ `attached`, `detached` ].includes( attachment ) ) {
+        throw new Error( `Could not read tmux attachment state for ${ session_name }` )
+    }
+
+    return attachment
 
 }
 
