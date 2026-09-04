@@ -100,20 +100,12 @@ does not publish a host port. Terminate TLS at the proxy and preserve
 `X-Forwarded-Proto` and `X-Forwarded-For`; `BABYSIT_WEB_PUBLIC_ORIGIN` pins
 browser requests to the expected origin.
 
-For local HTTP development, build the image and publish only loopback:
+For local HTTP development, use the loopback-only Compose file:
 
 ```bash
-docker build -f Dockerfile.web -t actuallymentor/babysit-web:local .
-docker run --rm --name babysit-web-local \
-    --user "$(id -u):$(id -g)" \
-    --read-only --tmpfs /tmp --cap-drop ALL \
-    --security-opt no-new-privileges \
-    -e BABYSIT_WEB_ALLOW_INSECURE_HTTP=1 \
-    -p 127.0.0.1:3000:3000 \
-    -v "$HOME/.babysit/web-bridge/access:/bridge/access:ro" \
-    -v "$HOME/.babysit/web-bridge/state:/bridge/state:ro" \
-    -v "$HOME/.babysit/web-bridge/requests:/bridge/requests:rw" \
-    actuallymentor/babysit-web:local
+BABYSIT_WEB_UID="$(id -u)" \
+BABYSIT_WEB_GID="$(id -g)" \
+docker compose -f examples/compose.web.local.yml up --build -d
 ```
 
 Open `http://127.0.0.1:3000` and sign in with the token from `babysit web init`.

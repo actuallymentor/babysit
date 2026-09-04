@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.39.1 — 2026-09-04
+
+### 🐛 Fixed
+- **Babysit-web setup now uses Docker Compose throughout.** `babysit web init`
+  prints a complete Compose service, and local HTTP development uses a hardened
+  loopback-only Compose file instead of a standalone `docker run` command.
+
 ## 0.39.0 — 2026-09-04
 
 ### ✨ Added
