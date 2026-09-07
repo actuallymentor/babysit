@@ -1541,6 +1541,7 @@ export const cmd_start = async ( cmd ) => {
         // and load_session knows how to resolve either form back to the record.
         const final = load_session( babysit_id ) || session_data
         const resume_id = final.agent_session_id || babysit_id
+        await cmd_list()
         console.log( `\nTo resume this session, run:\nbabysit resume ${ resume_id }` )
     }
 

@@ -72,6 +72,9 @@ the host daemon.
 | `babysit doctor --auth [agent]` | Verify agent authentication |
 | `babysit update` | Update Babysit, agent tools, and the image |
 
+Detaching or exiting the agent (for example, `/exit`) shows the remaining active
+sessions.
+
 Use `--log[=PATH]` to append raw tmux output to a file. Run `babysit --help` for
 the complete CLI reference.
 

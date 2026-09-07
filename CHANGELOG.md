@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### 🐛 Fixed
+- Show the active-session list after agent exit (including `/exit`), as well as detach.
 - Show a concise failure message when `babysit update` cannot pull `~/.agents`, without Git's multiline error output.
 
 ## 0.39.2 — 2026-09-07

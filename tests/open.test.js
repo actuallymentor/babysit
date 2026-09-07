@@ -225,18 +225,18 @@ describe( `cmd_open with a session id`, () => {
                 events.push( `attach` )
                 return true
             },
-            list_after_detach_fn: async ( ...args ) => {
+            list_after_attach_fn: async ( ...args ) => {
                 events.push( `list` )
                 list_arguments = args
             },
         } )
 
-        expect( events ).toEqual( [ `live`, `attach`, `live`, `list` ] )
+        expect( events ).toEqual( [ `live`, `attach`, `list` ] )
         expect( list_arguments ).toEqual( [] )
 
     } )
 
-    it( `does not list when the attached session ended`, async () => {
+    it( `lists remaining sessions when the attached session ended`, async () => {
 
         const live_results = [ true, false ]
         let list_calls = 0
@@ -244,10 +244,10 @@ describe( `cmd_open with a session id`, () => {
         await cmd_open( { session_id: `babysit_direct_codex_1` }, {
             has_session_fn: async () => live_results.shift(),
             attach_session_fn: () => true,
-            list_after_detach_fn: async () => list_calls++,
+            list_after_attach_fn: async () => list_calls++,
         } )
 
-        expect( list_calls ).toBe( 0 )
+        expect( list_calls ).toBe( 1 )
 
     } )
 
