@@ -232,8 +232,8 @@ const update_agents_repo = async () => {
             STEP_TIMEOUT_MS
         )
         console.log( `      ✓ git pull --ff-only succeeded\n` )
-    } catch ( e ) {
-        console.log( `      ✗ git pull failed: ${ e.message }\n` )
+    } catch {
+        console.log( `      ✗ git pull failed\n` )
     }
 
 }
