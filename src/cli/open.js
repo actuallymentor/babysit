@@ -31,23 +31,20 @@ export const active_sessions_for_pwd = ( pwd, tmux_sessions, stored_sessions ) =
  * @param {string} session_name - Tmux session name
  * @param {Object} deps - Attach dependencies
  * @param {Function} deps.attach_session_fn - Tmux attach helper
- * @param {Function} deps.has_session_fn - Tmux existence check
- * @param {Function} deps.list_after_detach_fn - Active session list command
+ * @param {Function} deps.list_after_attach_fn - Active session list command
  */
 const attach = async ( session_name, {
     attach_session_fn,
-    has_session_fn,
-    list_after_detach_fn,
+    list_after_attach_fn,
 } ) => {
 
     log.info( `Attaching to session: ${ session_name }` )
     const client_exited = await attach_session_fn( session_name )
 
     // The production attach helper returns true after the foreground tmux
-    // client exits. Re-checking the target distinguishes a user detach from
-    // the agent ending and taking its tmux session with it.
-    if( client_exited === true && await has_session_fn( session_name ) ) {
-        await list_after_detach_fn()
+    // client exits, whether the user detached or the agent ended.
+    if( client_exited === true ) {
+        await list_after_attach_fn()
     }
 
 }
@@ -109,7 +106,7 @@ const open_current_directory_session = async ( {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.attach_session_fn] - Tmux attach helper
- * @param {Function} [deps.list_after_detach_fn] - Active session list command
+ * @param {Function} [deps.list_after_attach_fn] - Active session list command
  * @param {Function} [deps.exit_fn] - Process exit helper
  * @param {string} [deps.cwd] - Directory used for zero-arg matching
  */
@@ -118,7 +115,7 @@ export const cmd_open = async ( cmd, {
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     attach_session_fn = attach_session,
-    list_after_detach_fn = cmd_list,
+    list_after_attach_fn = cmd_list,
     exit_fn = process.exit,
     cwd = process.cwd(),
 } = {} ) => {
@@ -126,8 +123,7 @@ export const cmd_open = async ( cmd, {
     const { session_id } = cmd
     const attach_selected_session = session_name => attach( session_name, {
         attach_session_fn,
-        has_session_fn,
-        list_after_detach_fn,
+        list_after_attach_fn,
     } )
 
     if( !session_id ) {
