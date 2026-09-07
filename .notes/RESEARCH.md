@@ -1,5 +1,11 @@
 # Operational Research
 
+## Completed replies for the web bridge — 2026-09-07
+
+- Prefer completion payloads over terminal parsing: [Codex notify](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications) provides `last-assistant-message`; [Claude Stop](https://code.claude.com/docs/en/hooks#stop) provides `last_assistant_message`; [Gemini AfterAgent](https://geminicli.com/docs/hooks/reference/#afteragent) provides `prompt_response`. Claude warns its transcript may lag the Stop payload.
+- [OpenCode plugins](https://opencode.ai/docs/plugins/) can observe session events and read structured messages through the SDK. Exclude child sessions and tool/reasoning parts. Native session IDs can change after a root CLI `/clear` or `/new`; launch identity and root-process checks must survive that change.
+- Hook completion does not mean terminal idleness, and idleness does not mean a completed reply. Preserve the last completed reply during ongoing work; show raw terminal state separately.
+
 Agent model defaults and container tool pins last verified against primary sources: 2026-08-07.
 
 ## Browser automation

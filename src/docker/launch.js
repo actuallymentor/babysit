@@ -132,6 +132,7 @@ export const build_docker_launch_plan = ( options, {
         include_host_preferences: include_host_agent_context,
         auth_probe: options.auth_probe === true,
         workspace: options.workspace,
+        completion_capture: options.completion_capture,
     } )
     const raw_credential_mounts = options.creds_mounts || []
     const has_staged_agent_credentials = raw_credential_mounts.some( mount => mount.type === `synced_file` )

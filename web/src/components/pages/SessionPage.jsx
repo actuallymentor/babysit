@@ -53,6 +53,15 @@ const RawScreen = styled.pre`
     white-space: pre-wrap;
 `
 
+const Terminal = styled( Panel )`
+    > summary {
+        color: #59645f;
+        cursor: pointer;
+        font-weight: 700;
+        min-height: 2.75rem;
+    }
+`
+
 const Composer = styled.form`
     display: grid;
     gap: 0.65rem;
@@ -136,14 +145,17 @@ export function SessionPage( { role } ) {
             <Status activity={ session.activity } busy={ session.busy } />
         </Heading>
 
-        <Panel>
+        <Panel aria-label="Latest message">
             <h2>Latest message</h2>
             { session.last_message
                 ? <MarkdownMessage>{ session.last_message }</MarkdownMessage>
-                : session.raw_screen
-                    ? <RawScreen>{ session.raw_screen }</RawScreen>
-                    : <Notice>No stable message captured yet.</Notice> }
+                : <Notice>No completed reply captured yet.</Notice> }
         </Panel>
+
+        { session.raw_screen && <Terminal as="details">
+            <summary>Terminal output</summary>
+            <RawScreen>{ session.raw_screen }</RawScreen>
+        </Terminal> }
 
         <Panel>
             <h2>Reply</h2>

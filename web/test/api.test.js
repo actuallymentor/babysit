@@ -119,8 +119,16 @@ test( `authenticated bridge API`, async () => {
 
         const detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
         assert.equal( detail.body.session.last_message, `## Finished\n\n- one\n- two` )
+        assert.equal( detail.body.session.raw_screen, `raw pane` )
+
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { last_message: `` } ) ) )
+        const no_reply = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
+        assert.equal( no_reply.body.session.last_message, `` )
+        assert.equal( no_reply.body.session.raw_screen, `raw pane` )
 
         writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { busy: true } ) ) )
+        const busy_detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
+        assert.equal( busy_detail.body.session.last_message, detail.body.session.last_message )
         const busy_send = await api_request( origin, `/api/sessions/session-1/messages`, {
             body: { text: `Wait for the action` },
             cookie: login.cookie,

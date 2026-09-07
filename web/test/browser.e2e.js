@@ -40,7 +40,7 @@ writeFileSync( state_file, JSON.stringify( {
     modifiers: [ `yolo` ],
     name: `Mobile release`,
     protocol: 1,
-    raw_screen: `raw fallback`,
+    raw_screen: `Planning the change\nRunning tools\nAn earlier reply\nReady`,
     results: [],
     revision: 3,
     session_id: `mobile-session`,
@@ -82,6 +82,26 @@ try {
     assert.equal( await page.$$eval( `[data-testid="markdown-message"] img`, elements => elements.length ), 0 )
     assert.equal( await page.$$eval( `[data-testid="markdown-message"] script`, elements => elements.length ), 0 )
     assert.equal( await page.evaluate( () => window.evil ), undefined )
+    assert.doesNotMatch( await page.$eval( `[aria-label="Latest message"]`, element => element.textContent ), /Planning the change|Running tools|An earlier reply/ )
+    assert.equal( await page.$eval( `details`, element => element.open ), false )
+    await page.click( `summary` )
+    assert.match( await page.$eval( `details pre`, element => element.innerText ), /Planning the change\nRunning tools\nAn earlier reply/ )
+    await page.click( `summary` )
+
+    const completed_state = JSON.parse( readFileSync( state_file, `utf8` ) )
+    writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `active`, busy: true, raw_screen: `Working on the next turn` } ) )
+    await page.waitForFunction( () => document.querySelector( `textarea` )?.disabled )
+    assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )
+    writeFileSync( state_file, JSON.stringify( { ...completed_state, last_message: `` } ) )
+    await page.waitForFunction( () => document.body.textContent.includes( `No completed reply captured yet.` ) )
+    assert.equal( await page.$( `[data-testid="markdown-message"]` ), null )
+    assert.doesNotMatch( await page.$eval( `[aria-label="Latest message"]`, element => element.textContent ), /Planning the change|Running tools|An earlier reply/ )
+    assert.equal( await page.$eval( `details`, element => element.open ), false )
+    await page.click( `summary` )
+    assert.match( await page.$eval( `details pre`, element => element.innerText ), /Planning the change/ )
+    await page.click( `summary` )
+    writeFileSync( state_file, JSON.stringify( completed_state ) )
+    await page.waitForSelector( `[data-testid="markdown-message"]` )
 
     await page.type( `textarea[aria-label="Message"]`, `Ship it from mobile` )
     await page.click( `button[type="submit"]` )

@@ -9,6 +9,7 @@ import { detect_dependency_volumes } from './volumes.js'
 import { AGENTS_DIR } from '../utils/paths.js'
 import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/render.js'
 import { get_extra_mounts } from '../agents/setup.js'
+import { COMPLETION_HELPER_PATH } from '../agents/completion_capture.js'
 import { normalise_port_mappings } from './ports.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
@@ -412,6 +413,7 @@ export const build_docker_command_args = ( options ) => {
         include_agent_state = true,
         extra_mounts: supplied_extra_mounts = null,
         auth_probe = false,
+        completion_capture = null,
         container_name = null,
         exit_sentinel = randomUUID(),
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
@@ -569,6 +571,7 @@ export const build_docker_command_args = ( options ) => {
         yolo: mode.yolo,
         include_host_preferences: include_host_agent_context,
         auth_probe,
+        completion_capture,
         workspace,
     } )
     for( const m of extra_mounts ) {
@@ -643,6 +646,11 @@ export const build_docker_command_args = ( options ) => {
         flags.push( `-e`, `${ key }=${ value }` )
     }
 
+    if( completion_capture && !auth_probe ) {
+        flags.push( `-e`, `BABYSIT_COMPLETION_LAUNCH_ID=${ completion_capture.launch_id }` )
+        flags.push( `-e`, `BABYSIT_COMPLETION_FILE=${ completion_capture.file }` )
+    }
+
     // Docker image
     flags.push( get_image_name() )
 
@@ -652,7 +660,12 @@ export const build_docker_command_args = ( options ) => {
         workspace,
         include_host_preferences: include_host_agent_context,
     } )
-    flags.push( ...agent_cmd )
+    if( completion_capture && !auth_probe ) {
+        // exec preserves the root PID, letting hooks reject nested CLI runs.
+        flags.push( `python3`, COMPLETION_HELPER_PATH, `launch`, agent.name, ...agent_cmd )
+    } else {
+        flags.push( ...agent_cmd )
+    }
 
     return flags
 
