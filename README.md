@@ -94,6 +94,7 @@ Requests already running finish with their original effort. The model stays the 
 Codex updates its native thread and active-turn settings, including the TUI footer.
 OpenCode uses a session-specific plugin override; its footer still shows the TUI's
 own variant. Run `babysit effort default` in OpenCode to restore that variant.
+If its effort lookup fails, OpenCode warns and uses the TUI variant for that request.
 Supported values come from the current model; they are not limited to `high`.
 
 Requires the updated Docker image and supported CLIs (verified with Codex 0.153.4

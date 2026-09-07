@@ -21,11 +21,11 @@ const until = async condition => {
 const message = ( text, phase = `final_answer`, extra = {} ) => ( { type: `agentMessage`, id: text, text, phase, ...extra } )
 const completed = ( id, items, extra = {} ) => ( { id, status: `completed`, itemsView: `full`, items, ...extra } )
 
-const fixture = async ( { loaded = [], turn = completed( `latest`, [ message( `answer` ) ] ), item_pages, notify } = {} ) => {
+const fixture = async ( { loaded = [], turn = completed( `latest`, [ message( `answer` ) ] ), item_pages, notify, delay_ms = 0 } = {} ) => {
     const directory = mkdtempSync( join( tmpdir(), `babysit-completion-observer-` ) )
     cleanups.push( () => rmSync( directory, { recursive: true, force: true } ) )
     const output = join( directory, `invocations.jsonl` )
-    writeFileSync( join( directory, `python3` ), `#!/usr/bin/env node\nif(process.argv[3]==='notify-command')process.stdout.write(process.env.CAPTURE_TEST_NOTIFY);else require('node:fs').appendFileSync(process.env.CAPTURE_TEST_OUTPUT, JSON.stringify({argv:process.argv.slice(2),root:process.env.BABYSIT_COMPLETION_ROOT_PID,agent:process.env.BABYSIT_EFFORT_AGENT})+'\\n')\n`, { mode: 0o755 } )
+    writeFileSync( join( directory, `python3` ), `#!/usr/bin/env node\nif(process.argv[3]==='notify-command')process.stdout.write(process.env.CAPTURE_TEST_NOTIFY);else setTimeout(()=>require('node:fs').appendFileSync(process.env.CAPTURE_TEST_OUTPUT, JSON.stringify({argv:process.argv.slice(2),root:process.env.BABYSIT_COMPLETION_ROOT_PID,agent:process.env.BABYSIT_EFFORT_AGENT})+'\\n'),${ delay_ms })\n`, { mode: 0o755 } )
     const calls = []
     let socket
     const server = serve( {
@@ -64,6 +64,14 @@ const fixture = async ( { loaded = [], turn = completed( `latest`, [ message( `a
 }
 
 describe( `Codex app-server completion bridge`, () => {
+
+    it( `lets a slow notification finish while the observer shuts down`, async () => {
+        const test = await fixture( { delay_ms: 5_200 } )
+        test.emit( `turn/completed`, { threadId: `root`, turn: completed( `slow`, [ message( `final` ) ] ) } )
+        await until( () => test.calls.some( call => call.method === `thread/read` ) )
+        await test.observer.close()
+        expect( test.records() ).toHaveLength( 1 )
+    }, 15_000 )
 
     it( `captures the final answer once and invokes the existing notify chain with root identity`, async () => {
         const turn = completed( `turn1`, [ message( `progress`, `commentary` ), message( `final answer` ), message( `background`, `final_answer`, { delivery: `async` } ) ] )
