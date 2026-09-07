@@ -145,6 +145,7 @@ RUN set -eux; \
 # and prompt-file writes done by the `node` user).
 RUN mkdir -p \
         /home/node/.npm-global \
+        /home/node/.babysit-capture \
         /home/node/.claude/projects \
         /home/node/.claude/plans \
         /home/node/.claude/todos \
@@ -152,7 +153,7 @@ RUN mkdir -p \
         /home/node/.codex/sqlite \
         /home/node/.gemini/tmp \
         /home/node/.config/gh \
-        /home/node/.config/opencode \
+        /home/node/.config/opencode/plugins \
         /home/node/.local/share/opencode \
         /home/node/.agents \
         /workspace \
@@ -167,6 +168,9 @@ RUN mkdir -p \
 # image needs to point to a baked file anymore.
 COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY effort/ /opt/babysit-effort/
+RUN chmod +x /opt/babysit-effort/bin.mjs \
+    && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 
 # Reuse the image's Chrome for both global and project-local Puppeteer installs.
@@ -231,7 +235,7 @@ RUN set -eux; \
         pkgconf pkg-config pstree fuser killall socat getfacl setfacl \
         inotifywait inotifywatch entr shfmt git-filter-repo \
         ctags ctags-universal readtags qpdf \
-        codex gemini claude opencode \
+        codex gemini claude opencode babysit \
     ; do \
         gosu node sh -c 'command -v "$1"' babysit-command "$cmd"; \
     done; \

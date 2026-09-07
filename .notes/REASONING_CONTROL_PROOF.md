@@ -1,6 +1,18 @@
-# Live Codex reasoning-control proof
+# Live reasoning-control proof
 
-Verified 2026-09-07 with installed `codex-cli 0.153.4` and real `gpt-6-astra` requests. This is research, not an implemented Babysit feature.
+Verified 2026-09-07 with installed `codex-cli 0.153.4` and real `gpt-6-astra` requests. The initial research below was followed by live implementation verification.
+
+## Implementation verification — 2026-09-07
+
+- The actual managed Codex TUI executed `babysit effort` through its shell tool. Real upstream requests changed **low → high → low → medium** within one turn, all HTTP 200 with the same model. Invalid effort returned nonzero without changing medium; the next user turn and footer retained medium. `/exit` stopped the TUI and owned server.
+- **Enable `step_model_switching` in both server and TUI configuration.** The attached TUI supplies local configuration when creating the thread; setting the server flag alone produced a real partial failure: future defaults changed, active settings were rejected.
+- The remote TUI needs explicit `--cd` to retain local workspace filtering in resume/fork pickers. Installed 0.153.4 accepts both `cli` and `vscode` histories; real picker and explicit UUID resume checks passed.
+- Explicit Codex app servers record root sessions as `vscode` and do **not** invoke legacy `notify` in the verified remote flow; a matching plain TUI did invoke it. Preserve completion capture through a server observer. Unsubscribed clients receive global thread status changes; joining a root thread enables completion events. Idle status plus a full last-turn read handles turns that finish before subscription. The config-read API omits `notify`, so share the existing launch parser when resolving the configured callback.
+- Final captured-launch verification passed real high → low effort changes, exact final-reply capture, and the pre-existing custom notification callback together. This closes the native-notify regression introduced by remote mode.
+- OpenCode **1.18.29** real inference with OpenRouter GPT-5.6 Sol disproved native v2 `switchModel`: successful HTTP 204 responses still produced low/low/low/low in its TUI loop. The official `chat.params` plugin hook driven by session metadata produced low/high/low/medium, persisted to another turn, and reset to the TUI's low with `default`.
+- OpenCode's latest user message identifies the inference model; v2 `session.model` can disagree. Bind overrides to provider/model. The TUI footer does not reflect the plugin override.
+- Capture OpenCode's plugin constructor directory and send encoded `x-opencode-directory`: shell tools can run in another directory. The final managed TUI proof exercised commands from `/tmp` and `/` successfully.
+- Sources: [Codex app server](https://developers.openai.com/codex/app-server), [OpenCode plugins](https://opencode.ai/docs/plugins/), and installed CLI schemas/source. Provider evidence recorded only model, reasoning, and status, never credentials. Temporary live harnesses were stopped after testing.
 
 ## Method
 

@@ -78,6 +78,29 @@ sessions.
 Use `--log[=PATH]` to append raw tmux output to a file. Run `babysit --help` for
 the complete CLI reference.
 
+## Change reasoning effort
+
+Inside a newly started Codex or OpenCode session, agents can run:
+
+```bash
+babysit effort          # Current setting and supported levels for this model
+babysit effort high
+babysit effort low
+```
+
+Changes apply to the next model request, including within the current turn.
+Requests already running finish with their original effort. The model stays the same.
+
+Codex updates its native thread and active-turn settings, including the TUI footer.
+OpenCode uses a session-specific plugin override; its footer still shows the TUI's
+own variant. Run `babysit effort default` in OpenCode to restore that variant.
+Supported values come from the current model; they are not limited to `high`.
+
+Requires the updated Docker image and supported CLIs (verified with Codex 0.153.4
+and OpenCode 1.18.29). Existing containers need a new launch. Claude and Gemini
+are unsupported. Explicit remote/headless sessions, Codex `--profile`, and
+OpenCode `--pure` retain their normal launch without effort controls.
+
 ## Supervision
 
 The first run creates `babysit.yaml`. This compact example shows its core shape.

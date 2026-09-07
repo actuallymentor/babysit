@@ -18,6 +18,7 @@ import { cmd_prune } from './cli/prune.js'
 import { cmd_web } from './cli/web.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
+import { run_effort } from './docker/assets/effort/command.mjs'
 
 // Subcommands that need a dep check before they run. `help` and `--version`
 // are pure metadata reads, `__monitor` is a background daemon that inherits
@@ -29,6 +30,12 @@ const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open`, `doctor` ]
  * Main entry point
  */
 const main = async () => {
+
+    // Keep the container helper and full CLI's effort syntax identical.
+    if( process.argv[2] === `effort` ) {
+        console.log( await run_effort( process.argv.slice( 3 ) ) )
+        return
+    }
 
     const cmd = parse_args( process.argv.slice( 2 ) )
 

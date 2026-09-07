@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### ✨ Added
+- Add `babysit effort [level]` for managed Codex and OpenCode sessions, with model-specific levels and changes between requests in a running turn. OpenCode uses a plugin override; `default` restores its TUI selection.
+
 ### 🐛 Fixed
 - Show only the latest completed agent reply in the web interface; keep terminal output in a separate collapsed view.
 - Show the active-session list after agent exit (including `/exit`), as well as detach.

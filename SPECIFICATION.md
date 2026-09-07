@@ -75,6 +75,8 @@ Google Chrome, Puppeteer, and Xvfb are preinstalled for browser automation; Popp
 
 Common build, process, filesystem, and code tools are also preinstalled: `pkgconf`/`pkg-config`, `pstree`, `fuser`, `killall`, `socat`, `getfacl`, `setfacl`, `inotifywait`, `inotifywatch`, `entr`, `shfmt`, `git filter-repo`, and Universal Ctags (`ctags`, `ctags-universal`, and `readtags`).
 
+In managed Codex and OpenCode sessions, run `babysit effort` to inspect supported reasoning levels and `babysit effort <level>` to change effort for subsequent model requests, including within this turn. OpenCode uses a session override; `babysit effort default` restores its TUI selection. Availability depends on the launch mode and model.
+
 Do NOT add Co-Authored-By lines to git commit messages. The git author identity is already configured via environment variables.
 ```
 
