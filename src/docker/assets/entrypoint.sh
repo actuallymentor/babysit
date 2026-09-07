@@ -124,6 +124,21 @@ if [ -z "${BABYSIT_EXIT_SENTINEL:-}" ]; then
     exit 1
 fi
 
+# Only supervised interactive sessions own effort controls. Authentication
+# probes above keep their original process and protocol.
+case "${1:-}" in
+    codex|opencode) set -- node /opt/babysit-effort/launch.mjs "$@" ;;
+    python3)
+        # Completion capture execs the native agent. Keep that prefix around
+        # both managed children so effort controls and completion hooks coexist.
+        if [ "${2:-}" = "/home/node/.babysit-capture/capture.py" ] && [ "${3:-}" = "launch" ]; then
+            case "${4:-}" in
+                codex|opencode) set -- node /opt/babysit-effort/launch.mjs "$@" ;;
+            esac
+        fi
+        ;;
+esac
+
 # Docker can spend seconds closing attach streams after the agent process has
 # already exited. Keep a tiny supervisor around so Babysit's monitor sees this
 # marker immediately and can release the foreground tmux client while Docker

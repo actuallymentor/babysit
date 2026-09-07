@@ -166,6 +166,31 @@ require('child_process').spawnSync(${ JSON.stringify( native ) }, [${ JSON.strin
         expect( JSON.parse( readFileSync( arguments_file, `utf8` ) ) ).toEqual( [ `--version` ] )
     } )
 
+    it( `captures managed app-server roots while excluding child and unmanaged remote sessions`, () => {
+        codex_metadata( `root`, `vscode` )
+        codex_metadata( `child`, { subagent: { parent_thread_id: `root` } } )
+        const root = { type: `agent-turn-complete`, 'thread-id': `root`, 'last-assistant-message': `Managed final` }
+        delete env.BABYSIT_EFFORT_AGENT
+        delete env.BABYSIT_EFFORT_ENDPOINT
+        expect( execute( `codex`, [ root ] ) ).toBeNull()
+
+        env.BABYSIT_EFFORT_AGENT = `codex`
+        env.BABYSIT_EFFORT_ENDPOINT = `ws://127.0.0.1:12345`
+        expect( execute( `codex`, [
+            root,
+            { type: `agent-turn-complete`, 'thread-id': `child`, 'last-assistant-message': `Wrong child` },
+        ] ).text ).toBe( `Managed final` )
+    } )
+
+    it( `resolves the same original notify chain for the remote completion bridge`, () => {
+        writeFileSync( join( directory, `config.toml` ), `notify = ['from-file']\n` )
+        const command = [ `codex`, `-c`, `notify=["first"]`, `--config=notify=["last", "argument with spaces"]` ]
+        const result = spawnSync( `python3`, [ helper, `notify-command`, JSON.stringify( command ) ], { env, encoding: `utf8` } )
+        expect( result.status ).toBe( 0 )
+        expect( JSON.parse( result.stdout ) ).toEqual( [ `last`, `argument with spaces` ] )
+        expect( existsSync( message_file ) ).toBe( false )
+    } )
+
     it( `fails closed for Codex notifications without matching native metadata`, () => {
         expect( execute( `codex`, [ { type: `agent-turn-complete`, 'thread-id': `unknown`, 'last-assistant-message': `Wrong` } ] ) ).toBeNull()
     } )

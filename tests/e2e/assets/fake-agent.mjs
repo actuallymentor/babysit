@@ -3,7 +3,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, dirname } from 'path'
 import { createInterface } from 'readline'
-import { spawnSync } from 'child_process'
+import { spawn, spawnSync } from 'child_process'
 
 const agent_name = process.argv[1] ? basename( process.argv[1] ) : `agent`
 const workspace = `/workspace`
@@ -202,6 +202,49 @@ const handle_prompt = ( line ) => {
 if( process.argv.includes( `--version` ) ) {
     console.log( `${ agent_name } fake-e2e 1.0.0` )
     process.exit( 0 )
+}
+
+if( agent_name === `codex` && agent_args.includes( `app-server` ) ) {
+    // The managed launcher requires a real WebSocket initialize handshake
+    // before it starts the fake TUI. Bun is included in Babysit's base image.
+    let notify = []
+    for( const [ index, argument ] of agent_args.entries() ) {
+        const assignment = [ `-c`, `--config` ].includes( argument ) ? agent_args[ index + 1 ] : argument.startsWith( `--config=` ) ? argument.slice( `--config=`.length ) : ``
+        if( assignment?.startsWith( `notify=` ) ) notify = JSON.parse( assignment.slice( `notify=`.length ) )
+    }
+    const server = spawn( `bun`, [ `-e`, `
+        const endpoint = new URL(process.env.BABYSIT_EFFORT_ENDPOINT)
+        Bun.serve({
+            hostname: endpoint.hostname,
+            port: Number(endpoint.port),
+            fetch(request, server) {
+                if(server.upgrade(request)) return
+                return new Response('WebSocket required', {status: 400})
+            },
+            websocket: {
+                message(socket, data) {
+                    const request = JSON.parse(data)
+                    if(request.id === undefined) return
+                    const result = request.method === 'config/read'
+                        ? {config: {notify: JSON.parse(process.env.BABYSIT_E2E_NOTIFY)}}
+                        : request.method === 'thread/loaded/list'
+                            ? {data: []}
+                            : {userAgent: 'babysit-e2e-fake-codex'}
+                    socket.send(JSON.stringify({
+                        id: request.id,
+                        result,
+                    }))
+                },
+            },
+        })
+    ` ], { stdio: `inherit`, env: { ...process.env, BABYSIT_E2E_NOTIFY: JSON.stringify( notify ) } } )
+    for( const signal of [ `SIGINT`, `SIGTERM`, `SIGHUP` ] ) process.on( signal, () => server.kill( signal ) )
+    server.on( `error`, error => {
+        console.error( error.message )
+        process.exit( 1 )
+    } )
+    server.on( `close`, code => process.exit( code || 0 ) )
+    await new Promise( () => {} )
 }
 
 const is_auth_check = agent_args.includes( `-p` )

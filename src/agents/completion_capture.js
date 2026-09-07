@@ -49,7 +49,12 @@ def codex_root_session(session):
             metadata = json.loads(file.readline(65536))
         if metadata.get('type') == 'session_meta':
             data = metadata.get('payload', {})
-            if data.get('id') == session and data.get('source') == 'cli':
+            # A remote TUI on Babysit's owned app server records root sessions
+            # as vscode. Process ancestry still excludes independently launched
+            # CLIs, and structured subagent sources remain excluded here.
+            source = data.get('source')
+            managed = os.environ.get('BABYSIT_EFFORT_AGENT') == 'codex' and os.environ.get('BABYSIT_EFFORT_ENDPOINT', '').startswith('ws://127.0.0.1:')
+            if data.get('id') == session and (source == 'cli' or (managed and source == 'vscode')):
                 return True
     return False
 
@@ -117,19 +122,24 @@ def save(agent, payload):
             os.unlink(temporary)
 
 
+def codex_notify(command):
+    config = pathlib.Path(os.environ.get('CODEX_HOME', '/home/node/.codex'), 'config.toml')
+    existing = tomllib.loads(config.read_text()).get('notify', []) if config.exists() else []
+    # CLI overrides are resolved after the file, in their original order.
+    for index, argument in enumerate(command):
+        assignment = command[index + 1] if argument in ('-c', '--config') and index + 1 < len(command) else argument.removeprefix('--config=') if argument.startswith('--config=') else ''
+        if assignment.strip().startswith('notify'):
+            parsed = tomllib.loads(assignment)
+            existing = parsed.get('notify', existing)
+    return existing
+
+
 def launch(agent, command):
     os.environ['BABYSIT_COMPLETION_ROOT_PID'] = str(os.getpid())
     original = command.copy()
     try:
         if agent == 'codex':
-            config = pathlib.Path(os.environ.get('CODEX_HOME', '/home/node/.codex'), 'config.toml')
-            existing = tomllib.loads(config.read_text()).get('notify', []) if config.exists() else []
-            # CLI overrides are resolved after the file, in their original order.
-            for index, argument in enumerate(command):
-                assignment = command[index + 1] if argument in ('-c', '--config') and index + 1 < len(command) else argument.removeprefix('--config=') if argument.startswith('--config=') else ''
-                if assignment.strip().startswith('notify'):
-                    parsed = tomllib.loads(assignment)
-                    existing = parsed.get('notify', existing)
+            existing = codex_notify(command)
             notify = ['python3', __file__, 'codex', json.dumps(existing)]
             command[1:1] = ['-c', 'notify=' + json.dumps(notify)]
             # The capture override must win over an explicit notify passthrough.
@@ -152,6 +162,9 @@ if __name__ == '__main__':
     mode = sys.argv[1]
     if mode == 'launch':
         launch(sys.argv[2], sys.argv[3:])
+    elif mode == 'notify-command':
+        # The app-server config API omits legacy notify; share the launch parser.
+        print(json.dumps(codex_notify(json.loads(sys.argv[2]))))
     else:
         # Completion reporting must never block or alter an agent response.
         try:
