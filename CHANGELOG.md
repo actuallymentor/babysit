@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### 🐛 Fixed
+- Show a concise failure message when `babysit update` cannot pull `~/.agents`, without Git's multiline error output.
+
 ## 0.39.2 — 2026-09-07
 
 ### Changed
