@@ -51,6 +51,26 @@ const next_request = async ( id = session_id, selected_model = model ) => {
 
 describe( `OpenCode effort server adapter and inference hook`, () => {
 
+    it( `preserves the TUI request and warns when metadata lookup fails`, async () => {
+        const warnings = []
+        for( const get of [ async () => ( { error: `unavailable` } ), async () => {
+            throw new Error( `connection closed` )
+        } ] ) {
+            const hooks = await babysit_effort_plugin( { client: {
+                session: { get },
+                app: { log: async ( { body } ) => {
+                    warnings.push( body )
+                    throw new Error( `Logging unavailable too` )
+                } },
+            } } )
+            const output = { options: { reasoningEffort: `medium`, unrelated: true } }
+            await hooks[ `chat.params` ]( { sessionID: session_id, model }, output )
+            expect( output.options ).toEqual( { reasoningEffort: `medium`, unrelated: true } )
+        }
+        expect( warnings ).toHaveLength( 2 )
+        expect( warnings[0].level ).toBe( `warn` )
+    } )
+
     it( `changes effort in both directions for only the requesting session and resets to TUI defaults`, async () => {
         const shell = { env: {} }
         await plugin[ `shell.env` ]( { sessionID: session_id }, shell )

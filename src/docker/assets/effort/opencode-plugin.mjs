@@ -18,8 +18,19 @@ export const babysit_effort_plugin = async ( { client, directory } ) => ( {
     },
 
     'chat.params': async ( input, output ) => {
-        const response = await client.session.get( { path: { id: input.sessionID } } )
-        if( response.error ) throw new Error( `Babysit could not read OpenCode effort settings.` )
+        let response
+        try {
+            response = await client.session.get( { path: { id: input.sessionID } } )
+            if( response.error ) throw new Error( `Effort lookup failed` )
+        } catch {
+            // Effort controls are additive: an unavailable metadata endpoint
+            // must not prevent an otherwise valid model request from running.
+            await client.app.log( { body: {
+                service: `babysit`, level: `warn`,
+                message: `Effort settings unavailable; using the TUI setting for this request.`,
+            } } ).catch( () => {} )
+            return
+        }
         const override = response.data?.metadata?.babysit_effort
         if( !override || override.provider_id !== input.model.providerID || override.model_id !== input.model.id ) return
 

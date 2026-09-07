@@ -63,7 +63,9 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
             output += chunk
             if( output.length > 65_536 ) kill( child )
         } )
-        const timeout = setTimeout( () => kill( child ), 5_000 )
+        // The existing Python notify chain allows callbacks ten seconds. Leave
+        // room for its startup/cleanup; only the read-only lookup needs less.
+        const timeout = setTimeout( () => kill( child ), read_output ? 5_000 : 12_000 )
         child.once( `error`, reject )
         child.once( `close`, code => {
             children.delete( child )
@@ -160,7 +162,7 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
             accepting = false
             let timeout
             await Promise.race( [ queue, new Promise( resolve => {
-                timeout = setTimeout( resolve, 3_000 )
+                timeout = setTimeout( resolve, 12_000 )
             } ) ] )
             clearTimeout( timeout )
             rpc.close()
