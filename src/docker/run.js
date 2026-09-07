@@ -695,7 +695,7 @@ const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
         else parts.push( flag )
     }
 
-    // Max model and effort
+    // Apply the agent's preferred model and reasoning effort.
     const default_model = typeof agent.defaults?.model === `function`
         ? agent.defaults.model( { ...options, agent_args, mode } )
         : agent.defaults?.model

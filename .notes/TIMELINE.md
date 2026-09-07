@@ -1,5 +1,7 @@
 # Timeline
 
+- **2026-09-07 (Codex model preference)**: Selected GPT-6 Astra from current official OpenAI guidance and set medium reasoning at the user’s request. Other agent model preferences remain separate.
+
 - **2026-09-07 (README simplification)**: Reworked the README from a long-form implementation narrative into a compact operator quick reference. Kept installation, modes, session commands, supervision syntax, web setup, runtime guarantees, and development commands; delegated design history and internals to the specification and changelog.
 
 - **2026-09-04 (Compose-only web setup)**: Changed `babysit web init` to print a complete Docker Compose service and replaced the standalone local `docker run` recipe with a hardened, loopback-only Compose file. Prepared v0.39.1.
