@@ -194,8 +194,8 @@ describe( `model defaults`, () => {
     it( `claude and codex force their preferred frontier defaults`, () => {
         expect( get_agent( `claude` ).defaults.model ).toBe( `best` )
         expect( get_agent( `claude` ).defaults.effort ).toBe( `xhigh` )
-        expect( get_agent( `codex` ).defaults.model ).toBe( `gpt-5.6-sol` )
-        expect( get_agent( `codex` ).defaults.effort ).toBe( `xhigh` )
+        expect( get_agent( `codex` ).defaults.model ).toBe( `gpt-6-astra` )
+        expect( get_agent( `codex` ).defaults.effort ).toBe( `medium` )
     } )
 
 } )

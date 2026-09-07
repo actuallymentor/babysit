@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased — 2026-09-07
+## 0.39.2 — 2026-09-07
+
+### Changed
+- Default Codex to `gpt-6-astra` with `medium` reasoning.
 
 ### 📚 Documentation
 - **The README is now a focused operator quick reference.** Installation,

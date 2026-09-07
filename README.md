@@ -30,6 +30,8 @@ babysit codex --sandbox --loop
 babysit gemini --mudbox
 ```
 
+Codex defaults to `gpt-6-astra` with `medium` reasoning.
+
 Detach with `Ctrl+B d`. Reattach with `babysit open`. Unrecognized flags pass
 through to the agent:
 
