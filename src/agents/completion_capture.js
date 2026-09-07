@@ -13,6 +13,10 @@ def root_hook(agent):
     root = int(os.environ.get('BABYSIT_COMPLETION_ROOT_PID', '0'))
     if not root:
         return False
+    root_command = pathlib.Path('/proc', str(root), 'cmdline').read_bytes().split(b'\0')
+    codex_shim = (agent == 'codex' and len(root_command) > 1
+                  and os.path.basename(root_command[0].decode()) in ('node', 'nodejs')
+                  and pathlib.Path(root_command[1].decode()).resolve().name == 'codex.js')
     pid = os.getppid()
     native = 0
     while pid >= 1:
@@ -26,7 +30,9 @@ def root_hook(agent):
         # Shell hook runners are expected. A second CLI/runtime between the
         # hook and root identifies an independently launched nested agent.
         if executable not in ('sh', 'bash', 'dash'):
-            if agent == 'codex' and executable == 'codex' and native == 0:
+            # Only the npm entrypoint needs one native child. A native root
+            # must not grant the same exception to a nested native CLI.
+            if codex_shim and executable == 'codex' and native == 0:
                 native += 1
             else:
                 return False
@@ -113,26 +119,32 @@ def save(agent, payload):
 
 def launch(agent, command):
     os.environ['BABYSIT_COMPLETION_ROOT_PID'] = str(os.getpid())
-    if agent == 'codex':
-        config = pathlib.Path(os.environ.get('CODEX_HOME', '/home/node/.codex'), 'config.toml')
-        existing = tomllib.loads(config.read_text()).get('notify', []) if config.exists() else []
-        # CLI overrides are resolved after the file, in their original order.
-        for index, argument in enumerate(command):
-            assignment = command[index + 1] if argument in ('-c', '--config') and index + 1 < len(command) else argument.removeprefix('--config=') if argument.startswith('--config=') else ''
-            if assignment.strip().startswith('notify'):
-                parsed = tomllib.loads(assignment)
-                existing = parsed.get('notify', existing)
-        notify = ['python3', __file__, 'codex', json.dumps(existing)]
-        command[1:1] = ['-c', 'notify=' + json.dumps(notify)]
-        # The capture override must win over an explicit notify passthrough.
-        index = 3
-        while index < len(command):
-            if command[index] in ('-c', '--config') and index + 1 < len(command) and command[index + 1].strip().startswith('notify'):
-                del command[index:index + 2]
-            elif command[index].startswith('--config=notify'):
-                del command[index]
-            else:
-                index += 1
+    original = command.copy()
+    try:
+        if agent == 'codex':
+            config = pathlib.Path(os.environ.get('CODEX_HOME', '/home/node/.codex'), 'config.toml')
+            existing = tomllib.loads(config.read_text()).get('notify', []) if config.exists() else []
+            # CLI overrides are resolved after the file, in their original order.
+            for index, argument in enumerate(command):
+                assignment = command[index + 1] if argument in ('-c', '--config') and index + 1 < len(command) else argument.removeprefix('--config=') if argument.startswith('--config=') else ''
+                if assignment.strip().startswith('notify'):
+                    parsed = tomllib.loads(assignment)
+                    existing = parsed.get('notify', existing)
+            notify = ['python3', __file__, 'codex', json.dumps(existing)]
+            command[1:1] = ['-c', 'notify=' + json.dumps(notify)]
+            # The capture override must win over an explicit notify passthrough.
+            index = 3
+            while index < len(command):
+                if command[index] in ('-c', '--config') and index + 1 < len(command) and command[index + 1].strip().startswith('notify'):
+                    del command[index:index + 2]
+                elif command[index].startswith('--config=notify'):
+                    del command[index]
+                else:
+                    index += 1
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        # Let the native CLI resolve/report configurations this parser cannot
+        # read. Optional capture must not replace its normal startup behavior.
+        command = original
     os.execvpe(command[0], command, os.environ)
 
 

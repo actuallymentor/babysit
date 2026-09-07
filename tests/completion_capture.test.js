@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
@@ -110,10 +110,60 @@ if(agent === 'codex') {
         expect( JSON.parse( readFileSync( original, `utf8` ) )[ `last-assistant-message` ] ).toBe( `Root final` )
     } )
 
+    it( `accepts the native child of the symlinked Codex npm entrypoint`, () => {
+        codex_metadata( `root`, `cli` )
+        const node_path = spawnSync( `node`, [ `-p`, `process.execPath` ], { encoding: `utf8` } ).stdout.trim()
+        const native = join( directory, `native`, `codex` )
+        const shim = join( directory, `codex.js` )
+        const child = join( directory, `child.cjs` )
+        mkdirSync( join( directory, `native` ) )
+        symlinkSync( node_path, native )
+        writeFileSync( shim, `#!/usr/bin/env node
+const {spawnSync} = require('child_process')
+const notify = JSON.parse(process.argv[3].slice('notify='.length))
+spawnSync(${ JSON.stringify( native ) }, [${ JSON.stringify( child ) }], {env: {...process.env, NOTIFY: JSON.stringify(notify)}})
+` )
+        writeFileSync( child, `const {spawnSync} = require('child_process')
+const notify = JSON.parse(process.env.NOTIFY)
+spawnSync(notify[0], [...notify.slice(1), JSON.stringify({type: 'agent-turn-complete', 'thread-id': 'root', 'last-assistant-message': 'Native child reply'})])
+` )
+        chmodSync( shim, 0o755 )
+        rmSync( fixture )
+        symlinkSync( shim, fixture )
+        expect( execute( `codex`, [] ).text ).toBe( `Native child reply` )
+    } )
+
+    it( `rejects a nested native Codex when the root is already native`, () => {
+        codex_metadata( `nested`, `cli` )
+        const node_path = spawnSync( `node`, [ `-p`, `process.execPath` ], { encoding: `utf8` } ).stdout.trim()
+        const native = join( directory, `codex` )
+        const child = join( directory, `child.cjs` )
+        symlinkSync( node_path, native )
+        writeFileSync( fixture, `process.env.BABYSIT_COMPLETION_ROOT_PID = String(process.pid)
+require('child_process').spawnSync(${ JSON.stringify( native ) }, [${ JSON.stringify( child ) }])
+` )
+        writeFileSync( child, `require('child_process').spawnSync('python3', [process.env.HELPER, 'codex', '[]', JSON.stringify({type: 'agent-turn-complete', 'thread-id': 'nested', 'last-assistant-message': 'Nested reply'})])
+` )
+        const result = spawnSync( native, [ fixture ], { env, encoding: `utf8` } )
+        expect( result.status ).toBe( 0 )
+        expect( result.stderr ).toBe( `` )
+        expect( existsSync( message_file ) ).toBe( false )
+    } )
+
     it( `honors an explicit Codex notification override and captures before it fails`, () => {
         codex_metadata( `root`, `cli` )
         const record = execute( `codex`, [ { type: `agent-turn-complete`, 'thread-id': `root`, 'last-assistant-message': `Final` } ], [ `-c`, `notify=["false"]` ] )
         expect( record.text ).toBe( `Final` )
+    } )
+
+    it( `leaves native startup intact when the optional notification config cannot be parsed`, () => {
+        const arguments_file = join( directory, `arguments.json` )
+        writeFileSync( join( directory, `config.toml` ), `notify = [invalid TOML` )
+        writeFileSync( fixture, `#!/usr/bin/env node\nrequire('fs').writeFileSync(${ JSON.stringify( arguments_file ) }, JSON.stringify(process.argv.slice(2)))\n` )
+        const result = spawnSync( `python3`, [ helper, `launch`, `codex`, fixture, `--version` ], { env, encoding: `utf8` } )
+        expect( result.status ).toBe( 0 )
+        expect( result.stderr ).toBe( `` )
+        expect( JSON.parse( readFileSync( arguments_file, `utf8` ) ) ).toEqual( [ `--version` ] )
     } )
 
     it( `fails closed for Codex notifications without matching native metadata`, () => {
