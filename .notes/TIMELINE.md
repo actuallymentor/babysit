@@ -1,5 +1,7 @@
 # Timeline
 
+- **2026-09-07 (README simplification)**: Reworked the README from a long-form implementation narrative into a compact operator quick reference. Kept installation, modes, session commands, supervision syntax, web setup, runtime guarantees, and development commands; delegated design history and internals to the specification and changelog.
+
 - **2026-09-04 (Compose-only web setup)**: Changed `babysit web init` to print a complete Docker Compose service and replaced the standalone local `docker run` recipe with a hardened, loopback-only Compose file. Prepared v0.39.1.
 
 - **2026-09-04 (mobile web companion)**: Added a separate, non-root `babysit-web` PWA and a narrow filesystem bridge for listing live Babysit sessions, rendering their latest pane output as restricted Markdown, and sending bounded messages into the exact tmux pane. Authentication uses hash-only read/write tokens and short-lived secure cookies. The container receives only read-only state/access mounts plus a writable request spool; it has no Docker socket, tmux socket, session registry, home, or workspace access. Prepared v0.39.0 with API, browser, tmux, Docker, and multi-architecture release coverage.

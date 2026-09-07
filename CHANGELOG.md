@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — 2026-09-07
+
+### 📚 Documentation
+- **The README is now a focused operator quick reference.** Installation,
+  modes, session commands, supervision, web setup, and development remain easy
+  to scan without implementation history.
+
 ## 0.39.1 — 2026-09-04
 
 ### 🐛 Fixed
