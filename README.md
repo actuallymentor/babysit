@@ -122,6 +122,12 @@ babysit web init
 Sessions already running during initialization must exit and then be resumed so
 their new monitors publish to the bridge.
 
+The web view shows the latest completed reply, retaining it while the agent
+works on the next turn. Expand **Terminal output** to see live tool steps and
+prompts. After upgrading from screen-based message capture, exit and resume
+existing sessions to enable completion capture; the first new reply fills the
+message view.
+
 Run the production Compose example behind a TLS proxy:
 
 ```bash

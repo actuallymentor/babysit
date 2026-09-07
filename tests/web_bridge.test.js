@@ -125,7 +125,7 @@ describe( `per-session web bridge`, () => {
         return { bridge, directory, sent }
     }
 
-    it( `publishes only the allowlisted state and captures the stable screen`, async () => {
+    it( `publishes only the allowlisted state without treating an idle screen as a message`, async () => {
         const { bridge, directory } = setup()
 
         await bridge.publish( { output: `# Result\u0000\n\nDone\u001b`, activity: `running` } )
@@ -148,7 +148,7 @@ describe( `per-session web bridge`, () => {
             attachment: `detached`,
             busy: false,
             directory: `projects/babysit`,
-            last_message: `# Result\n\nDone`,
+            last_message: null,
             raw_screen: `# Result\n\nDone`,
             revision: 1,
         } )
@@ -158,6 +158,34 @@ describe( `per-session web bridge`, () => {
         bridge.close()
         expect( lstatSync( join( directory, `state` ) ).isDirectory() ).toBe( true )
         expect( readdirSync( join( directory, `state` ) ) ).toEqual( [] )
+    } )
+
+    it( `publishes completed replies independently of screen activity and retains them during work`, async () => {
+        let completion = null
+        let closed = false
+        const { bridge, directory } = setup( {
+            completion_reader: {
+                read: () => completion,
+                close: () => { closed = true },
+            },
+        } )
+        const read_state = () => JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
+        const output = `Old reply\nTool steps\nNew reply\nPrompt`
+
+        await bridge.publish( { output, activity: `idle` } )
+        expect( read_state().last_message ).toBeNull()
+
+        completion = { text: `# New reply\n\nDone\u0000` }
+        await bridge.publish( { output, activity: `running` } )
+        expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
+        expect( read_state().raw_screen ).toBe( output )
+        const revision = read_state().revision
+
+        await bridge.publish( { output, activity: `running`, busy: true } )
+        expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
+        expect( read_state().revision ).toBe( revision )
+        bridge.close()
+        expect( closed ).toBe( true )
     } )
 
     it( `claims one valid request and sends it only to the exact pane id`, async () => {

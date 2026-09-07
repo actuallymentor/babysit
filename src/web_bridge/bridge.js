@@ -15,11 +15,13 @@ import {
     writeFileSync,
 } from 'fs'
 import { join } from 'path'
+import { stripVTControlCharacters } from 'util'
 
 import { log } from '../utils/log.js'
 import { send_text } from '../tmux/send.js'
 import { get_session_attachment, get_session_pane } from '../tmux/session.js'
 import { WEB_BRIDGE_DIR, WEB_BRIDGE_PROTOCOL, web_bridge_paths } from './paths.js'
+import { create_completion_reader } from './completion.js'
 
 const MAX_TEXT_BYTES = 16 * 1_024
 const MAX_REQUEST_BYTES = 24 * 1_024
@@ -207,6 +209,7 @@ const validate_request = ( request, expected ) => {
  * @param {Function} [options.send_text_fn=send_text] - Input sender seam
  * @param {Function} [options.attachment_fn=get_session_attachment] - Attachment reader seam
  * @param {Function} [options.now_fn=Date.now] - Clock seam
+ * @param {Object} [options.completion_reader] - Launch-bound completed reply reader
  * @returns {Object} Monitor bridge controller
  */
 export const create_web_bridge = ( {
@@ -217,6 +220,7 @@ export const create_web_bridge = ( {
     send_text_fn = send_text,
     attachment_fn = get_session_attachment,
     now_fn = Date.now,
+    completion_reader = create_completion_reader( session ),
 } ) => {
 
     const session_id = session?.babysit_id
@@ -230,6 +234,7 @@ export const create_web_bridge = ( {
     let attachment = `unknown`
     let raw_screen = ``
     let last_message = null
+    let last_completion = null
     let revision = 0
     let current_activity = `running`
 
@@ -284,7 +289,14 @@ export const create_web_bridge = ( {
                 raw_screen = next_screen
                 revision += 1
             }
-            if( activity === `idle` && raw_screen ) last_message = raw_screen
+            const completion = completion_reader.read()
+            if( completion && completion !== last_completion ) {
+                // Completion events carry the reply itself. Terminal stability
+                // only describes activity and must never define a message.
+                last_message = stripVTControlCharacters( completion.text ).replace( UNSAFE_DISPLAY_TEXT, `` ).trimEnd()
+                last_completion = completion
+                revision += 1
+            }
             current_activity = activity === `idle` ? `idle` : `running`
 
             try {
@@ -382,6 +394,7 @@ export const create_web_bridge = ( {
 
         /** Remove this monitor's published state when its session ends. */
         close() {
+            completion_reader.close()
 
             try {
                 const current = JSON.parse( readFileSync( state_path, `utf8` ) )

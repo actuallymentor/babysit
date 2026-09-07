@@ -12,6 +12,7 @@ import { expand_home_path } from '../credentials/paths.js'
 import { get_host_codex_home } from './codex.js'
 import { OPENCODE_AUTH_AGENT } from './opencode.js'
 import { resolve_opencode_route_config } from './opencode_config.js'
+import { add_completion_hooks, completion_capture_mounts } from './completion_capture.js'
 
 const home = homedir()
 
@@ -43,13 +44,14 @@ export const claude_extra_mounts = ( {
     yolo = false,
     include_host_preferences = true,
     auth_probe = false,
+    completion_capture = null,
 } = {} ) => {
 
     const mounts = []
 
     const settings_tmpfile = build_claude_settings_tmpfile(
         join( home, `.claude`, `settings.json` ),
-        { yolo, include_host_preferences }
+        { yolo, include_host_preferences, completion_capture }
     )
     if( settings_tmpfile ) {
         mounts.push( { host: settings_tmpfile, container: `/home/node/.claude/settings.json` } )
@@ -109,6 +111,7 @@ export const claude_extra_mounts = ( {
 export const build_claude_settings_tmpfile = ( host_settings_path, {
     yolo = false,
     include_host_preferences = true,
+    completion_capture = null,
 } = {} ) => {
 
     let settings = {}
@@ -127,6 +130,8 @@ export const build_claude_settings_tmpfile = ( host_settings_path, {
     // "WARNING: Claude Code running in Bypass Permissions mode" dialog
     // that otherwise fires on every `--dangerously-skip-permissions` launch.
     if( yolo ) settings.skipDangerousModePermissionPrompt = true
+
+    if( completion_capture ) add_completion_hooks( settings, `claude` )
 
     return build_tmpfile( `claude`, `settings.json`, JSON.stringify( settings, null, 2 ) )
 
@@ -365,6 +370,7 @@ export const gemini_extra_mounts = ( {
     include_host_preferences = true,
     gemini_dir = join( home, `.gemini` ),
     auth_probe = false,
+    completion_capture = null,
 } = {} ) => {
 
     const mounts = []
@@ -384,7 +390,7 @@ export const gemini_extra_mounts = ( {
 
     const settings_tmpfile = build_gemini_settings_tmpfile(
         join( gemini_dir, `settings.json` ),
-        { include_host_preferences }
+        { include_host_preferences, completion_capture }
     )
     if( settings_tmpfile ) {
         mounts.push( { host: settings_tmpfile, container: `/home/node/.gemini/settings.json` } )
@@ -422,6 +428,7 @@ export const gemini_extra_mounts = ( {
  */
 export const build_gemini_settings_tmpfile = ( host_settings_path, {
     include_host_preferences = true,
+    completion_capture = null,
 } = {} ) => {
 
     let parsed = {}
@@ -444,6 +451,8 @@ export const build_gemini_settings_tmpfile = ( host_settings_path, {
                 : {},
         }
     }
+
+    if( completion_capture ) add_completion_hooks( parsed, `gemini` )
 
     return build_tmpfile( `gemini`, `settings.json`, JSON.stringify( parsed, null, 2 ) )
 
@@ -522,4 +531,11 @@ const EXTRA_MOUNTS_BY_AGENT = {
  * @param {string} agent_name
  * @returns {(options?: { yolo?: boolean, include_host_preferences?: boolean, auth_probe?: boolean, workspace?: string }) => { host: string, container: string, ro?: boolean }[]}
  */
-export const get_extra_mounts = ( agent_name ) => EXTRA_MOUNTS_BY_AGENT[ agent_name ] || NO_EXTRA_MOUNTS
+export const get_extra_mounts = ( agent_name ) => ( options = {} ) => {
+
+    const build_mounts = EXTRA_MOUNTS_BY_AGENT[ agent_name ] || NO_EXTRA_MOUNTS
+    const mounts = build_mounts( { ...options, completion_capture: options.auth_probe ? null : options.completion_capture } )
+    if( options.completion_capture && !options.auth_probe ) mounts.push( ...completion_capture_mounts( agent_name ) )
+    return mounts
+
+}

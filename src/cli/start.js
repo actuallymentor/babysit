@@ -1319,6 +1319,10 @@ export const cmd_start = async ( cmd ) => {
 
     // Create tmux session (detached — we'll attach the foreground in a moment)
     const agent_exit_sentinel = randomUUID()
+    const completion_capture = {
+        launch_id: agent_exit_sentinel,
+        file: `/tmp/.babysit-completion-${ agent_exit_sentinel }/message.json`,
+    }
     const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
 
     // GitHub's isolated credential profile is uploaded through Docker's API to
@@ -1345,6 +1349,7 @@ export const cmd_start = async ( cmd ) => {
             docker_socket_path,
             container_name,
             exit_sentinel: agent_exit_sentinel,
+            completion_capture,
         } ) )
 
         // Connect before the tmux pane can start Docker. A very fast agent may
@@ -1485,6 +1490,7 @@ export const cmd_start = async ( cmd ) => {
             auth_cache_context,
             auth_cache_contexts,
             agent_exit_sentinel,
+            completion_capture,
             container_id: prepared_launch.container_id,
             status: `active`,
         }

@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### 🐛 Fixed
+- Show only the latest completed agent reply in the web interface; keep terminal output in a separate collapsed view.
 - Show the active-session list after agent exit (including `/exit`), as well as detach.
 - Show a concise failure message when `babysit update` cannot pull `~/.agents`, without Git's multiline error output.
 
