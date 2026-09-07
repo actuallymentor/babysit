@@ -8,8 +8,8 @@ Supports [Claude](https://docs.anthropic.com/en/docs/claude-code),
 [Codex](https://github.com/openai/codex),
 [Gemini](https://github.com/google-gemini/gemini-cli), and
 [OpenCode](https://github.com/anomalyco/opencode). Gemini supports enterprise
-Code Assist and API-key accounts; individual Google accounts require
-Antigravity.
+Code Assist and API-key accounts. Individual Google accounts moved to
+Antigravity, which Babysit does not support.
 
 ## Install
 
@@ -52,8 +52,8 @@ babysit claude --yolo --model sonnet --effort high
 | `--loop` | Additive | Continue when the agent becomes idle |
 
 Modes combine. `--clone` cannot combine with `--sandbox` or `--mudbox`.
-`--docker` weakens their isolation because the Docker socket controls the host
-daemon.
+`--docker` weakens `--sandbox` and `--mudbox` because the Docker socket controls
+the host daemon.
 
 ## Sessions
 
@@ -75,24 +75,18 @@ the complete CLI reference.
 
 ## Supervision
 
-The first run creates `babysit.yaml`. Rules are evaluated from top to bottom;
-the first match wins.
+The first run creates `babysit.yaml`. This compact example shows its core shape.
+Rules are evaluated from top to bottom; the first match wins.
 
 ```yaml
 config:
     idle_timeout_s: 300
-    # commands:
-    #     notify: notify-send "Babysit needs input"
 
 babysit:
     # Uncomment only the rules you want.
     # - on: plan
     #   do: accept
     #   timeout: 10
-
-    # - on: choice
-    #   do: notify
-    #   timeout: 1:00:00
 
     # - on: idle
     #   do: ./IDLE.md
@@ -101,14 +95,15 @@ babysit:
 
 Triggers: `idle`, `plan`, `choice`, a quoted literal, or `/regex/flags`.
 
-Actions: `enter`, `accept`, `shift_tab`, a configured command, text to submit,
-or a Markdown file. Split Markdown workflows on `===` to wait for idle between
-steps. Timeouts accept `SS`, `MM:SS`, or `HH:MM:SS`.
+Actions: `enter`, `accept`, `shift_tab`, a command named under
+`config.commands`, text to submit, or a Markdown file. Split Markdown workflows
+on `===` to wait for idle between steps. Timeouts accept `SS`, `MM:SS`, or
+`HH:MM:SS`.
 
 `--loop` uses the first available instruction source:
 
 1. `./LOOP.md`
-2. `~/.agents/LOOP.md`
+2. `~/.agents/LOOP.md` (skipped with `--ignore-host-agents-md`)
 3. `Keep going`
 
 ## Mobile web companion
@@ -118,6 +113,9 @@ Initialize the host bridge and print its access token:
 ```bash
 babysit web init
 ```
+
+Sessions already running during initialization must exit and then be resumed so
+their new monitors publish to the bridge.
 
 Run the production Compose example behind a TLS proxy:
 
@@ -142,9 +140,10 @@ a request queue—not Docker, tmux, home-directory, or workspace access. Keep
 `~/.babysit/web-bridge` private; run `babysit web init` again to rotate its
 token.
 
-The production proxy must preserve the original host, `X-Forwarded-Proto`, and
-`X-Forwarded-For`. To move the bridge, set `BABYSIT_WEB_BRIDGE_DIR` to the same
-absolute path for both Babysit and Compose.
+Route the production proxy to `http://babysit-web:3000` on the shared network;
+the service publishes no host port. Preserve the original host,
+`X-Forwarded-Proto`, and `X-Forwarded-For`. To move the bridge, set
+`BABYSIT_WEB_BRIDGE_DIR` to the same absolute path for Babysit and Compose.
 
 ## Runtime
 
