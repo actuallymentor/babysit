@@ -6,6 +6,8 @@ import pkg from '../package.json' with { type: 'json' }
 import { log } from './utils/log.js'
 import { parse_args } from './cli/parse.js'
 import { show_help } from './cli/help.js'
+import { launch_menu } from './cli/launcher.js'
+import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_open } from './cli/open.js'
@@ -37,7 +39,7 @@ const main = async () => {
         return
     }
 
-    const cmd = parse_args( process.argv.slice( 2 ) )
+    let cmd = parse_args( process.argv.slice( 2 ) )
 
     // --version
     if( cmd.flags.version ) {
@@ -45,10 +47,20 @@ const main = async () => {
         process.exit( 0 )
     }
 
-    // --help or no command
+    // Explicit help
     if( cmd.flags.help || cmd.verb === `help` ) {
         show_help()
         process.exit( 0 )
+    }
+
+    if( cmd.verb === `launch` ) {
+        cmd = await launch_menu( { name: cmd.flags.name || `` } )
+        if( !cmd ) return
+        try {
+            save_launch_defaults( cmd )
+        } catch ( error ) {
+            log.warn( `Could not save launch defaults: ${ error.message }` )
+        }
     }
 
     // Pre-flight: dep check only. Self-update is no longer implicit — users

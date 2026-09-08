@@ -189,6 +189,12 @@ export const parse_args = ( argv ) => {
 
     }
 
+    // Explicit agents and subcommands take precedence over name-only launches.
+    if( !argv.length || argv.every( arg => !arg.startsWith( `-` ) ) ) {
+        flags.name = argv.length ? normalise_session_name( argv.join( ` ` ) ) : false
+        return { verb: `launch`, agent: null, flags, passthrough: [] }
+    }
+
     // Default: show help
     return { verb: `help`, agent: null, flags, passthrough: [] }
 

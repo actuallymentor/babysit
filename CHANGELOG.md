@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.42.0 — 2026-09-08
+
+### ✨ Added
+- Add a keyboard launch menu for bare `babysit` and session-name arguments.
+- Remember menu settings per workspace, with global fallback for new projects.
+
 ## 0.41.0 — 2026-09-08
 
 ### Added
