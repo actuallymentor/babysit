@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'bun:test'
 import {
-    agent_status_for_idle,
     agent_exit_status,
     publish_agent_status,
     should_fire_rule,
@@ -8,7 +7,6 @@ import {
     AGENT_EXIT_SENTINEL,
     DEBOUNCE_MS,
 } from '../src/babysit/monitor.js'
-import { IdleTracker } from '../src/babysit/matcher.js'
 
 const make_rule = ( overrides = {} ) => ( {
     on: { type: `regex`, value: /error/i },
@@ -175,20 +173,6 @@ describe( `should_fire_rule`, () => {
             expect( should_fire_rule( rule, ctx, after ) ).toBe( true )
         } )
 
-    } )
-
-} )
-
-describe( `agent_status_for_idle`, () => {
-
-    it( `reports viewport changes as running and a stable viewport as idle`, () => {
-        const tracker = new IdleTracker()
-
-        expect( agent_status_for_idle( tracker.update( `working frame one` ) ) ).toBe( `running` )
-
-        tracker.unchanged_since = Date.now() - 1_000
-        expect( agent_status_for_idle( tracker.update( `working frame one` ) ) ).toBe( `idle` )
-        expect( agent_status_for_idle( tracker.update( `working frame two` ) ) ).toBe( `running` )
     } )
 
 } )

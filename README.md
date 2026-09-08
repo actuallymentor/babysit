@@ -77,6 +77,10 @@ the host daemon.
 Detaching or exiting the agent (for example, `/exit`) shows the remaining active
 sessions.
 
+`babysit list` samples current panes over one second. Agent input/interrupt
+controls determine `idle`/`running`; unrecognized screens fall back to output
+stability. Unreadable panes show `unknown`. Attachment is reported separately.
+
 Use `--log[=PATH]` to append raw tmux output to a file. Run `babysit --help` for
 the complete CLI reference.
 
@@ -211,6 +215,7 @@ npm install
 npm run build
 bun test
 npm run test:e2e
+node tests/e2e/status.js # Focused activity regression with Docker and tmux
 ```
 
 `npm run build` creates static Linux and macOS binaries in `dist/`. The E2E

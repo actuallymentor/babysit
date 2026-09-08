@@ -6,10 +6,10 @@ import { IdleTracker, strip_ansi, evaluate_rule } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
 import { write_loop_deadline } from '../statusline/render.js'
+import { agent_status as detect_agent_status } from './activity.js'
 
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
-const ACTIVITY_IDLE_SECONDS = 1
 export const AGENT_EXIT_SENTINEL = `__BABYSIT_AGENT_EXIT__`
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
@@ -17,19 +17,6 @@ const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
 
 // Debounce between consecutive fires of the same rule (sir-claudius lesson: redraw flicker)
 export const DEBOUNCE_MS = 3_000
-
-/**
- * Convert pane stability into a list status.
- * @param {number} idle_seconds - Seconds since pane output last changed
- * @returns {'idle'|'running'} Current coding-agent activity
- */
-export const agent_status_for_idle = ( idle_seconds ) => {
-
-    // One complete unchanged poll means the viewport has stopped moving.
-    // Supervision timeouts remain separate: they decide when rules fire.
-    return idle_seconds >= ACTIVITY_IDLE_SECONDS ? `idle` : `running`
-
-}
 
 /**
  * Read the supervised entrypoint's process exit marker from pane output.
@@ -233,7 +220,7 @@ export const start_monitor = async ( {
 
             // Track idle state
             const idle_seconds = idle_tracker.update( clean_output )
-            const agent_status = agent_status_for_idle( idle_seconds )
+            const agent_status = detect_agent_status( clean_output, agent?.name, idle_seconds )
 
             // Store activity with the tmux session itself. Only transitions issue
             // a command, keeping the one-second monitor poll cheap. Failed writes

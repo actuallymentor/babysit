@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import {
     cmd_list,
+    observe_session_activity,
     format_session_directory,
     format_session_status_label,
     print_active_sessions_table,
@@ -60,6 +61,7 @@ describe( `print_active_sessions_table`, () => {
         const output = await capture_console( () => cmd_list( {
             list_sessions_fn: async () => tmux_sessions,
             list_stored_sessions_fn: () => stored_sessions,
+            observe_activity_fn: async sessions => sessions,
         } ) )
 
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
@@ -143,6 +145,7 @@ describe( `print_active_sessions_table`, () => {
 
         const output = await capture_console( () => cmd_list( {
             flags: { all: true },
+            observe_activity_fn: async sessions => sessions,
             list_sessions_fn: async () => [ {
                 name: `babysit_/ping/pong/ding/dong_codex_123`,
                 attached: false,
@@ -194,7 +197,7 @@ describe( `print_active_sessions_table`, () => {
             attached: false,
         } ], [] ) )
 
-        expect( output ).toMatch( /babysit_\/workspace\/legacy_codex_123\s+running\s+detached\s+unknown\s+-/ )
+        expect( output ).toMatch( /babysit_\/workspace\/legacy_codex_123\s+unknown\s+detached\s+unknown\s+-/ )
 
     } )
 
@@ -239,6 +242,64 @@ describe( `format_session_status_label`, () => {
             pwd: `/work\tspace/project`,
             modifiers: [ `name`, `yolo\u007fmode` ],
         } ) ).toBe( `unsafe?name?[fg=red] · work?space/project · [yolo?mode]` )
+    } )
+
+} )
+
+describe( `observe_session_activity`, () => {
+
+    it( `replaces stale and missing monitor options using fresh exact pane captures`, async () => {
+        const sessions = [
+            { name: `babysit_idle`, agent_status: `running` },
+            { name: `babysit_busy`, agent_status: `idle` },
+            { name: `babysit_legacy` },
+        ]
+        let second_sample = false
+        const targets = []
+        const observed = await observe_session_activity( sessions, [], {
+            capture: async target => {
+                targets.push( target )
+                return target === `=babysit_busy:` && second_sample ? `new output` : `first output`
+            },
+            wait: async milliseconds => {
+                expect( milliseconds ).toBe( 1_000 )
+                expect( targets ).toHaveLength( 3 )
+                second_sample = true
+            },
+        } )
+
+        expect( observed.map( session => session.agent_status ) ).toEqual( [ `idle`, `running`, `idle` ] )
+        expect( targets ).toEqual( [ ...sessions, ...sessions ].map( session => `=${ session.name }:` ) )
+        expect( sessions[0].agent_status ).toBe( `running` )
+    } )
+
+    it( `reports unknown when either capture fails without hiding other sessions`, async () => {
+        let second_sample = false
+        const sessions = [ `first_failure`, `second_failure`, `healthy` ].map( name => ( { name, agent_status: `running` } ) )
+        const observed = await observe_session_activity( sessions, [], {
+            capture: async target => {
+                if( target === `=first_failure:` && !second_sample || target === `=second_failure:` && second_sample ) {
+                    throw new Error( `pane unavailable` )
+                }
+                return `stable`
+            },
+            wait: async () => { second_sample = true },
+        } )
+
+        expect( observed.map( session => session.agent_status ) ).toEqual( [ `unknown`, `unknown`, `idle` ] )
+    } )
+
+    it( `prints newly observed status rather than the cached list value`, async () => {
+        const output = await capture_console( () => cmd_list( {
+            list_sessions_fn: async () => [ { name: `babysit_stale`, attached: false, agent_status: `running` } ],
+            list_stored_sessions_fn: () => [],
+            observe_activity_fn: ( sessions, stored ) => observe_session_activity( sessions, stored, {
+                capture: async () => `waiting for input`,
+                wait: async () => {},
+            } ),
+        } ) )
+
+        expect( output ).toMatch( /babysit_stale\s+idle\s+detached/ )
     } )
 
 } )
