@@ -92,6 +92,8 @@ The fixed OpenCode path was exercised through Babysit in fresh container `bb8686
 
 The fixed Codex path passed in fresh container `c5f9553bad58` with an explicit model and inherited host configuration, without `--ignore-host-agents-md`. The actual command contained one model flag; staged TOML parsed with 11 integer NUX entries, and the host config hash stayed unchanged. Thread `01a0808b-3283-7bf1-9b10-37af18a84b4b` executed `babysit effort high` then `low`; four real gpt-6-astra requests used low/low/high/low, all HTTP 200. Production completion capture passed. Evidence: `/tmp/codex-fixed-container-evidence-20260908/` (ephemeral).
 
+Final independent review identified a remaining Claude argument edge after the allowed correction round: combined short options such as `-pn` combine boolean print with value-taking name. For `-pn -- --model sonnet`, native Claude consumes `--` as the name, while Babysit's scanner mistakes it for a separator and can inject a duplicate model. Native `claude -pn --version --help` confirmed the operand consumption without inference. Workaround: spell the flags separately (`-p -n NAME --model sonnet`). This is reported for a subsequent task; the reproduced Codex/OpenCode launch failures above are resolved.
+
 ## Sources
 
 - Installed CLI help, generated experimental protocol schemas, actual control responses, outbound request fields, and captured TUI screens.
