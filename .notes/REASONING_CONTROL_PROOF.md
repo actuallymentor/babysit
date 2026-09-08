@@ -70,7 +70,21 @@ A native adapter is viable for Codex 0.153.4 when it controls the exact server h
 
 This requires changing Babysit's Codex launch path to start the explicit server and attach its TUI. It is not a proven retrofit for sessions already running under the ordinary launch path.
 
-This proof does not establish live control for Claude Code, OpenCode, or Gemini CLI. Their earlier findings remain documentation research.
+The initial Codex experiment did not establish live control for other agents. OpenCode was subsequently verified as recorded above; Claude Code and Gemini CLI remain outside the implemented effort controls.
+
+## Fresh production-container verification — 2026-09-08
+
+Launched through the actual Babysit CLI using published image `actuallymentor/babysit@sha256:7a8d9fc5252e80f1cb8de100908b9383abc11e4327ad9c4be93502a0b57b3f28` (image ID `sha256:b7f4709d07161565749d2c19c2509411ce25f4c63a2b86498663d6453503b077`). All image effort modules and entrypoint hashes matched the committed source. These checks used real credentials, native TUIs, installed `babysit effort`, and transparent relays forwarding real provider requests. Authentication preflight was skipped through its supported Enter prompt; actual inference verified authentication directly.
+
+- OpenCode 1.18.29, container `98486133a229`, session `ses_f7f86d91dffe9tnU6PbQbGvL8g`: nine LLM-issued helper commands across three user turns. Actual GPT-5.6 Sol requests changed omitted/default → high → low → medium; invalid effort exited 1 and preserved medium. Medium persisted into the next turn. `default` restored an omitted reasoning field, including another user turn. All 12 main-model requests returned HTTP 200. Completion capture matched the session and final reply. Root independently correlated command completion timestamps with the next provider request. Sanitized evidence: `/tmp/opencode-fresh-container-evidence/` (ephemeral).
+- Codex 0.153.4, container `44d8f46bdfba`, thread `01a0807d-08f7-7890-9cee-4dcf64ac2a8f`: six LLM-issued helper commands in turn `01a0807e-29cb-7eb3-8837-5b89e2cdf6e7`. Actual gpt-6-astra requests changed low → high → low → medium; invalid effort exited 1 and preserved medium. A subsequent user turn used medium, the native footer showed medium, and production completion capture matched the exact final reply. All nine real model requests returned HTTP 200. Root independently asserted native command sequence/exit codes, completed turn IDs, request effort sequence within turn timestamps, and completion capture. Sanitized evidence: `/tmp/codex-real-container-evidence-20260908/` (ephemeral).
+
+Both successful launches used `--yolo --ignore-host-agents-md` with real native credentials. Only low, medium, and high were inference-tested; this does not establish every supported level or provider. No effort source changes were necessary for these passes.
+
+### Existing launch pitfalls exposed by the full path
+
+- Explicit `--model`/`-m` is appended after Babysit's default model flag. Codex 0.153.4 rejects the duplicate; OpenCode 1.18.29 parses an array and crashes with `U.split is not a function`. Use the configured/default model for these verification launches. The unconditional default flag predates the effort feature.
+- Codex configuration staging detects NUX model keys only when double-quoted. A valid native config with bare keys acquires duplicate quoted keys and becomes invalid TOML (`Cannot overwrite a value`). This predates the effort feature. The supported `--ignore-host-agents-md` option supplies a fresh config while retaining natural authentication and production completion/effort integration. Successful isolated-config tests do not establish that the inherited-config launch works.
 
 ## Sources
 
