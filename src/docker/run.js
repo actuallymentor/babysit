@@ -18,6 +18,21 @@ export const BABYSIT_RC_CONTAINER_PATH = `/home/node/.babysitrc`
 export const BABYSIT_HOST_RC_ENV = `BABYSIT_HOST_BABYSITRC`
 export const WATCHTOWER_DISABLE_LABEL = `com.centurylinklabs.watchtower.enable=false`
 
+// Claude's Commander parser consumes required operands even when they look
+// like options. Other agents reject those operands or parse them as options.
+// Optional-value flags are intentionally absent: they leave options unconsumed.
+const CLAUDE_VALUE_OPTIONS = new Set( [
+    `--add-dir`, `--agent`, `--agents`, `--allowedTools`, `--allowed-tools`,
+    `--append-system-prompt`, `--append-system-prompt-file`, `--autocompact`,
+    `--betas`, `--debug-file`, `--disallowedTools`, `--disallowed-tools`,
+    `--effort`, `--environment`, `--fallback-model`, `--file`, `--input-format`,
+    `--json-schema`, `--max-budget-usd`, `--mcp-config`, `-n`, `--name`, `--output-format`,
+    `--permission-mode`, `--permission-prompts`, `--plugin-dir`, `--plugin-url`,
+    `--remote-control-session-name-prefix`, `--session-id`, `--setting-sources`,
+    `--settings`, `--system-prompt`, `--system-prompt-file`,
+    `--system-prompt-snapshot`, `--tools`,
+] )
+
 /**
  * Extract a Unix socket path from a Docker host URI.
  * @param {string} docker_host - DOCKER_HOST-style URI
@@ -710,12 +725,22 @@ const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
 
     // Native CLIs may reject repeated model flags. Keep an explicit selection
     // intact instead of relying on a later flag overriding Babysit's default.
-    const separator = agent_args.indexOf( `--` )
-    const options_args = separator < 0 ? agent_args : agent_args.slice( 0, separator )
-    const explicit_model = options_args.some( argument => /^--model(?:=|$)/.test( argument )
-        || agent.name !== `claude` && /^-m(?:=|$)/.test( argument )
-        || agent.name === `codex` && /^-m./.test( argument )
-    )
+    let explicit_model = false
+    for( let index = 0; index < agent_args.length; index++ ) {
+        const argument = agent_args[ index ]
+        if( argument === `--` ) break
+        if( agent.name === `claude` && CLAUDE_VALUE_OPTIONS.has( argument ) ) {
+            index++
+            continue
+        }
+        if( /^--model(?:=|$)/.test( argument )
+            || agent.name !== `claude` && /^-m(?:=|$)/.test( argument )
+            || agent.name === `codex` && /^-m./.test( argument )
+        ) {
+            explicit_model = true
+            break
+        }
+    }
     const default_model = explicit_model ? null : typeof agent.defaults?.model === `function`
         ? agent.defaults.model( { ...options, agent_args, mode } )
         : agent.defaults?.model

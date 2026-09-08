@@ -913,6 +913,41 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `preserves Claude defaults when option-looking tokens are required values`, () => {
+
+        for( const option of [ `--append-system-prompt`, `--system-prompt`, `--name`, `-n`, `--agents` ] ) {
+            const agent_args = [ option, `--model=sonnet` ]
+            const args = build_docker_command_args( make_options( { agent: claude, agent_args } ) )
+            expect( args ).toContain( claude.defaults.model )
+            expect( args.slice( -agent_args.length ) ).toEqual( agent_args )
+        }
+
+    } )
+
+    it( `finds Claude model flags after a required value containing --`, () => {
+
+        const agent_args = [ `--append-system-prompt`, `--`, `--model`, `sonnet` ]
+        const args = build_docker_command_args( make_options( { agent: claude, agent_args } ) )
+        expect( args ).not.toContain( claude.defaults.model )
+        expect( args.filter( argument => argument === `--model` ) ).toHaveLength( 1 )
+        expect( args.slice( -agent_args.length ) ).toEqual( agent_args )
+
+    } )
+
+    it( `distinguishes required values from inline values and boolean or optional flags`, () => {
+
+        for( const agent_args of [ [ `-p`, `--model`, `sonnet` ], [ `--resume`, `--model=sonnet` ], [ `--append-system-prompt=--`, `--model=sonnet` ] ] ) {
+            const args = build_docker_command_args( make_options( { agent: claude, agent_args } ) )
+            expect( args ).not.toContain( claude.defaults.model )
+            expect( args.slice( -agent_args.length ) ).toEqual( agent_args )
+        }
+        const profile_args = [ `-p`, `work`, `--model`, `chosen-model` ]
+        const args = build_docker_command_args( make_options( { agent: codex, agent_args: profile_args } ) )
+        expect( args ).not.toContain( codex.defaults.model )
+        expect( args.slice( -profile_args.length ) ).toEqual( profile_args )
+
+    } )
+
     it( `does not mistake model text or positional arguments after -- for model options`, () => {
 
         for( const agent_args of [ [ `--`, `--model=literal-prompt` ], [ `--`, `-mliteral-prompt` ], [ `Explain --model=chosen-model` ], [ `-c`, `developer_instructions="Discuss --model"` ] ] ) {
