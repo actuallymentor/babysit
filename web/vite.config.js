@@ -14,8 +14,8 @@ export default defineConfig( {
                 description: `A focused mobile interface for Babysit sessions`,
                 start_url: `/`,
                 display: `standalone`,
-                background_color: `#f5f3ee`,
-                theme_color: `#15221f`,
+                background_color: `#fafbfc`,
+                theme_color: `#286477`,
                 icons: [
                     {
                         src: `/icon-192.png`,

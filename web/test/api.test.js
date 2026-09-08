@@ -121,6 +121,12 @@ test( `authenticated bridge API`, async () => {
         assert.equal( detail.body.session.last_message, `## Finished\n\n- one\n- two` )
         assert.equal( detail.body.session.raw_screen, `raw pane` )
 
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { activity: `unknown` } ) ) )
+        const unknown_detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
+        const unknown_list = await api_request( origin, `/api/sessions`, { cookie: login.cookie } )
+        assert.equal( unknown_detail.body.session.activity, `unknown` )
+        assert.equal( unknown_list.body.sessions[ 0 ].activity, `unknown` )
+
         writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { last_message: `` } ) ) )
         const no_reply = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
         assert.equal( no_reply.body.session.last_message, `` )
@@ -143,6 +149,8 @@ test( `authenticated bridge API`, async () => {
             method: `POST`,
         } )
         assert.equal( sent.status, 202 )
+        const queued = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
+        assert.deepEqual( queued.body.pending, [ { request_id: sent.body.request_id, status: `pending` } ] )
         const request_filename = readdirSync( request_dir ).find( filename => filename.startsWith( `session-1--` ) )
         assert.match( request_filename, /^session-1--epoch-1--[a-f0-9-]+\.json$/ )
         assert.deepEqual( JSON.parse( readFileSync( join( request_dir, request_filename ), `utf8` ) ), {
@@ -154,6 +162,11 @@ test( `authenticated bridge API`, async () => {
             text: `Continue\ncarefully`,
         } )
         unlinkSync( join( request_dir, request_filename ) )
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( {
+            results: [ { request_id: sent.body.request_id, status: `accepted`, message: `Delivered` } ],
+        } ) ) )
+        const delivered = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
+        assert.deepEqual( delivered.body.pending, [ { request_id: sent.body.request_id, status: `accepted`, message: `Delivered` } ] )
 
         const unsupported = await api_request( origin, `/api/sessions/session-1/messages`, {
             body: { text: `hide\u202esecret` },

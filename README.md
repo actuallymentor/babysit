@@ -158,6 +158,12 @@ prompts. After upgrading from screen-based message capture, exit and resume
 existing sessions to enable completion capture; the first new reply fills the
 message view.
 
+Use the **app menu** for theme (system/light/dark), text size (100–150%),
+installation, updates, and logout. Text also scales with viewport width.
+On mobile, **Reply ↓** jumps to the composer. Draft while busy; send once
+unlocked. **Copy** copies code blocks. Heartbeat age describes host freshness,
+not reply age; delivery status confirms handoff to the agent, not completion.
+
 Run the production Compose example behind a TLS proxy:
 
 ```bash
