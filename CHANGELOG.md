@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.40.0 — 2026-09-08
 
 ### ✨ Added
 - Add `babysit effort [level]` for managed Codex and OpenCode sessions, with model-specific levels and changes between requests in a running turn. OpenCode uses a plugin override; `default` restores its TUI selection.
