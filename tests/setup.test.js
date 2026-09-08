@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, statSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { parse as parse_toml } from 'smol-toml'
 
 import {
     build_claude_settings_tmpfile,
@@ -362,8 +363,82 @@ describe( `codex_extra_mounts`, () => {
         // Each known model gets pre-marked seen so codex doesn't pop the
         // "Try new model" intro on a fresh container.
         for ( const model of CODEX_KNOWN_MODELS_FOR_NUX ) {
-            expect( content ).toContain( `"${ model }" = ` )
+            expect( parse_toml( content ).tui.model_availability_nux[model] ).toBeGreaterThanOrEqual( 1 )
         }
+
+    } )
+
+    it( `preserves equivalent TOML key forms and remains valid on repeated staging`, () => {
+
+        const fixtures = [
+            `[tui.model_availability_nux]\ngpt-6-astra = 4\n'gpt-5.6-sol' = 3\n"gpt-5.5" = 1\n`,
+            `[ 'tui' . "model_availability_nux" ] # native formatting\r\ngpt-6-astra = 4\r\n`,
+            `tui.model_availability_nux.gpt-6-astra = 4\n`,
+            `tui = { model_availability_nux = { gpt-6-astra = 4 } }\n`,
+        ]
+        for( const raw of fixtures ) {
+            const first = build_codex_config_tmpdir( raw, { include_user_globals: false } )
+            let second
+            try {
+                const content = readFileSync( join( first.tmpdir, `config.toml` ), `utf-8` )
+                const parsed = parse_toml( content )
+                expect( parsed.tui.model_availability_nux ).toMatchObject( parse_toml( raw ).tui.model_availability_nux )
+                for( const model of CODEX_KNOWN_MODELS_FOR_NUX ) {
+                    expect( parsed.tui.model_availability_nux[model] ).toBeGreaterThanOrEqual( 1 )
+                }
+                second = build_codex_config_tmpdir( content, { include_user_globals: false } )
+                expect( readFileSync( join( second.tmpdir, `config.toml` ), `utf-8` ) ).toBe( content )
+            } finally {
+                rmSync( first.tmpdir, { recursive: true, force: true } )
+                if( second ) rmSync( second.tmpdir, { recursive: true, force: true } )
+            }
+        }
+
+    } )
+
+    it( `preserves unrelated config values and scopes injected keys to their tables`, () => {
+
+        const raw = `model = "custom-model"
+notify = ["custom-notify", "--flag"]
+[profiles.custom]
+gpt-6-astra = 9
+apps = true
+check_for_update_on_startup = true
+limit = 9223372036854775807
+ratio = 1.0
+[projects.'/workspace']
+trust_level = "trusted"
+custom = "retained"
+`
+        const { tmpdir: codex_home } = build_codex_config_tmpdir( raw, { include_user_globals: false } )
+        try {
+            const content = readFileSync( join( codex_home, `config.toml` ), `utf-8` )
+            const parsed = parse_toml( content, { integersAsBigInt: true } )
+            const original = parse_toml( raw, { integersAsBigInt: true } )
+            expect( parsed.profiles ).toEqual( original.profiles )
+            expect( parsed.projects ).toEqual( original.projects )
+            expect( parsed.model ).toBe( original.model )
+            expect( parsed.notify ).toEqual( original.notify )
+            expect( parsed.features.apps ).toBe( false )
+            expect( parsed.check_for_update_on_startup ).toBe( false )
+            expect( parsed.tui.model_availability_nux[`gpt-6-astra`] ).toBe( 2n )
+        } finally {
+            rmSync( codex_home, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `rejects malformed config without exposing its source contents`, () => {
+
+        const raw = `secret = "do-not-print-this"\nsecret = "also-private"\n`
+        expect( () => build_codex_config_tmpdir( raw ) ).toThrow( /Invalid Codex config.toml at line 2, column/ )
+        try {
+            build_codex_config_tmpdir( raw )
+        } catch( error ) {
+            expect( error.message ).not.toContain( `do-not-print-this` )
+            expect( error.message ).not.toContain( `also-private` )
+        }
+        expect( () => build_codex_config_tmpdir( `tui = false` ) ).toThrow( /'tui' must be a table/ )
 
     } )
 

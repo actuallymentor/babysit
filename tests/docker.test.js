@@ -882,6 +882,47 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `preserves explicit native model arguments without injecting a second model`, () => {
+
+        for( const agent of [ codex, claude, gemini, opencode ] ) {
+            const forms = [ [ `--model`, `chosen-model` ], [ `--model=chosen-model` ] ]
+            if( agent.name !== `claude` ) forms.push( [ `-m`, `chosen-model` ], [ `-m=chosen-model` ] )
+            if( agent.name === `codex` ) forms.push( [ `-mchosen-model` ] )
+
+            for( const agent_args of forms ) {
+                const args = build_docker_command_args( make_options( {
+                    agent: { ...agent, defaults: { ...agent.defaults, model: () => { throw new Error( `Explicit models must not resolve a fallback.` ) } } },
+                    agent_args,
+                } ) )
+                const command = args.slice( args.lastIndexOf( agent.bin ) + 1 )
+
+                expect( command.slice( -agent_args.length ) ).toEqual( agent_args )
+                expect( command.filter( argument => /^--model(?:=|$)/.test( argument ) || /^-m/.test( argument ) ) ).toHaveLength( 1 )
+            }
+        }
+
+    } )
+
+    it( `keeps native resume model overrides intact`, () => {
+
+        const agent_args = [ `resume`, `thread-id`, `--model`, `chosen-model` ]
+        const args = build_docker_command_args( make_options( { agent: codex, agent_args } ) )
+        expect( args.slice( -agent_args.length ) ).toEqual( agent_args )
+        expect( args.filter( argument => argument === `--model` ) ).toHaveLength( 1 )
+        expect( args ).not.toContain( codex.defaults.model )
+
+    } )
+
+    it( `does not mistake model text or positional arguments after -- for model options`, () => {
+
+        for( const agent_args of [ [ `--`, `--model=literal-prompt` ], [ `--`, `-mliteral-prompt` ], [ `Explain --model=chosen-model` ], [ `-c`, `developer_instructions="Discuss --model"` ] ] ) {
+            const args = build_docker_command_args( make_options( { agent: codex, agent_args } ) )
+            expect( args ).toContain( codex.defaults.model )
+            expect( args.slice( -agent_args.length ) ).toEqual( agent_args )
+        }
+
+    } )
+
     it( `disables codex's internal sandbox without bypassing approvals outside yolo`, () => {
 
         const cmd = build_docker_command( make_options( {

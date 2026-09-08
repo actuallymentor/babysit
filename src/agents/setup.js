@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { parse as parse_toml, stringify as stringify_toml } from 'smol-toml'
 
 import {
     build_private_tmpfile,
@@ -227,51 +228,40 @@ export const CODEX_KNOWN_MODELS_FOR_NUX = [ `gpt-5`, `gpt-5.1`, `gpt-5.2`, `gpt-
  */
 const inject_codex_first_run_bypass = ( raw ) => {
 
-    let out = raw
-
-    // A fresh Codex release can open an update dialog over the composer. That
-    // dialog owns Enter, so the launch prompt would confirm the dialog instead
-    // of submitting. This is a container-only config snapshot; host update
-    // preferences remain untouched.
-    const first_section = out.search( /^\s*\[/m )
-    const update_check = /^\s*check_for_update_on_startup\s*=.*$/m
-    const update_match = update_check.exec( out )
-    if( update_match && ( first_section === -1 || update_match.index < first_section ) ) {
-        out = out.replace( update_check, `check_for_update_on_startup = false` )
-    } else {
-        out = `check_for_update_on_startup = false\n${ out }`
+    let config
+    try {
+        // Preserve integer/float types and large integers in the temporary copy.
+        config = parse_toml( raw, { integersAsBigInt: true } )
+    } catch ( error ) {
+        // Parser messages include source excerpts, which may contain secrets.
+        throw new Error( `Invalid Codex config.toml at line ${ error.line }, column ${ error.column }. Fix the host configuration before launching.` )
     }
 
-    if( !out.includes( `[projects."/workspace"]` ) ) {
-        out += `\n\n[projects."/workspace"]\ntrust_level = "trusted"\n`
-    }
-
-    const has_nux_section = /\[tui\.model_availability_nux\]/.test( out )
-    const missing = CODEX_KNOWN_MODELS_FOR_NUX.filter(
-        m => !new RegExp( `"${ m.replace( /\./g, `\\.` ) }"\\s*=` ).test( out )
-    )
-    if( missing.length ) {
-        const lines = missing.map( m => `"${ m }" = 2` ).join( `\n` )
-        if( has_nux_section ) {
-            out = out.replace( /\[tui\.model_availability_nux\]\n/, `[tui.model_availability_nux]\n${ lines }\n` )
-        } else {
-            out += `\n\n[tui.model_availability_nux]\n${ lines }\n`
+    const table = ( parent, key ) => {
+        parent[key] ??= {}
+        if( typeof parent[key] !== `object` || Array.isArray( parent[key] ) || parent[key] instanceof Date ) {
+            throw new Error( `Invalid Codex config.toml: '${ key }' must be a table.` )
         }
+        return parent[key]
     }
 
-    // Disable the `apps` feature (codex_apps MCP). Idempotent: only inject
-    // if the key isn't already present in any [features] section.
-    const has_apps_key = /^\s*apps\s*=/m.test( out )
-    if( !has_apps_key ) {
-        const has_features_section = /\[features\]/.test( out )
-        if( has_features_section ) {
-            out = out.replace( /\[features\]\n/, `[features]\napps = false\n` )
-        } else {
-            out += `\n\n[features]\napps = false\n`
-        }
-    }
+    // Rebuild only the container snapshot. Native TOML can use bare, quoted,
+    // dotted, or inline keys; text matching cannot reliably identify duplicates.
+    config.check_for_update_on_startup = false
+    const projects = table( config, `projects` )
+    projects[`/workspace`] ??= { trust_level: `trusted` }
+    const nux = table( table( config, `tui` ), `model_availability_nux` )
+    CODEX_KNOWN_MODELS_FOR_NUX.forEach( model => {
+        nux[model] ??= 2n
+    } )
 
-    return out
+    const features = table( config, `features` )
+    features.apps ??= false
+
+    const output = stringify_toml( config, { numbersAsFloat: true } )
+    // Fail before staging a file if serialization ever produces invalid TOML.
+    parse_toml( output, { integersAsBigInt: true } )
+    return output
 
 }
 
