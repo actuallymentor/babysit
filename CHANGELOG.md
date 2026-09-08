@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.41.0 — 2026-09-08
+
+### Added
+
+- Add persistent light/dark/system themes and fluid text with size controls.
+- Add mobile Reply shortcut, busy-state drafting, and code copying.
+- Show heartbeat freshness and identifiable message delivery feedback.
+
+### Changed
+
+- Refine colors, typography, card density, and mobile app navigation.
+- Keep terminal output below the reply flow; constrain desktop reading width.
+
+### Fixed
+
+- Preserve unknown activity and disable sends during connection failures.
+- Prevent older polls from replacing newer session state.
+- Retain request IDs so delivery results match their queued messages.
+
 ## 0.40.0 — 2026-09-08
 
 ### ✨ Added

@@ -12,10 +12,9 @@ const Page = styled.main`
 `
 
 const Card = styled.form`
-    background: #ffffff;
-    border: 1px solid #d8ddda;
-    border-radius: 1rem;
-    box-shadow: 0 1rem 3rem rgba(21, 34, 31, 0.08);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
     display: grid;
     gap: 1rem;
     max-width: 28rem;
@@ -26,14 +25,14 @@ const Card = styled.form`
     p { line-height: 1.6; margin: 0; }
     label { display: grid; font-weight: 700; gap: 0.45rem; }
     input {
-        border: 1px solid #9da8a4;
-        border-radius: 0.6rem;
+        border: 1px solid var(--border);
+        border-radius: 0.3rem;
         font: inherit;
         min-height: 3.1rem;
         padding: 0.65rem 0.8rem;
         width: 100%;
     }
-    input:focus { border-color: #356b77; outline: 3px solid #d5ecf1; }
+    input:focus { border-color: var(--primary); outline: 3px solid var(--primary); }
 `
 
 /** Collects the one-time access key without persisting it in the browser. */

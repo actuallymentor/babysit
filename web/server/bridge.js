@@ -28,7 +28,7 @@ const normalize_state = parsed => {
     if( parsed.protocol !== 1 || !BRIDGE_TOKEN_PATTERN.test( parsed.session_id ) || !BRIDGE_TOKEN_PATTERN.test( parsed.epoch ) ) return null
 
     return {
-        activity: [ `idle`, `running` ].includes( parsed.activity ) ? parsed.activity : `running`,
+        activity: [ `idle`, `running` ].includes( parsed.activity ) ? parsed.activity : `unknown`,
         agent: typeof parsed.agent === `string` ? parsed.agent : `agent`,
         attachment: [ `attached`, `detached`, `unknown` ].includes( parsed.attachment ) ? parsed.attachment : `unknown`,
         busy: parsed.busy === true,
@@ -108,7 +108,8 @@ export class BridgeStore {
 
         return states.sort( ( first, second ) => {
             if( first.busy !== second.busy ) return first.busy ? -1 : 1
-            if( first.activity !== second.activity ) return first.activity === `running` ? -1 : 1
+            const activity_order = { running: 0, idle: 1, unknown: 2 }
+            if( first.activity !== second.activity ) return activity_order[ first.activity ] - activity_order[ second.activity ]
             return first.name.localeCompare( second.name )
         } )
     }
@@ -159,6 +160,7 @@ export class BridgeStore {
             created_at: Date.now(),
             filename,
             request_path,
+            request_id,
             session_id: session.session_id,
             status: `pending`,
         } )

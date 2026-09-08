@@ -4,7 +4,8 @@ import { api } from './modules/api.js'
 import { activate_update, force_update, register_pwa } from './modules/pwa.js'
 import { use_install } from './hooks/use_install.js'
 import { AppFrame } from './components/molecules/AppFrame.jsx'
-import { InstallPill } from './components/molecules/InstallPill.jsx'
+import { use_reading_preferences } from './hooks/use_reading_preferences.js'
+import { Notice } from './components/atoms/Notice.jsx'
 import { LoginPage } from './components/pages/LoginPage.jsx'
 import { Routes } from './routes/Routes.jsx'
 
@@ -14,6 +15,7 @@ export function App() {
     const [ is_loading, set_is_loading ] = useState( true )
     const [ has_update, set_has_update ] = useState( false )
     const { can_install, install } = use_install()
+    const reading = use_reading_preferences()
 
     useEffect( () => {
         const expire_authentication = () => set_identity( null )
@@ -33,13 +35,12 @@ export function App() {
         set_has_update( false )
     }
 
-    if( is_loading ) return null
+    if( is_loading ) return <Notice role="status">Opening Babysit…</Notice>
     if( !identity ) return <LoginPage login={ login } />
 
     return <BrowserRouter>
-        <AppFrame force_update={ force_update } has_update={ has_update } logout={ logout } update={ update }>
+        <AppFrame can_install={ can_install } install={ install } reading={ reading } force_update={ force_update } has_update={ has_update } logout={ logout } update={ update }>
             <Routes role={ identity.role } />
         </AppFrame>
-        <InstallPill can_install={ can_install } install={ install } />
     </BrowserRouter>
 }
