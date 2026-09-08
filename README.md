@@ -39,6 +39,8 @@ through to the agent:
 babysit claude --yolo --model sonnet --effort high
 ```
 
+An explicit model flag replaces Babysit's default model selection.
+
 ## Modes
 
 | Flag | Workspace | Use |
@@ -186,6 +188,8 @@ the service publishes no host port. Preserve the original host,
 - A detached monitor applies `babysit.yaml` rules and keeps credentials in sync.
 - Agent state lives in persistent Docker volumes. Babysit metadata lives under
   `~/.babysit`.
+- Codex settings are copied into a temporary container configuration; the host
+  file stays untouched. Invalid TOML produces a configuration error before staging.
 - `node_modules` and `.venv` use named volumes by default to avoid host/container
   binary conflicts. Set `config.isolate_dependencies: false` to disable this.
 - The image includes all supported agent CLIs, common coding tools, Chrome,

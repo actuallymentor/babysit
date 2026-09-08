@@ -81,10 +81,16 @@ Launched through the actual Babysit CLI using published image `actuallymentor/ba
 
 Both successful launches used `--yolo --ignore-host-agents-md` with real native credentials. Only low, medium, and high were inference-tested; this does not establish every supported level or provider. No effort source changes were necessary for these passes.
 
-### Existing launch pitfalls exposed by the full path
+### Launch pitfalls exposed by the full path (subsequently fixed)
 
 - Explicit `--model`/`-m` is appended after Babysit's default model flag. Codex 0.153.4 rejects the duplicate; OpenCode 1.18.29 parses an array and crashes with `U.split is not a function`. Use the configured/default model for these verification launches. The unconditional default flag predates the effort feature.
 - Codex configuration staging detects NUX model keys only when double-quoted. A valid native config with bare keys acquires duplicate quoted keys and becomes invalid TOML (`Cannot overwrite a value`). This predates the effort feature. The supported `--ignore-host-agents-md` option supplies a fresh config while retaining natural authentication and production completion/effort integration. Successful isolated-config tests do not establish that the inherited-config launch works.
+
+Follow-up on 2026-09-08 fixed both pitfalls: explicit model flags suppress default injection, and Codex staging parses/serializes the temporary TOML with integer/float types preserved. Native config key spelling is not stable; never identify existing TOML keys by requiring quotation marks. Invalid input errors must omit source excerpts because configuration may contain secrets.
+
+The fixed OpenCode path was exercised through Babysit in fresh container `bb86863d8f88`: exactly one explicit GPT-5.6 Sol model flag overrode a different project model. The real model executed `babysit effort high` then `low`; actual requests were omitted/high/low, all HTTP 200, and completion capture passed. Evidence: `/tmp/opencode-explicit-model-evidence/` (ephemeral).
+
+The fixed Codex path passed in fresh container `c5f9553bad58` with an explicit model and inherited host configuration, without `--ignore-host-agents-md`. The actual command contained one model flag; staged TOML parsed with 11 integer NUX entries, and the host config hash stayed unchanged. Thread `01a0808b-3283-7bf1-9b10-37af18a84b4b` executed `babysit effort high` then `low`; four real gpt-6-astra requests used low/low/high/low, all HTTP 200. Production completion capture passed. Evidence: `/tmp/codex-fixed-container-evidence-20260908/` (ephemeral).
 
 ## Sources
 

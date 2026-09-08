@@ -708,8 +708,15 @@ const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
         else parts.push( flag )
     }
 
-    // Apply the agent's preferred model and reasoning effort.
-    const default_model = typeof agent.defaults?.model === `function`
+    // Native CLIs may reject repeated model flags. Keep an explicit selection
+    // intact instead of relying on a later flag overriding Babysit's default.
+    const separator = agent_args.indexOf( `--` )
+    const options_args = separator < 0 ? agent_args : agent_args.slice( 0, separator )
+    const explicit_model = options_args.some( argument => /^--model(?:=|$)/.test( argument )
+        || agent.name !== `claude` && /^-m(?:=|$)/.test( argument )
+        || agent.name === `codex` && /^-m./.test( argument )
+    )
+    const default_model = explicit_model ? null : typeof agent.defaults?.model === `function`
         ? agent.defaults.model( { ...options, agent_args, mode } )
         : agent.defaults?.model
     if( default_model && agent.flags.model ) {
