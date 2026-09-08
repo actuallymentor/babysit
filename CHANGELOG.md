@@ -16,7 +16,7 @@
 ### Fixed
 
 - Preserve unknown activity and disable sends during connection failures.
-- Prevent older polls from replacing newer session state.
+- Bound stalled requests and prevent older polls replacing newer state.
 - Retain request IDs so delivery results match their queued messages.
 
 ## 0.40.0 — 2026-09-08

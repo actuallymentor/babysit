@@ -12,7 +12,8 @@ const parse_response = async response => {
  */
 export const api = async ( path, options={} ) => {
     const headers = options.body ? { 'Content-Type': `application/json`, ...options.headers } : options.headers
-    const response = await fetch( path, { ...options, credentials: `same-origin`, headers } )
+    // Bound stalled mobile connections so polling can report failure and retry.
+    const response = await fetch( path, { signal: AbortSignal.timeout( 10_000 ), ...options, credentials: `same-origin`, headers } )
     if( response.status === 401 && path !== `/api/login` && typeof window !== `undefined` ) window.dispatchEvent( new Event( `babysit-auth-expired` ) )
     return parse_response( response )
 }

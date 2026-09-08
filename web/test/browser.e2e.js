@@ -56,7 +56,7 @@ const server = create_app( {
     public_origin: null,
     request_dir,
     request_ttl_ms: 20_000,
-    session_ttl_ms: 60_000,
+    session_ttl_ms: 120_000,
     state_dir,
     static_dir: resolve( `dist` ),
     trust_proxy: false,
@@ -194,6 +194,16 @@ try {
     assert.equal( await page.$eval( `button[type="submit"]`, element => element.disabled ), true )
     await page.setOfflineMode( false )
     await page.waitForFunction( () => !document.body.textContent.includes( `Connection interrupted` ) && !document.querySelector( `button[type="submit"]` )?.disabled )
+
+    // A connected network can still stall: the request deadline must release polling for recovery.
+    await page.emulateNetworkConditions( { download: -1, upload: -1, latency: 15_000 } )
+    await page.waitForFunction( () => document.body.textContent.includes( `Connection interrupted` ), { timeout: 20_000 } )
+    assert.equal( await page.$eval( `textarea`, element => element.value ), `Draft while the agent works` )
+    assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )
+    assert.equal( await page.$eval( `button[type="submit"]`, element => element.disabled ), true )
+    await page.emulateNetworkConditions( null )
+    await page.waitForFunction( () => !document.body.textContent.includes( `Connection interrupted` ) && !document.querySelector( `button[type="submit"]` )?.disabled )
+
     await page.click( `textarea` )
     await page.keyboard.down( `Control` )
     await page.keyboard.press( `KeyA` )

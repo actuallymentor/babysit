@@ -202,7 +202,7 @@ export function SessionPage( { role } ) {
                 <h1>{ session.name }</h1>
                 <p>{ session.agent } · { session.directory || `Directory unavailable` }</p>
             </div>
-            <Status activity={ error ? `unknown` : session.activity } busy={ session.busy } />
+            <Status activity={ error ? `unknown` : session.activity } busy={ role === `write` && session.busy } />
         </Heading>
         <Freshness title={ session.updated_at || undefined }>{ error ? `Connection interrupted` : `Connected` } · { heartbeat_label( session.updated_at ) }</Freshness>
         { error && <Notice $error role="alert">{ error.message }. Showing the last received state; sending is paused until the connection recovers.</Notice> }
