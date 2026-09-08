@@ -6,6 +6,8 @@
 - Add `babysit effort [level]` for managed Codex and OpenCode sessions, with model-specific levels and changes between requests in a running turn. OpenCode uses a plugin override; `default` restores its TUI selection.
 
 ### 🐛 Fixed
+- Fix activity publication and session parsing with older tmux versions that require exact pane targets and sanitize tab separators.
+- Refresh `babysit list` activity from live panes; recognize idle controls despite countdown redraws and keep static interrupt controls running. Report unreadable panes as `unknown`.
 - Honor explicit agent model flags without also injecting a default model.
 - Preserve existing Codex TOML settings when staging container configuration; handle equivalent key syntax and report invalid input before staging.
 - Show only the latest completed agent reply in the web interface; keep terminal output in a separate collapsed view.

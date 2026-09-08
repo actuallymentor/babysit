@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { attach_session, create_session, get_session_pane, has_session, kill_session } from '../src/tmux/session.js'
+import { attach_session, create_session, get_session_pane, has_session, kill_session, list_sessions, set_agent_status } from '../src/tmux/session.js'
 
 describe( `create_session status bar`, () => {
 
@@ -61,7 +61,7 @@ describe( `get_session_pane`, () => {
         const result = await get_session_pane( `babysit_one`, {
             run_command: async ( command, args ) => {
                 calls.push( { command, args } )
-                return `%12\tdetached\n`
+                return `%12:detached\n`
             },
         } )
 
@@ -71,7 +71,7 @@ describe( `get_session_pane`, () => {
 
     it( `rejects non-pane targets`, async () => {
         expect( get_session_pane( `babysit_one`, {
-            run_command: async () => `babysit_one\tdetached`,
+            run_command: async () => `babysit_one:detached`,
         } ) ).rejects.toThrow( `exact tmux pane` )
     } )
 
@@ -112,6 +112,52 @@ describe( `exact session lifecycle targets`, () => {
 
         expect( calls ).toHaveLength( 2 )
         expect( calls.every( call => call.args.includes( `=babysit_one` ) ) ).toBe( true )
+    } )
+
+} )
+
+describe( `list_sessions format compatibility`, () => {
+
+    it( `preserves session identity and status when tmux sanitizes control characters`, async () => {
+        const rows = [
+            { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle` },
+            { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running` },
+        ]
+        const result = await list_sessions( {
+            run_command: async ( command, args ) => {
+                // Tmux 3.3a replaces literal tab characters in the format with
+                // underscores. Render the supplied format so this tests the
+                // production command, rather than assuming its wire format.
+                const format = args.at( -1 ).replaceAll( `\t`, `_` )
+                return rows.map( row => format
+                    .replaceAll( `#{session_name}`, row.session_name )
+                    .replaceAll( `#{?session_attached,attached,detached}`, `detached` )
+                    .replaceAll( `#{session_created}`, row.session_created )
+                    .replaceAll( `#{@babysit_agent_status}`, row.babysit_agent_status )
+                ).join( `\n` )
+            },
+        } )
+
+        expect( result ).toEqual( [
+            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle` },
+            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running` },
+        ] )
+    } )
+
+} )
+
+
+describe( `set_agent_status`, () => {
+
+    it( `uses exact target-pane syntax supported by older tmux set-option`, async () => {
+        const result = await set_agent_status( `babysit_one`, `idle`, {
+            run_command: async ( command, args ) => {
+                expect( args ).toContain( `=babysit_one:` )
+                expect( args.slice( -2 ) ).toEqual( [ `@babysit_agent_status`, `idle` ] )
+            },
+        } )
+
+        expect( result ).toBe( true )
     } )
 
 } )

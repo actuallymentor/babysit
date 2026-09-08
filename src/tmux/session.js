@@ -179,12 +179,15 @@ export const attach_session = ( session_name, { exec_command = execSync } = {} )
  * Publish coding-agent activity on its tmux session for `babysit list`.
  * @param {string} session_name - Babysit tmux session name
  * @param {'idle'|'running'} status - Current coding-agent activity
+ * @param {Object} [options] - Command runner seam
  * @returns {Promise<boolean>} Whether tmux accepted the update
  */
-export const set_agent_status = async ( session_name, status ) => {
+export const set_agent_status = async ( session_name, status, { run_command = run } = {} ) => {
 
     try {
-        await run( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, `=${ session_name }`, AGENT_STATUS_OPTION, status ] )
+        // Older tmux set-option resolves an exact session only in target-pane
+        // form. Without the colon it looks for a literal leading '=' in the name.
+        await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, `=${ session_name }:`, AGENT_STATUS_OPTION, status ] )
         return true
     } catch ( error ) {
         log.debug( `Could not publish ${ session_name } agent status: ${ error.message }` )
@@ -211,9 +214,9 @@ export const get_session_pane = async ( session_name, { run_command = run } = {}
     const output = await run_command( `tmux`, [
         `-L`, TMUX_SOCKET,
         `display-message`, `-p`, `-t`, exact_target,
-        `#{pane_id}\t#{?session_attached,attached,detached}`,
+        `#{pane_id}:#{?session_attached,attached,detached}`,
     ] )
-    const [ pane_id, attachment ] = output.trim().split( `\t` )
+    const [ pane_id, attachment ] = output.trim().split( `:` )
 
     if( !/^%\d+$/.test( pane_id ) || ![ `attached`, `detached` ].includes( attachment ) ) {
         throw new Error( `Could not resolve an exact tmux pane for ${ session_name }` )
@@ -260,13 +263,15 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
         const output = await run_command( `tmux`, [
             `-L`, TMUX_SOCKET,
             `list-sessions`, `-F`,
-            `#{session_name}\t#{?session_attached,attached,detached}\t#{session_created}\t#{${ AGENT_STATUS_OPTION }}`,
+            // Tmux 3.3a sanitizes literal tabs in formats into underscores.
+            // Colons survive formatting and cannot occur in session names.
+            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}`,
         ] )
 
         return output.split( `\n` )
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
-                const [ name, tmux_status, created, stored_agent_status ] = line.split( `\t` )
+                const [ name, tmux_status, created, stored_agent_status ] = line.split( `:` )
                 const agent_status = stored_agent_status === `idle` ? `idle` : `running`
                 return { name, attached: tmux_status === `attached`, created, agent_status }
             } )

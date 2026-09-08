@@ -1,7 +1,47 @@
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
+import { capture_pane } from '../tmux/capture.js'
+import { agent_status } from '../babysit/activity.js'
+import { strip_ansi } from '../babysit/matcher.js'
+import { setTimeout as delay } from 'node:timers/promises'
 
-const AGENT_STATUSES = new Set( [ `idle`, `running` ] )
+const AGENT_STATUSES = new Set( [ `idle`, `running`, `unknown` ] )
+
+/**
+ * Observe current panes instead of trusting options left by an old or stopped
+ * monitor. Sample sessions together so listing costs one polling interval.
+ * @param {Object[]} sessions - Active tmux sessions
+ * @param {Object[]} stored_sessions - Stored agent identities
+ * @param {Object} [options] - Pane capture and wait seams
+ * @returns {Promise<Object[]>} Sessions with freshly observed activity
+ */
+export const observe_session_activity = async ( sessions, stored_sessions, {
+    capture = capture_pane,
+    wait = delay,
+} = {} ) => {
+
+    const sample = async session => {
+        try {
+            return strip_ansi( await capture( `=${ session.name }:` ) )
+        } catch {
+            return null
+        }
+    }
+
+    const before = await Promise.all( sessions.map( sample ) )
+    await wait( 1_000 )
+    const after = await Promise.all( sessions.map( sample ) )
+
+    return sessions.map( ( session, index ) => {
+        const agent = stored_sessions.find( stored => stored.tmux_session === session.name )?.agent
+        const observed_status = before[index] === null || after[index] === null
+            ? `unknown`
+            : agent_status( after[index], agent, before[index] === after[index] ? 1 : 0 )
+
+        return { ...session, agent_status: observed_status }
+    } )
+
+}
 
 /**
  * Pad a string to a fixed width
@@ -144,7 +184,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const agent = stored?.agent || `unknown`
         const session_id = stored?.agent_session_id || stored?.babysit_id || tmux.name
         const name = stored?.name || session_id
-        const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `running`
+        const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
         const directory = format_session_directory( stored?.pwd )
@@ -180,11 +220,13 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Object} [deps.flags] - Parsed list display flags
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
+ * @param {Function} [deps.observe_activity_fn] - Fresh pane activity observer
  */
 export const cmd_list = async ( {
     flags = {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
+    observe_activity_fn = observe_session_activity,
 } = {} ) => {
 
     const tmux_sessions = await list_sessions_fn()
@@ -195,7 +237,9 @@ export const cmd_list = async ( {
         return
     }
 
-    print_active_sessions_table( tmux_sessions, stored_sessions, {
+    const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
+
+    print_active_sessions_table( observed_sessions, stored_sessions, {
         numbered: true,
         show_flags: true,
         all: flags.all,

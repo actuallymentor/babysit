@@ -773,6 +773,10 @@ try {
     ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
 
     await build_images()
+    const { stdout: status_output } = await run( `node`, [ `tests/e2e/status.js` ], {
+        env: { ...process.env, BABYSIT_E2E_BASE_IMAGE: base_image },
+    } )
+    console.log( status_output )
     await run_agent_tooling()
     await run_puppeteer_browser()
     await run_puppeteer_headful_browser()
