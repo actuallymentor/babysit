@@ -232,9 +232,9 @@ describe( `parse_args`, () => {
         expect( () => parse_args( [ `codex`, `--port` ] ) ).toThrow( /requires a value/ )
     } )
 
-    it( `sets help verb when no agent given`, () => {
+    it( `opens launcher when no arguments given`, () => {
         const cmd = parse_args( [] )
-        expect( cmd.verb ).toBe( `help` )
+        expect( cmd.verb ).toBe( `launch` )
     } )
 
     it( `recognises -v as version`, () => {

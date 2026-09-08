@@ -11,6 +11,7 @@ export const show_help = () => {
 babysit — supervisor for LLM coding agent CLIs
 
 Usage:
+  babysit ["session name"]           Open the interactive launch menu
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id> [flags]  Resume a previous session
   babysit list [--all]                 List active sessions and launch flags

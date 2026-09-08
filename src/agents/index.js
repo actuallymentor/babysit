@@ -30,4 +30,4 @@ export const get_agent = ( name ) => agents[ name ] || null
  * @param {string} name - Name to check
  * @returns {boolean}
  */
-export const is_agent = ( name ) => name in agents
+export const is_agent = ( name ) => Object.hasOwn( agents, name )

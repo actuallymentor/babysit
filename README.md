@@ -24,11 +24,23 @@ The installer puts `babysit` in `~/.local/bin` without sudo.
 ## Start
 
 ```bash
+babysit                         # Interactive launcher
+babysit "feature 1"             # Launcher with a session name
 babysit claude --yolo
 babysit codex --clone --name "feature 1"
 babysit codex --sandbox --loop
 babysit gemini --mudbox
 ```
+
+The launcher selects an agent CLI on the Model row. Use ↑/↓ to navigate,
+←/→ to select Model or Mode, type on Name, and Space to toggle Docker, YOLO,
+Clone, or Loop. Enter launches; Esc/Ctrl+C cancels. Mode cycles through Regular,
+Sandbox, and Mudbox; Clone requires Regular and switches back automatically.
+
+Menu selections persist per workspace directory, with the latest global selection
+as fallback for new directories. Names are not remembered. Explicit agent commands
+keep their existing behavior and do not read or update menu defaults. The menu
+requires an interactive terminal; scripts should use explicit agent commands.
 
 Codex defaults to `gpt-6-astra` with `medium` reasoning.
 
