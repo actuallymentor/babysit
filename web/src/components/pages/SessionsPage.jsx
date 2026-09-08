@@ -53,7 +53,7 @@ const Metadata = styled.div`
 `
 
 /** Lists only active bridge sessions. */
-export function SessionsPage() {
+export function SessionsPage( { role } ) {
     const { data, error, is_loading } = use_poll( () => api( `/api/sessions` ) )
     const sessions = data?.sessions || []
 
@@ -71,7 +71,7 @@ export function SessionsPage() {
             { sessions.map( session => <Card key={ session.session_id } to={ `/sessions/${ session.session_id }` }>
                 <CardHeader>
                     <h2>{ session.name }</h2>
-                    <Status activity={ error ? `unknown` : session.activity } busy={ session.busy } />
+                    <Status activity={ error ? `unknown` : session.activity } busy={ role === `write` && session.busy } />
                 </CardHeader>
                 <Metadata>
                     <span>{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</span>
