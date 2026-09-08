@@ -185,8 +185,8 @@ export const attach_session = ( session_name, { exec_command = execSync } = {} )
 export const set_agent_status = async ( session_name, status, { run_command = run } = {} ) => {
 
     try {
-        // Older tmux set-option resolves an exact session only in target-pane
-        // form. Without the colon it looks for a literal leading '=' in the name.
+        // Older tmux set-option requires target-pane syntax for this exact
+        // session reference; the bare '=session' form fails in a detached monitor.
         await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, `=${ session_name }:`, AGENT_STATUS_OPTION, status ] )
         return true
     } catch ( error ) {

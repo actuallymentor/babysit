@@ -19,14 +19,15 @@ export const agent_activity = ( output, agent_name ) => {
     const footer = lines.join( `\n` )
     const interrupt = /(?:^\s*|[·•(]\s*|\s{2,})esc(?:ape)?\s+(?:to\s+)?(?:interrupt|cancel|stop)\b/i
 
-    // Approval dialogs also advertise Escape, but their confirm/amend controls
-    // mean the agent is waiting for input. Keep these narrower than busy hints.
-    if( agent_name === `codex`
-        && /^\s*Press enter to confirm or esc to (?:cancel|go back)\s*$/im.test( footer ) ) return `idle`
-    if( agent_name === `claude`
-        && /^\s*Esc to cancel\s*·\s*Tab to amend\b/im.test( footer ) ) return `idle`
-
-    if( lines.some( line => interrupt.test( line ) ) ) return `running`
+    // The newest explicit control wins if an older dialog or working line is
+    // still visible. Approval controls also say Escape but await user input.
+    for( const line of lines.toReversed() ) {
+        if( agent_name === `codex`
+            && /^\s*Press enter to confirm or esc to (?:cancel|go back)\s*$/i.test( line ) ) return `idle`
+        if( agent_name === `claude`
+            && /^\s*Esc to cancel\s*·\s*Tab to amend\b/i.test( line ) ) return `idle`
+        if( interrupt.test( line ) ) return `running`
+    }
 
     switch ( agent_name ) {
     case `codex`:
