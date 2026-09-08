@@ -39,6 +39,14 @@ describe( `agent activity controls`, () => {
         expect( agent_activity( output, `codex` ) ).toBe( `running` )
     } )
 
+    it( `uses the latest explicit control when an old dialog or busy line remains`, () => {
+        const approval = `Esc to cancel · Tab to amend`
+        const busy = `✻ Working… (30s · esc to interrupt)`
+
+        expect( agent_activity( `${ approval }\n${ busy }\n? for shortcuts`, `claude` ) ).toBe( `running` )
+        expect( agent_activity( `${ busy }\n${ approval }`, `claude` ) ).toBe( `idle` )
+    } )
+
     it( `gives interrupt controls priority over a visible composer`, () => {
         expect( agent_activity( `Working… (esc to interrupt)\n› Ask a follow-up question\n? for shortcuts`, `codex` ) ).toBe( `running` )
     } )
