@@ -1,3 +1,4 @@
+import { get_boot_id } from '../sessions/lock.js'
 import { execFileSync } from 'child_process'
 
 const read_process_command = pid => {
@@ -26,7 +27,10 @@ const read_process_command = pid => {
 export const is_monitor_alive = ( pid, token = null, {
     kill = process.kill.bind( process ),
     read_command = read_process_command,
+    boot_id = null,
 } = {} ) => {
+
+    if( boot_id && get_boot_id() && boot_id !== get_boot_id() ) return false
 
     if( !Number.isInteger( pid ) || pid <= 0 ) return false
 

@@ -1,3 +1,4 @@
+import { get_boot_id } from './sessions/lock.js'
 import { spawnSync } from 'child_process'
 import { createHash, randomUUID } from 'crypto'
 import {
@@ -168,7 +169,9 @@ const process_is_alive = pid => {
 const remove_dead_lock = ( lock_path, owner, is_process_alive ) => {
 
     if( owner?.magic !== CLONE_STATE_MAGIC || owner?.version !== CLONE_STATE_VERSION ) return false
-    if( owner.hostname !== hostname() || is_process_alive( owner.pid ) ) return false
+    if( owner.hostname !== hostname() ) return false
+    const previous_boot = owner.boot_id && get_boot_id() && owner.boot_id !== get_boot_id()
+    if( !previous_boot && is_process_alive( owner.pid ) ) return false
 
     const quarantine = `${ lock_path }.stale-${ randomUUID() }`
 
@@ -216,6 +219,7 @@ export const acquire_clone_lock = ( clone_path, {
         token,
         pid: process.pid,
         hostname: hostname(),
+        boot_id: get_boot_id(),
         clone_path: target,
         started_at: new Date().toISOString(),
     }
@@ -290,6 +294,7 @@ export const clone_lock_status = ( clone_path, {
     if( owner?.magic !== CLONE_STATE_MAGIC || owner?.version !== CLONE_STATE_VERSION ) return `unknown`
     if( owner.clone_path !== target || owner.hostname !== hostname() ) return `unknown`
 
+    if( owner.boot_id && get_boot_id() && owner.boot_id !== get_boot_id() ) return `stale`
     return is_process_alive( owner.pid ) ? `locked` : `stale`
 
 }

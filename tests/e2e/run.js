@@ -792,6 +792,12 @@ try {
     await run_mudbox_session()
     await run_sandbox_session()
     await run_dependency_session()
+    const { stdout: recovery_output } = await run( `node`, [ `tests/e2e/recovery.js` ], {
+        env: { ...process.env, BABYSIT_E2E_FAKE_IMAGE: fake_image, ... use_sudo_docker ? { BABYSIT_DOCKER_USE_SUDO: `1` } : {}  },
+        // The measured Codex crash matrix alone takes ~6.5 minutes; allow all four agents.
+        timeout_ms: 1_800_000,
+    } )
+    console.log( recovery_output )
     await assert_no_orphans()
 
     console.log( `E2E passed` )

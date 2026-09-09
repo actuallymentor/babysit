@@ -10,7 +10,7 @@ const LAUNCH_ID = /^[a-f0-9-]{36}$/
 
 // Read through Docker's API, not a host bind mount. A bounded descriptor read
 // avoids following symlinks, blocking on FIFOs, or trusting a file's size alone.
-const READ_COMPLETION = `
+export const READ_COMPLETION = `
 const fs = require('fs')
 const [path, limit] = process.argv.slice(1)
 let fd

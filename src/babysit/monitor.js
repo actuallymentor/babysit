@@ -133,6 +133,8 @@ export const start_monitor = async ( {
     agent,
     web_bridge = null,
     on_session_id,
+    on_tick,
+    input_allowed = () => true,
     on_exit,
     agent_exit_sentinel = null,
     has_session_fn = has_session,
@@ -189,6 +191,8 @@ export const start_monitor = async ( {
 
         while( true ) {
 
+            on_tick?.()
+
             if( reset_after_action ) {
                 idle_tracker.reset()
                 reset_after_action = false
@@ -201,7 +205,7 @@ export const start_monitor = async ( {
                 log.info( `Session ended: ${ session_name }` )
                 write_loop_deadline_fn( `idle` )
                 await finish_action()
-                if( on_exit ) await on_exit()
+                if( on_exit ) await on_exit( { exit_status: null } )
                 break
             }
 
@@ -263,7 +267,7 @@ export const start_monitor = async ( {
                 await kill_session_fn( session_name )
                 log_shutdown_timing( `Shutdown: tmux released in ${ Date.now() - exit_started_at }ms` )
                 await finish_action()
-                if( on_exit ) await on_exit()
+                if( on_exit ) await on_exit( { exit_status } )
                 break
             }
 
@@ -276,9 +280,9 @@ export const start_monitor = async ( {
                     await web_bridge.publish( {
                         output: clean_output,
                         activity: agent_status,
-                        busy: action_busy,
+                        busy: action_busy || !input_allowed(),
                     } )
-                    const bridge_result = await web_bridge.process_requests( { busy: action_busy } )
+                    const bridge_result = await web_bridge.process_requests( { busy: action_busy || !input_allowed() } )
                     bridge_sent = bridge_result.sent
                 } catch ( error ) {
                     log.debug( `Web bridge tick failed for ${ session_name }: ${ error.message }` )
@@ -302,7 +306,7 @@ export const start_monitor = async ( {
                 continue
             }
 
-            if( action_busy ) {
+            if( action_busy || !input_allowed() ) {
                 await wait_fn( POLL_INTERVAL_MS )
                 continue
             }

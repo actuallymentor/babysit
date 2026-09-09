@@ -1,3 +1,7 @@
+import { create_identity_reader } from '../sessions/identity.js'
+import { continue_recovered_session } from '../sessions/continuation.js'
+import { get_boot_id } from '../sessions/lock.js'
+import { read_durable_exit } from '../sessions/transcript.js'
 import { existsSync } from 'fs'
 
 import { log } from '../utils/log.js'
@@ -158,6 +162,10 @@ export const cmd_monitor = async ( cmd ) => {
         session.creds_sync_baseline ? { [ session.agent ]: session.creds_sync_baseline } : {}
     )
 
+    const identity_reader = create_identity_reader( session )
+    let observed_identity = session.agent_session_id
+    let { continuation } = session
+
     let creds_sync = null
     let credential_setup_complete = false
     let caffeinate = null
@@ -281,6 +289,14 @@ export const cmd_monitor = async ( cmd ) => {
             } )
         }
 
+        if( !cmd.cleanup_only && continuation === `pending` ) {
+            const { wait_for_initial_prompt_ready } = await import( './start.js' )
+            continuation = await continue_recovered_session( session, {
+                ready: name => wait_for_initial_prompt_ready( name, agent ),
+                read_identity: () => identity_reader.refresh(),
+            } )
+        }
+
         const agent_patterns = get_patterns( session.agent )
         const web_bridge = await open_web_bridge( { session } )
 
@@ -295,10 +311,33 @@ export const cmd_monitor = async ( cmd ) => {
             agent,
             web_bridge,
             agent_exit_sentinel: session.agent_exit_sentinel,
-            on_session_id: ( id ) => {
-                update_session( session.babysit_id, { agent_session_id: id } )
+            on_tick: () => {
+                const identity = identity_reader.read()
+                if( identity && ( identity.session_id !== observed_identity || session.agent_session_id_source !== `structured` ) ) {
+                    observed_identity = identity.session_id
+                    session.agent_session_id_source = `structured`
+                    update_session( session.babysit_id, { agent_session_id: identity.session_id, agent_session_id_source: `structured` } )
+                }
             },
-            on_exit: async () => {
+            input_allowed: () => ![ `pending`, `sending`, `blocked` ].includes( load_session( session.babysit_id )?.continuation ),
+            on_session_id: ( id ) => {
+                if( session.agent_session_id_source !== `structured` ) update_session( session.babysit_id, { agent_session_id: id } )
+            },
+            on_exit: async ( { exit_status } ) => {
+                const latest = load_session( session.babysit_id )
+                let clean_exit = exit_status === 0
+                if( exit_status === null && session.recovery_version === 1 ) {
+                    try {
+                        const receipt = await read_durable_exit( session )
+                        clean_exit = receipt?.exit_status === 0 && !receipt.interrupted
+                    } catch ( error ) {
+                        log.warn( `Could not verify agent exit; retaining recovery intent: ${ error.message }` )
+                    }
+                }
+                // Host shutdown is suspension. A normal native /exit closes intent.
+                if( !cmd.cleanup_only && clean_exit && !( latest?.shutdown_boot_id && latest.shutdown_boot_id === get_boot_id() ) ) {
+                    update_session( session.babysit_id, { expected_open: false, close_reason: `agent_exit` } )
+                }
                 // Await so the sync's final flush completes before the process
                 // exits — otherwise a token refresh that happened in the last
                 // REFRESH_INTERVAL_MS window never makes it back to the host file.
@@ -307,6 +346,7 @@ export const cmd_monitor = async ( cmd ) => {
         } )
 
     } finally {
+        identity_reader.close()
         const credentials_recovered = await cleanup_credentials()
         const container_removed = credentials_recovered
             ? await cleanup_container()

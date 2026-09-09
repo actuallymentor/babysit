@@ -177,6 +177,30 @@ describe( `clone prune storage`, () => {
 
     } )
 
+    it( `protects expected-open recovery families after all runtime state disappears`, async () => {
+
+        const clone = create_clone()
+        save_session( {
+            babysit_id: `recovery-launch`,
+            clone_id: clone.clone_id,
+            clone_path: clone.workspace,
+            status: `failed`,
+            expected_open: true,
+            recovery_version: 1,
+        }, { directory: sessions_dir } )
+        const inventory = await inspect_clone_inventory( {
+            clones_dir,
+            sessions_dir,
+            list_tmux: async () => [],
+            monitor_alive: () => false,
+            inspect_container: async () => null,
+            get_cwd: () => directory,
+        } )
+        expect( inventory.clones[0].status ).toBe( `protected: recovery pending` )
+        expect( inventory.clones[0].available ).toBe( false )
+
+    } )
+
     it( `protects a tmux-less clone whose Docker container is still running`, async () => {
 
         const clone = create_clone()

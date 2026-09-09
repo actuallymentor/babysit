@@ -38,7 +38,10 @@ const credential_paths = {
 const session_prefix = session_prefix_by_agent[ agent_name ] || `000`
 const random_session_bits = Math.floor( Math.random() * 0x1000000000 ).toString( 16 ).padStart( 9, `0` )
 const session_tail = `${ session_prefix }${ random_session_bits }`
-const session_id = `00000000-0000-4000-8000-${ session_tail }`
+const resume_index = agent_args.findIndex( argument => [ `resume`, `--resume`, `--session` ].includes( argument ) )
+const resume_id = resume_index >= 0 ? agent_args[ resume_index + 1 ] : null
+const session_id = resume_id && /^[a-zA-Z0-9_-]{1,256}$/.test( resume_id ) && !resume_id.startsWith( `-` )
+    ? resume_id : `00000000-0000-4000-8000-${ session_tail }`
 
 const ensure_parent = ( path ) => mkdirSync( dirname( path ), { recursive: true } )
 
@@ -260,13 +263,48 @@ if( is_auth_check ) {
     process.exit( 0 )
 }
 
+// Model native persistent state and identity publication, so recovery exercises
+// its real transcript reader and monitor bridge without calling external APIs.
+const transcript_paths = {
+    codex: `/home/node/.codex/sessions/e2e/rollout-${ session_id }.jsonl`,
+    claude: `/home/node/.claude/projects/-workspace/${ session_id }.jsonl`,
+    gemini: `/home/node/.gemini/tmp/e2e/chats/session-${ session_id }.json`,
+    opencode: `/home/node/.local/share/opencode/storage/session/e2e/${ session_id }.json`,
+}
+const transcript = transcript_paths[ agent_name ]
+if( transcript ) {
+    ensure_parent( transcript )
+    writeFileSync( transcript, JSON.stringify( agent_name === `codex`
+        ? { type: `session_meta`, payload: { id: session_id, source: `cli` } }
+        : { sessionId: session_id, id: session_id, type: `user`, projectHash: `e2e` } ) + `\n` )
+}
+if( process.env.BABYSIT_COMPLETION_FILE && process.env.BABYSIT_COMPLETION_LAUNCH_ID ) {
+    const identity_path = `${ dirname( process.env.BABYSIT_COMPLETION_FILE ) }/identity.json`
+    ensure_parent( identity_path )
+    const identity = JSON.stringify( {
+        version: 1,
+        launch_id: process.env.BABYSIT_COMPLETION_LAUNCH_ID,
+        agent: agent_name,
+        session_id,
+        captured_at: new Date().toISOString(),
+    } )
+    const roots = { claude: `/home/node/.claude/projects`, codex: `/home/node/.codex/sessions`,
+        gemini: `/home/node/.gemini/tmp`, opencode: `/home/node/.local/share/opencode` }
+    if( process.env.BABYSIT_RECOVERY_IDENTITY === `1` && roots[ agent_name ] ) {
+        const mirror = `${ roots[ agent_name ] }/.babysit-identities/${ process.env.BABYSIT_COMPLETION_LAUNCH_ID }.json`
+        ensure_parent( mirror )
+        writeFileSync( mirror, identity )
+    }
+    writeFileSync( identity_path, identity )
+}
+
 console.log( startup_banner_by_agent[ agent_name ] || `${ agent_name } fake agent` )
 console.log( `${ agent_name } fake agent starting` )
 console.log( `session: ${ session_id }` )
 record( `argv ${ JSON.stringify( agent_args ) }` )
 assert_all_credentials_present()
 
-if( agent_args.includes( `resume` ) ) {
+if( resume_index >= 0 ) {
     write_marker( `${ workspace }/e2e-resume-args.txt`, JSON.stringify( agent_args ) )
 }
 

@@ -124,6 +124,17 @@ if [ -z "${BABYSIT_EXIT_SENTINEL:-}" ]; then
     exit 1
 fi
 
+# Preserve the frontend before wrapping Codex/OpenCode in their supervisor.
+capture_agent=""
+case "${1:-}" in
+    claude|codex|gemini|opencode) capture_agent="$1" ;;
+    python3)
+        if [ "${2:-}" = "/home/node/.babysit-capture/capture.py" ] && [ "${3:-}" = "launch" ]; then
+            capture_agent="${4:-}"
+        fi
+        ;;
+esac
+
 # Only supervised interactive sessions own effort controls. Authentication
 # probes above keep their original process and protocol.
 case "${1:-}" in
@@ -144,11 +155,13 @@ esac
 # marker immediately and can release the foreground tmux client while Docker
 # finishes its bookkeeping in the detached cleanup process.
 agent_pid=""
+agent_interrupted=0
 
 # Invoked indirectly by the signal traps below.
 # shellcheck disable=SC2317
 forward_signal() {
     local signal="$1"
+    agent_interrupted=1
 
     [ -n "$agent_pid" ] || return
     kill "-$signal" "$agent_pid" 2>/dev/null || true
@@ -175,6 +188,18 @@ wait_status=$?
 if [ "$wait_status" -ne 127 ]; then agent_status=$wait_status; fi
 set -e
 
+# The pane can vanish before the host polls its terminal marker. Persist the
+# native exit first; host shutdown remains recoverable even if a signal handler
+# made the child return zero. Receipt failure must never masquerade as success.
+if [ "${BABYSIT_RECOVERY_IDENTITY:-0}" = "1" ] && [ -n "$capture_agent" ]; then
+    if ! gosu node python3 /home/node/.babysit-capture/capture.py exit "$capture_agent" "${agent_status:-1}" "$agent_interrupted"; then
+        printf 'Could not persist native session exit receipt\n' >&2
+    fi
+fi
+
 trap - HUP INT TERM
-printf '\r\n__BABYSIT_AGENT_EXIT__:%s:%s\r\n' "$BABYSIT_EXIT_SENTINEL" "${agent_status:-1}"
+marker_status="${agent_status:-1}"
+# Keep old monitors from treating a signal-handling CLI's zero as user closure.
+if [ "$agent_interrupted" = "1" ] && [ "$marker_status" = "0" ]; then marker_status=143; fi
+printf '\r\n__BABYSIT_AGENT_EXIT__:%s:%s\r\n' "$BABYSIT_EXIT_SENTINEL" "$marker_status"
 exit "${agent_status:-1}"

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test'
+import { existsSync, readFileSync, rmSync, statSync } from 'fs'
+import { dirname } from 'path'
 
 import {
     active_sessions_for_original,
@@ -78,6 +80,32 @@ describe( `clone launch safety`, () => {
 
 describe( `clone container recovery`, () => {
 
+    it( `reconstructs reboot-cleared credential scratch without losing conflict hashes`, async () => {
+        const updates = []
+        const baseline = { baseline_source_hash: `source`, baseline_tmpfile_hash: `container` }
+        try {
+            await recover_clone_container( {
+                babysit_id: `reboot`, agent: `codex`, container_id: `old`,
+                creds_tmpfiles: { codex: `/missing-reboot-temp/credentials.json` },
+                creds_sync_baselines: { codex: baseline },
+            }, {
+                inspect_container: async () => `exited`,
+                monitor_alive: () => false,
+                update_session_fn: ( id, fields ) => updates.push( fields ),
+                recover_session: async () => {},
+            } )
+            const file = updates.find( value => value.creds_tmpfiles ).creds_tmpfiles.codex
+            expect( existsSync( file ) ).toBe( true )
+            expect( readFileSync( file, `utf8` ) ).toBe( `` )
+            expect( statSync( dirname( file ) ).mode & 0o777 ).toBe( 0o700 )
+            expect( updates.some( value => value.creds_sync_baselines ) ).toBe( false )
+        } finally {
+            const file = updates.find( value => value.creds_tmpfiles )?.creds_tmpfiles.codex
+            if( file ) rmSync( dirname( file ), { recursive: true, force: true } )
+        }
+    } )
+
+
     it( `stops and finalizes a surviving running container`, async () => {
 
         const calls = []
@@ -101,7 +129,7 @@ describe( `clone container recovery`, () => {
             [ `inspect`, `babysit-session-id` ],
             [ `stop`, `babysit-session-id` ],
             [ `update`, `session-id`, { container_id: `babysit-session-id` } ],
-            [ `recover`, { session_id: `session-id`, monitor_token: null } ],
+            [ `recover`, { session_id: `session-id`, monitor_token: null, cleanup_only: true } ],
         ] )
 
     } )

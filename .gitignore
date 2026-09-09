@@ -3,6 +3,8 @@ dist/
 .env
 .env.local
 .babysit-e2e-*
+.babysit-recovery-e2e-*
+.babysit-native-recovery-*
 *.pem
 *.key
 .DS_Store

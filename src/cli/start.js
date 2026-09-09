@@ -16,7 +16,7 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
-import { private_credential_tmpdir } from '../utils/tmpfile.js'
+import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
     DEFAULT_DOCKER_SOCKET,
     docker_daemon_status,
@@ -74,6 +74,10 @@ import { acquire_clone_lock, prepare_clone_workspace } from '../clone.js'
 import { cmd_monitor } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { cmd_list, format_session_status_label } from './list.js'
+import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
+import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
+import { create_identity_reader } from '../sessions/identity.js'
+import { get_session_pane } from '../tmux/session.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
 const INITIAL_PROMPT_READY_INTERVAL_MS = 250
@@ -181,7 +185,7 @@ export const recover_clone_container = async ( session = {}, {
     const state = await inspect_container( container )
     if( !state ) return false
 
-    if( monitor_alive( session.monitor_pid, session.monitor_token ) ) {
+    if( monitor_alive( session.monitor_pid, session.monitor_token, { boot_id: session.boot_id } ) ) {
         throw new Error( `Session cleanup is still running for ${ session.babysit_id }; retry shortly.` )
     }
 
@@ -196,10 +200,26 @@ export const recover_clone_container = async ( session = {}, {
         await stop_container( container )
     }
 
+    // /tmp is commonly cleared at boot. Recreate only observation files in
+    // fresh private directories; retain the old hashes for conflict resolution.
+    const tmpfiles = { ... session.creds_tmpfiles || ( session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {} )  }
+    let replaced = false
+    for( const [ name, file ] of Object.entries( tmpfiles ) ) {
+        if( existsSync( file ) ) continue
+        const baseline = session.creds_sync_baselines?.[ name ] || ( name === session.agent ? session.creds_sync_baseline : null )
+        if( !baseline?.baseline_source_hash || !baseline?.baseline_tmpfile_hash ) throw new Error( `Cannot reconstruct missing credential baseline for ${ name }` )
+        const transport = build_private_tmpfile( `creds-${ name }`, `recovered.json`, ``, { file_mode: 0o666 } )
+        if( !transport ) throw new Error( `Cannot rebuild credential observation file for ${ name }` )
+        tmpfiles[ name ] = transport.file
+        replaced = true
+    }
+    if( replaced ) update_session_fn( session.babysit_id, { creds_tmpfiles: tmpfiles, creds_tmpfile: tmpfiles[ session.agent ] || null } )
+
     update_session_fn( session.babysit_id, { container_id: container } )
     await recover_session( {
         session_id: session.babysit_id,
         monitor_token: session.monitor_token || null,
+        cleanup_only: true,
     } )
     return true
 
@@ -902,11 +922,39 @@ export const check_startup_agent_authentication = async ( agent, {
 
 }
 
+/** Merge launch progress without overwriting concurrent closure or shutdown intent. */
+export const record_launch_progress = ( id, fields, { recovering = false, update = update_session } = {} ) =>
+    update( id, current => ( {
+        ...fields,
+        expected_open: current.expected_open && ( fields.status !== `failed` || recovering || Boolean( current.shutdown_boot_id ) ),
+        shutdown_boot_id: current.shutdown_boot_id,
+    } ) )
+
 /**
  * Start a new babysit session
  * @param {Object} cmd - Parsed command { agent, flags, passthrough }
  */
 export const cmd_start = async ( cmd ) => {
+
+    const stored = cmd.stored_session || resolve_stored_agent_resume_session( cmd, get_agent( cmd.agent ) || {} )
+    const release = cmd.lifecycle_locked ? () => {} : acquire_session_lock( stored ? session_lock_key( stored ) : `launch:${ randomUUID() }` )
+    let released = false
+    const handoff = () => {
+        if( !released ) release()
+        released = true
+    }
+    const launch = { ...cmd, on_handoff: handoff }
+    try {
+        if( stored && load_session( stored.babysit_id )?.superseded_by ) throw new Error( `Session was superseded; use its current launch` )
+        return await start_session( launch )
+    } finally {
+        launch.release_clone_lock?.()
+        handoff()
+    }
+
+}
+
+async function start_session( cmd ) {
 
     const { agent: agent_name, flags, passthrough } = cmd
 
@@ -914,7 +962,7 @@ export const cmd_start = async ( cmd ) => {
     const agent = get_agent( agent_name )
     if( !agent ) {
         log.error( `Unknown agent: ${ agent_name }` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     // Explicit `babysit <agent> resume <id>` can receive either an agent-native
@@ -928,12 +976,12 @@ export const cmd_start = async ( cmd ) => {
     )
     if( stored_resume_session?.agent_mismatch ) {
         log.error( `Session ${ cmd.session_id } belongs to ${ stored_resume_session.agent_mismatch }, not ${ agent.name }` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     if( stored_resume_session?.clone_pruned_at ) {
         log.error( `Clone workspace was pruned at ${ stored_resume_session.clone_pruned_at }: ${ stored_resume_session.clone_path }` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     const stored_is_clone = Boolean(
@@ -942,13 +990,25 @@ export const cmd_start = async ( cmd ) => {
     )
     if( flags.clone && stored_resume_session && !stored_is_clone ) {
         log.error( `--clone cannot be added while resuming a non-clone session; start a new clone session instead.` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
-    if( stored_is_clone && await has_session( stored_resume_session.tmux_session ) ) {
+    if( stored_resume_session && await has_session( stored_resume_session.tmux_session ) ) {
         log.error( `Clone session is already active: ${ stored_resume_session.babysit_id }` )
         log.error( `Attach with: babysit open ${ stored_resume_session.babysit_id }` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
+    }
+
+    // Tmux releases the user's terminal before credential finalization finishes.
+    // A quick manual resume should wait for that handoff, not lose its parent.
+    if( stored_resume_session && !cmd.container_reconciled ) {
+        const deadline = Date.now() + 60_000
+        while( true ) {
+            const previous = load_session( stored_resume_session.babysit_id )
+            if( !is_monitor_alive( previous?.monitor_pid, previous?.monitor_token, { boot_id: previous?.boot_id } ) ) break
+            if( Date.now() >= deadline ) throw new Error( `Previous session cleanup is still running; retry shortly` )
+            await wait( 250 )
+        }
     }
 
     // A resumed session keeps its human-readable label unless the user gives
@@ -985,20 +1045,20 @@ export const cmd_start = async ( cmd ) => {
 
     if( mode.clone && cmd.verb === `resume` && !stored_resume_session ) {
         log.error( `--clone resume requires a Babysit session ID so the existing clone can be restored.` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     if( mode.clone && ( process.env.BABYSIT_DOCKER === `1` || process.env.BABYSIT_HOST_WORKSPACE ) ) {
         log.error( `--clone is not supported from inside a Docker-enabled Babysit session.` )
         log.error( `Run the clone session from the Docker host so ~/.babysit/clones is host-visible.` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     const docker_socket_path = mode.docker ? resolve_docker_socket_path() : null
     if( mode.docker && !docker_socket_path ) {
         log.error( `--docker requested, but no local Docker socket is available on the host.` )
         log.error( `Checked ${ DEFAULT_DOCKER_SOCKET }, Docker Desktop's macOS user socket, DOCKER_HOST, and the active Docker context.` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     const docker_status = time_phase_sync( `docker daemon`, docker_daemon_status )
@@ -1006,7 +1066,7 @@ export const cmd_start = async ( cmd ) => {
         print_error( `Docker is not running or is not reachable.` )
         if( docker_status.reason ) print_error( docker_status.reason )
         print_error( `Start Docker and try again.` )
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     // Confirmed Watchtower releases either honor Babysit's opt-out label or
@@ -1014,11 +1074,11 @@ export const cmd_start = async ( cmd ) => {
     // not been confirmed safe, before credentials or session state are created.
     time_phase_sync( `watchtower inspection`, warn_if_unrecognized_watchtower_is_running )
 
-    if( should_confirm_docker_restricted_mode( mode ) ) {
+    if( should_confirm_docker_restricted_mode( mode ) && !cmd.recovering ) {
         const confirmed = await confirm_docker_restricted_mode( mode )
         if( !confirmed ) {
             log.error( `Aborted --docker ${ mode.sandbox ? `--sandbox` : `--mudbox` } session.` )
-            process.exit( 1 )
+            throw new Error( `Session launch aborted; see diagnostic above` )
         }
     }
 
@@ -1035,7 +1095,7 @@ export const cmd_start = async ( cmd ) => {
         const confirmed = flags.yes || await confirm_default_yes( `Resume from the clone without /original? [Y/n] ` )
         if( !confirmed ) {
             log.error( `Aborted clone-only resume.` )
-            process.exit( 1 )
+            throw new Error( `Session launch aborted; see diagnostic above` )
         }
     }
 
@@ -1057,7 +1117,7 @@ export const cmd_start = async ( cmd ) => {
             const confirmed = flags.yes || await confirm_default_yes( `Continue with --clone? [Y/n] ` )
             if( !confirmed ) {
                 log.error( `Aborted clone session.` )
-                process.exit( 1 )
+                throw new Error( `Session launch aborted; see diagnostic above` )
             }
         }
     }
@@ -1121,7 +1181,11 @@ export const cmd_start = async ( cmd ) => {
         }
     }
 
+    // Lifecycle identity is stable even when a tmux name is reused after reboot.
+    const owner = await docker_identity()
+    const replay = recovery_arguments( agent, passthrough, mode )
     const release_clone_lock = mode.clone ? acquire_clone_lock( workspace ) : null
+    cmd.release_clone_lock = release_clone_lock
     process.chdir( workspace )
 
     // Compute immutable launch identity before authentication or Docker create
@@ -1140,6 +1204,8 @@ export const cmd_start = async ( cmd ) => {
         name: session_display_name,
         agent: agent.name,
         agent_session_id: stored_resume_session?.agent_session_id || null,
+        agent_session_id_source: stored_resume_session?.agent_session_id_source || null,
+        recovery_native_id: cmd.recovering ? stored_resume_session?.agent_session_id : null,
         tmux_session: session_name,
         pwd: original_workspace,
         original_pwd: original_workspace,
@@ -1156,14 +1222,32 @@ export const cmd_start = async ( cmd ) => {
         status: `preparing`,
         resumed_from: stored_resume_session?.babysit_id || null,
         started_at,
+        boot_id: get_boot_id(),
+        launch_owner: { pid: process.pid, process_identity: get_process_identity(), boot_id: get_boot_id(), hostname: owner.host },
+        expected_open: true,
+        recovery_version: 1,
+        ...owner,
+        tmux_socket: TMUX_SOCKET,
+        image_id: stored_resume_session?.image_id || null,
+        launch_spec: {
+            args: replay.args, unsupported: replay.unsupported, log: flags.log,
+            config_hash: stored_resume_session?.launch_spec?.config_hash || null,
+            environment: Object.fromEntries( [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `OPENCODE_CONFIG_DIR` ]
+                .filter( key => process.env[ key ] ).map( key => [ key, process.env[ key ] ] ) ),
+        },
+        continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : null,
     }
     const mark_clone_launch_failed = () => {
-        if( mode.clone ) update_session( babysit_id, { status: `failed` } )
+        record_launch_progress( babysit_id, { status: `failed` }, { recovering: cmd.recovering } )
     }
 
-    if( mode.clone ) save_session( base_session_data )
+    save_session( base_session_data )
+    if( stored_resume_session ) update_session( stored_resume_session.babysit_id, {
+        superseded_by: babysit_id,
+        expected_open: false,
+    } )
 
-    if( mode.clone && stored_resume_session ) {
+    if( stored_resume_session && !cmd.container_reconciled ) {
         try {
             await recover_clone_container( stored_resume_session )
         } catch ( error ) {
@@ -1200,6 +1284,7 @@ export const cmd_start = async ( cmd ) => {
             reconcile_credentials: name => credential_setup.sync?.flush?.( name ),
             credential_source_changed: name => credential_setup.sync?.source_changed?.( name ) === true,
             agent_args: passthrough,
+            ... cmd.recovering ? { input: { isTTY: false } } : {} ,
         } ) )
     } catch ( error ) {
         if( credential_setup ) {
@@ -1239,7 +1324,7 @@ export const cmd_start = async ( cmd ) => {
             .filter( result => [ `unauthenticated`, `failed` ].includes( result.status ) )
             .forEach( result => log.debug( `Auth check failed for ${ result.name }: ${ result.reason || `unknown reason` }` ) )
 
-        const should_continue = await confirm_continue_with_unauthenticated_agents( unauthenticated_agents, {
+        const should_continue = !cmd.recovering && await confirm_continue_with_unauthenticated_agents( unauthenticated_agents, {
             failed_names: failed_agents,
         } )
 
@@ -1252,7 +1337,7 @@ export const cmd_start = async ( cmd ) => {
             mark_clone_launch_failed()
             release_clone_lock?.()
             log.error( `Aborted because host agent authentication is incomplete.` )
-            process.exit( 1 )
+            throw new Error( `Session launch aborted; see diagnostic above` )
         }
     }
 
@@ -1262,6 +1347,9 @@ export const cmd_start = async ( cmd ) => {
     const { config, rules } = load_config( workspace, {
         default_initial_prompt: build_system_prompt( mode ),
     } )
+
+    base_session_data.launch_spec.config_hash = workspace_config_hash( workspace )
+    update_session( babysit_id, { launch_spec: base_session_data.launch_spec } )
 
     // Initialize the loop deadline file before docker mounts it.
     // "idle" tells the statusline there's no active countdown yet.
@@ -1292,7 +1380,7 @@ export const cmd_start = async ( cmd ) => {
             mark_clone_launch_failed()
             release_clone_lock?.()
             log.error( `Session ${ cmd.session_id } belongs to ${ resume_target.agent_mismatch }, not ${ agent.name }` )
-            process.exit( 1 )
+            throw new Error( `Session launch aborted; see diagnostic above` )
         }
 
         if( resume_target.resume_latest && agent.flags.resume_latest ) {
@@ -1359,6 +1447,13 @@ export const cmd_start = async ( cmd ) => {
             creds_sync.connect( prepared_launch.container_id )
         }
 
+        // Persist the container and capture identity before it can start work.
+        base_session_data.completion_capture = completion_capture
+        base_session_data.agent_exit_sentinel = agent_exit_sentinel
+        base_session_data.container_id = prepared_launch.container_id
+        base_session_data.image_id = await container_image( prepared_launch.container_id )
+        record_launch_progress( babysit_id, base_session_data )
+
         const { pipe_started: started_pipe } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
             log_path,
             startup_log_path: log_path ? null : diagnostic_log_path,
@@ -1421,7 +1516,7 @@ export const cmd_start = async ( cmd ) => {
         if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
         mark_clone_launch_failed()
         release_clone_lock?.()
-        process.exit( 1 )
+        throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
     let session_data
@@ -1481,8 +1576,21 @@ export const cmd_start = async ( cmd ) => {
         // Save durable ownership metadata before spawning the monitor. The
         // prepared launch keeps its signal/error cleanup until the detached
         // monitor process has acknowledged that it spawned successfully.
+        const identity_reader = create_identity_reader( base_session_data )
+        try {
+            const identity = await identity_reader.refresh()
+            if( identity ) {
+                if( cmd.recovering && identity.session_id !== base_session_data.recovery_native_id ) throw new Error( `Agent resumed a different conversation` )
+                base_session_data.agent_session_id = identity.session_id
+                base_session_data.agent_session_id_source = `structured`
+            }
+        } finally {
+            identity_reader.close()
+        }
+        const pane = await get_session_pane( session_name )
         session_data = {
             ...base_session_data,
+            pane_id: pane.pane_id,
             creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
             creds_tmpfiles,
             creds_sync_baseline: monitor_sync_baseline,
@@ -1494,7 +1602,7 @@ export const cmd_start = async ( cmd ) => {
             container_id: prepared_launch.container_id,
             status: `active`,
         }
-        save_session( session_data )
+        session_data = record_launch_progress( babysit_id, session_data )
         clear_credential_recovery( foreground_recovery_id )
 
         const monitor_pid = await time_phase(
@@ -1518,6 +1626,9 @@ export const cmd_start = async ( cmd ) => {
     }
 
     log.info( `Session started: ${ agent.name } (${ babysit_id })` )
+
+    cmd.on_handoff?.()
+    if( cmd.detached ) return session_data
 
     // Hand the user's terminal over to tmux. Blocks until they detach
     // (Ctrl+B d) or the agent exits and the session terminates.

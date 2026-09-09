@@ -1,3 +1,4 @@
+import { acquire_session_lock } from '../src/sessions/lock.js'
 import { describe, it, expect } from 'bun:test'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -195,6 +196,95 @@ describe( `stored session workspaces`, () => {
         expect( session_workspace() ).toBeNull()
         expect( session_original_workspace( null ) ).toBeNull()
         expect( session_workspace( null ) ).toBeNull()
+
+    } )
+
+} )
+
+describe( `durable lifecycle locks`, () => {
+
+    it( `excludes concurrent owners and permits record writes while lifecycle work runs`, () => {
+
+        with_session_directory( directory => {
+            const release = acquire_session_lock( `codex:/workspace`, { directory } )
+            expect( () => acquire_session_lock( `codex:/workspace`, { directory } ) ).toThrow( `already in progress` )
+            save_session( { babysit_id: `session`, expected_open: true }, { directory } )
+            update_session( `session`, { expected_open: false }, { directory } )
+            expect( load_session( `session`, { directory } ).expected_open ).toBe( false )
+            release()
+            release()
+            acquire_session_lock( `codex:/workspace`, { directory } )()
+        } )
+
+    } )
+
+    it( `reclaims a previous boot despite a reused live PID`, () => {
+
+        with_session_directory( directory => {
+            const release = acquire_session_lock( `reboot`, { directory } )
+            const owner_path = join( release.path, readdirSync( release.path )[ 0 ] )
+            const owner = JSON.parse( readFileSync( owner_path, `utf8` ) )
+            owner.boot_id = `previous-boot`
+            writeFileSync( owner_path, JSON.stringify( owner ) )
+            const recovered = acquire_session_lock( `reboot`, { directory } )
+            release()
+            expect( () => acquire_session_lock( `reboot`, { directory } ) ).toThrow( `already in progress` )
+            recovered()
+        } )
+
+    } )
+
+    it( `fails closed on unknown ownership`, () => {
+
+        with_session_directory( directory => {
+            const release = acquire_session_lock( `unknown`, { directory } )
+            const owner_path = join( release.path, readdirSync( release.path )[ 0 ] )
+            writeFileSync( owner_path, `{ broken` )
+            expect( () => acquire_session_lock( `unknown`, { directory } ) ).toThrow( `already in progress` )
+            release()
+        } )
+
+    } )
+
+    it( `recovers a lock held by a process killed without cleanup`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-lock-killed-` ) )
+        const lock_url = new URL( `../src/sessions/lock.js`, import.meta.url ).href
+        const child = Bun.spawn( [ process.execPath, `--eval`,
+            `import { acquire_session_lock } from ${ JSON.stringify( lock_url ) }; acquire_session_lock('killed', { directory: ${ JSON.stringify( directory ) } }); console.log('locked'); setInterval(() => {}, 1000)`,
+        ], { stdout: `pipe`, stderr: `pipe` } )
+        try {
+            const reader = child.stdout.getReader()
+            const { value } = await reader.read()
+            expect( new TextDecoder().decode( value ) ).toContain( `locked` )
+            expect( () => acquire_session_lock( `killed`, { directory } ) ).toThrow( `already in progress` )
+            child.kill( `SIGKILL` )
+            await child.exited
+            acquire_session_lock( `killed`, { directory } )()
+        } finally {
+            child.kill()
+            await child.exited
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `serializes concurrent process updates without losing fields`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-store-concurrent-` ) )
+        try {
+            save_session( { babysit_id: `concurrent`, expected_open: true }, { directory } )
+            const store_url = new URL( `../src/sessions/store.js`, import.meta.url ).href
+            const children = Array.from( { length: 8 }, ( _, index ) => Bun.spawn( [
+                process.execPath, `--eval`,
+                `import { update_session } from ${ JSON.stringify( store_url ) }; for(let i=0;i<20;i++) update_session('concurrent', { worker_${ index }: i }, { directory: ${ JSON.stringify( directory ) } })`,
+            ], { stdout: `pipe`, stderr: `pipe` } ) )
+            expect( await Promise.all( children.map( child => child.exited ) ) ).toEqual( Array( 8 ).fill( 0 ) )
+            const record = load_session( `concurrent`, { directory } )
+            for( let index = 0; index < 8; index++ ) expect( record[ `worker_${ index }` ] ).toBe( 19 )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
 
     } )
 

@@ -59,11 +59,25 @@ const fixture = async ( { loaded = [], turn = completed( `latest`, [ message( `a
     cleanups.push( () => observer.close() )
     const emit = ( method, params ) => socket.send( JSON.stringify( { method, params } ) )
     const status = ( type, threadId = `root` ) => emit( `thread/status/changed`, { threadId, status: { type } } )
-    const records = () => existsSync( output ) ? readFileSync( output, `utf8` ).trim().split( `\n` ).filter( Boolean ).map( line => JSON.parse( line ) ) : []
-    return { emit, status, calls, records, observer }
+    const all_records = () => existsSync( output ) ? readFileSync( output, `utf8` ).trim().split( `\n` ).filter( Boolean ).map( line => JSON.parse( line ) ) : []
+    const records = () => all_records().filter( record => JSON.parse( record.argv[ 3 ] ).type === `agent-turn-complete` )
+    const identities = () => all_records().filter( record => JSON.parse( record.argv[ 3 ] ).type === `babysit-session-identity` )
+    return { emit, status, calls, records, identities, observer }
 }
 
 describe( `Codex app-server completion bridge`, () => {
+
+    it( `publishes verified root identity before any turn and tracks a new root`, async () => {
+        const test = await fixture()
+        test.emit( `thread/started`, { thread: { id: `child` } } )
+        test.emit( `thread/started`, { thread: { id: `root` } } )
+        await until( () => test.identities().length === 1 )
+        test.emit( `thread/started`, { thread: { id: `new-root` } } )
+        await until( () => test.identities().length === 2 )
+        expect( test.identities().map( record => JSON.parse( record.argv[ 3 ] )[ `thread-id` ] ) ).toEqual( [ `root`, `new-root` ] )
+        expect( test.identities().every( record => record.argv[ 2 ] === `[]` ) ).toBe( true )
+        expect( test.records() ).toEqual( [] )
+    } )
 
     it( `lets a slow notification finish while the observer shuts down`, async () => {
         const test = await fixture( { delay_ms: 5_200 } )

@@ -59,8 +59,48 @@ def codex_root_session(session):
     return False
 
 
+def durable_write(path, content):
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as file:
+            file.write(content)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def persist_receipt(agent, name, content):
+    if os.environ.get('BABYSIT_RECOVERY_IDENTITY') != '1':
+        return
+    state = {'claude': '/home/node/.claude/projects', 'codex': '/home/node/.codex/sessions',
+             'gemini': '/home/node/.gemini/tmp', 'opencode': '/home/node/.local/share/opencode'}[agent]
+    persisted = pathlib.Path(state, '.babysit-identities')
+    persisted.mkdir(mode=0o700, parents=True, exist_ok=True)
+    parent = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+    durable_write(persisted / (os.environ['BABYSIT_COMPLETION_LAUNCH_ID'] + name + '.json'), content)
+
+
+def save_exit(agent, status, interrupted):
+    receipt = json.dumps(dict(version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'],
+                              agent=agent, exit_status=int(status), interrupted=interrupted == '1',
+                              exited_at=datetime.datetime.now(datetime.timezone.utc).isoformat()))
+    persist_receipt(agent, '.exit', receipt)
+
+
 def save(agent, payload):
-    if agent == 'codex' and payload.get('type') != 'agent-turn-complete':
+    if agent == 'codex' and payload.get('type') not in ('agent-turn-complete', 'babysit-session-identity'):
         return
     if agent in ('claude', 'gemini') and payload.get('hook_event_name') not in ('SessionStart', 'Stop' if agent == 'claude' else 'AfterAgent'):
         return
@@ -78,15 +118,15 @@ def save(agent, payload):
     lock = (path.parent / 'lock').open('a')
     fcntl.flock(lock, fcntl.LOCK_EX)
     binding = path.parent / 'session'
-    try:
-        with binding.open('x') as file:
-            file.write(session)
-    except FileExistsError:
-        if binding.read_text() != session:
-            if payload.get('hook_event_name') == 'SessionStart' or agent in ('codex', 'opencode'):
-                binding.write_text(session)
-            else:
-                return
+    if binding.exists() and binding.read_text() != session:
+        if payload.get('hook_event_name') != 'SessionStart' and agent not in ('codex', 'opencode'):
+            return
+    identity = json.dumps(dict(
+        version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'], agent=agent,
+        session_id=session, captured_at=datetime.datetime.now(datetime.timezone.utc).isoformat()))
+    persist_receipt(agent, '', identity)
+    durable_write(binding, session)
+    durable_write(path.parent / 'identity.json', identity)
     if agent == 'codex':
         if payload.get('type') != 'agent-turn-complete':
             return
@@ -137,6 +177,14 @@ def codex_notify(command):
 def launch(agent, command):
     os.environ['BABYSIT_COMPLETION_ROOT_PID'] = str(os.getpid())
     original = command.copy()
+    os.environ.pop('BABYSIT_COMPLETION_RESUME_ID', None)
+    if agent == 'opencode':
+        # An explicit resume ID is authoritative; never infer it from recency.
+        options = command[:command.index('--')] if '--' in command else command
+        for index, argument in enumerate(options):
+            session = options[index + 1] if argument in ('-s', '--session') and index + 1 < len(options) else argument.removeprefix('--session=') if argument.startswith('--session=') else ''
+            if re.fullmatch(r'ses[a-zA-Z0-9_]+', session):
+                os.environ['BABYSIT_COMPLETION_RESUME_ID'] = session
     try:
         if agent == 'codex':
             existing = codex_notify(command)
@@ -162,6 +210,8 @@ if __name__ == '__main__':
     mode = sys.argv[1]
     if mode == 'launch':
         launch(sys.argv[2], sys.argv[3:])
+    elif mode == 'exit':
+        save_exit(sys.argv[2], sys.argv[3], sys.argv[4])
     elif mode == 'notify-command':
         # The app-server config API omits legacy notify; share the launch parser.
         print(json.dumps(codex_notify(json.loads(sys.argv[2]))))
@@ -175,7 +225,7 @@ if __name__ == '__main__':
         if mode == 'codex':
             try:
                 previous = json.loads(sys.argv[2])
-                if isinstance(previous, list) and previous:
+                if payload.get('type') == 'agent-turn-complete' and isinstance(previous, list) and previous:
                     subprocess.run([*previous, sys.argv[3]], timeout=10, check=False)
             except Exception:
                 pass
@@ -185,11 +235,31 @@ export const COMPLETION_PLUGIN_SOURCE = String.raw`import { spawn } from 'node:c
 
 export const BabysitCompletion = async ( { client } ) => {
     let active_session = null
+    const publish = payload => new Promise( resolve => {
+        const child = spawn( 'python3', [ '/home/node/.babysit-capture/capture.py', 'opencode' ], { stdio: [ 'pipe', 'ignore', 'ignore' ] } )
+        child.on( 'error', resolve )
+        child.on( 'close', resolve )
+        child.stdin.on( 'error', () => {} )
+        child.stdin.end( JSON.stringify( payload ) )
+    } )
+    const resumed = process.env.BABYSIT_COMPLETION_RESUME_ID
+    if( resumed ) {
+        try {
+            const { data: session } = await client.session.get( { path: { id: resumed } } )
+            if( session?.id === resumed && !session.parentID ) {
+                active_session = resumed
+                await publish( { session_id: resumed } )
+            }
+        } catch { /* Missing native sessions must not claim a recovery identity. */ }
+    }
     return {
     'chat.message': async input => {
         try {
             const { data: session } = await client.session.get( { path: { id: input.sessionID } } )
-            if( session && !session.parentID ) active_session = input.sessionID
+            if( session && !session.parentID ) {
+                active_session = input.sessionID
+                await publish( { session_id: active_session } )
+            }
         } catch { /* Ignore sessions that cannot be verified. */ }
     },
     event: async ( { event } ) => {
@@ -205,10 +275,7 @@ export const BabysitCompletion = async ( { client } ) => {
             if( latest.info.finish !== 'stop' && latest.info.finish !== 'end_turn' ) return
             const text = latest.parts.filter( part => part.type === 'text' && !part.synthetic && !part.ignored ).map( part => part.text ).join( '\n\n' )
             if( !text.trim() ) return
-            const child = spawn( 'python3', [ '/home/node/.babysit-capture/capture.py', 'opencode' ], { stdio: [ 'pipe', 'ignore', 'ignore' ] } )
-            child.on( 'error', () => {} )
-            child.stdin.on( 'error', () => {} )
-            child.stdin.end( JSON.stringify( { session_id, turn_id: latest.info.id, text } ) )
+            await publish( { session_id, turn_id: latest.info.id, text } )
         } catch { /* An unavailable message must not interrupt the agent. */ }
     },
     }
