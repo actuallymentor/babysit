@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.43.1 — 2026-09-09
+
+### Fixed
+- Prefer verified plain Chrome indexes when compressed repository metadata lags.
+
 ## 0.43.0 — 2026-09-09
 
 ### ✨ Added
