@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.43.3 — 2026-09-09
+
+### Fixed
+- Validate boot executables and Docker access with the service account’s environment.
+- Use absolute Ubuntu administration paths through sudo.
+- Include boot dependency directories in required service mounts.
+
 ## 0.43.2 — 2026-09-09
 
 ### Fixed

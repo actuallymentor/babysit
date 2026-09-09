@@ -123,11 +123,15 @@ Inspect the conversation, then use `--no-continue` to acknowledge without resend
 This does not undo input already submitted or actions already completed.
 
 On Ubuntu with system Docker, run `babysit recover init` as the session owner
-(sudo is supported). It installs and enables `babysit-recover-<uid>.service` for
+(let it prompt for sudo internally). It installs and enables `babysit-recover-<uid>.service` for
 the next boot; it does not restart current sessions. The account needs direct
 Docker access. The installer prompts for sudo authorization in a terminal;
-unattended installation needs root or cached/passwordless sudo. Its home/workspaces and
-credentials must be available before login; login-unlocked homes/keyrings and
+unattended installation needs root or cached/passwordless sudo. Initialization checks
+Babysit, `sh`, `tmux`, `docker`, `cat`, `ps`, and Docker access as the service user
+with a clean boot environment. It records an absolute Babysit path and explicit PATH;
+login shell settings are not loaded. Explicit `sudo babysit recover init` preserves
+the original account but can lose custom PATH entries—prefer normal-user invocation.
+Its home/workspaces and credentials must be available before login; login-unlocked homes/keyrings and
 rootless/remote Docker need separate host setup and are not supported by this installer.
 Rerun initialization after moving the executable or adding workspace mount dependencies.
 

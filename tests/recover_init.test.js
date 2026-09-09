@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { install_recovery_service, render_recovery_service } from '../src/cli/recover_init.js'
+import { check_recovery_environment, install_recovery_service, render_recovery_service } from '../src/cli/recover_init.js'
 
 const settings = { uid: 1000, gid: 1000, home: `/home/alice`, command: [ `/usr/bin/true` ], path: `/usr/bin:/bin` }
 
@@ -53,14 +53,14 @@ describe( `boot recovery service`, () => {
         const unit = render_recovery_service( settings )
         const execute = async ( command, args ) => {
             calls.push( [ command, ...args ] )
-            if( command === `install` ) {
+            if( command === `/usr/bin/install` ) {
                 staged = args.at( -2 )
                 expect( readFileSync( staged, `utf8` ) ).toBe( unit )
             }
         }
         const result = await install_recovery_service( { unit, uid: 1000, privileged: true }, { execute } )
         expect( result.name ).toBe( `babysit-recover-1000.service` )
-        expect( calls.slice( 1 ) ).toEqual( [ [ `systemctl`, `daemon-reload` ], [ `systemctl`, `enable`, result.name ] ] )
+        expect( calls.slice( 1 ) ).toEqual( [ [ `/usr/bin/systemctl`, `daemon-reload` ], [ `/usr/bin/systemctl`, `enable`, result.name ] ] )
         expect( existsSync( staged ) ).toBe( false )
     } )
 
@@ -75,7 +75,7 @@ describe( `boot recovery service`, () => {
         } ).catch( error => error )
         expect( error.message ).toContain( `Run babysit recover init in a terminal` )
         expect( error.message ).toContain( `sudo requires a password` )
-        expect( calls ).toEqual( [ [ `sudo`, `-n`, `-v` ] ] )
+        expect( calls ).toEqual( [ [ `/usr/bin/sudo`, `-n`, `-v` ] ] )
     } )
 
     it( `authenticates through the user's terminal before installing`, async () => {
@@ -84,8 +84,8 @@ describe( `boot recovery service`, () => {
             interactive: true,
             execute: async ( command, args, options, timeout ) => calls.push( { command, args, options, timeout } ),
         } )
-        expect( calls[ 0 ] ).toEqual( { command: `sudo`, args: [ `-v` ], options: { stdio: [ `inherit`, `pipe`, `pipe` ] }, timeout: 300_000 } )
-        expect( calls.slice( 1 ).map( call => call.args.slice( 0, 2 ) ) ).toEqual( [ [ `--`, `install` ], [ `--`, `systemctl` ], [ `--`, `systemctl` ] ] )
+        expect( calls[ 0 ] ).toEqual( { command: `/usr/bin/sudo`, args: [ `-v` ], options: { stdio: [ `inherit`, `pipe`, `pipe` ] }, timeout: 300_000 } )
+        expect( calls.slice( 1 ).map( call => call.args.slice( 0, 2 ) ) ).toEqual( [ [ `--`, `/usr/bin/install` ], [ `--`, `/usr/bin/systemctl` ], [ `--`, `/usr/bin/systemctl` ] ] )
         expect( calls.every( call => !call.args.includes( `-n` ) ) ).toBe( true )
     } )
 
@@ -96,5 +96,64 @@ describe( `boot recovery service`, () => {
             execute: async () => { attempts++; throw new Error( `authentication failed` ) },
         } ) ).rejects.toThrow( `Sudo authentication failed` )
         expect( attempts ).toBe( 1 )
+    } )
+} )
+
+describe( `boot recovery prerequisites`, () => {
+    const account = { ...settings, username: `alice` }
+
+    it( `checks executables with a clean environment after dropping sudo privileges`, async () => {
+        const calls = []
+        const dependencies = await check_recovery_environment( account, {
+            current_uid: 0,
+            execute: async ( binary, args, options ) => {
+                calls.push( { binary, args, options } )
+                return args.includes( `command -v "$1"` ) ? `/usr/bin/${ args.at( -1 ) }` : `ok`
+            },
+        } )
+        expect( dependencies ).toEqual( [ `/usr/bin/sh`, `/usr/bin/tmux`, `/usr/bin/docker`, `/usr/bin/cat`, `/usr/bin/ps` ] )
+        for( const call of calls ) {
+            expect( call.binary ).toBe( `/usr/sbin/runuser` )
+            expect( call.args.slice( 0, 5 ) ).toEqual( [ `--user`, `alice`, `--`, `/usr/bin/env`, `-i` ] )
+            expect( call.args ).toContain( `HOME=/home/alice` )
+            expect( call.args ).toContain( `PATH=/usr/bin:/bin` )
+            expect( call.options ).toEqual( { cwd: `/home/alice` } )
+        }
+        expect( calls[ 1 ].args.slice( -2 ) ).toEqual( [ `/usr/bin/true`, `--version` ] )
+        expect( calls.at( -1 ).args.slice( -6 ) ).toEqual( [ `docker`, `--host`, `unix:///var/run/docker.sock`, `info`, `--format`, `{{.ID}}` ] )
+    } )
+
+    it( `explains stripped PATH failures before any privileged installation`, async () => {
+        const calls = []
+        const error = await check_recovery_environment( account, {
+            current_uid: 1000,
+            execute: async ( binary, args ) => {
+                calls.push( binary )
+                if( args.at( -1 ) === `tmux` ) throw new Error( `tmux unavailable` )
+                return args.includes( `command -v "$1"` ) ? `/usr/bin/${ args.at( -1 ) }` : `ok`
+            },
+        } ).catch( error => error )
+        expect( error.message ).toContain( `tmux on the service PATH` )
+        expect( error.message ).toContain( `as alice without a sudo prefix` )
+        expect( calls.every( binary => binary === `/usr/bin/env` ) ).toBe( true )
+    } )
+
+    it( `actually rejects a runtime that relies on login-only environment`, async () => {
+        const directory = mkdtempSync( join( tmpdir(), `babysit-boot-env-` ) )
+        const previous = process.env.BABYSIT_BOOT_TEST_LOGIN
+        try {
+            process.env.BABYSIT_BOOT_TEST_LOGIN = `yes`
+            const script = join( directory, `needs-login.js` )
+            writeFileSync( script, `if (!process.env.PATH || process.env.HOME !== ${ JSON.stringify( directory ) }) process.exit(2); process.exit(process.env.BABYSIT_BOOT_TEST_LOGIN ? 0 : 7)` )
+            const result = spawnSync( process.execPath, [ script ], { env: { ...process.env, HOME: directory, BABYSIT_BOOT_TEST_LOGIN: `yes` } } )
+            expect( result.status ).toBe( 0 )
+            await expect( check_recovery_environment( {
+                ...account, uid: process.getuid(), home: directory, command: [ process.execPath, script ],
+            } ) ).rejects.toThrow( `Babysit executable` )
+        } finally {
+            if( previous === undefined ) delete process.env.BABYSIT_BOOT_TEST_LOGIN
+            else process.env.BABYSIT_BOOT_TEST_LOGIN = previous
+            rmSync( directory, { recursive: true, force: true } )
+        }
     } )
 } )
