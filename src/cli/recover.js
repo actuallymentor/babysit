@@ -2,7 +2,6 @@ import { existsSync } from 'fs'
 import { hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { wait } from 'mentie'
-import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
 import { inspect_stored_sessions, load_session, session_workspace, update_session } from '../sessions/store.js'
 import { acquire_session_lock, get_boot_id, lock_owner_is_stale } from '../sessions/lock.js'
@@ -42,6 +41,24 @@ const continuation_result = session => {
 
 }
 
+const AUTH_ENVIRONMENT = [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `OPENCODE_CONFIG_DIR` ]
+
+/** Scope credential cleanup and relaunch to the original host profile. */
+const use_launch_environment = session => {
+
+    const saved = session.launch_spec?.environment
+    if( !saved ) return () => {}
+
+    const previous = Object.fromEntries( AUTH_ENVIRONMENT.map( key => [ key, process.env[ key ] ] ) )
+    const apply = environment => AUTH_ENVIRONMENT.forEach( key => {
+        if( environment[ key ] === undefined ) delete process.env[ key ]
+        else process.env[ key ] = environment[ key ]
+    } )
+    apply( saved )
+    return () => apply( previous )
+
+}
+
 /** Recover one launch while holding the same workspace lock as manual start/resume. */
 export const recover_session = async ( record, flags = {}, {
     load = load_session,
@@ -64,8 +81,7 @@ export const recover_session = async ( record, flags = {}, {
     const release = lock( session_lock_key( record ) )
     const cwd = process.cwd()
     const old_image = process.env.BABYSIT_DOCKER_IMAGE
-    const auth_environment = [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `OPENCODE_CONFIG_DIR` ]
-    const old_environment = Object.fromEntries( auth_environment.map( key => [ key, process.env[ key ] ] ) )
+    let restore_environment = () => {}
     try {
         const session = load( record.babysit_id )
         if( !session || session.superseded_by ) return { id: record.babysit_id, status: `skipped`, reason: `Superseded launch` }
@@ -74,6 +90,7 @@ export const recover_session = async ( record, flags = {}, {
         if( session.status === `preparing` && session.launch_owner && !lock_owner_is_stale( session.launch_owner ) ) {
             return { id: session.babysit_id, status: `preparing`, reason: `Launch is still in progress` }
         }
+        restore_environment = use_launch_environment( session )
 
         const owner = await identity()
         if( owner.docker_id !== session.docker_id ) throw new Error( `Docker daemon differs from the original launch` )
@@ -103,7 +120,7 @@ export const recover_session = async ( record, flags = {}, {
 
         if( monitoring ) throw new Error( `Monitor is still finalizing this launch; retry shortly` )
         const receipt = await durable_exit( session )
-        if( receipt?.exit_status === 0 && !receipt.interrupted && !( session.shutdown_boot_id && session.shutdown_boot_id === session.boot_id ) ) {
+        if( receipt?.exit_status === 0 && !receipt.interrupted ) {
             if( !flags.dry_run ) {
                 await reconcile( session )
                 if( await inspect( session.container_id || session.container_name ) ) throw new Error( `Closed agent container retained for credential recovery` )
@@ -128,11 +145,6 @@ export const recover_session = async ( record, flags = {}, {
         await verify( session )
         if( flags.dry_run ) return { id: session.babysit_id, status: `recoverable` }
 
-        auth_environment.forEach( key => {
-            const value = session.launch_spec.environment?.[ key ]
-            if( value ) process.env[ key ] = value
-            else delete process.env[ key ]
-        } )
         await reconcile( session )
         const reconciled = load( session.babysit_id )
         if( await inspect( session.container_id || session.container_name ) ) {
@@ -154,14 +166,14 @@ export const recover_session = async ( record, flags = {}, {
         const reason = continuation_result( completed )
         return { id: session.babysit_id, recovered_id: resumed.babysit_id, status: reason ? `blocked` : `recovered`, ... reason ? { reason } : {}  }
     } finally {
-        process.chdir( cwd )
+        restore_environment()
         if( old_image === undefined ) delete process.env.BABYSIT_DOCKER_IMAGE
         else process.env.BABYSIT_DOCKER_IMAGE = old_image
-        auth_environment.forEach( key => {
-            if( old_environment[ key ] === undefined ) delete process.env[ key ]
-            else process.env[ key ] = old_environment[ key ]
-        } )
-        release()
+        try {
+            process.chdir( cwd )
+        } finally {
+            release()
+        }
     }
 
 }
@@ -231,9 +243,13 @@ async function recover_batch( cmd, { inspect = inspect_stored_sessions, recover 
 /** Persist intentional closure before touching processes; shutdown preserves open intent. */
 export const close_session = async ( session, { shutdown = false } = {}, {
     load = load_session, update = update_session, lock = acquire_session_lock,
+    identity = docker_identity, sessions = list_sessions, pane = get_session_pane,
+    stop = stop_docker_container, kill = kill_session, monitor_alive = is_monitor_alive,
+    reconcile = recover_clone_container,
 } = {} ) => {
 
     const release = lock( session_lock_key( session ) )
+    let restore_environment = () => {}
     try {
         const latest = load( session.babysit_id )
         if( !latest || latest.superseded_by ) throw new Error( `Session was superseded; close its current launch instead` )
@@ -245,32 +261,37 @@ export const close_session = async ( session, { shutdown = false } = {}, {
             update( latest.babysit_id, { shutdown_boot_id: get_boot_id() } )
             return
         }
+        restore_environment = use_launch_environment( latest )
         update( latest.babysit_id, shutdown
             ? { shutdown_boot_id: get_boot_id() }
             : { expected_open: false, close_reason: `user`, closed_at: new Date().toISOString() } )
-        const owner = await docker_identity()
+        const owner = await identity()
         if( latest.docker_id && owner.docker_id !== latest.docker_id ) throw new Error( `Docker daemon differs from saved launch` )
-        const active = ( await list_sessions( { strict: true } ) ).some( live => live.name === latest.tmux_session )
+        const active = ( await sessions( { strict: true } ) ).some( live => live.name === latest.tmux_session )
         if( active ) {
-            const pane = await get_session_pane( latest.tmux_session )
-            if( latest.pane_id && pane.pane_id !== latest.pane_id ) throw new Error( `Tmux pane belongs to another launch` )
+            const target = await pane( latest.tmux_session )
+            if( latest.pane_id && target.pane_id !== latest.pane_id ) throw new Error( `Tmux pane belongs to another launch` )
         }
-        await stop_docker_container( latest.container_id || latest.container_name )
-        if( active ) await kill_session( latest.tmux_session )
-        if( !is_monitor_alive( latest.monitor_pid, latest.monitor_token, { boot_id: latest.boot_id } ) ) await recover_clone_container( load_session( latest.babysit_id ) )
+        await stop( latest.container_id || latest.container_name )
+        if( active ) await kill( latest.tmux_session )
+        if( !monitor_alive( latest.monitor_pid, latest.monitor_token, { boot_id: latest.boot_id } ) ) await reconcile( load( latest.babysit_id ) )
     } finally {
+        restore_environment()
         release()
     }
 
 }
 
 /** Close a selected session, or suspend this account's expected-open launches at shutdown. */
-export const cmd_close = async cmd => {
+export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, close = close_session, print = console.log } = {} ) => {
 
-    const session = load_session( cmd.session_id )
+    // Recovery reports the original ID even when a retry creates a new launch.
+    // Keep that ID usable for retiring the whole conversation's current leaf.
+    const { records } = inspect_records()
+    const [ session ] = select_recovery_sessions( records.map( record => record.session ), cmd.session_id )
     if( !session ) throw new Error( `No stored session found: ${ cmd.session_id }` )
-    await close_session( session )
-    log.info( `Closed ${ session.babysit_id }; it will not be recovered.` )
+    await close( session )
+    print( `Closed ${ session.babysit_id }; it will not be recovered.` )
 
 }
 
@@ -281,6 +302,8 @@ export const cmd_recovery_shutdown = async () => {
     const sessions = recovery_candidates( records.map( record => record.session ) )
         .filter( session => session.expected_open && session.host === hostname() )
     sessions.forEach( session => update_session( session.babysit_id, { shutdown_boot_id: get_boot_id() } ) )
-    await Promise.allSettled( sessions.map( session => close_session( session, { shutdown: true } ) ) )
+    // Cleanup resolves credential destinations from process.env. Finish and
+    // restore each saved profile before loading another session's credentials.
+    for( const session of sessions ) await close_session( session, { shutdown: true } ).catch( () => {} )
 
 }

@@ -26,6 +26,23 @@ const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
     : log.debug( message )
 
+/** Resolve closure from native evidence; a later shutdown stamp cannot undo a clean exit. */
+export const was_clean_native_exit = async ( session, exit_status, { read_exit = read_durable_exit } = {} ) => {
+
+    const shutting_down = Boolean( session.shutdown_boot_id && session.shutdown_boot_id === get_boot_id() )
+    if( session.recovery_version === 1 && ( exit_status === null || shutting_down ) ) {
+        try {
+            const receipt = await read_exit( session )
+            return receipt?.exit_status === 0 && receipt.interrupted === false
+        } catch ( error ) {
+            log.warn( `Could not verify agent exit; retaining recovery intent: ${ error.message }` )
+            return false
+        }
+    }
+    return exit_status === 0 && !shutting_down
+
+}
+
 /**
  * Rebuild the launch mode from stored session modifiers.
  * @param {string[]} modifiers - Stored session modifiers
@@ -325,17 +342,10 @@ export const cmd_monitor = async ( cmd ) => {
             },
             on_exit: async ( { exit_status } ) => {
                 const latest = load_session( session.babysit_id )
-                let clean_exit = exit_status === 0
-                if( exit_status === null && session.recovery_version === 1 ) {
-                    try {
-                        const receipt = await read_durable_exit( session )
-                        clean_exit = receipt?.exit_status === 0 && !receipt.interrupted
-                    } catch ( error ) {
-                        log.warn( `Could not verify agent exit; retaining recovery intent: ${ error.message }` )
-                    }
-                }
-                // Host shutdown is suspension. A normal native /exit closes intent.
-                if( !cmd.cleanup_only && clean_exit && !( latest?.shutdown_boot_id && latest.shutdown_boot_id === get_boot_id() ) ) {
+                const clean_exit = await was_clean_native_exit( { ...session, ...latest }, exit_status )
+                // The receipt records whether the native process was interrupted,
+                // even if shutdown stamped the registry after it exited normally.
+                if( !cmd.cleanup_only && clean_exit ) {
                     update_session( session.babysit_id, { expected_open: false, close_reason: `agent_exit` } )
                 }
                 // Await so the sync's final flush completes before the process

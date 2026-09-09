@@ -12,6 +12,8 @@
 - Resume exact conversations with original launch settings; repair missing monitors without duplicate agents.
 - Retain interrupted clone workspaces and recover boot-stale locks and credential scratch files.
 - Report uncertain continuation delivery and unsupported recovery prerequisites.
+- Honor completed-before-shutdown exits and saved credential profiles.
+- Let close resolve original IDs through replacement recovery launches.
 
 ## 0.42.0 — 2026-09-08
 
