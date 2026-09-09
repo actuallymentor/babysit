@@ -124,6 +124,7 @@ ARG RUNTIME_REFRESH=manual
 # Browser and document runtime — Google's signed apt repository publishes
 # native Chrome packages for both architectures in Babysit's multi-arch image.
 # `x11-utils` intentionally keeps xdpyinfo despite its Mesa/LLVM footprint.
+# Google's gzip index can lag its signed Release; prefer the verified plain index.
 RUN set -eux; \
     echo "Runtime refresh: ${RUNTIME_REFRESH}"; \
     install -m 0755 -d /etc/apt/keyrings; \
@@ -132,7 +133,8 @@ RUN set -eux; \
     printf '%s\n' \
         "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
         > /etc/apt/sources.list.d/google-chrome.list; \
-    apt-get update; \
+    apt-get -o Acquire::CompressionTypes::uncompressed=. \
+        -o Acquire::CompressionTypes::Order=uncompressed update; \
     apt-get install -y --no-install-recommends \
         google-chrome-stable \
         xvfb xauth x11-utils poppler-utils qpdf; \
