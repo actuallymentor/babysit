@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.43.2 — 2026-09-09
+
+### Fixed
+- Prompt for sudo authentication when installing boot recovery from a terminal.
+- Explain how to authorize unattended recovery-service installation.
+
 ## 0.43.1 — 2026-09-09
 
 ### Fixed
