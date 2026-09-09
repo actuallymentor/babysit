@@ -66,12 +66,35 @@ describe( `boot recovery service`, () => {
 
     it( `fails before installing when sudo cannot run noninteractively`, async () => {
         const calls = []
-        await expect( install_recovery_service( { unit: render_recovery_service( settings ), uid: 1000, privileged: false }, {
+        const error = await install_recovery_service( { unit: render_recovery_service( settings ), uid: 1000, privileged: false }, {
+            interactive: false,
             execute: async ( command, args ) => {
                 calls.push( [ command, ...args ] )
                 throw new Error( `sudo requires a password` )
             },
-        } ) ).rejects.toThrow( `password` )
-        expect( calls ).toEqual( [ [ `sudo`, `-n`, `true` ] ] )
+        } ).catch( error => error )
+        expect( error.message ).toContain( `Run babysit recover init in a terminal` )
+        expect( error.message ).toContain( `sudo requires a password` )
+        expect( calls ).toEqual( [ [ `sudo`, `-n`, `-v` ] ] )
+    } )
+
+    it( `authenticates through the user's terminal before installing`, async () => {
+        const calls = []
+        await install_recovery_service( { unit: render_recovery_service( settings ), uid: 1000, privileged: false }, {
+            interactive: true,
+            execute: async ( command, args, options, timeout ) => calls.push( { command, args, options, timeout } ),
+        } )
+        expect( calls[ 0 ] ).toEqual( { command: `sudo`, args: [ `-v` ], options: { stdio: [ `inherit`, `pipe`, `pipe` ] }, timeout: 300_000 } )
+        expect( calls.slice( 1 ).map( call => call.args.slice( 0, 2 ) ) ).toEqual( [ [ `--`, `install` ], [ `--`, `systemctl` ], [ `--`, `systemctl` ] ] )
+        expect( calls.every( call => !call.args.includes( `-n` ) ) ).toBe( true )
+    } )
+
+    it( `does not install after terminal authentication fails`, async () => {
+        let attempts = 0
+        await expect( install_recovery_service( { unit: `unit`, uid: 1000, privileged: false }, {
+            interactive: true,
+            execute: async () => { attempts++; throw new Error( `authentication failed` ) },
+        } ) ).rejects.toThrow( `Sudo authentication failed` )
+        expect( attempts ).toBe( 1 )
     } )
 } )

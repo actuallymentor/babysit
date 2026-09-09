@@ -125,7 +125,8 @@ This does not undo input already submitted or actions already completed.
 On Ubuntu with system Docker, run `babysit recover init` as the session owner
 (sudo is supported). It installs and enables `babysit-recover-<uid>.service` for
 the next boot; it does not restart current sessions. The account needs direct
-Docker access; install as root or with noninteractive sudo. Its home/workspaces and
+Docker access. The installer prompts for sudo authorization in a terminal;
+unattended installation needs root or cached/passwordless sudo. Its home/workspaces and
 credentials must be available before login; login-unlocked homes/keyrings and
 rootless/remote Docker need separate host setup and are not supported by this installer.
 Rerun initialization after moving the executable or adding workspace mount dependencies.

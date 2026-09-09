@@ -51,17 +51,31 @@ WantedBy=multi-user.target
 }
 
 /** Install and enable a unit without disturbing currently running sessions. */
-export const install_recovery_service = async ( { unit, uid, privileged = process.getuid() === 0 }, { execute = run } = {} ) => {
+export const install_recovery_service = async ( { unit, uid, privileged = process.getuid() === 0 }, {
+    execute = run, interactive = Boolean( process.stdin.isTTY ),
+} = {} ) => {
     const name = `babysit-recover-${ uid }.service`
     const directory = mkdtempSync( join( tmpdir(), `babysit-recover-` ) )
     const source = join( directory, name )
     const destination = `/etc/systemd/system/${ name }`
-    const admin = ( command, args ) => privileged ? execute( command, args ) : execute( `sudo`, [ `-n`, `--`, command, ...args ] )
+    // Sudo owns its terminal prompt; Babysit never reads or stores the password.
+    const sudo = args => execute( `sudo`, [ ... interactive ? [] : [ `-n` ], ...args ],
+        interactive ? { stdio: [ `inherit`, `pipe`, `pipe` ] } : {}, interactive ? 300_000 : 30_000 )
+    const admin = ( command, args ) => privileged ? execute( command, args ) : sudo( [ `--`, command, ...args ] )
 
     try {
         writeFileSync( source, unit, { mode: 0o600 } )
-        // Fail before writing configuration when sudo would require a password.
-        if( !privileged ) await execute( `sudo`, [ `-n`, `true` ] )
+        // Authenticate before writing configuration, allowing the usual password
+        // prompt in a terminal while unattended invocations remain nonblocking.
+        if( !privileged ) {
+            try {
+                await sudo( [ `-v` ] )
+            } catch ( error ) {
+                const hint = interactive ? `Sudo authentication failed; retry babysit recover init.`
+                    : `Sudo authorization is required. Run babysit recover init in a terminal, or use root/passwordless sudo for unattended installation.`
+                throw new Error( `${ hint }\n${ error.message }`, { cause: error } )
+            }
+        }
         await admin( `install`, [ `-o`, `root`, `-g`, `root`, `-m`, `0644`, source, destination ] )
         await admin( `systemctl`, [ `daemon-reload` ] )
         await admin( `systemctl`, [ `enable`, name ] )
