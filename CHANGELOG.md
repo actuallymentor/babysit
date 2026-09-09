@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.43.0 — 2026-09-09
+
+### ✨ Added
+- Add manual `babysit recover [id]`, dry-run/JSON output, and optional continuation suppression.
+- Add `babysit recover init` to install per-account Ubuntu boot recovery.
+- Add `babysit close <id>` for intentional closure across reboots.
+
+### Fixed
+- Persist recovery intent, native conversation identity, and crash-safe registry updates.
+- Resume exact conversations with original launch settings; repair missing monitors without duplicate agents.
+- Retain interrupted clone workspaces and recover boot-stale locks and credential scratch files.
+- Report uncertain continuation delivery and unsupported recovery prerequisites.
+
 ## 0.42.0 — 2026-09-08
 
 ### ✨ Added

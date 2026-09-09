@@ -39,7 +39,7 @@ export const parse_args = ( argv ) => {
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
     const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh` ],
+        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -88,6 +88,24 @@ export const parse_args = ( argv ) => {
     // Determine what the user wants to do
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
+
+    // Recovery options are command-scoped; unknown input must never launch an agent.
+    if( verb === `recover` || verb === `close` ) {
+        const selector = positionals[1] || null
+        const allowed = new Set( [ `--help`, `-h`, `--version`, `-v`, ... verb === `recover` && selector !== `init`
+            ? [ `--dry-run`, `--json`, `--no-continue`, `--boot`, `--shutdown` ] : []  ] )
+        const unexpected = prepared.slice( 1 ).filter( argument => argument !== selector && !allowed.has( argument ) )
+        if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown ${ verb } argument: ${ unexpected[0] || positionals[2] }` )
+        if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <session_id>` )
+        if( args.shutdown && ( selector || args.boot || args.json || args[ `dry-run` ] || args.continue === false ) ) throw new Error( `--shutdown cannot be combined with recovery options` )
+        if( args.boot && ( selector || args[ `dry-run` ] ) ) throw new Error( `--boot requires an unfiltered recovery sweep` )
+        return {
+            verb, agent: null, session_id: selector === `init` && verb === `recover` ? null : selector,
+            recover_verb: verb === `recover` && selector === `init` ? `init` : null,
+            flags: { ...flags, dry_run: Boolean( args[ `dry-run` ] ), json: Boolean( args.json ), no_continue: args.continue === false, boot: Boolean( args.boot ), shutdown: Boolean( args.shutdown ) },
+            passthrough: [],
+        }
+    }
 
     // babysit config
     if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }

@@ -99,8 +99,14 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
     }
 
     const handle = async ( { method, params } ) => {
-        const thread_id = params?.threadId
+        const thread_id = params?.threadId || params?.thread?.id
         if( !thread_id ) return
+        if( ( method === `thread/started` || method === `thread/status/changed` && params.status.type === `active` )
+            && await root_thread( thread_id ) ) {
+            // Publish root identity before the first response; identity events
+            // bypass user completion callbacks and never select a latest log.
+            await execute( [ `python3`, capture_path, `codex`, `[]`, JSON.stringify( { type: `babysit-session-identity`, 'thread-id': thread_id } ) ] )
+        }
         if( method === `turn/completed` ) return capture( thread_id, params.turn )
         if( method !== `thread/status/changed` ) return
         if( params.status.type === `active` ) return join( thread_id )
@@ -121,7 +127,7 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
         rpc = await connect_rpc( endpoint, {
             timeout_ms: 3_000,
             on_notification: message => {
-                if( !accepting || ![ `thread/status/changed`, `turn/completed` ].includes( message.method ) ) return
+                if( !accepting || ![ `thread/started`, `thread/status/changed`, `turn/completed` ].includes( message.method ) ) return
                 if( initialized ) enqueue( message )
                 else notifications.push( message )
             },

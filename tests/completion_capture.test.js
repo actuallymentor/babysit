@@ -41,6 +41,7 @@ if(agent === 'codex') {
 ` )
         chmodSync( fixture, 0o755 )
         env = { ...process.env, HELPER: helper, CODEX_HOME: directory, BABYSIT_COMPLETION_FILE: message_file, BABYSIT_COMPLETION_LAUNCH_ID: `launch-1` }
+        delete env.BABYSIT_RECOVERY_IDENTITY
     } )
 
     afterEach( () => rmSync( directory, { recursive: true, force: true } ) )
@@ -60,6 +61,24 @@ if(agent === 'codex') {
         mkdirSync( join( directory, `sessions` ), { recursive: true } )
         writeFileSync( join( directory, `sessions`, `rollout-date-${ id }.jsonl` ), JSON.stringify( { type: `session_meta`, payload: { id, source } } ) + `\n` )
     }
+
+    it( `publishes durable identity on SessionStart before any completion`, () => {
+        expect( execute( `claude`, [ { hook_event_name: `SessionStart`, session_id: `root` } ] ) ).toBeNull()
+        const identity = JSON.parse( readFileSync( join( directory, `output`, `identity.json` ), `utf8` ) )
+        expect( identity ).toMatchObject( { version: 1, launch_id: `launch-1`, agent: `claude`, session_id: `root` } )
+        expect( Number.isFinite( Date.parse( identity.captured_at ) ) ).toBe( true )
+    } )
+
+    it( `persists the newest root binding in the mounted state before host polling`, () => {
+        const state = join( directory, `state` )
+        mkdirSync( state )
+        writeFileSync( helper, COMPLETION_HELPER_SOURCE.replace( `'/home/node/.claude/projects'`, JSON.stringify( state ) ) )
+        env.BABYSIT_RECOVERY_IDENTITY = `1`
+        execute( `claude`, [ { hook_event_name: `SessionStart`, session_id: `old` }, { hook_event_name: `SessionStart`, session_id: `new` } ] )
+        const mirror = JSON.parse( readFileSync( join( state, `.babysit-identities`, `launch-1.json` ), `utf8` ) )
+        expect( mirror.session_id ).toBe( `new` )
+        expect( mirror ).toEqual( JSON.parse( readFileSync( join( directory, `output`, `identity.json` ), `utf8` ) ) )
+    } )
 
     it( `captures only the final Claude reply and preserves it through empty events`, () => {
         const record = execute( `claude`, [
@@ -204,6 +223,20 @@ require('child_process').spawnSync(${ JSON.stringify( native ) }, [${ JSON.strin
         ] )
         expect( record.session_id ).toBe( `new` )
         expect( record.text ).toBe( `New reply` )
+    } )
+
+    it( `OpenCode verifies an explicit resumed root before any new message`, () => {
+        const plugin = join( directory, `plugin.mjs` )
+        writeFileSync( plugin, COMPLETION_PLUGIN_SOURCE.replaceAll( COMPLETION_HELPER_PATH, helper ) )
+        writeFileSync( fixture, `#!/usr/bin/env node
+async function main() {
+    const { BabysitCompletion } = await import(${ JSON.stringify( plugin ) })
+    await BabysitCompletion({client: {session: {get: async ({path}) => ({data: {id: path.id}})}}})
+}
+main()
+` )
+        expect( execute( `opencode`, [], [ `--session`, `ses_root` ] ) ).toBeNull()
+        expect( JSON.parse( readFileSync( join( directory, `output`, `identity.json` ), `utf8` ) ).session_id ).toBe( `ses_root` )
     } )
 
     it( `OpenCode selects completed visible text from the active root session`, () => {

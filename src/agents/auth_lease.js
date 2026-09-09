@@ -1,3 +1,4 @@
+import { get_boot_id } from '../sessions/lock.js'
 import { randomUUID } from 'crypto'
 import {
     existsSync,
@@ -49,6 +50,9 @@ const lease_is_stale = ( lease_path, {
 } ) => {
 
     const owner = read_lease_owner( lease_path )
+    const boot_id = get_boot_id()
+    if( owner?.boot_id && boot_id && owner.boot_id !== boot_id ) return true
+
     const alive = process_is_alive( owner?.pid, kill )
     if( alive === false ) return true
     if( alive === true ) return false
@@ -71,6 +75,7 @@ const try_create_lease = ( lease_path, token ) => {
         mkdirSync( candidate_path, { mode: 0o700 } )
         writeFileSync( join( candidate_path, `owner.json` ), JSON.stringify( {
             pid: process.pid,
+            boot_id: get_boot_id(),
             token,
             acquired_at: new Date().toISOString(),
         } ), { mode: 0o600 } )

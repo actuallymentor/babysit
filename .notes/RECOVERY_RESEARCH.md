@@ -1,6 +1,8 @@
 # Recovery research — 2026-09-09
 
-Design proposal only. User requested research and decisions before implementation.
+Recommendations accepted by the user on 2026-09-09, with implementation, testing,
+push and deployment authorized. User explicitly requires both manual recovery
+and `babysit recover init` for Ubuntu boot setup.
 
 ## Findings
 
@@ -25,6 +27,7 @@ Design proposal only. User requested research and decisions before implementatio
 - Prefer an opt-in systemd system unit running as the original Unix user on a conventional Ubuntu Docker host. Configure absolute executable, HOME/PATH, Docker access, and required mounts; order after Docker and network readiness. Login-only environment, passworded sudo, locked keyrings, and encrypted homes are boot prerequisites to resolve explicitly.
 - Network ordering does not guarantee API reachability. Use bounded retries and per-session reporting. See [systemd network readiness](https://systemd.io/NETWORK_ONLINE/).
 - A successful oneshot with RemainAfterExit=yes is a candidate for the existing detached model. It requires deliberate batch exit semantics and shutdown handling: service failure or stop can kill children in its cgroup. A shared tmux server may also own later interactive sessions. Do not solve this with KillMode=none. Validate process ownership, logout, shutdown, and restart in a real Ubuntu VM before shipping a unit. See [service lifecycle](https://github.com/systemd/systemd/blob/main/man/systemd.service.xml) and [kill behavior](https://github.com/systemd/systemd/blob/main/man/systemd.kill.xml).
+- Implementation review refined the unit to Type=exec with RemainAfterExit=yes: boot/login can proceed once recovery executes, and a startup timeout cannot kill successful children midway through a long sweep. The stop hook suspends the account's sessions while preserving intent. Batch errors remain journal-visible without failing the unit after successful launches.
 - A user unit with loginctl enable-linger is an alternative, especially for rootless Docker. Linger starts the user manager at boot; it does not automatically move existing tmux processes out of login scopes. See [loginctl](https://raw.githubusercontent.com/systemd/systemd/main/man/loginctl.xml) and [logind](https://raw.githubusercontent.com/systemd/systemd/main/man/logind.conf.xml).
 
 ## Decisions for the user
@@ -45,3 +48,9 @@ Real hard power-off of a disposable Ubuntu VM; normal reboot; clean CLI exit; ex
 Claude CLI review completed using model alias best, high effort. Accepted: reuse resume/start behind a strict recovery policy; prioritize durable native identity; account for boot-stale clone/auth locks as well as monitor PIDs; keep lifecycle locks shared with manual resume; specify systemd startup timeout and successful partial-batch semantics. Current monitor has no signal handlers, so default SIGTERM can bypass finally entirely; merely adding shutdown cleanup must not accidentally retire expected-open sessions.
 
 Reviewer preferred user units with linger and per-session transient scopes. Keep this as an alternative until a VM validates the shared tmux server's ownership: separate scopes do not automatically isolate panes hosted by one existing server. Rejected continuation-off-by-default because the user explicitly requested sending continuation. Claims about how often native IDs are missing were not measured; only the unreliable extraction path was verified in source.
+
+## Implementation validation
+
+Ubuntu 24.04 under disposable QEMU validated `recover init` as UID 1000, automatic recovery after SIGKILL of the VM, ordinary reboot shutdown intent, exact native conversation restoration, and one continuation per boot. Repeated manual recovery did not duplicate input; a native clean exit stayed closed. A separate real Codex inference test remembered a pre-crash nonce after exact-session recovery. The VM uses fixture agent output to isolate systemd behavior; the Codex test uses the real provider.
+
+The same VM validated the latest compiled binary and a real clone crash/recovery roundtrip: unchanged clone directory, preserved marker file, exact native ID, one continuation, then deliberate close excluded recovery. Host Docker integration tests cover all four agent adapters; nested-Docker clone tests are intentionally replaced by this VM check.

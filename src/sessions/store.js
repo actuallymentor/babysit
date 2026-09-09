@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { readFileSync, writeFileSync, readdirSync, existsSync, lstatSync, mkdirSync, renameSync, rmSync } from 'fs'
-import { basename, join } from 'path'
+import { basename, dirname, join } from 'path'
+import { acquire_session_lock, sync_path } from './lock.js'
 import { SESSIONS_DIR, ensure_dirs } from '../utils/paths.js'
 import { log } from '../utils/log.js'
 
@@ -49,7 +50,9 @@ const write_session = ( path, session ) => {
 
     try {
         writeFileSync( pending_path, JSON.stringify( session, null, 2 ), `utf-8` )
+        sync_path( pending_path )
         renameSync( pending_path, path )
+        sync_path( dirname( path ) )
     } finally {
         rmSync( pending_path, { force: true } )
     }
@@ -95,13 +98,19 @@ export const save_session = ( session, { directory = SESSIONS_DIR } = {} ) => {
     else mkdirSync( directory, { recursive: true } )
 
     const path = join( directory, `${ session.babysit_id }.json` )
-    write_session( path, session )
+    const release = acquire_session_lock( session.babysit_id, { directory, namespace: `record`, wait_ms: 5000 } )
+    try {
+        write_session( path, session )
+    } finally {
+        release()
+    }
     log.debug( `Session saved: ${ path }` )
 
 }
 
 /**
- * Update an existing session record (merge fields)
+ * Update an existing session record under its record lock. A callback can
+ * compare current state and return null to decline an atomic transition.
  * @param {string} babysit_id - The session identifier
  * @param {Object} updates - Fields to merge
  * @param {Object} [options]
@@ -110,11 +119,19 @@ export const save_session = ( session, { directory = SESSIONS_DIR } = {} ) => {
 export const update_session = ( babysit_id, updates, { directory = SESSIONS_DIR } = {} ) => {
 
     const path = join( directory, `${ babysit_id }.json` )
-    if( !existsSync( path ) ) return
+    const release = acquire_session_lock( babysit_id, { directory, namespace: `record`, wait_ms: 5000 } )
+    try {
+        if( !existsSync( path ) ) return
 
-    const existing = JSON.parse( readFileSync( path, `utf-8` ) )
-    const updated = { ...existing, ...updates }
-    write_session( path, updated )
+        const existing = JSON.parse( readFileSync( path, `utf-8` ) )
+        const changes = typeof updates === `function` ? updates( existing ) : updates
+        if( !changes ) return null
+        const updated = { ...existing, ...changes }
+        write_session( path, updated )
+        return updated
+    } finally {
+        release()
+    }
 
 }
 

@@ -81,6 +81,11 @@ the host daemon.
 | `babysit resume` | List this workspace's session history |
 | `babysit resume --all` | List history from every workspace |
 | `babysit resume <id> [flags]` | Restore a Babysit session |
+| `babysit recover [id]` | Recover interrupted sessions across workspaces, detached |
+| `babysit recover --dry-run [--json]` | Inspect recovery candidates and blockers |
+| `babysit recover --no-continue [id]` | Reopen without submitting a continuation |
+| `babysit recover init` | Enable Ubuntu boot recovery for this account |
+| `babysit close <id>` | Close intentionally; exclude this launch from recovery |
 | `babysit prune --list` | Show managed clone usage |
 | `babysit prune` | Remove unused clones interactively |
 | `babysit doctor --auth [agent]` | Verify agent authentication |
@@ -95,6 +100,45 @@ stability. Unreadable panes show `unknown`. Attachment is reported separately.
 
 Use `--log[=PATH]` to append raw tmux output to a file. Run `babysit --help` for
 the complete CLI reference.
+
+### Recovery
+
+`babysit recover` restores sessions left open through power loss, reboot, or
+process failure. It resumes the exact saved conversation and submits:
+“You were interrupted. Check the current state, then continue unfinished work.”
+Idle sessions are included. Live agents keep running; missing monitors are repaired.
+Repeated recovery does not duplicate a running session. Attach with `babysit open`.
+
+Normal agent exit and `babysit close <id>` retire a session. Detaching and host
+shutdown preserve recovery intent. Only sessions launched with recovery support
+are eligible; use `babysit resume` for older history. Sandbox sessions remain
+ephemeral. Missing transcripts, changed workspace configuration, unsupported
+launch arguments, and unavailable prerequisites are reported instead of guessed.
+Model/effort/variant options, modes, ports, credential-home paths, and the original
+image are retained; credentials are reloaded. Custom tmux sockets require the same
+`BABYSIT_TMUX_SOCKET`. Unflushed work and in-flight subprocesses cannot be restored.
+
+If a second crash makes continuation delivery uncertain, recovery reports it.
+Inspect the conversation, then use `--no-continue` to acknowledge without resending.
+This does not undo input already submitted or actions already completed.
+
+On Ubuntu with system Docker, run `babysit recover init` as the session owner
+(sudo is supported). It installs and enables `babysit-recover-<uid>.service` for
+the next boot; it does not restart current sessions. The account needs direct
+Docker access; install as root or with noninteractive sudo. Its home/workspaces and
+credentials must be available before login; login-unlocked homes/keyrings and
+rootless/remote Docker need separate host setup and are not supported by this installer.
+Rerun initialization after moving the executable or adding workspace mount dependencies.
+
+```bash
+babysit recover init
+journalctl -u "babysit-recover-$(id -u).service"
+sudo systemctl disable "babysit-recover-$(id -u).service" # Disable future boot recovery
+```
+
+Boot recovery uses bounded retries, reports failures in the journal, and leaves
+successful sessions running. Stopping the service suspends its sessions while
+preserving recovery intent; use `babysit close` to retire individual sessions.
 
 ## Change reasoning effort
 

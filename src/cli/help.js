@@ -18,6 +18,9 @@ Usage:
   babysit open [id|name|number]        Attach to an active session
   babysit resume [session_id] [flags]  List this workspace's sessions or resume one
   babysit prune [--list]               Remove unused clone workspaces
+  babysit recover [session_id]        Recover interrupted sessions, detached
+  babysit recover init                Install this account's Ubuntu boot recovery service
+  babysit close <session_id>           Close intentionally; disable recovery for this launch
   babysit config                       Configure babysit settings
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit web init                     Initialize or rotate babysit-web access
@@ -41,6 +44,9 @@ Flags:
   --auth          With "babysit doctor", make real model-backed auth checks
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
   --all           With "list", show full details; with "resume", show every workspace
+  --dry-run       With "recover", inspect without restarting
+  --json          With "recover", print machine-readable results
+  --no-continue   With "recover", reopen without submitting a continuation
   --list          With "prune", list clone workspaces and directory sizes
   --loop          Override idle action with LOOP.md or "Keep going"
   --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)

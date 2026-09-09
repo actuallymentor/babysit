@@ -111,6 +111,12 @@ const inspect_clone_protection = async ( clone, family, {
         if( lock === `unknown` ) return { active: false, reason: `protected: clone lock unreadable` }
     }
 
+    // A reboot can remove every process and container while the user still
+    // expects this clone to return. Durable intent protects the entire family.
+    if( family.some( ( { session } ) => session.recovery_version && session.expected_open === true ) ) {
+        return { active: false, reason: `protected: recovery pending` }
+    }
+
     const uncertain_sessions = family.filter( ( { session } ) =>
         [ `active`, `preparing` ].includes( session.status )
         || session.container_cleaned === false
