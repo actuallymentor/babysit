@@ -166,9 +166,13 @@ try {
                 }
             } )
             assert.equal( current( workspace ).expected_open, true, `no live monitor should have retired this session` )
+            // Reproduce a clean exit immediately before host shutdown. The
+            // later shutdown stamp must not override the durable clean receipt.
+            await run( process.execPath, [ join( repo, `src/index.js` ), `recover`, `--shutdown` ], { cwd: workspace } )
+            assert.equal( current( workspace ).shutdown_boot_id, session.boot_id )
             await cli( [ `recover`, session.babysit_id ] )
             assert.equal( current( workspace ).babysit_id, session.babysit_id, `durable clean receipt must prevent relaunch` )
-            console.log( `PASS durable native exit is recovered after monitor loss` )
+            console.log( `PASS durable native exit stays closed after monitor loss and shutdown` )
         } else if( [ `claude`, `gemini` ].includes( agent ) ) await input( session, `BABYSIT_E2E_EXIT` )
         else await cli( [ `close`, session.babysit_id ] )
         await wait_for( `${ agent } graceful retirement`, () => current( workspace ).expected_open === false )

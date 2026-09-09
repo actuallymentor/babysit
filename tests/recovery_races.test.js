@@ -168,10 +168,19 @@ describe( `recovery lifecycle races`, () => {
         expect( f.load( `launch` ).close_reason ).toBeUndefined()
     } )
 
-    it( `keeps an explicit host shutdown recoverable despite a zero exit receipt`, async () => {
+    it( `closes a previously clean native exit even when shutdown stamped it later`, async () => {
         const f = fixture()
         f.update( `launch`, { shutdown_boot_id: f.session.boot_id } )
         const result = await recover_session( f.load( `launch` ), {}, { ...f.dependencies, durable_exit: async () => receipt() } )
+        expect( result.status ).toBe( `closed` )
+        expect( f.load( `launch` ).expected_open ).toBe( false )
+        expect( f.calls ).not.toContain( `start` )
+    } )
+
+    it( `keeps a shutdown-interrupted zero exit recoverable`, async () => {
+        const f = fixture()
+        f.update( `launch`, { shutdown_boot_id: f.session.boot_id } )
+        const result = await recover_session( f.load( `launch` ), {}, { ...f.dependencies, durable_exit: async () => receipt( true ) } )
         expect( result.status ).toBe( `recovered` )
         expect( f.calls ).toContain( `start` )
     } )

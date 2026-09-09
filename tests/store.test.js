@@ -269,6 +269,7 @@ describe( `durable lifecycle locks`, () => {
 
     } )
 
+    // Eight processes perform 160 fsynced writes; allow slow test-host storage.
     it( `serializes concurrent process updates without losing fields`, async () => {
 
         const directory = mkdtempSync( join( tmpdir(), `babysit-store-concurrent-` ) )
@@ -286,6 +287,6 @@ describe( `durable lifecycle locks`, () => {
             rmSync( directory, { recursive: true, force: true } )
         }
 
-    } )
+    }, 15_000 )
 
 } )
