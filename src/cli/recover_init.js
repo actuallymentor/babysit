@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -59,7 +59,7 @@ export const install_recovery_service = async ( { unit, uid, privileged = proces
     const source = join( directory, name )
     const destination = `/etc/systemd/system/${ name }`
     // Sudo owns its terminal prompt; Babysit never reads or stores the password.
-    const sudo = args => execute( `sudo`, [ ... interactive ? [] : [ `-n` ], ...args ],
+    const sudo = args => execute( `/usr/bin/sudo`, [ ... interactive ? [] : [ `-n` ], ...args ],
         interactive ? { stdio: [ `inherit`, `pipe`, `pipe` ] } : {}, interactive ? 300_000 : 30_000 )
     const admin = ( command, args ) => privileged ? execute( command, args ) : sudo( [ `--`, command, ...args ] )
 
@@ -76,9 +76,9 @@ export const install_recovery_service = async ( { unit, uid, privileged = proces
                 throw new Error( `${ hint }\n${ error.message }`, { cause: error } )
             }
         }
-        await admin( `install`, [ `-o`, `root`, `-g`, `root`, `-m`, `0644`, source, destination ] )
-        await admin( `systemctl`, [ `daemon-reload` ] )
-        await admin( `systemctl`, [ `enable`, name ] )
+        await admin( `/usr/bin/install`, [ `-o`, `root`, `-g`, `root`, `-m`, `0644`, source, destination ] )
+        await admin( `/usr/bin/systemctl`, [ `daemon-reload` ] )
+        await admin( `/usr/bin/systemctl`, [ `enable`, name ] )
         return { name, destination }
     } finally {
         rmSync( directory, { recursive: true, force: true } )
@@ -100,6 +100,49 @@ const workspace_mounts = home => {
     } )
 }
 
+/** Verify boot executables with the service account's environment, before sudo installation. */
+export const check_recovery_environment = async ( { uid, username, home, path, command }, {
+    execute = run, current_uid = process.getuid(),
+} = {} ) => {
+    // Clear login-only configuration *after* runuser/PAM. Otherwise root's
+    // Docker config or loader settings can make a probe pass that fails at boot.
+    const environment = [ `HOME=${ home }`, `USER=${ username }`, `LOGNAME=${ username }`, `PATH=${ path }`, `DOCKER_HOST=unix:///var/run/docker.sock` ]
+    const as_user = ( binary, args ) => {
+        const invocation = [ `-i`, ...environment, binary, ...args ]
+        return current_uid === 0 && uid !== 0
+            ? execute( `/usr/sbin/runuser`, [ `--user`, username, `--`, `/usr/bin/env`, ...invocation ], { cwd: home } )
+            : execute( `/usr/bin/env`, invocation, { cwd: home } )
+    }
+
+    const dependencies = []
+    const check = async ( label, binary, args ) => {
+        try {
+            return await as_user( binary, args )
+        } catch ( error ) {
+            throw new Error( `Boot recovery prerequisite failed for ${ username }: ${ label }. Ensure dependencies are installed and accessible, then run babysit recover init as ${ username } without a sudo prefix to capture that user's PATH.\n${ error.message }`, { cause: error } )
+        }
+    }
+
+    await check( `home directory access`, `/usr/bin/test`, [ `-r`, home, `-a`, `-x`, home ] )
+    await check( `Babysit executable`, command[ 0 ], [ ...command.slice( 1 ), `--version` ] )
+    // Agent CLIs run inside Docker; only these host tools are needed by recovery.
+    const probes = [
+        [ `sh`, [ `-c`, `true` ] ],
+        [ `tmux`, [ `-V` ] ],
+        [ `docker`, [ `--version` ] ],
+        [ `cat`, [ `--version` ] ],
+        [ `ps`, [ `--version` ] ],
+    ]
+    for( const [ binary, args ] of probes ) {
+        const location = await check( `${ binary } on the service PATH`, `/bin/sh`, [ `-c`, `command -v "$1"`, `sh`, binary ] )
+        if( !isAbsolute( location ) ) throw new Error( `Boot recovery requires an absolute executable for ${ binary }; got ${ location }` )
+        await check( binary, location, args )
+        dependencies.push( location )
+    }
+    await check( `Docker access`, `docker`, [ `--host`, `unix:///var/run/docker.sock`, `info`, `--format`, `{{.ID}}` ] )
+    return dependencies
+}
+
 /** Install Ubuntu boot recovery for the invoking account, including through sudo. */
 export const cmd_recover_init = async ( _cmd = {}, { execute = run, install = install_recovery_service, print = console.log } = {} ) => {
     if( process.platform !== `linux` || !existsSync( `/run/systemd/system` ) ) throw new Error( `babysit recover init requires an Ubuntu host running systemd` )
@@ -110,28 +153,20 @@ export const cmd_recover_init = async ( _cmd = {}, { execute = run, install = in
     // Resolve HOME from the account database, never sudo's root HOME.
     const uid = process.getuid() === 0 && process.env.SUDO_UID ? Number( process.env.SUDO_UID ) : process.getuid()
     if( !Number.isInteger( uid ) || uid < 0 ) throw new Error( `Invalid invoking user ID` )
-    const account = await execute( `getent`, [ `passwd`, String( uid ) ] )
+    const account = await execute( `/usr/bin/getent`, [ `passwd`, String( uid ) ] )
     const [ username, , account_uid, account_gid, , home ] = account.trim().split( `:` )
     if( Number( account_uid ) !== uid || !home || !username ) throw new Error( `Cannot resolve invoking account ${ uid }` )
     const gid = Number( account_gid )
     const compiled = !process.argv[ 1 ] || process.argv[ 1 ].startsWith( `/$bunfs` )
     const command = compiled ? [ process.execPath ] : [ process.execPath, resolve( process.argv[ 1 ] ) ]
-    command.forEach( file => accessSync( file, constants.R_OK ) )
     const path = [ ...new Set( [ join( home, `.local`, `bin` ), ...command.map( dirname ), ...( process.env.PATH || `` ).split( `:` ).filter( isAbsolute ), `/usr/local/bin`, `/usr/bin`, `/bin` ] ) ].join( `:` )
 
-    await execute( `systemctl`, [ `show`, `docker.service`, `--property=LoadState`, `--value` ] ).then( state => {
+    await execute( `/usr/bin/systemctl`, [ `show`, `docker.service`, `--property=LoadState`, `--value` ] ).then( state => {
         if( state !== `loaded` ) throw new Error( `The system Docker service is not installed` )
     } )
-    // Check access as the service account, including sudo's original user. A
-    // successful root probe would otherwise hide missing Docker membership.
-    const as_user = ( binary, args ) => process.getuid() === 0 && uid !== 0
-        ? execute( `runuser`, [ `--user`, username, `--`, binary, ...args ], { env: { ...process.env, HOME: home, PATH: path } } )
-        : execute( binary, args, { env: { ...process.env, HOME: home, PATH: path } } )
-    await as_user( `test`, [ `-x`, command[ 0 ] ] )
-    if( command[ 1 ] ) await as_user( `test`, [ `-r`, command[ 1 ] ] )
-    await as_user( `docker`, [ `--host`, `unix:///var/run/docker.sock`, `info`, `--format`, `{{.ID}}` ] )
+    const dependencies = await check_recovery_environment( { uid, username, home, path, command }, { execute } )
 
-    const unit = render_recovery_service( { uid, gid, home, command, path, workspaces: workspace_mounts( home ), tmux_socket: process.env.BABYSIT_TMUX_SOCKET || `babysit` } )
+    const unit = render_recovery_service( { uid, gid, home, command, path, workspaces: [ ...workspace_mounts( home ), ...dependencies.map( dirname ) ], tmux_socket: process.env.BABYSIT_TMUX_SOCKET || `babysit` } )
     const installed = await install( { unit, uid }, { execute } )
     print( `Enabled ${ installed.name } for ${ username }; recovery runs on the next boot.` )
     print( `Logs: journalctl -u ${ installed.name }` )
