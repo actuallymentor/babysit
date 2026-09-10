@@ -179,6 +179,8 @@ try {
         const retired_count = read_sessions().length
         await cli( [ `recover` ] )
         assert.equal( read_sessions().length, retired_count, `retired conversation recovered again` )
+        // Teardown allows 45s for Docker to stop, 60s for a final credential
+        // copy, and 30s for removal. This asserts eventual cleanup, not a 30s SLA.
         await wait_for( `${ agent } container cleanup`, async () => {
             try {
                 await docker( [ `inspect`, session.container_id ] )
@@ -186,6 +188,18 @@ try {
             } catch {
                 return true
             }
+        }, 180_000 ).catch( async error => {
+            const latest = current( workspace )
+            const state = await docker( [ `inspect`, `--format`, `{{json .State}}`, session.container_id ] ).catch( inspect_error => inspect_error.message )
+            throw new Error( `${ error.message }\nCleanup: ${ JSON.stringify( {
+                session_id: latest.babysit_id,
+                status: latest.status,
+                monitor_pid: latest.monitor_pid,
+                container_cleaned: latest.container_cleaned,
+                credentials_cleaned: latest.credentials_cleaned,
+                container_state: state,
+                artifacts: root,
+            } ) }`, { cause: error } )
         } )
         console.log( `PASS ${ agent }: intentional closure stays closed` )
     }

@@ -231,12 +231,14 @@ export const create_web_bridge = ( {
     const paths = web_bridge_paths( directory )
     const state_path = join( paths.state, `${ session_id }.json` )
     const results = []
+    const candidates = []
     let attachment = `unknown`
     let raw_screen = ``
     let last_message = null
     let last_completion = null
     let revision = 0
     let current_activity = `running`
+    let request_directory = null
 
     const state_value = busy => ( {
         protocol: WEB_BRIDGE_PROTOCOL,
@@ -316,8 +318,9 @@ export const create_web_bridge = ( {
          */
         async process_requests( { busy = false } = {} ) {
 
-            const candidates = []
-            const request_directory = opendirSync( paths.requests )
+            // Preserve the cursor across bounded scans. Restarting at entry one
+            // lets requests for other sessions starve this monitor indefinitely.
+            request_directory ||= opendirSync( paths.requests )
             let entries_scanned = 0
 
             try {
@@ -326,20 +329,27 @@ export const create_web_bridge = ( {
                     && candidates.length < MAX_REQUESTS_PER_TICK
                 ) {
                     const entry = request_directory.readSync()
-                    if( !entry ) break
+                    if( !entry ) {
+                        request_directory.closeSync()
+                        request_directory = null
+                        break
+                    }
                     entries_scanned += 1
 
                     const request_id = request_id_from_filename( entry.name, session_id, epoch )
                     if( request_id ) candidates.push( { filename: entry.name, request_id } )
                 }
-            } finally {
-                request_directory.closeSync()
+            } catch ( error ) {
+                request_directory?.closeSync()
+                request_directory = null
+                throw error
             }
 
             let sent = false
             let processed = 0
 
-            for( const { filename, request_id } of candidates ) {
+            while( candidates.length ) {
+                const { filename, request_id } = candidates.shift()
                 const request_path = join( paths.requests, filename )
                 const claimed_path = join( paths.inflight, filename )
 
@@ -395,6 +405,8 @@ export const create_web_bridge = ( {
         /** Remove this monitor's published state when its session ends. */
         close() {
             completion_reader.close()
+            request_directory?.closeSync()
+            request_directory = null
 
             try {
                 const current = JSON.parse( readFileSync( state_path, `utf8` ) )
@@ -426,7 +438,9 @@ export const open_web_bridge = async ( {
     if( !web_bridge_initialized( directory ) ) return null
 
     try {
-        const { pane_id } = await resolve_pane( session.tmux_session )
+        // A user may select another pane before enabling web access. Preserve
+        // the launch-bound agent pane instead of resolving the active pane.
+        const pane_id = session.pane_id || ( await resolve_pane( session.tmux_session ) ).pane_id
         return create_web_bridge( {
             session,
             tmux_target: pane_id,

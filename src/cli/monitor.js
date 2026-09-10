@@ -315,7 +315,6 @@ export const cmd_monitor = async ( cmd ) => {
         }
 
         const agent_patterns = get_patterns( session.agent )
-        const web_bridge = await open_web_bridge( { session } )
 
         log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
         caffeinate = start_caffeinate()
@@ -326,7 +325,8 @@ export const cmd_monitor = async ( cmd ) => {
             rules,
             agent_patterns,
             agent,
-            web_bridge,
+            open_web_bridge_fn: () => open_web_bridge( { session } ),
+            tmux_target: session.pane_id || session.tmux_session,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_tick: () => {
                 const identity = identity_reader.read()

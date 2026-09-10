@@ -234,6 +234,9 @@ export async function launch( argv ) {
     const children = []
     let tui
     let completion_observer
+    let completion_warning
+    let server_stderr = ``
+    let failure
     let interrupted
     let resolve_signal
     const signal_received = new Promise( resolve_signal_promise => {
@@ -266,13 +269,21 @@ export async function launch( argv ) {
         if( plan.managed && agent === `codex` ) {
             const endpoint = `ws://127.0.0.1:${ await free_port() }`
             env = { ...env, BABYSIT_EFFORT_AGENT: `codex`, BABYSIT_EFFORT_ENDPOINT: endpoint }
-            server = spawn_agent( [ ...plan.server_args, `--listen`, endpoint ], { env, cwd: plan.cwd, detached: true, stdio: [ `ignore`, `ignore`, `inherit` ] } )
+            server = spawn_agent( [ ...plan.server_args, `--listen`, endpoint ], { env, cwd: plan.cwd, detached: true, stdio: [ `ignore`, `ignore`, `pipe` ] } )
+            // Background diagnostics must never paint over the foreground TUI.
+            // Drain continuously, retaining only a bounded tail for fatal errors.
+            server.stderr.setEncoding( `utf8` )
+            server.stderr.on( `data`, chunk => {
+                server_stderr = ( server_stderr + chunk ).slice( -16_384 )
+            } )
             children.push( server )
             await Promise.race( [ wait_for_server( server, endpoint ), signal_received, server.done.then( result => {
                 throw result.error || new Error( `Codex app server exited before becoming ready.` )
             } ) ] )
             if( interrupted ) return interrupted
-            if( capture ) completion_observer = await observe_completions( endpoint, { env, args: [ executable, ...args ] } )
+            if( capture ) completion_observer = await observe_completions( endpoint, { env, args: [ executable, ...args ], on_warning: warning => {
+                completion_warning = warning
+            } } )
             // The TUI passes its local config into thread/start, so it must
             // enable the feature too rather than override the server default.
             const separator = args.indexOf( `--` )
@@ -294,6 +305,9 @@ export async function launch( argv ) {
         const result = await Promise.race( [ tui.done, signal_received, ... server ? [ server.done.then( result => ( { error: result.error || new Error( `Codex app server exited while its TUI was running.` ) } ) ) ] : []  ] )
         if( result.error ) throw result.error
         return interrupted || result.code || ( result.signal ? 128 + ( constants.signals[ result.signal ] || 0 ) : 0 )
+    } catch ( error ) {
+        failure = error
+        throw error
     } finally {
         try {
             await completion_observer?.close()
@@ -301,6 +315,8 @@ export async function launch( argv ) {
             await stop_children( children )
             signal_handlers.forEach( ( [ signal, handler ] ) => process.off( signal, handler ) )
             process.off( `SIGWINCH`, resize )
+            if( completion_warning ) process.stderr.write( `${ completion_warning }\n` )
+            if( failure && server_stderr.trim() ) failure.message += `\n${ server_stderr.trim() }`
         }
     }
 

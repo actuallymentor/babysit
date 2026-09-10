@@ -21,12 +21,15 @@ const server = args.includes('app-server')
 const record = kind => writeFileSync(process.env.RECORD_DIR + '/' + kind + '.json', JSON.stringify({args,pid:process.pid,endpoint:process.env.BABYSIT_EFFORT_ENDPOINT,agent:process.env.BABYSIT_EFFORT_AGENT,capture:process.env.CAPTURE_SEEN}))
 record(server ? 'server' : 'tui')
 if (server) {
+  if (process.env.SERVER_NOISE) writeFileSync(2, 'background diagnostic\\n'.repeat(8192) + 'server diagnostic tail\\n')
   if (process.env.SERVER_FAIL) process.exit(17)
   const endpoint = new URL(args[args.indexOf('--listen') + 1])
   Bun.serve({ hostname: endpoint.hostname, port: Number(endpoint.port), fetch(request, server) { if(server.upgrade(request)) return; return new Response('no', {status:400}) }, websocket: { message(socket, value) {
     const request = JSON.parse(value)
+    if (request.method === 'thread/read' && process.env.OBSERVER_FAIL) { socket.send(JSON.stringify({id:request.id,error:{message:'observer failure'}})); return }
     const result = request.method === 'config/read' ? {config:{notify:['python3','/home/node/.babysit-capture/capture.py','codex','[]']}} : request.method === 'thread/loaded/list' ? {data:[]} : {userAgent:'fixture'}
     if(request.id !== undefined) socket.send(JSON.stringify({id:request.id,result}))
+    if(request.method === 'thread/loaded/list' && process.env.OBSERVER_FAIL) socket.send(JSON.stringify({method:'thread/started',params:{thread:{id:'root'}}}))
   } } })
   if(process.env.SERVER_TOOL) {
     const tool = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {stdio: 'ignore', detached: true})
@@ -35,21 +38,44 @@ if (server) {
   if(process.env.SERVER_DIES) setTimeout(() => process.exit(19), 400)
   if(process.env.SERVER_STUBBORN) process.on('SIGTERM', () => {})
 } else {
-  if(process.env.TUI_WAIT) setInterval(() => {}, 1000)
+  if(process.env.TUI_DIAGNOSTIC) process.stderr.write('frontend stderr; tty=' + Boolean(process.stderr.isTTY) + '\\n')
+  if(process.env.OBSERVER_FAIL) { setTimeout(() => { process.stderr.write('frontend finished\\n'); process.exit(0) }, 300); setInterval(() => {}, 1000) }
+  else if(process.env.TUI_WAIT) setInterval(() => {}, 1000)
   else process.exit(Number(process.env.TUI_STATUS || 0))
 }
 `, { mode: 0o755 } )
     return { directory, executable }
 }
 
-const run_fixture = ( { directory, executable, captured }, args = [], env = {} ) => {
+const run_fixture = ( { directory, executable, captured, terminal }, args = [], env = {} ) => {
     const prefix = captured ? [ `python3`, `/home/node/.babysit-capture/capture.py`, `launch`, `codex` ] : []
-    const child = spawn( `node`, [ `src/docker/assets/effort/launch.mjs`, ...prefix, executable, ...args ], { env: { ...process.env, RECORD_DIR: directory, ...env }, stdio: [ `ignore`, `pipe`, `pipe` ] } )
+    const command = [ `node`, `src/docker/assets/effort/launch.mjs`, ...prefix, executable, ...args ]
+    // A real PTY catches terminal corruption that pipe-only launch tests miss.
+    const pty = `import os, pty, subprocess, sys
+master, slave = pty.openpty()
+child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave)
+os.close(slave)
+try:
+    while True:
+        data = os.read(master, 65536)
+        if not data: break
+        os.write(1, data)
+except OSError:
+    pass
+finally:
+    os.close(master)
+sys.exit(child.wait())`
+    const invocation = terminal ? [ `python3`, `-c`, pty, ...command ] : command
+    const child = spawn( invocation[ 0 ], invocation.slice( 1 ), { env: { ...process.env, RECORD_DIR: directory, ...env }, stdio: [ `ignore`, `pipe`, `pipe` ] } )
+    let stdout = ``
+    child.stdout.on( `data`, chunk => {
+        stdout += chunk
+    } )
     let stderr = ``
     child.stderr.on( `data`, chunk => {
         stderr += chunk
     } )
-    child.result = new Promise( resolve => child.on( `close`, ( code, signal ) => resolve( { code, signal, stderr } ) ) )
+    child.result = new Promise( resolve => child.on( `close`, ( code, signal ) => resolve( { code, signal, stdout, stderr } ) ) )
     return child
 }
 
@@ -126,6 +152,40 @@ describe( `OpenCode managed launch arguments`, () => {
 
 describe( `managed launcher lifecycle`, () => {
 
+    it( `keeps noisy background stderr out of a real terminal while preserving frontend output`, async () => {
+        const files = fixture()
+        const { code, stdout, stderr } = await run_fixture( { ...files, terminal: true }, [], { SERVER_NOISE: `1`, TUI_DIAGNOSTIC: `1` } ).result
+        expect( code ).toBe( 0 )
+        expect( stdout ).toContain( `frontend stderr; tty=true` )
+        expect( stdout ).not.toContain( `background diagnostic` )
+        expect( stdout ).not.toContain( `server diagnostic tail` )
+        expect( stderr ).toBe( `` )
+    }, 10_000 )
+
+    it( `retains a bounded server diagnostic tail when startup fails`, async () => {
+        const { code, stderr } = await run_fixture( fixture(), [], { SERVER_NOISE: `1`, SERVER_FAIL: `1` } ).result
+        expect( code ).toBe( 1 )
+        expect( stderr ).toContain( `before becoming ready` )
+        expect( stderr ).toContain( `server diagnostic tail` )
+        expect( stderr.length ).toBeLessThan( 17_000 )
+    }, 10_000 )
+
+    it( `defers completion capture warnings until the terminal frontend exits`, async () => {
+        const files = fixture()
+        writeFileSync( join( files.directory, `python3` ), `#!/bin/sh\nif [ "$2" = notify-command ]; then printf '[]'; exit 0; fi\nshift 3\nexec "$@"\n`, { mode: 0o755 } )
+        const { code, stderr } = await run_fixture( { ...files, captured: true }, [], { PATH: `${ files.directory }:${ process.env.PATH }`, OBSERVER_FAIL: `1` } ).result
+        expect( code ).toBe( 0 )
+        expect( stderr ).toContain( `frontend finished` )
+        expect( stderr ).toContain( `Codex completion capture failed: observer failure` )
+        expect( stderr.indexOf( `frontend finished` ) ).toBeLessThan( stderr.indexOf( `Codex completion capture failed` ) )
+    }, 10_000 )
+
+    it( `preserves passthrough command stderr`, async () => {
+        const { code, stderr } = await run_fixture( fixture(), [ `login`, `status` ], { TUI_DIAGNOSTIC: `1` } ).result
+        expect( code ).toBe( 0 )
+        expect( stderr ).toContain( `frontend stderr` )
+    }, 10_000 )
+
     it( `retains completion capture around both actual Codex processes`, async () => {
         const files = fixture()
         writeFileSync( join( files.directory, `python3` ), `#!/bin/sh\nif [ "$2" = notify-command ]; then printf '[]'; exit 0; fi\nexport CAPTURE_SEEN="$1|$2|$3"\nshift 3\nexec "$@"\n`, { mode: 0o755 } )
@@ -171,10 +231,12 @@ describe( `managed launcher lifecycle`, () => {
 
     it( `stops the TUI if its server dies`, async () => {
         const files = fixture()
-        const { code, stderr } = await run_fixture( files, [], { SERVER_DIES: `1`, TUI_WAIT: `1` } ).result
+        const { code, stderr } = await run_fixture( files, [], { SERVER_DIES: `1`, SERVER_NOISE: `1`, TUI_WAIT: `1` } ).result
         const tui = await wait_for_file( join( files.directory, `tui.json` ) )
         expect( code ).toBe( 1 )
         expect( stderr ).toContain( `while its TUI was running` )
+        expect( stderr ).toContain( `server diagnostic tail` )
+        expect( stderr.length ).toBeLessThan( 17_000 )
         expect( alive( tui.pid ) ).toBe( false )
     }, 10_000 )
 

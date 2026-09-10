@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import styled from 'styled-components'
+import styled, { keyframes } from 'styled-components'
 import { Button } from '../atoms/Button.jsx'
 import { Notice } from '../atoms/Notice.jsx'
 
@@ -41,22 +41,41 @@ const Actions = styled.div`
     justify-content: flex-end;
 `
 
-const Menu = styled.div`
+const slide_in = keyframes`
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+`
+
+const Menu = styled.dialog`
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0.35rem;
-    display: grid;
-    gap: 1.5rem;
-    max-height: calc(100dvh - 6rem - env(safe-area-inset-top));
+    border: 0;
+    border-left: 1px solid var(--border);
+    color: var(--text);
+    height: 100dvh;
+    inset: 0;
+    margin: 0 0 0 auto;
+    max-height: none;
+    max-width: 100%;
     overflow-y: auto;
-    padding: 1rem;
-    position: absolute;
-    right: 0;
-    top: 100%;
+    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+    position: fixed;
     width: min(22rem, 100%);
+
+    &[open] { animation: ${ slide_in } 220ms ease-out; display: flex; flex-direction: column; gap: 1.5rem; }
+    &::backdrop { background: rgb(0 0 0 / 45%); }
+    @media (prefers-reduced-motion: reduce) { &[open] { animation: none; } }
 
     label { display: grid; gap: 0.35rem; }
     select { border: 1px solid var(--border); border-radius: 0.3rem; min-height: 3rem; padding: 0.5em; width: 100%; }
+`
+
+const MenuHeader = styled.div`
+    align-items: center;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+
+    h2 { font-size: 1.25rem; margin: 0; }
 `
 
 const TextSize = styled.div`
@@ -77,7 +96,7 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
     const [ menu_open, set_menu_open ] = useState( false )
     const [ action_error, set_action_error ] = useState( null )
     const [ is_working, set_is_working ] = useState( false )
-    const header = useRef( null )
+    const menu = useRef( null )
     const toggle = useRef( null )
     const { pathname } = useLocation()
 
@@ -86,24 +105,24 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
     useEffect( () => {
         if( !menu_open ) return
 
-        const dismiss_outside = event => {
-            if( !header.current?.contains( event.target ) ) set_menu_open( false )
-        }
-        const dismiss_escape = event => {
-            if( event.key !== `Escape` ) return
-            set_menu_open( false )
+        // Native modal behavior traps focus and keeps the underlying session inert.
+        const previous_overflow = document.body.style.overflow
+        document.body.style.overflow = `hidden`
+        menu.current.showModal()
+        const drawer = menu.current
+
+        return () => {
+            drawer.close()
+            document.body.style.overflow = previous_overflow
             toggle.current?.focus()
         }
-
-        document.addEventListener( `pointerdown`, dismiss_outside )
-        document.addEventListener( `focusin`, dismiss_outside )
-        document.addEventListener( `keydown`, dismiss_escape )
-        return () => {
-            document.removeEventListener( `pointerdown`, dismiss_outside )
-            document.removeEventListener( `focusin`, dismiss_outside )
-            document.removeEventListener( `keydown`, dismiss_escape )
-        }
     }, [ menu_open ] )
+
+    const dismiss_backdrop = event => {
+        if( event.target !== menu.current ) return
+        const { left, right, top, bottom } = menu.current.getBoundingClientRect()
+        if( event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom ) set_menu_open( false )
+    }
 
     const run_action = async action => {
         set_action_error( null )
@@ -119,7 +138,7 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
     }
 
     return <Shell>
-        <Header ref={ header }>
+        <Header>
             <Brand to="/">Babysit</Brand>
             <Actions>
                 { has_update && <Button disabled={ is_working } onClick={ () => run_action( update ) }>Update ready</Button> }
@@ -129,7 +148,11 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
                     </svg>
                 </Button>
             </Actions>
-            { menu_open && <Menu aria-label="App settings" id="app-menu" role="region">
+            <Menu aria-labelledby="app-menu-title" id="app-menu" onCancel={ () => set_menu_open( false ) } onClick={ dismiss_backdrop } ref={ menu }>
+                <MenuHeader>
+                    <h2 id="app-menu-title">App settings</h2>
+                    <Button $quiet aria-label="Close menu" onClick={ () => set_menu_open( false ) }>×</Button>
+                </MenuHeader>
                 <label>
                     Theme
                     <select aria-label="Theme" onChange={ event => reading.set_theme( event.target.value ) } value={ reading.theme }>
@@ -152,7 +175,7 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
                     <Button $quiet disabled={ is_working } onClick={ () => run_action( logout ) }>Log out</Button>
                 </MenuActions>
                 { action_error && <Notice $error role="alert">{ action_error }</Notice> }
-            </Menu> }
+            </Menu>
         </Header>
         <main>{ children }</main>
     </Shell>
