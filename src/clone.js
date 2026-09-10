@@ -252,7 +252,13 @@ export const acquire_clone_lock = ( clone_path, {
             }
         }
     } finally {
-        rmSync( pending, { force: true } )
+        // Cleanup must neither mask the storage error nor strand a published
+        // lock by preventing its release callback from reaching the caller.
+        try {
+            rmSync( pending, { force: true } )
+        } catch {
+            // An unpublished pending record never blocks another acquisition.
+        }
     }
 
     let released = false

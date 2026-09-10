@@ -57,3 +57,5 @@
 - 2026-09-10: Fix late web discovery, request scan starvation/claim races, launch-pane pinning, background stderr leakage, and mobile drawer. Add real browser-to-tmux regression plus combined CLI/web/Docker PR checks.
 
 - 2026-09-10: Diagnose seven zero-byte clone locks from failed ENOSPC writes. Archive the exact failed records under `~/.babysit/clones/.babysit-state/failed-locks-1789050367`; publish new locks atomically and add real full-tmpfs/interactive-prune regressions. User deferred push credential setup.
+
+- 2026-09-10: External review caught pending-lock cleanup masking acquisition outcomes; made cleanup best-effort. Kept atomic publication rather than adding an unverified fallback for filesystems without hard links.
