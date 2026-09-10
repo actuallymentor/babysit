@@ -4,6 +4,7 @@
 
 ### Fixed
 - Preserve clone lock write errors instead of reporting false contention.
+- Keep temporary lock cleanup from masking storage errors or stranding an acquired lock.
 - Publish complete clone lock records; leave no phantom lock after ENOSPC.
 
 ### Changed
