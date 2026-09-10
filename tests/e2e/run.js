@@ -777,6 +777,11 @@ try {
         env: { ...process.env, BABYSIT_E2E_BASE_IMAGE: base_image },
     } )
     console.log( status_output )
+    const { stdout: storage_output } = await run( `node`, [ `tests/e2e/clone-storage.js` ], {
+        env: { ...process.env, BABYSIT_E2E_BASE_IMAGE: base_image },
+        timeout_ms: 180_000,
+    } )
+    console.log( storage_output )
     await run_agent_tooling()
     await run_puppeteer_browser()
     await run_puppeteer_headful_browser()
