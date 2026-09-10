@@ -130,7 +130,7 @@ On Ubuntu with system Docker, run `babysit recover init` as the session owner
 the next boot; it does not restart current sessions. The account needs direct
 Docker access. The installer prompts for sudo authorization in a terminal;
 unattended installation needs root or cached/passwordless sudo. Initialization checks
-Babysit, `sh`, `tmux`, `docker`, `cat`, `ps`, and Docker access as the service user
+Babysit, storage access, `sh`, `tmux`, `docker`, `cat`, `ps`, and Docker access as the service user
 with a clean boot environment. It records an absolute Babysit path and explicit PATH;
 login shell settings are not loaded. Explicit `sudo babysit recover init` preserves
 the original account but can lose custom PATH entries—prefer normal-user invocation.

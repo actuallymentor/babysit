@@ -63,3 +63,5 @@
 - 2026-09-10: Adopt `BABYSIT_HOME` for host storage with the existing default, no automatic migration, and recovery service persistence. Keep the host rc file at its existing location and the explicit web bridge override authoritative.
 
 - 2026-09-10: Validate `BABYSIT_HOME` with 902 CLI tests, web/browser/tmux/PTY checks, custom-root Docker lifecycles, and all four default-root crash-recovery adapters. Compiled CLI writes, real Compose expansion, and systemd syntax checks pass. Nested-Docker clone launch remains skipped by the existing suite.
+
+- 2026-09-10: Post-commit review added a real service-account storage-access prerequisite, including missing roots, regular files, broken symlinks, and unwritable roots. Keep access checks read-only during recovery setup.

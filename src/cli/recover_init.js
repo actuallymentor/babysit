@@ -127,6 +127,15 @@ export const check_recovery_environment = async ( { uid, username, home, babysit
     }
 
     await check( `home directory access`, `/usr/bin/test`, [ `-r`, home, `-a`, `-x`, home ] )
+    // New roots need a writable ancestor; existing roots must already be usable
+    // by the boot account. Pass the path as data, never interpolate shell input.
+    await check( `Babysit storage access`, `/bin/sh`, [ `-c`, `
+        directory=$1
+        while [ ! -e "$directory" ] && [ ! -L "$directory" ]; do
+            directory=$(/usr/bin/dirname -- "$directory") || exit
+        done
+        test -d "$directory" && test -r "$directory" && test -w "$directory" && test -x "$directory"
+    `, `sh`, babysit_home ] )
     await check( `Babysit executable`, command[ 0 ], [ ...command.slice( 1 ), `--version` ] )
     // Agent CLIs run inside Docker; only these host tools are needed by recovery.
     const probes = [
