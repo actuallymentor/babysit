@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.43.5 — 2026-09-10
+
+### Fixed
+- Preserve clone lock write errors instead of reporting false contention.
+- Publish complete clone lock records; leave no phantom lock after ENOSPC.
+
+### Changed
+- Test interactive prune and recovery from real filesystem exhaustion.
+
 ## 0.43.4 — 2026-09-10
 
 ### Fixed

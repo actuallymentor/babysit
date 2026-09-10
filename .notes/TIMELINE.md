@@ -55,3 +55,5 @@
 - 2026-09-09: Harden boot recovery initialization against sudo/PATH differences. Verify prerequisites in the service account’s clean environment, including real sudo tests for custom PATH and root-only executables. Prefer normal-user initialization; do not attempt to reconstruct shell settings stripped by sudo.
 
 - 2026-09-10: Fix late web discovery, request scan starvation/claim races, launch-pane pinning, background stderr leakage, and mobile drawer. Add real browser-to-tmux regression plus combined CLI/web/Docker PR checks.
+
+- 2026-09-10: Diagnose seven zero-byte clone locks from failed ENOSPC writes. Archive the exact failed records under `~/.babysit/clones/.babysit-state/failed-locks-1789050367`; publish new locks atomically and add real full-tmpfs/interactive-prune regressions. User deferred push credential setup.

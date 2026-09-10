@@ -91,6 +91,9 @@ the host daemon.
 | `babysit doctor --auth [agent]` | Verify agent authentication |
 | `babysit update` | Update Babysit, agent tools, and the image |
 
+Pruning needs writable space for lock records and recovery journals. If the
+filesystem is full, free some space first, then retry `babysit prune`.
+
 Detaching or exiting the agent (for example, `/exit`) shows the remaining active
 sessions.
 
@@ -297,6 +300,7 @@ Focused checks:
 npm run test:cli
 npm run test:web
 npm run test:bridge # Build web assets first: npm run build --prefix web
+npm run test:prune # Interactive CLI pruning through a real terminal
 npm run test:e2e   # Docker launch, send, detach, resume, recovery, cleanup
 node tests/e2e/status.js # Focused activity regression with Docker and tmux
 ```

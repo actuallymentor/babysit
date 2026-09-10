@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'crypto'
 import {
     chmodSync,
     cpSync,
+    linkSync,
     lstatSync,
     mkdirSync,
     readFileSync,
@@ -224,26 +225,34 @@ export const acquire_clone_lock = ( clone_path, {
         started_at: new Date().toISOString(),
     }
 
-    for( let attempt = 0; attempt < 2; attempt++ ) {
-        try {
-            writeFileSync( lock_path, `${ JSON.stringify( owner, null, 2 ) }\n`, {
-                encoding: `utf8`,
-                flag: `wx`,
-                mode: 0o600,
-            } )
-            break
-        } catch ( error ) {
-            const current_owner = read_json( lock_path )
-            if( attempt === 0 && remove_dead_lock( lock_path, current_owner, is_process_alive ) ) continue
+    const pending = join( paths.locks, `.pending-${ token }` )
 
-            if( error.code === `EEXIST` || path_exists( lock_path ) ) {
+    try {
+        // A full disk may create a file but fail to write its owner. Publish
+        // only a complete record; linking is exclusive and never replaces a lock.
+        writeFileSync( pending, `${ JSON.stringify( owner, null, 2 ) }\n`, {
+            encoding: `utf8`,
+            flag: `wx`,
+            mode: 0o600,
+        } )
+
+        for( let attempt = 0; attempt < 2; attempt++ ) {
+            try {
+                linkSync( pending, lock_path )
+                break
+            } catch ( error ) {
+                if( error.code !== `EEXIST` ) throw error
+
+                const current_owner = read_json( lock_path )
+                if( attempt === 0 && remove_dead_lock( lock_path, current_owner, is_process_alive ) ) continue
+
                 const lock_error = new Error( `Clone workspace is already locked: ${ target }` )
                 lock_error.code = `BABYSIT_CLONE_LOCKED`
                 throw lock_error
             }
-
-            throw error
         }
+    } finally {
+        rmSync( pending, { force: true } )
     }
 
     let released = false
