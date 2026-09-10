@@ -4,6 +4,7 @@
 
 ### Added
 - Support `BABYSIT_HOME` for host storage, boot recovery, and web Compose mounts.
+- Check storage access as the service account before installing boot recovery.
 
 ## 0.43.5 — 2026-09-10
 

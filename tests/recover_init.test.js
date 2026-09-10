@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -127,7 +127,7 @@ describe( `boot recovery prerequisites`, () => {
             expect( call.args ).toContain( `PATH=/usr/bin:/bin` )
             expect( call.options ).toEqual( { cwd: `/home/alice` } )
         }
-        expect( calls[ 1 ].args.slice( -2 ) ).toEqual( [ `/usr/bin/true`, `--version` ] )
+        expect( calls.find( call => call.args.at( -1 ) === `--version` ).args.slice( -2 ) ).toEqual( [ `/usr/bin/true`, `--version` ] )
         expect( calls.at( -1 ).args.slice( -6 ) ).toEqual( [ `docker`, `--host`, `unix:///var/run/docker.sock`, `info`, `--format`, `{{.ID}}` ] )
     } )
 
@@ -158,6 +158,43 @@ describe( `boot recovery prerequisites`, () => {
         expect( calls.every( binary => binary === `/usr/bin/env` ) ).toBe( true )
     } )
 
+    it( `checks real storage access without creating directories`, async () => {
+        const root = mkdtempSync( join( tmpdir(), `babysit-storage-access-` ) )
+        const existing = join( root, `existing state` )
+        const missing = join( root, `new state`, `nested` )
+        const file = join( root, `file` )
+        const broken = join( root, `broken` )
+        mkdirSync( existing )
+        writeFileSync( file, `` )
+        symlinkSync( join( root, `absent` ), broken )
+
+        const check = babysit_home => check_recovery_environment( { ...account, babysit_home }, {
+            current_uid: 1000,
+            execute: async ( binary, args ) => {
+                if( args.at( -1 ) === babysit_home ) {
+                    const result = spawnSync( binary, args, { encoding: `utf8`, timeout: 5000 } )
+                    if( result.status !== 0 ) throw new Error( `Storage inaccessible` )
+                }
+                return args.includes( `command -v "$1"` ) ? `/usr/bin/${ args.at( -1 ) }` : `ok`
+            },
+        } )
+
+        try {
+            await check( existing )
+            await check( missing )
+            expect( existsSync( missing ) ).toBe( false )
+            await expect( check( file ) ).rejects.toThrow( `Babysit storage access` )
+            await expect( check( broken ) ).rejects.toThrow( `Babysit storage access` )
+            if( process.getuid() !== 0 ) {
+                chmodSync( existing, 0o500 )
+                await expect( check( existing ) ).rejects.toThrow( `Babysit storage access` )
+            }
+        } finally {
+            chmodSync( existing, 0o700 )
+            rmSync( root, { recursive: true, force: true } )
+        }
+    } )
+
     it( `actually rejects a runtime that relies on login-only environment`, async () => {
         const directory = mkdtempSync( join( tmpdir(), `babysit-boot-env-` ) )
         const previous = process.env.BABYSIT_BOOT_TEST_LOGIN
@@ -168,7 +205,7 @@ describe( `boot recovery prerequisites`, () => {
             const result = spawnSync( process.execPath, [ script ], { env: { ...process.env, HOME: directory, BABYSIT_BOOT_TEST_LOGIN: `yes` } } )
             expect( result.status ).toBe( 0 )
             await expect( check_recovery_environment( {
-                ...account, uid: process.getuid(), home: directory, command: [ process.execPath, script ],
+                ...account, uid: process.getuid(), home: directory, babysit_home: join( directory, `state` ), command: [ process.execPath, script ],
             } ) ).rejects.toThrow( `Babysit executable` )
         } finally {
             if( previous === undefined ) delete process.env.BABYSIT_BOOT_TEST_LOGIN
