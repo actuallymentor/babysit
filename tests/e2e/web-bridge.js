@@ -12,6 +12,7 @@ const root = mkdtempSync( join( tmpdir(), `babysit-web-roundtrip-` ) )
 const socket = `babysit-web-test-${ process.pid }`
 const repository = resolve( fileURLToPath( new URL( `../../`, import.meta.url ) ) )
 const bridge_dir = join( root, `bridge` )
+process.env.BABYSIT_HOME = join( root, `.babysit` )
 process.env.BABYSIT_TMUX_SOCKET = socket
 process.env.BABYSIT_WEB_BRIDGE_DIR = bridge_dir
 const run = promisify( execFile )

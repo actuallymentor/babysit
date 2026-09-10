@@ -22,7 +22,7 @@ assert.ok( agents.length && agents.every( agent => all_agents.includes( agent ) 
 const prompt = `You were interrupted. Check the current state, then continue unfinished work.`
 const volumes = new Set()
 const claude_transcripts = new Set()
-const env = { ...process.env, HOME: home, CODEX_HOME: join( home, `.codex` ), TMPDIR: temporary,
+const env = { ...process.env, HOME: home, BABYSIT_HOME: ``, CODEX_HOME: join( home, `.codex` ), TMPDIR: temporary,
     PATH: `${ binaries }:${ process.env.PATH }`, AGENT_AUTONOMY_MODE: `yolo`,
     BABYSIT_TMUX_SOCKET: run_id, BABYSIT_DOCKER_IMAGE: image, BABYSIT_E2E_RUN_ID: run_id }
 delete env.BABYSIT_HOST_BABYSITRC

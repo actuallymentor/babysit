@@ -17,7 +17,7 @@ const sessions_dir = join( root, `.babysit/sessions` )
 const source = join( root, `source` )
 const socket = `babysit-prune-e2e-${ process.pid }`
 const tmux = args => run( `tmux`, [ `-L`, socket, ...args ] )
-const env = { ...process.env, HOME: root, BABYSIT_TMUX_SOCKET: socket, TERM: `xterm-256color` }
+const env = { ...process.env, HOME: root, BABYSIT_HOME: ``, BABYSIT_TMUX_SOCKET: socket, TERM: `xterm-256color` }
 
 // Drive the actual readline prompts through a PTY. Sending all answers up front
 // can lose input between questions and does not reproduce interactive usage.

@@ -6,7 +6,7 @@ import { createInterface } from 'readline/promises'
 import { wait } from 'mentie'
 
 import { log, print_error } from '../utils/log.js'
-import { BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
+import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import { load_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
@@ -1050,7 +1050,7 @@ async function start_session( cmd ) {
 
     if( mode.clone && ( process.env.BABYSIT_DOCKER === `1` || process.env.BABYSIT_HOST_WORKSPACE ) ) {
         log.error( `--clone is not supported from inside a Docker-enabled Babysit session.` )
-        log.error( `Run the clone session from the Docker host so ~/.babysit/clones is host-visible.` )
+        log.error( `Run the clone session from the Docker host so ${ CLONES_DIR } is host-visible.` )
         throw new Error( `Session launch aborted; see diagnostic above` )
     }
 

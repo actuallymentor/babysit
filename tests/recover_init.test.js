@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 
 import { check_recovery_environment, install_recovery_service, render_recovery_service } from '../src/cli/recover_init.js'
 
-const settings = { uid: 1000, gid: 1000, home: `/home/alice`, command: [ `/usr/bin/true` ], path: `/usr/bin:/bin` }
+const settings = { uid: 1000, gid: 1000, home: `/home/alice`, command: [ `/usr/bin/true` ], path: `/usr/bin:/bin`, babysit_home: `/home/alice/.babysit` }
 
 describe( `boot recovery service`, () => {
     it( `retains detached children and stops recovery before Docker during shutdown`, () => {
@@ -20,6 +20,13 @@ describe( `boot recovery service`, () => {
         expect( unit ).toContain( `TimeoutStopSec=120` )
         expect( unit ).toContain( `KillMode=control-group` )
         expect( unit ).toContain( `User=1000\nGroup=1000` )
+    } )
+
+    it( `captures custom storage and waits for its mount at boot`, () => {
+        const unit = render_recovery_service( { ...settings, babysit_home: `/mnt/state 100% $literal/babysit` } )
+        expect( unit ).toContain( `Environment="BABYSIT_HOME=/mnt/state 100%% $literal/babysit"` )
+        expect( unit.split( `\n` ).find( line => line.startsWith( `RequiresMountsFor=` ) ) ).toContain( `"/mnt/state 100%% $literal/babysit"` )
+        expect( () => render_recovery_service( { ...settings, babysit_home: `relative/path` } ) ).toThrow( `absolute` )
     } )
 
     it( `escapes systemd expansion and rejects injected directives`, () => {
@@ -38,7 +45,7 @@ describe( `boot recovery service`, () => {
             const file = join( directory, `babysit-recover-1000.service` )
             const executable = join( directory, `babysit 100% $literal` )
             copyFileSync( `/usr/bin/true`, executable )
-            writeFileSync( file, render_recovery_service( { ...settings, command: [ executable ], home: `/home/space user`, workspaces: [ `/mnt/space work` ] } ) )
+            writeFileSync( file, render_recovery_service( { ...settings, command: [ executable ], home: `/home/space user`, babysit_home: `/mnt/state 100% $literal`, workspaces: [ `/mnt/space work` ] } ) )
             const result = spawnSync( `/usr/bin/systemd-analyze`, [ `verify`, file ], { encoding: `utf8`, timeout: 10_000 } )
             expect( result.stderr ).toBe( `` )
             expect( result.status ).toBe( 0 )
@@ -116,11 +123,24 @@ describe( `boot recovery prerequisites`, () => {
             expect( call.binary ).toBe( `/usr/sbin/runuser` )
             expect( call.args.slice( 0, 5 ) ).toEqual( [ `--user`, `alice`, `--`, `/usr/bin/env`, `-i` ] )
             expect( call.args ).toContain( `HOME=/home/alice` )
+            expect( call.args ).toContain( `BABYSIT_HOME=/home/alice/.babysit` )
             expect( call.args ).toContain( `PATH=/usr/bin:/bin` )
             expect( call.options ).toEqual( { cwd: `/home/alice` } )
         }
         expect( calls[ 1 ].args.slice( -2 ) ).toEqual( [ `/usr/bin/true`, `--version` ] )
         expect( calls.at( -1 ).args.slice( -6 ) ).toEqual( [ `docker`, `--host`, `unix:///var/run/docker.sock`, `info`, `--format`, `{{.ID}}` ] )
+    } )
+
+    it( `preserves custom storage in the sanitized prerequisite environment`, async () => {
+        const babysit_home = `/mnt/babysit state`
+        await check_recovery_environment( { ...account, babysit_home }, {
+            current_uid: 1000,
+            execute: async ( binary, args ) => {
+                expect( binary ).toBe( `/usr/bin/env` )
+                expect( args ).toContain( `BABYSIT_HOME=${ babysit_home }` )
+                return args.includes( `command -v "$1"` ) ? `/usr/bin/${ args.at( -1 ) }` : `ok`
+            },
+        } )
     } )
 
     it( `explains stripped PATH failures before any privileged installation`, async () => {
