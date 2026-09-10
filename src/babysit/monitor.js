@@ -121,6 +121,8 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Object} options.agent_patterns - Agent-specific plan/choice patterns
  * @param {Object} options.agent - Agent adapter
  * @param {Object|null} [options.web_bridge] - Optional filesystem bridge controller
+ * @param {Function|null} [options.open_web_bridge_fn] - Retry bridge initialization until enabled
+ * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
@@ -132,6 +134,8 @@ export const start_monitor = async ( {
     agent_patterns,
     agent,
     web_bridge = null,
+    open_web_bridge_fn = null,
+    tmux_target = session_name,
     on_session_id,
     on_tick,
     input_allowed = () => true,
@@ -153,7 +157,7 @@ export const start_monitor = async ( {
     let action_task = null
     let action_busy = false
     let reset_after_action = false
-    const agent_target = web_bridge?.tmux_target || session_name
+    let agent_target = web_bridge?.tmux_target || tmux_target
 
     const begin_action = ( rule, now ) => {
 
@@ -207,6 +211,13 @@ export const start_monitor = async ( {
                 await finish_action()
                 if( on_exit ) await on_exit( { exit_status: null } )
                 break
+            }
+
+            // Web access may be initialized after this session starts. Retry on
+            // each tick so running sessions appear without restarting the agent.
+            if( !web_bridge && open_web_bridge_fn ) {
+                web_bridge = await open_web_bridge_fn()
+                agent_target = web_bridge?.tmux_target || tmux_target
             }
 
             // Capture pane output

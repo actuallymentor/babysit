@@ -5,6 +5,7 @@ import {
     lstatSync,
     mkdirSync,
     mkdtempSync,
+    opendirSync,
     readFileSync,
     readdirSync,
     rmSync,
@@ -166,7 +167,9 @@ describe( `per-session web bridge`, () => {
         const { bridge, directory } = setup( {
             completion_reader: {
                 read: () => completion,
-                close: () => { closed = true },
+                close: () => {
+                    closed = true
+                },
             },
         } )
         const read_state = () => JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
@@ -179,7 +182,7 @@ describe( `per-session web bridge`, () => {
         await bridge.publish( { output, activity: `running` } )
         expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
         expect( read_state().raw_screen ).toBe( output )
-        const revision = read_state().revision
+        const { revision } = read_state()
 
         await bridge.publish( { output, activity: `running`, busy: true } )
         expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
@@ -278,6 +281,59 @@ describe( `per-session web bridge`, () => {
         expect( readdirSync( join( directory_request.directory, `inflight` ) ) ).toEqual( [] )
     } )
 
+    it( `eventually delivers requests behind other sessions without exceeding the scan budget`, async () => {
+        const directory = make_directory()
+        initialize_web_bridge( { directory } )
+        Array.from( { length: 64 }, ( _, index ) => write_request( directory,
+            make_request( { session_id: `session-${ index }` } )
+        ) )
+
+        // Filesystem enumeration order is unspecified. Target its last entry,
+        // ensuring this request is beyond the first bounded scan on any host.
+        const entries = opendirSync( join( directory, `requests` ) )
+        let last
+        while( true ) {
+            const entry = entries.readSync()
+            if( !entry ) break
+            last = entry.name
+        }
+        entries.closeSync()
+        const [ session_id ] = last.split( `--` )
+        const sent = []
+        const bridge = create_web_bridge( {
+            session: { ...make_session(), babysit_id: session_id },
+            tmux_target: `%42`, directory, epoch: `launch-epoch`,
+            send_text_fn: async ( ...args ) => sent.push( args ),
+        } )
+
+        try {
+            expect( await bridge.process_requests() ).toEqual( { sent: false, processed: 0 } )
+            expect( await bridge.process_requests() ).toEqual( { sent: true, processed: 1 } )
+            expect( sent ).toEqual( [ [ `%42`, make_request().text, { redact: true } ] ] )
+            await bridge.process_requests()
+            expect( sent ).toHaveLength( 1 )
+        } finally {
+            bridge.close()
+        }
+    } )
+
+    it( `retains scanned messages after submitting the first in a batch`, async () => {
+        const { bridge, directory, sent } = setup()
+        Array.from( { length: 8 }, ( _, index ) => write_request( directory,
+            make_request( { request_id: `message-${ index }`, text: `message-${ index }` } )
+        ) )
+        // A full batch leaves its directory cursor open. Remaining candidates
+        // must survive the early return after the first accepted message.
+        try {
+            for( let tick = 0; tick < 8; tick += 1 ) {
+                expect( await bridge.process_requests() ).toEqual( { sent: true, processed: 1 } )
+            }
+            expect( new Set( sent.map( ( [ , text ] ) => text ) ).size ).toBe( 8 )
+        } finally {
+            bridge.close()
+        }
+    } )
+
     it( `ignores requests for an old launch epoch`, async () => {
         const { bridge, directory, sent } = setup()
         await bridge.publish( { output: `ready`, activity: `idle` } )
@@ -286,6 +342,23 @@ describe( `per-session web bridge`, () => {
         expect( await bridge.process_requests() ).toEqual( { sent: false, processed: 0 } )
         expect( sent ).toEqual( [] )
         expect( readdirSync( join( directory, `requests` ) ) ).toHaveLength( 1 )
+    } )
+
+    it( `keeps the launch pane when a different pane becomes active before web init`, async () => {
+        const directory = make_directory()
+        initialize_web_bridge( { directory } )
+        const bridge = await open_web_bridge( {
+            session: { ...make_session(), pane_id: `%19` }, directory,
+            resolve_pane: async () => {
+                throw new Error( `Must not resolve the active pane` )
+            },
+        } )
+
+        try {
+            expect( bridge.tmux_target ).toBe( `%19` )
+        } finally {
+            bridge.close()
+        }
     } )
 
     it( `opens only initialized bridges and resolves an exact pane`, async () => {

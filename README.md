@@ -210,8 +210,9 @@ Initialize the host bridge and print its access token:
 babysit web init
 ```
 
-Sessions already running during initialization must exit and then be resumed so
-their new monitors publish to the bridge.
+Running sessions discover the bridge after initialization. When upgrading from
+an older Babysit version, exit and resume existing sessions once to load the
+updated monitor and terminal helpers.
 
 The web view shows the latest completed reply, retaining it while the agent
 works on the next turn. Expand **Terminal output** to see live tool steps and
@@ -279,9 +280,24 @@ Requires [Bun](https://bun.sh).
 
 ```bash
 npm install
+npm install --prefix web
 npm run build
-bun test
-npm run test:e2e
+npm run test:all
+```
+
+`test:all` checks CLI units, web API/browser interactions, browser-to-tmux
+delivery, and Docker session lifecycles. Requires Docker, tmux, Python 3, and
+Chrome/Chromium (`CHROME_PATH` overrides discovery). Missing prerequisites fail
+the run. Pull requests and main pushes run the same suite. Clone E2E requires
+host execution; nested Docker runs skip it, while CI runs it on the host.
+
+Focused checks:
+
+```bash
+npm run test:cli
+npm run test:web
+npm run test:bridge # Build web assets first: npm run build --prefix web
+npm run test:e2e   # Docker launch, send, detach, resume, recovery, cleanup
 node tests/e2e/status.js # Focused activity regression with Docker and tmux
 ```
 

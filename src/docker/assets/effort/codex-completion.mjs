@@ -10,7 +10,7 @@ const final_text = items => {
 }
 
 /** Forward native app-server completions to the existing capture/notify chain. */
-export const observe_completions = async ( endpoint, { env = process.env, args = [] } = {} ) => {
+export const observe_completions = async ( endpoint, { env = process.env, args = [], on_warning = warning => process.stderr.write( `${ warning }\n` ) } = {} ) => {
 
     const roots = new Map()
     const joined = new Set()
@@ -28,7 +28,7 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
     const warn = error => {
         if( warned ) return
         warned = true
-        process.stderr.write( `babysit: Codex completion capture failed: ${ error.message }\n` )
+        on_warning( `babysit: Codex completion capture failed: ${ error.message }` )
     }
 
     const root_thread = async thread_id => {

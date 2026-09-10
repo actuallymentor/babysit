@@ -210,10 +210,11 @@ export class BridgeStore {
             .filter( entry => entry.isFile() && ( REQUEST_FILE_PATTERN.test( entry.name ) || TEMPORARY_FILE_PATTERN.test( entry.name ) ) )
             .forEach( entry => {
                 const path = join( this.request_dir, entry.name )
-                const age_ms = now - lstatSync( path ).mtimeMs
-                if( age_ms <= this.request_ttl_ms ) return
-
                 try {
+                    // The host monitor may claim this file between readdir and
+                    // lstat. Treat either missing-file race as normal delivery.
+                    const age_ms = now - lstatSync( path ).mtimeMs
+                    if( age_ms <= this.request_ttl_ms ) return
                     unlinkSync( path )
                 } catch ( error ) {
                     if( error.code !== `ENOENT` ) log.warn( `Could not remove orphaned bridge request:`, error.message )

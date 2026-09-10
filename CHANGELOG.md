@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.43.4 — 2026-09-10
+
+### Fixed
+- Discover live sessions when web access is initialized after launch.
+- Deliver queued web messages fairly and tolerate concurrent request claims.
+- Keep web messages pinned to the agent pane after terminal pane switches.
+- Keep background Codex diagnostics out of the interactive terminal.
+- Replace the hamburger dropdown with a full-height sliding drawer.
+
+### Changed
+- Gate CLI and web changes with browser, tmux, and Docker regression tests.
+
 ## 0.43.3 — 2026-09-09
 
 ### Fixed

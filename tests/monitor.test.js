@@ -287,6 +287,36 @@ describe( `supervised agent exit`, () => {
 
 describe( `web bridge coordination`, () => {
 
+    it( `discovers a bridge enabled after launch and retries an unavailable bridge`, async () => {
+        let ticks = 0
+        let attempts = 0
+        const capture_targets = []
+        const published = []
+        const bridge = {
+            tmux_target: `%19`,
+            publish: async snapshot => published.push( snapshot.output ),
+            process_requests: async () => ( { sent: false } ),
+            close: async () => published.push( `closed` ),
+        }
+
+        await start_monitor( {
+            session_name: `babysit_late`, config: {}, rules: [], agent_patterns: {},
+            open_web_bridge_fn: async () => ++attempts === 3 ? bridge : null,
+            has_session_fn: async () => ++ticks <= 4,
+            capture_pane_fn: async target => {
+                capture_targets.push( target ); return `ready`
+            },
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            write_loop_deadline_fn: () => null,
+            wait_fn: async () => null,
+        } )
+
+        expect( attempts ).toBe( 3 )
+        expect( capture_targets ).toEqual( [ `babysit_late`, `babysit_late`, `%19`, `%19` ] )
+        expect( published ).toEqual( [ `ready`, `ready`, `closed` ] )
+    } )
+
+
     it( `keeps publishing while an action runs and rejects interleaved web input`, async () => {
         const busy_states = []
         const request_states = []
@@ -296,7 +326,9 @@ describe( `web bridge coordination`, () => {
         const capture_targets = []
         const action_targets = []
 
-        const action = new Promise( resolve => { action_done = resolve } )
+        const action = new Promise( resolve => {
+            action_done = resolve
+        } )
         const web_bridge = {
             publish: async ( { busy } ) => busy_states.push( busy ),
             process_requests: async ( { busy } ) => {
@@ -342,7 +374,9 @@ describe( `web bridge coordination`, () => {
         let publish_count = 0
         let alive_checks = 0
         let action_count = 0
-        const action = new Promise( resolve => { action_done = resolve } )
+        const action = new Promise( resolve => {
+            action_done = resolve
+        } )
         const web_bridge = {
             tmux_target: `%7`,
             publish: async () => {
