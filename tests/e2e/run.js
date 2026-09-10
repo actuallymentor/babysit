@@ -21,6 +21,7 @@ const browser_seccomp_profile = ensure_chrome_seccomp_profile( {
     path: join( state_root, `chrome-seccomp.json` ),
 } )
 const home = join( state_root, `home` )
+const babysit_home = join( state_root, `custom state` )
 const host_bin = join( state_root, `bin` )
 const workspaces_root = join( root, `workspaces` )
 const workspace_tmp = join( root, `tmp` )
@@ -62,6 +63,7 @@ const e2e_env = () => {
     const env = {
         ...host_env,
         HOME: home,
+        BABYSIT_HOME: babysit_home,
         TMPDIR: workspace_tmp,
         CODEX_HOME: join( home, `.codex` ),
         PATH: `${ host_bin }:${ process.env.PATH }`,
@@ -193,7 +195,7 @@ const make_workspace = ( name, yaml, files = {} ) => {
 }
 
 const latest_session = () => {
-    const sessions_dir = join( home, `.babysit/sessions` )
+    const sessions_dir = join( babysit_home, `sessions` )
     const files = existsSync( sessions_dir )
         ? readdirSync( sessions_dir ).filter( file => file.endsWith( `.json` ) )
         : []
@@ -287,7 +289,7 @@ const assert_no_orphans = async () => {
         return stdout.trim() === ``
     }, 180_000 )
 
-    const recovery_dir = join( home, `.babysit/credential-recovery` )
+    const recovery_dir = join( babysit_home, `credential-recovery` )
     const recovery_markers = existsSync( recovery_dir )
         ? readdirSync( recovery_dir ).filter( file => file.endsWith( `.json` ) )
         : []
@@ -660,7 +662,7 @@ babysit: []
     ensure( session.clone === true, `clone session metadata did not preserve clone mode` )
     ensure( session.original_pwd === workspace, `clone session metadata lost the original workspace` )
     ensure( session.clone_path !== workspace, `clone session reused the original workspace` )
-    ensure( session.clone_path === join( home, `.babysit/clones`, session.clone_id ), `clone path is outside the configured clone root` )
+    ensure( session.clone_path === join( babysit_home, `clones`, session.clone_id ), `clone path is outside the configured clone root` )
     ensure( existsSync( join( session.clone_path, `node_modules/copied-sentinel.txt` ) ), `clone omitted node_modules` )
     const { stdout: status_label } = await tmux( [
         `show-options`, `-v`, `-t`, session.tmux_session, `@babysit_status_label`,

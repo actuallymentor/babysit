@@ -59,3 +59,7 @@
 - 2026-09-10: Diagnose seven zero-byte clone locks from failed ENOSPC writes. Archive the exact failed records under `~/.babysit/clones/.babysit-state/failed-locks-1789050367`; publish new locks atomically and add real full-tmpfs/interactive-prune regressions. User deferred push credential setup.
 
 - 2026-09-10: External review caught pending-lock cleanup masking acquisition outcomes; made cleanup best-effort. Kept atomic publication rather than adding an unverified fallback for filesystems without hard links.
+
+- 2026-09-10: Adopt `BABYSIT_HOME` for host storage with the existing default, no automatic migration, and recovery service persistence. Keep the host rc file at its existing location and the explicit web bridge override authoritative.
+
+- 2026-09-10: Validate `BABYSIT_HOME` with 902 CLI tests, web/browser/tmux/PTY checks, custom-root Docker lifecycles, and all four default-root crash-recovery adapters. Compiled CLI writes, real Compose expansion, and systemd syntax checks pass. Nested-Docker clone launch remains skipped by the existing suite.

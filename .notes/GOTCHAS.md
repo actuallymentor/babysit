@@ -141,3 +141,5 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 136. **Run the combined behavior suite for changes.** `npm run test:all` covers CLI, web API, browser interactions, real browser-to-tmux delivery, and Docker lifecycle/recovery. Browser-only acknowledgment fixtures do not prove host delivery.
 
 137. **A failed lock write is not lock contention.** Disk exhaustion can leave a zero-byte file after exclusive creation. Write clone ownership privately, then publish with an exclusive hard link; only EEXIST means a competing lock. Never auto-reclaim arbitrary malformed locks. Keep the real full-tmpfs prune regression and interactive PTY prune flow in the aggregate suite.
+
+138. **Storage overrides must survive boot.** Export `BABYSIT_HOME` in the host environment and rerun `babysit recover init` after changing it. The container-sourced `~/.babysitrc` cannot select host storage. Changing the root does not migrate existing state or isolate the tmux socket.

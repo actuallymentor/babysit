@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.44.0 — 2026-09-10
+
+### Added
+- Support `BABYSIT_HOME` for host storage, boot recovery, and web Compose mounts.
+
 ## 0.43.5 — 2026-09-10
 
 ### Fixed

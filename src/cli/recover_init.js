@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { run } from '../utils/exec.js'
+import { resolve_babysit_home } from '../utils/paths.js'
 
 // systemd applies specifier expansion even inside quotes. Exec arguments also
 // expand dollars; Environment= values do not.
@@ -13,11 +14,12 @@ const unit_quote = ( value, argument = false ) => {
 }
 
 /** Render one account's boot recovery unit; all launch paths must be absolute. */
-export const render_recovery_service = ( { uid, gid, home, command, path, workspaces = [], tmux_socket = `babysit` } ) => {
+export const render_recovery_service = ( { uid, gid, home, babysit_home = resolve_babysit_home( home ), command, path, workspaces = [], tmux_socket = `babysit` } ) => {
     if( !Number.isInteger( uid ) || uid < 0 || !Number.isInteger( gid ) || gid < 0 ) throw new Error( `Invalid service account` )
     if( !isAbsolute( home ) || !command?.length || command.some( item => !isAbsolute( item ) ) ) throw new Error( `Recovery service requires absolute home and executable paths` )
+    babysit_home = resolve_babysit_home( home, babysit_home )
     const launch = command.map( ( item, index ) => unit_quote( item, index > 0 ) ).join( ` ` )
-    const mounts = [ ...new Set( [ home, ...command.map( dirname ), ...workspaces.filter( isAbsolute ) ] ) ]
+    const mounts = [ ...new Set( [ home, babysit_home, ...command.map( dirname ), ...workspaces.filter( isAbsolute ) ] ) ]
 
     // Let boot proceed once exec succeeds; keep recovered children after the
     // bounded sweep exits. A long batch must not hit a startup timeout.
@@ -34,6 +36,7 @@ User=${ uid }
 Group=${ gid }
 WorkingDirectory=${ home.replaceAll( `%`, `%%` ) }
 Environment=${ unit_quote( `HOME=${ home }` ) }
+Environment=${ unit_quote( `BABYSIT_HOME=${ babysit_home }` ) }
 Environment=${ unit_quote( `PATH=${ path }` ) }
 Environment=${ unit_quote( `BABYSIT_TMUX_SOCKET=${ tmux_socket }` ) }
 Environment="DOCKER_HOST=unix:///var/run/docker.sock"
@@ -85,8 +88,8 @@ export const install_recovery_service = async ( { unit, uid, privileged = proces
     }
 }
 
-const workspace_mounts = home => {
-    const directory = join( home, `.babysit`, `sessions` )
+const workspace_mounts = babysit_home => {
+    const directory = join( babysit_home, `sessions` )
     if( !existsSync( directory ) ) return []
     return readdirSync( directory ).filter( name => name.endsWith( `.json` ) ).flatMap( name => {
         try {
@@ -101,12 +104,12 @@ const workspace_mounts = home => {
 }
 
 /** Verify boot executables with the service account's environment, before sudo installation. */
-export const check_recovery_environment = async ( { uid, username, home, path, command }, {
+export const check_recovery_environment = async ( { uid, username, home, babysit_home = resolve_babysit_home( home ), path, command }, {
     execute = run, current_uid = process.getuid(),
 } = {} ) => {
     // Clear login-only configuration *after* runuser/PAM. Otherwise root's
     // Docker config or loader settings can make a probe pass that fails at boot.
-    const environment = [ `HOME=${ home }`, `USER=${ username }`, `LOGNAME=${ username }`, `PATH=${ path }`, `DOCKER_HOST=unix:///var/run/docker.sock` ]
+    const environment = [ `HOME=${ home }`, `BABYSIT_HOME=${ babysit_home }`, `USER=${ username }`, `LOGNAME=${ username }`, `PATH=${ path }`, `DOCKER_HOST=unix:///var/run/docker.sock` ]
     const as_user = ( binary, args ) => {
         const invocation = [ `-i`, ...environment, binary, ...args ]
         return current_uid === 0 && uid !== 0
@@ -157,6 +160,7 @@ export const cmd_recover_init = async ( _cmd = {}, { execute = run, install = in
     const [ username, , account_uid, account_gid, , home ] = account.trim().split( `:` )
     if( Number( account_uid ) !== uid || !home || !username ) throw new Error( `Cannot resolve invoking account ${ uid }` )
     const gid = Number( account_gid )
+    const babysit_home = resolve_babysit_home( home )
     const compiled = !process.argv[ 1 ] || process.argv[ 1 ].startsWith( `/$bunfs` )
     const command = compiled ? [ process.execPath ] : [ process.execPath, resolve( process.argv[ 1 ] ) ]
     const path = [ ...new Set( [ join( home, `.local`, `bin` ), ...command.map( dirname ), ...( process.env.PATH || `` ).split( `:` ).filter( isAbsolute ), `/usr/local/bin`, `/usr/bin`, `/bin` ] ) ].join( `:` )
@@ -164,13 +168,14 @@ export const cmd_recover_init = async ( _cmd = {}, { execute = run, install = in
     await execute( `/usr/bin/systemctl`, [ `show`, `docker.service`, `--property=LoadState`, `--value` ] ).then( state => {
         if( state !== `loaded` ) throw new Error( `The system Docker service is not installed` )
     } )
-    const dependencies = await check_recovery_environment( { uid, username, home, path, command }, { execute } )
+    const dependencies = await check_recovery_environment( { uid, username, home, babysit_home, path, command }, { execute } )
 
-    const unit = render_recovery_service( { uid, gid, home, command, path, workspaces: [ ...workspace_mounts( home ), ...dependencies.map( dirname ) ], tmux_socket: process.env.BABYSIT_TMUX_SOCKET || `babysit` } )
+    const unit = render_recovery_service( { uid, gid, home, babysit_home, command, path, workspaces: [ ...workspace_mounts( babysit_home ), ...dependencies.map( dirname ) ], tmux_socket: process.env.BABYSIT_TMUX_SOCKET || `babysit` } )
     const installed = await install( { unit, uid }, { execute } )
     print( `Enabled ${ installed.name } for ${ username }; recovery runs on the next boot.` )
+    print( `Babysit storage: ${ babysit_home }` )
     print( `Logs: journalctl -u ${ installed.name }` )
     print( `Run babysit recover now to recover interrupted sessions immediately.` )
-    print( `Rerun babysit recover init after moving the executable or adding workspace mounts.` )
+    print( `Rerun babysit recover init after changing BABYSIT_HOME, moving the executable, or adding workspace mounts.` )
     return installed
 }

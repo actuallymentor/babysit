@@ -45,7 +45,7 @@ export const default_babysit_config = () => ( {
 } )
 
 /**
- * Read host-level Babysit config from ~/.babysit/config.json.
+ * Read host-level Babysit config from the selected storage root.
  * @param {Object} [options]
  * @param {string} [options.config_path] - Config file path
  * @returns {{ version: number, auth_check_agents: string[] }} Parsed config

@@ -262,7 +262,7 @@ the service publishes no host port. Preserve the original host,
 - The agent runs as a non-root user in a Docker container inside tmux.
 - A detached monitor applies `babysit.yaml` rules and keeps credentials in sync.
 - Agent state lives in persistent Docker volumes. Babysit metadata lives under
-  `~/.babysit`.
+  `${BABYSIT_HOME:-$HOME/.babysit}`.
 - Codex settings are copied into a temporary container configuration; the host
   file stays untouched. Invalid TOML produces a configuration error before staging.
 - `node_modules` and `.venv` use named volumes by default to avoid host/container
@@ -271,6 +271,23 @@ the service publishes no host port. Preserve the original host,
   Puppeteer, Xvfb, Poppler, and qpdf.
 - Authentication checks use real model requests and cache successes for 12
   hours. Add `--refresh` to `babysit doctor --auth` to bypass the cache.
+
+Set an absolute host storage path in your shell profile:
+
+```bash
+export BABYSIT_HOME="/mnt/storage/babysit"
+```
+
+Unset or empty uses `~/.babysit`; relative paths and literal `~` are rejected.
+This relocates Babysit config, sessions, clones, caches, recovery data, and the
+default web bridge. `BABYSIT_WEB_BRIDGE_DIR` overrides the bridge location;
+export the same settings for Compose. Agent credentials and Docker volumes
+keep their existing locations. Existing state is not migrated automatically.
+The tmux socket is unchanged; this setting alone does not create an isolated instance.
+
+For boot recovery, run `babysit recover init` as the session owner, without a
+`sudo` prefix (sudo may strip the export). Rerun it after changing `BABYSIT_HOME`; the service captures the path for reboot.
+Set this variable in the host environment, not the container-sourced rc file.
 
 If `~/.babysitrc` exists, Babysit sources it before launching the agent. Use it
 for local environment variables and tool setup. `--ignore-host-agents-md` skips
