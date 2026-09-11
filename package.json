@@ -1,6 +1,6 @@
 {
   "name": "babysit",
-  "version": "0.44.0",
+  "version": "1.0.0",
   "description": "A CLI supervisor for LLM coding agent CLIs",
   "type": "module",
   "main": "src/index.js",
@@ -16,9 +16,10 @@
     "test:bridge": "node tests/e2e/web-bridge.js",
     "test:prune": "node tests/e2e/prune.js",
     "test:e2e": "node tests/e2e/run.js",
-    "test:all": "npm run test:cli && npm run test:web && npm run test:bridge && npm run test:prune && npm run test:e2e",
+    "test:all": "npm run test:cli && npm run test:web && npm run test:bridge && npm run test:prune && npm run test:antigravity && npm run test:e2e",
     "lint": "eslint --fix src",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:antigravity": "node tests/e2e/antigravity.js"
   },
   "keywords": [
     "cli",

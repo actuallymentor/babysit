@@ -16,7 +16,7 @@ const temporary = join( root, `tmp` )
 const binaries = join( root, `bin` )
 const run_id = `babysit-recovery-${ Date.now() }-${ process.pid }`
 const image = process.env.BABYSIT_E2E_FAKE_IMAGE || `babysit:e2e-fake`
-const all_agents = [ `codex`, `claude`, `gemini`, `opencode` ]
+const all_agents = [ `codex`, `claude`, `antigravity`, `opencode` ]
 const agents = process.env.BABYSIT_E2E_RECOVERY_AGENTS?.split( `,` ) || all_agents
 assert.ok( agents.length && agents.every( agent => all_agents.includes( agent ) ), `Unknown recovery fixture agent` )
 const prompt = `You were interrupted. Check the current state, then continue unfinished work.`
@@ -80,12 +80,12 @@ const crash = async session => {
 
 try {
     for( const directory of [ home, temporary, binaries ] ) mkdirSync( directory, { recursive: true } )
-    const credentials = [ `.claude/.credentials.json`, `.codex/auth.json`, `.gemini/oauth_creds.json`, `.local/share/opencode/auth.json` ]
+    const credentials = [ `.claude/.credentials.json`, `.codex/auth.json`, `.gemini/antigravity-cli/antigravity-oauth-token`, `.local/share/opencode/auth.json` ]
     for( const file of credentials ) {
         mkdirSync( join( home, file, `..` ), { recursive: true } )
         writeFileSync( join( home, file ), JSON.stringify( { refresh_token: `isolated-recovery-fixture` } ) )
     }
-    for( const agent of all_agents ) symlinkSync( join( repo, `tests/e2e/assets/fake-agent.mjs` ), join( binaries, agent ) )
+    for( const agent of all_agents ) symlinkSync( join( repo, `tests/e2e/assets/fake-agent.mjs` ), join( binaries, agent === `antigravity` ? `agy` : agent ) )
     await docker( [ `image`, `inspect`, image ] )
     await tmux( [ `-V` ] )
 
@@ -135,6 +135,7 @@ try {
         assert.equal( recovered.expected_open, true )
         const replayed_args = JSON.parse( readFileSync( join( workspace, `e2e-resume-args.txt` ), `utf8` ) )
         assert.ok( replayed_args.includes( native_id ), `native CLI did not receive the exact conversation ID` )
+        if( agent === `antigravity` ) assert.equal( replayed_args[ replayed_args.indexOf( `--conversation` ) + 1 ], native_id )
         const after = read_sessions().length
         await cli( [ `recover`, recovered.babysit_id ] )
         assert.equal( read_sessions().length, after, `repeated recover duplicated a launch` )
@@ -173,7 +174,7 @@ try {
             await cli( [ `recover`, session.babysit_id ] )
             assert.equal( current( workspace ).babysit_id, session.babysit_id, `durable clean receipt must prevent relaunch` )
             console.log( `PASS durable native exit stays closed after monitor loss and shutdown` )
-        } else if( [ `claude`, `gemini` ].includes( agent ) ) await input( session, `BABYSIT_E2E_EXIT` )
+        } else if( [ `claude`, `antigravity` ].includes( agent ) ) await input( session, `BABYSIT_E2E_EXIT` )
         else await cli( [ `close`, session.babysit_id ] )
         await wait_for( `${ agent } graceful retirement`, () => current( workspace ).expected_open === false )
         const retired_count = read_sessions().length

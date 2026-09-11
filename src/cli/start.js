@@ -937,6 +937,9 @@ export const record_launch_progress = ( id, fields, { recovering = false, update
 export const cmd_start = async ( cmd ) => {
 
     const stored = cmd.stored_session || resolve_stored_agent_resume_session( cmd, get_agent( cmd.agent ) || {} )
+    if( cmd.agent === `gemini` || stored?.agent === `gemini` || stored?.agent_mismatch === `gemini` ) {
+        throw new Error( `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.` )
+    }
     const release = cmd.lifecycle_locked ? () => {} : acquire_session_lock( stored ? session_lock_key( stored ) : `launch:${ randomUUID() }` )
     let released = false
     const handoff = () => {
@@ -1232,7 +1235,7 @@ async function start_session( cmd ) {
         launch_spec: {
             args: replay.args, unsupported: replay.unsupported, log: flags.log,
             config_hash: stored_resume_session?.launch_spec?.config_hash || null,
-            environment: Object.fromEntries( [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `OPENCODE_CONFIG_DIR` ]
+            environment: Object.fromEntries( [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
                 .filter( key => process.env[ key ] ).map( key => [ key, process.env[ key ] ] ) ),
         },
         continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : null,

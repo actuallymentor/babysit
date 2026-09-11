@@ -86,13 +86,13 @@ describe( `launch defaults`, () => {
         mkdirSync( unknown.cwd )
 
         await save_launch_defaults( parse_args( [ `codex`, `--docker`, `--yolo`, `--name`, `private name` ] ), options )
-        await save_launch_defaults( parse_args( [ `gemini`, `--sandbox`, `--loop` ] ), other )
+        await save_launch_defaults( parse_args( [ `antigravity`, `--sandbox`, `--loop` ] ), other )
 
         expect( await read_launch_defaults( options ) ).toMatchObject( {
             agent: `codex`, docker: true, yolo: true, clone: false, loop: false, mode: `regular`,
         } )
         expect( await read_launch_defaults( unknown ) ).toEqual( await read_launch_defaults( other ) )
-        expect( await read_launch_defaults( other ) ).toMatchObject( { agent: `gemini`, mode: `sandbox`, loop: true } )
+        expect( await read_launch_defaults( other ) ).toMatchObject( { agent: `antigravity`, mode: `sandbox`, loop: true } )
         expect( readFileSync( options.defaults_path, `utf8` ) ).not.toContain( `private name` )
 
     } )

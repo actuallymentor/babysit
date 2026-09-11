@@ -51,7 +51,7 @@ describe( `print_active_sessions_table`, () => {
             },
             {
                 tmux_session: `babysit_canonical`,
-                agent: `gemini`,
+                agent: `antigravity`,
                 babysit_id: `baby-3`,
                 modifiers: [],
                 pwd: `/workspace/solo`,
@@ -71,7 +71,7 @@ describe( `print_active_sessions_table`, () => {
         )
         expect( output ).toMatch( /1\s+feature 1\s+running\s+detached\s+codex\s+yolo,docker\s+ping\/pong/ )
         expect( output ).toMatch( /2\s+native-2\s+idle\s+attached\s+claude\s+-\s+ding\/dong/ )
-        expect( output ).toMatch( /3\s+baby-3\s+running\s+detached\s+gemini\s+-\s+workspace\/solo/ )
+        expect( output ).toMatch( /3\s+baby-3\s+running\s+detached\s+antigravity\s+-\s+workspace\/solo/ )
         expect( output ).not.toContain( `babysit_named` )
         expect( output ).not.toContain( `babysit_legacy` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
@@ -185,8 +185,8 @@ describe( `print_active_sessions_table`, () => {
             numbers: [ 2, 4 ],
         } ) )
 
-        expect( output ).toMatch( /\n  2\s+second/ )
-        expect( output ).toMatch( /\n  4\s+fourth/ )
+        expect( output ).toMatch( /\n {2}2\s+second/ )
+        expect( output ).toMatch( /\n {2}4\s+fourth/ )
 
     } )
 
@@ -283,7 +283,9 @@ describe( `observe_session_activity`, () => {
                 }
                 return `stable`
             },
-            wait: async () => { second_sample = true },
+            wait: async () => {
+                second_sample = true
+            },
         } )
 
         expect( observed.map( session => session.agent_status ) ).toEqual( [ `unknown`, `unknown`, `idle` ] )

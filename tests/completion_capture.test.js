@@ -35,12 +35,12 @@ if(agent === 'codex') {
         if(payload.nested) {
             const code = "require('node:child_process').spawnSync('python3', [process.env.HELPER, process.env.AGENT], {input: process.env.NESTED_PAYLOAD})"
             spawnSync('node', ['-e', code], {env: {...process.env, NESTED_PAYLOAD: JSON.stringify(payload)}})
-        } else spawnSync('python3', [helper, agent], {input: JSON.stringify(payload)})
+        } else spawnSync('python3', [helper, agent, payload.hook_event_name || ''], {input: JSON.stringify(payload)})
     }
 }
 ` )
         chmodSync( fixture, 0o755 )
-        env = { ...process.env, HELPER: helper, CODEX_HOME: directory, BABYSIT_COMPLETION_FILE: message_file, BABYSIT_COMPLETION_LAUNCH_ID: `launch-1` }
+        env = { ...process.env, HELPER: helper, HOME: directory, CODEX_HOME: directory, BABYSIT_COMPLETION_FILE: message_file, BABYSIT_COMPLETION_LAUNCH_ID: `launch-1` }
         delete env.BABYSIT_RECOVERY_IDENTITY
     } )
 
@@ -101,12 +101,82 @@ if(agent === 'codex') {
         expect( record.text ).toBe( `Right` )
     } )
 
-    it( `captures Gemini AfterAgent and ignores model steps`, () => {
-        const record = execute( `gemini`, [
-            { hook_event_name: `AfterModel`, session_id: `root`, prompt_response: `Intermediate` },
-            { hook_event_name: `AfterAgent`, session_id: `root`, prompt_response: `Finished` },
+    const antigravity_metadata = ( id, source = 17, content = `Finished` ) => {
+        const state = join( directory, `.gemini`, `antigravity-cli` )
+        mkdirSync( join( state, `conversations` ), { recursive: true } )
+        const result = spawnSync( `python3`, [ `-c`, `import sqlite3,sys
+with sqlite3.connect(sys.argv[1]) as db:
+ db.execute('CREATE TABLE trajectory_meta (cascade_id TEXT, source INTEGER)')
+ db.execute('INSERT INTO trajectory_meta VALUES (?, ?)', (sys.argv[2], int(sys.argv[3])))`, join( state, `conversations`, `${ id }.db` ), id, String( source ) ] )
+        expect( result.status ).toBe( 0 )
+        const logs = join( state, `brain`, id, `.system_generated`, `logs` )
+        mkdirSync( logs, { recursive: true } )
+        const transcript_path = join( logs, `transcript_full.jsonl` )
+        writeFileSync( transcript_path, [
+            { step_index: 0, source: `USER_EXPLICIT`, type: `USER_INPUT`, status: `DONE`, content: `Question` },
+            { step_index: 1, source: `MODEL`, type: `PLANNER_RESPONSE`, status: `DONE`, thinking: `Private reasoning`, content },
+        ].map( JSON.stringify ).join( `\n` ) )
+        return { conversationId: id, transcriptPath: transcript_path, fullyIdle: true, terminationReason: `NO_TOOL_CALL`, executionNum: 0, error: `` }
+    }
+
+    it( `captures Antigravity native root identity and final visible response`, () => {
+        const root = antigravity_metadata( `11111111-1111-1111-1111-111111111111` )
+        const child = antigravity_metadata( `22222222-2222-2222-2222-222222222222`, 16, `Child response` )
+        const record = execute( `antigravity`, [
+            { ...root, hook_event_name: `PreInvocation` },
+            { ...child, hook_event_name: `PreInvocation` },
+            { ...child, hook_event_name: `Stop` },
+            { ...root, hook_event_name: `Stop` },
+            { ...root, hook_event_name: `Stop`, fullyIdle: false },
         ] )
         expect( record.text ).toBe( `Finished` )
+        expect( record.session_id ).toBe( root.conversationId )
+        expect( record.turn_id ).toBe( `0:1` )
+    } )
+
+    it( `ignores failed Antigravity turns, tool continuations and foreign transcripts`, () => {
+        const root = antigravity_metadata( `11111111-1111-1111-1111-111111111111` )
+        for( const patch of [ { fullyIdle: false }, { error: `failed` }, { terminationReason: `ERROR` }, { transcriptPath: helper } ] ) {
+            expect( execute( `antigravity`, [ { ...root, hook_event_name: `Stop`, ...patch } ] ) ).toBeNull()
+        }
+        writeFileSync( root.transcriptPath, JSON.stringify( { source: `MODEL`, type: `PLANNER_RESPONSE`, status: `DONE`, content: `Intermediate`, tool_calls: [ { name: `run_command` } ] } ) )
+        expect( execute( `antigravity`, [ { ...root, hook_event_name: `Stop` } ] ) ).toBeNull()
+    } )
+
+    it( `follows an Antigravity /clear root but never an in-process subagent`, () => {
+        const first = antigravity_metadata( `11111111-1111-1111-1111-111111111111` )
+        const next = antigravity_metadata( `22222222-2222-2222-2222-222222222222`, 17, `New conversation` )
+        const record = execute( `antigravity`, [
+            { ...first, hook_event_name: `PreInvocation` },
+            { ...first, hook_event_name: `Stop` },
+            { ...next, hook_event_name: `PreInvocation` },
+            { ...next, hook_event_name: `Stop` },
+            { ...first, hook_event_name: `Stop` },
+        ] )
+        expect( record.session_id ).toBe( next.conversationId )
+        expect( record.text ).toBe( `New conversation` )
+    } )
+
+    it( `rejects unavailable exact Antigravity resumes before the native CLI can fall back`, () => {
+        for( const args of [ [ `--conversation`, `11111111-1111-1111-1111-111111111111` ], [ `--conversation=../../outside` ], [ `--conversation` ] ] ) {
+            const result = spawnSync( `python3`, [ helper, `launch`, `antigravity`, fixture, ...args ], { env, encoding: `utf8` } )
+            expect( result.status ).toBe( 1 )
+            expect( result.stderr ).toContain( `exact native conversation is unavailable` )
+            expect( existsSync( join( directory, `output`, `identity.json` ) ) ).toBe( false )
+        }
+        const child = antigravity_metadata( `22222222-2222-2222-2222-222222222222`, 16 )
+        const result = spawnSync( `python3`, [ helper, `launch`, `antigravity`, fixture, `--conversation`, child.conversationId ], { env, encoding: `utf8` } )
+        expect( result.status ).toBe( 1 )
+        expect( result.stderr ).toContain( `exact native conversation is unavailable` )
+    } )
+
+    it( `adds named Antigravity hooks without replacing custom hooks`, () => {
+        const custom = { Stop: [ { command: `original` } ] }
+        const hooks = add_completion_hooks( { custom }, `antigravity` )
+        expect( hooks.custom ).toEqual( custom )
+        expect( hooks[ `babysit-completion` ].PreInvocation[ 0 ].command ).toEndWith( `antigravity PreInvocation` )
+        expect( hooks[ `babysit-completion` ].Stop[ 0 ].command ).toEndWith( `antigravity Stop` )
+        expect( hooks.hooks ).toBeUndefined()
     } )
 
     it( `bounds oversized replies with an explicit notice`, () => {

@@ -316,9 +316,9 @@ export const get_agent_state_mounts = ( agent, workspace, mode = {} ) => {
         ]
     }
 
-    if( agent.name === `gemini` ) {
+    if( agent.name === `antigravity` ) {
         return [
-            { source: scoped( `tmp` ), target: `/home/node/.gemini/tmp` },
+            { source: scoped( `state` ), target: `/home/node/.gemini/antigravity-cli` },
         ]
     }
 
@@ -758,7 +758,7 @@ const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
     }
 
     // Per-agent extra CLI args — typically headless / trust-skip flags that
-    // can't be set declaratively via state files (e.g. gemini's --skip-trust).
+    // can't be set declaratively via state files when the native CLI exposes no state-file equivalent.
     // Pushed before passthrough so user overrides win on conflicting flags.
     if( agent.extra_args ) {
         const extra = agent.extra_args( mode )

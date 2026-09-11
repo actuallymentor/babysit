@@ -51,14 +51,24 @@ elif agent == 'codex':
         data = record.get('payload', {})
         if record.get('type') == 'session_meta' and isinstance(data, dict):
             found = found or data.get('id') == ident and data.get('source') in ('cli', 'vscode')
-elif agent == 'gemini':
-    for file in (home / '.gemini/tmp').glob('**/session-*'):
-        if file.suffix not in ('.json', '.jsonl'): continue
-        record = next(records(file), {})
-        # Current Gemini appends JSONL; older releases wrote one pretty JSON
-        # document. Both must contain an exact native session ID.
-        if record.get('sessionId') != ident: record = document(file)
-        found = found or record.get('sessionId') == ident and bool(record.get('projectHash'))
+elif agent == 'antigravity':
+    root = home / '.gemini/antigravity-cli'
+    file = root / 'conversations' / (ident + '.db')
+    if file.is_file() and not file.is_symlink():
+        try:
+            # Resume uses the native SQLite trajectory, not the human-readable
+            # transcript. Copy crash sidecars so recovery never mutates state.
+            with tempfile.TemporaryDirectory(prefix='babysit-transcript-') as directory:
+                target = pathlib.Path(directory) / file.name
+                shutil.copyfile(file, target)
+                for suffix in ('-wal', '-journal'):
+                    sidecar = pathlib.Path(str(file) + suffix)
+                    if sidecar.is_file() and not sidecar.is_symlink():
+                        shutil.copyfile(sidecar, str(target) + suffix)
+                with sqlite3.connect(target, timeout=2) as db:
+                    found = db.execute('SELECT 1 FROM trajectory_meta WHERE cascade_id = ? AND source = 17 LIMIT 1', (ident,)).fetchone() is not None
+                    found = found and db.execute('SELECT 1 FROM steps LIMIT 1').fetchone() is not None
+        except (sqlite3.Error, OSError): pass
 elif agent == 'opencode':
     root = home / '.local/share/opencode'
     for file in root.glob('storage/session/*/' + ident + '.json'):

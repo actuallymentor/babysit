@@ -52,7 +52,8 @@ const fixture = () => {
             // Exercise the real credential resolver and destination on disk.
             await Promise.resolve()
             expect( process.env.CLAUDE_CONFIG_DIR ).toBeUndefined()
-            expect( process.env.GEMINI_CLI_HOME ).toBe( environment.GEMINI_CLI_HOME )
+            // Old Gemini overrides are not replayed into the new agent environment.
+            expect( process.env.GEMINI_CLI_HOME ).toBeUndefined()
             writeFileSync( get_host_codex_auth_file(), `refreshed` )
         },
     }
@@ -90,7 +91,9 @@ describe( `saved recovery credential environment`, () => {
 
     for( const action of [ `recover`, `close` ] ) it( `restores the caller profile when ${ action } cleanup fails`, async () => {
         const f = fixture()
-        f.dependencies.reconcile = async () => { throw new Error( `cleanup failed` ) }
+        f.dependencies.reconcile = async () => {
+            throw new Error( `cleanup failed` )
+        }
         const operation = action === `recover` ? recover_session : close_session
         await expect( operation( f.session, {}, f.dependencies ) ).rejects.toThrow( `cleanup failed` )
         f.assert_restored()

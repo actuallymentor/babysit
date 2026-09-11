@@ -38,7 +38,9 @@ jobs:
       - name: Install test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y tmux python3
+          sudo apt-get install -y tmux python3 jq
+          bash src/docker/assets/install-antigravity.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           npm ci
           npm ci --prefix web
 

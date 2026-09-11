@@ -344,107 +344,88 @@ export const codex_extra_mounts = ( {
 }
 
 /**
- * Gemini extra mounts. Gemini's "logged in" state lives across several files
- * in ~/.gemini/, not just oauth_creds.json. Without settings.json (which
- * carries `auth.selectedType`) gemini drops into its auth-method picker on
- * launch, ignoring the OAuth tokens it has on disk. trustedFolders.json
- * needs /workspace to skip the trust dialog.
- *
- * @param {Object} [options]
- * @param {boolean} [options.include_host_preferences=true] - Copy non-authentication host state
- * @param {string} [options.gemini_dir] - Host Gemini directory, injectable for tests
- * @param {boolean} [options.auth_probe=false] - Keep account selection but omit UI/trust state
- * @returns {{ host: string, container: string }[]}
+ * Stage Antigravity preferences separately from its persistent conversation state.
+ * Profile isolation retains only provider selection; hooks are launch-scoped.
+ * @param {Object} [options] - Host preference, probe, and completion options
+ * @param {string} [options.antigravity_dir] - Native host CLI state directory
+ * @param {string} [options.config_dir] - Shared Antigravity customization directory
+ * @returns {Object[]} Writable container seed files
  */
-export const gemini_extra_mounts = ( {
+export const antigravity_extra_mounts = ( {
     include_host_preferences = true,
-    gemini_dir = join( home, `.gemini` ),
+    antigravity_dir = join( home, `.gemini`, `antigravity-cli` ),
+    config_dir = join( home, `.gemini`, `config` ),
     auth_probe = false,
     completion_capture = null,
 } = {} ) => {
 
     const mounts = []
+    const settings = build_antigravity_settings_tmpfile( join( antigravity_dir, `settings.json` ), { include_host_preferences } )
+    if( settings ) mounts.push( { host: settings, container: `/home/node/.gemini/antigravity-cli/settings.json` } )
 
-    // The account cache participates in OAuth account selection. Installation
-    // identity and persistent UI state are host preferences, so only copy them
-    // when the user has not requested profile isolation.
-    const passthrough = auth_probe
-        ? [ `google_accounts.json` ]
-        : include_host_preferences
-            ? [ `google_accounts.json`, `installation_id`, `state.json` ]
-            : [ `google_accounts.json` ]
-    for( const file of passthrough ) {
-        const tmp = copy_host_file_to_tmpfile( join( gemini_dir, file ), `gemini` )
-        if( tmp ) mounts.push( { host: tmp, container: `/home/node/.gemini/${ file }` } )
-    }
-
-    const settings_tmpfile = build_gemini_settings_tmpfile(
-        join( gemini_dir, `settings.json` ),
-        { include_host_preferences, completion_capture }
-    )
-    if( settings_tmpfile ) {
-        mounts.push( { host: settings_tmpfile, container: `/home/node/.gemini/settings.json` } )
-    }
-
-    // trustedFolders.json — merge /workspace into whatever the host has, or
-    // create the file fresh if missing. The host's entries refer to host paths
-    // (/home/sandbox/...) which don't apply inside the container; /workspace
-    // is the only path the container actually sees.
+    // Completed native onboarding includes account consent. Carry the user's
+    // existing choice even when omitting visual preferences; never invent it.
     if( !auth_probe ) {
-        const host_trust = join( gemini_dir, `trustedFolders.json` )
-        let trust_obj = {}
-        if( include_host_preferences && existsSync( host_trust ) ) {
-            try {
-                trust_obj = JSON.parse( readFileSync( host_trust, `utf-8` ) )
-            } catch { /* malformed → start fresh */ }
+        const path = join( antigravity_dir, `cache`, `onboarding.json` )
+        let onboarding = null
+        try {
+            onboarding = JSON.parse( readFileSync( path, `utf8` ) )
+        } catch { /* No completed host onboarding to carry. */ }
+        // An unfinished host wizard must not reset consent completed in the
+        // persistent Babysit state during an earlier container launch.
+        if( onboarding && typeof onboarding === `object` && !Array.isArray( onboarding ) && onboarding.onboardingComplete === true ) {
+            const tmp = build_tmpfile( `antigravity`, `onboarding.json`, JSON.stringify( onboarding, null, 2 ) )
+            if( tmp ) mounts.push( { host: tmp, container: `/home/node/.gemini/antigravity-cli/cache/onboarding.json` } )
         }
-        trust_obj[ `/workspace` ] = `TRUST_FOLDER`
-        const trust_tmpfile = build_tmpfile( `gemini`, `trustedFolders.json`, JSON.stringify( trust_obj, null, 2 ) )
-        if( trust_tmpfile ) mounts.push( { host: trust_tmpfile, container: `/home/node/.gemini/trustedFolders.json` } )
     }
+
+    // Keep provider/customization state out of the conversation volume. Seed
+    // copies are writable and never let native migrations modify host files.
+    if( include_host_preferences && !auth_probe ) {
+        for( const file of [ `config.json`, `mcp_config.json` ] ) {
+            const tmp = copy_host_file_to_tmpfile( join( config_dir, file ), `antigravity` )
+            if( tmp ) mounts.push( { host: tmp, container: `/home/node/.gemini/config/${ file }` } )
+        }
+    }
+
+    let hooks = {}
+    const host_hooks = join( config_dir, `hooks.json` )
+    if( include_host_preferences && !auth_probe && existsSync( host_hooks ) ) {
+        try {
+            hooks = JSON.parse( readFileSync( host_hooks, `utf8` ) )
+        } catch { /* Ignore malformed host hooks. */ }
+    }
+    if( !hooks || typeof hooks !== `object` || Array.isArray( hooks ) ) hooks = {}
+    if( completion_capture && !auth_probe ) add_completion_hooks( hooks, `antigravity` )
+    const hooks_file = build_tmpfile( `antigravity`, `hooks.json`, JSON.stringify( hooks, null, 2 ) )
+    if( hooks_file ) mounts.push( { host: hooks_file, container: `/home/node/.gemini/config/hooks.json` } )
 
     return mounts
 
 }
 
 /**
- * Build Gemini settings while retaining only authentication selection when
- * host preferences are isolated. Gemini requires `security.auth` beside its
- * OAuth files to choose the already-authenticated login lane without prompting.
- * @param {string} host_settings_path - Host ~/.gemini/settings.json path
+ * Preserve API-provider selection when omitting host UI and tool preferences.
+ * @param {string} host_settings_path - Native Antigravity settings file
  * @param {Object} [options]
- * @param {boolean} [options.include_host_preferences=true] - Copy all host settings
- * @returns {string|null} Writable tmpfile for the container
+ * @param {boolean} [options.include_host_preferences=true] - Copy host preferences
+ * @returns {string|null} Temporary container settings file
  */
-export const build_gemini_settings_tmpfile = ( host_settings_path, {
+export const build_antigravity_settings_tmpfile = ( host_settings_path, {
     include_host_preferences = true,
-    completion_capture = null,
 } = {} ) => {
 
-    let parsed = {}
+    let settings = {}
     if( existsSync( host_settings_path ) ) {
         try {
-            parsed = JSON.parse( readFileSync( host_settings_path, `utf-8` ) )
-        } catch { /* malformed → start fresh */ }
+            settings = JSON.parse( readFileSync( host_settings_path, `utf8` ) )
+        } catch { /* Start with native defaults. */ }
     }
+    if( !settings || typeof settings !== `object` || Array.isArray( settings ) ) settings = {}
+    if( !include_host_preferences ) settings = settings.modelProvider === `gemini` ? { modelProvider: `gemini` } : {}
+    if( process.env.GEMINI_API_KEY ) settings.modelProvider = `gemini`
 
-    if( !include_host_preferences ) {
-        const selected_type = parsed.security?.auth?.selectedType
-        const legacy_selected_type = parsed.auth?.selectedType
-
-        parsed = {
-            ... typeof selected_type === `string` && selected_type
-                ? { security: { auth: { selectedType: selected_type } } }
-                : {},
-            ... typeof legacy_selected_type === `string` && legacy_selected_type
-                ? { auth: { selectedType: legacy_selected_type } }
-                : {},
-        }
-    }
-
-    if( completion_capture ) add_completion_hooks( parsed, `gemini` )
-
-    return build_tmpfile( `gemini`, `settings.json`, JSON.stringify( parsed, null, 2 ) )
+    return build_tmpfile( `antigravity`, `settings.json`, JSON.stringify( settings, null, 2 ) )
 
 }
 
@@ -508,7 +489,7 @@ const NO_EXTRA_MOUNTS = () => []
 const EXTRA_MOUNTS_BY_AGENT = {
     claude: claude_extra_mounts,
     codex: codex_extra_mounts,
-    gemini: gemini_extra_mounts,
+    antigravity: antigravity_extra_mounts,
     opencode: opencode_extra_mounts,
 }
 

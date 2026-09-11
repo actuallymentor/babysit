@@ -31,10 +31,10 @@ describe( `babysit config`, () => {
     } )
 
     it( `parses direct auth-check agent input`, () => {
-        expect( parse_auth_check_agent_selection( `codex, gemini` ) ).toEqual( [ `codex`, `gemini` ] )
-        expect( parse_auth_check_agent_selection( `all` ) ).toEqual( [ `claude`, `codex`, `gemini`, `opencode` ] )
+        expect( parse_auth_check_agent_selection( `codex, antigravity` ) ).toEqual( [ `codex`, `antigravity` ] )
+        expect( parse_auth_check_agent_selection( `all` ) ).toEqual( [ `claude`, `codex`, `antigravity`, `opencode` ] )
         expect( parse_auth_check_agent_selection( `none` ) ).toEqual( [] )
-        expect( parse_auth_check_agent_selection( ``, { current: [ `gemini` ] } ) ).toEqual( [ `gemini` ] )
+        expect( parse_auth_check_agent_selection( ``, { current: [ `antigravity` ] } ) ).toEqual( [ `antigravity` ] )
         expect( () => parse_auth_check_agent_selection( `codex,missing` ) ).toThrow( /Unsupported agent/ )
     } )
 
@@ -56,7 +56,7 @@ describe( `babysit config`, () => {
         try {
             await cmd_config( {
                 flags: {
-                    auth_check_agents: `gemini,opencode`,
+                    auth_check_agents: `antigravity,opencode`,
                 },
             }, {
                 output,
@@ -65,8 +65,8 @@ describe( `babysit config`, () => {
 
             const saved = JSON.parse( readFileSync( config_path, `utf-8` ) )
 
-            expect( saved.auth_check_agents ).toEqual( [ `gemini`, `opencode` ] )
-            expect( rendered ).toContain( `Legacy authentication selection saved: gemini, opencode` )
+            expect( saved.auth_check_agents ).toEqual( [ `antigravity`, `opencode` ] )
+            expect( rendered ).toContain( `Legacy authentication selection saved: antigravity, opencode` )
             expect( rendered ).toContain( `deprecated` )
         } finally {
             rmSync( dir, { recursive: true, force: true } )

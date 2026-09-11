@@ -48,11 +48,10 @@ export const copy_host_file_to_tmpfile = ( host_path, tag, transform ) => {
 /**
  * Build a fresh chmod-666 tmpfile from in-memory content (no host source).
  * Used when babysit synthesises a file that has no equivalent on the host
- * (e.g. gemini's `trustedFolders.json` for users who never trusted a folder
- * via the gemini CLI).
+ * (e.g. Antigravity completion hooks for a fresh host profile).
  *
  * @param {string} tag - Short identifier baked into the tmpfile name
- * @param {string} hint - Filename hint (e.g. "trustedFolders.json")
+ * @param {string} hint - Filename hint (e.g. "hooks.json")
  * @param {string} content - File content to write
  * @returns {string|null} Tmpfile path, or null on error
  */

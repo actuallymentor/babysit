@@ -90,33 +90,23 @@ fi
 # customisations use the same HOME and uid as the coding agent. `set -a`
 # exports plain KEY=value assignments as child-process environment variables.
 run_agent() {
-    if [ -f /home/node/.babysitrc ]; then
-        exec gosu node env HOME=/home/node bash -c '
+    exec gosu node env HOME=/home/node bash -c '
+        if [ -f /home/node/.babysitrc ]; then
             set -a
             # shellcheck source=/dev/null
             source /home/node/.babysitrc || exit $?
             set +a
-            exec "$@"
-        ' babysit-agent "$@"
-    fi
-
-    exec gosu node "$@"
+        fi
+        # Secondary agy invocations need the same API route as the frontend.
+        python3 /usr/local/bin/antigravity-auth.py || exit $?
+        exec "$@"
+    ' babysit-agent "$@"
 }
 
 # Headless probes and other one-shot Docker commands keep ordinary exec
 # semantics. Only the tmux-supervised agent needs the early-exit handshake.
 if [ "${BABYSIT_SUPERVISED_SESSION:-0}" != "1" ]; then
-    if [ -f /home/node/.babysitrc ]; then
-        exec gosu node env HOME=/home/node bash -c '
-            set -a
-            # shellcheck source=/dev/null
-            source /home/node/.babysitrc || exit $?
-            set +a
-            exec "$@"
-        ' babysit-agent "$@"
-    fi
-
-    exec gosu node "$@"
+    run_agent "$@"
 fi
 
 if [ -z "${BABYSIT_EXIT_SENTINEL:-}" ]; then
@@ -127,7 +117,8 @@ fi
 # Preserve the frontend before wrapping Codex/OpenCode in their supervisor.
 capture_agent=""
 case "${1:-}" in
-    claude|codex|gemini|opencode) capture_agent="$1" ;;
+    claude|codex|opencode) capture_agent="$1" ;;
+    agy|antigravity) capture_agent="antigravity" ;;
     python3)
         if [ "${2:-}" = "/home/node/.babysit-capture/capture.py" ] && [ "${3:-}" = "launch" ]; then
             capture_agent="${4:-}"

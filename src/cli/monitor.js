@@ -153,6 +153,13 @@ export const cmd_monitor = async ( cmd ) => {
         process.exit( 1 )
     }
 
+    const agent = get_agent( session.agent )
+    if( !agent ) {
+        throw new Error( session.agent === `gemini`
+            ? `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.`
+            : `Cannot monitor unsupported agent: ${ session.agent }` )
+    }
+
     // Restore the original working directory so cwd-relative paths in
     // babysit.yaml (./IDLE.md, ./LOOP.md) resolve the same way the
     // foreground saw them when it parsed the rules.
@@ -171,7 +178,6 @@ export const cmd_monitor = async ( cmd ) => {
         status: `active`,
     } )
 
-    const agent = get_agent( session.agent )
     const existing_tmpfiles = session.creds_tmpfiles || (
         session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {}
     )

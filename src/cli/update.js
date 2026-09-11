@@ -36,7 +36,7 @@ const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
  *      for compiled installs — see scripts/install.sh)
  *   2. ~/.agents (git pull, if it's a git repo)
  *   3. the docker image (docker pull)
- *   4. host-installed coding agent CLIs (claude / codex / gemini / opencode)
+ *   4. host-installed coding agent CLIs (claude / codex / antigravity / opencode)
  *      using each agent's declared strategy chain — see deps/agent_update.js
  *
  * Steps run sequentially (not in parallel) so the output reads top-to-bottom,
@@ -268,7 +268,7 @@ const AGENT_UPDATE_TIMEOUT_MS = 60_000
 
 /**
  * Step 4 — upgrade each supported coding agent CLI on the host
- * (claude / codex / gemini / opencode). Per-agent narration: skip cleanly
+ * (claude / codex / antigravity / opencode). Per-agent narration: skip cleanly
  * when the binary isn't on PATH, otherwise try the registered strategies in
  * order (self_update → npm → brew, gated by realpath detection so an
  * npm-installed agent never accidentally triggers brew). The docker image

@@ -14,6 +14,7 @@ describe( `agent activity controls`, () => {
         const screens = {
             codex: `• Working (30s • esc to interrupt)\n\n› Ask a follow-up question`,
             claude: `✻ Thinking…\n  esc to interrupt\n❯ `,
+            antigravity: `⣯ Generating...\n>\nesc to cancel       Gemini 3.8 Flash · medium`,
         }
 
         for( const [ agent, screen ] of Object.entries( screens ) ) {
@@ -55,13 +56,22 @@ describe( `agent activity controls`, () => {
         const screens = {
             codex: `› Ask Codex to do anything`,
             claude: `  ? for shortcuts`,
-            gemini: `│ > Type your message or @path/to/file │`,
+            antigravity: `>\n────────────────────────\n? for shortcuts       Gemini 3.8 Flash · medium`,
             opencode: `tab agents  ctrl+p commands`,
         }
 
         for( const [ agent, screen ] of Object.entries( screens ) ) {
             expect( agent_activity( `\x1b[32m${ screen }\x1b[0m${ `\n`.repeat( 20 ) }`, agent ) ).toBe( `idle` )
         }
+    } )
+
+    it( `recognizes Antigravity composer controls without mistaking native setup for a composer`, () => {
+        expect( agent_activity( `>\n────\n? for shortcuts       Gemini 3.8 Flash · medium`, `antigravity` ) ).toBe( `idle` )
+        for( const screen of [
+            `Do you trust the contents of this project?\n> Yes, I trust this folder\n↑/↓ Navigate · enter Confirm`,
+            `Select login method:\n> Google account\n↑/↓ Navigate · enter Select`,
+            `Terms of Service & Data Use\n> [ ] Yes, I agree\n↑/↓ Navigate · enter Toggle`,
+        ] ) expect( agent_activity( screen, `antigravity` ) ).toBeNull()
     } )
 
     it( `ignores controls in older transcript rows`, () => {

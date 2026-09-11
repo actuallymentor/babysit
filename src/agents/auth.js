@@ -28,24 +28,13 @@ const authentication_abort_reason = signal => {
     return `cancelled`
 }
 
-const isolated_gemini_auth_settings = raw => {
+const isolated_antigravity_auth_settings = raw => {
 
-    let parsed = {}
+    let settings = {}
     try {
-        parsed = JSON.parse( raw )
-    } catch { /* malformed settings become an empty generated profile */ }
-
-    const selected_type = parsed.security?.auth?.selectedType
-    const legacy_selected_type = parsed.auth?.selectedType
-
-    return JSON.stringify( {
-        ... typeof selected_type === `string` && selected_type
-            ? { security: { auth: { selectedType: selected_type } } }
-            : {},
-        ... typeof legacy_selected_type === `string` && legacy_selected_type
-            ? { auth: { selectedType: legacy_selected_type } }
-            : {},
-    } )
+        settings = JSON.parse( raw )
+    } catch { /* Invalid settings use native defaults. */ }
+    return JSON.stringify( settings?.modelProvider === `gemini` ? { modelProvider: `gemini` } : {} )
 
 }
 
@@ -73,7 +62,7 @@ const is_authentication_failure = output =>
  * @param {Date} date - Date to format
  * @returns {string} UTC timestamp
  */
-export const format_utc_timestamp = ( date = new Date() ) => 
+export const format_utc_timestamp = ( date = new Date() ) =>
     date.toISOString().replace( `T`, ` ` ).replace( /\.\d{3}Z$/, ` UTC` )
 
 
@@ -82,7 +71,7 @@ export const format_utc_timestamp = ( date = new Date() ) =>
  * @param {Date} date - Date used in the prompt
  * @returns {string} Minimal prompt for a real model call
  */
-export const build_host_auth_prompt = ( date = new Date() ) => 
+export const build_host_auth_prompt = ( date = new Date() ) =>
     `The current time is ${ format_utc_timestamp( date ) }. What do you think about that? Respond with just ok`
 
 
@@ -91,7 +80,7 @@ export const build_host_auth_prompt = ( date = new Date() ) =>
  * @param {string[]} agent_names - Host agent names being checked
  * @returns {string} Human-readable auth status message
  */
-export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS ) => 
+export const format_host_auth_status_message = ( agent_names = SUPPORTED_AGENTS ) =>
     agent_names.length
         ? `Checking agent auth status...`
         : `No agents configured for authentication checks; skipping authentication checks`
@@ -141,13 +130,12 @@ export const resolve_host_auth_context_files = ( mode = {}, {
         codex: {
             codex_config: join( codex_home, `config.toml` ),
         },
-        gemini: {
-            gemini_settings: join( home_dir, `.gemini`, `settings.json` ),
-            gemini_account: join( home_dir, `.gemini`, `google_accounts.json` ),
+        antigravity: {
+            antigravity_settings: join( home_dir, `.gemini`, `antigravity-cli`, `settings.json` ),
         },
     }
 
-    const agent_context = mode.ignore_host_agents_md && agent?.name !== `gemini`
+    const agent_context = mode.ignore_host_agents_md && agent?.name !== `antigravity`
         ? {}
         : agent_context_candidates[ agent?.name ] || {}
 
@@ -157,10 +145,10 @@ export const resolve_host_auth_context_files = ( mode = {}, {
             context_files[ key ] = path
         } )
 
-    if( mode.ignore_host_agents_md && context_files.gemini_settings ) {
-        context_files.gemini_settings = {
-            path: context_files.gemini_settings,
-            transform: isolated_gemini_auth_settings,
+    if( mode.ignore_host_agents_md && context_files.antigravity_settings ) {
+        context_files.antigravity_settings = {
+            path: context_files.antigravity_settings,
+            transform: isolated_antigravity_auth_settings,
         }
     }
 
@@ -223,7 +211,7 @@ export const resolve_host_auth_context_values = ( agent, agent_args = [], option
  * @param {string} output - Raw or stripped command output
  * @returns {string} Last non-empty output line
  */
-export const last_nonempty_line = ( output = `` ) => 
+export const last_nonempty_line = ( output = `` ) =>
     output.split( /\r?\n/ ).map( line => line.trim() ).filter( Boolean ).at( -1 ) || ``
 
 
@@ -693,7 +681,7 @@ export const check_host_agent_authentication = async ( {
  * @param {Array<{ name: string, authenticated: boolean }>} results - Auth-check results
  * @returns {string[]} Unauthenticated agent names
  */
-export const unauthenticated_agent_names = ( results = [] ) => 
+export const unauthenticated_agent_names = ( results = [] ) =>
     results
         .filter( result => result.status
             ? result.status === `unauthenticated`
