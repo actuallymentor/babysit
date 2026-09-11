@@ -9,6 +9,7 @@
 ### Added
 - Carry native Antigravity credentials, settings, hooks, and conversation state.
 - Verify interactive completion and exact resume with the real `agy` binary.
+- Preserve accepted workspace trust and native keyring credential origins.
 
 ## 0.44.0 — 2026-09-10
 

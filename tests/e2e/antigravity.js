@@ -6,6 +6,7 @@ import { createServer } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
 import { antigravity } from '../../src/agents/antigravity.js'
@@ -97,6 +98,21 @@ try {
         BABYSIT_COMPLETION_LAUNCH_ID: `11111111-1111-1111-1111-111111111111`,
     }
     delete env.BABYSIT_RECOVERY_IDENTITY
+    // Match the credential-only auth probe: fresh HOME, API provider settings,
+    // no onboarding cache, hooks, user instructions or interactive terminal.
+    const probe_home = join( root, `probe-home` )
+    const probe_state = join( probe_home, `.gemini`, `antigravity-cli` )
+    mkdirSync( probe_state, { recursive: true } )
+    writeFileSync( join( probe_state, `settings.json` ), JSON.stringify( { modelProvider: `gemini` } ) )
+    const probe_answer = await run( binary, antigravity.auth_check.args( `AUTH_PROBE_NATIVE` ), {
+        env: { ...env, HOME: probe_home }, cwd: workspace,
+    } )
+    assert.match( probe_answer, /Native first answer/ )
+    assert.ok( model_requests.some( text => text.includes( `AUTH_PROBE_NATIVE` ) ) )
+    const onboarding = JSON.parse( readFileSync( join( probe_state, `cache`, `onboarding.json` ), `utf8` ) )
+    assert.equal( onboarding.onboardingComplete, false, `Headless auth succeeds without completing onboarding` )
+    console.log( `PASS real headless auth probe without onboarding or an interactive terminal` )
+
     const launch = async extra => {
         // Multiple tmux arguments bypass shell interpolation entirely.
         await run( `tmux`, [ `-L`, socket, `new-session`, `-d`, `-s`, session, `-x`, `110`, `-y`, `35`,
@@ -144,13 +160,16 @@ try {
     rmSync( config, { recursive: true, force: true } )
     mkdirSync( config, { recursive: true } )
     writeFileSync( join( config, `hooks.json` ), hooks )
+    // Recreate the production host-settings handoff: the host snapshot does
+    // not know about trust explicitly granted in the persistent container.
+    writeFileSync( join( home, `.babysit-antigravity-settings.json` ), JSON.stringify( { modelProvider: `gemini` } ) )
+    await run( `python3`, [ fileURLToPath( new URL( `../../src/docker/assets/antigravity-auth.py`, import.meta.url ) ), `agy` ], { env } )
+    const saved_settings = JSON.parse( readFileSync( join( native, `settings.json` ), `utf8` ) )
+    assert.ok( saved_settings.trustedWorkspaces.includes( workspace ), `Native state preserves the explicit workspace trust selection` )
     await launch( antigravity.flags.resume( first.session_id ) )
-    await until( `resumed composer or workspace trust`, async () => {
+    await until( `resumed composer without another trust prompt`, async () => {
         const output = await capture()
-        if( output.includes( `Do you trust the contents of this project?` ) ) {
-            await tmux( [ `send-keys`, `-t`, session, `Enter` ] )
-            return false
-        }
+        assert.ok( !output.includes( `Do you trust the contents of this project?` ), `Exact resume retains the user's workspace trust` )
         return is_initial_prompt_ready( antigravity, output )
     } )
     await submit( `SECOND_NATIVE_TURN` )
@@ -160,7 +179,7 @@ try {
     assert.notEqual( second.turn_id, first.turn_id )
     assert.ok( model_requests.some( text => text.includes( `FIRST_NATIVE_TURN` ) && text.includes( `SECOND_NATIVE_TURN` ) ), `Resumed model context includes the first user turn` )
     await until( `rendered resumed reply`, async () => ( await capture() ).includes( `Native resumed answer.` ) )
-    console.log( `PASS real --conversation resume retains UUID, native history and completion capture` )
+    console.log( `PASS real --conversation resume retains trust after host reseed, UUID, history and completion capture` )
 } finally {
     await tmux( [ `kill-server` ] ).catch( () => {} )
     if( server ) await new Promise( closed => server.close( closed ) )

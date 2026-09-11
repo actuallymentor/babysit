@@ -550,19 +550,19 @@ describe( `antigravity_extra_mounts`, () => {
             security: { auth: { selectedType: `legacy-gemini-oauth` } },
         } ) )
         const mounts = stage( { include_host_preferences: false } )
-        expect( read_mount( mounts, `/settings.json` ) ).toEqual( { modelProvider: `gemini` } )
+        expect( read_mount( mounts, `/.babysit-antigravity-settings.json` ) ).toEqual( { modelProvider: `gemini` } )
     } )
 
     it( `selects the native Gemini API provider when an API key is supplied`, () => {
         process.env.GEMINI_API_KEY = `test-key`
         const mounts = stage()
-        expect( read_mount( mounts, `/settings.json` ) ).toEqual( { modelProvider: `gemini` } )
+        expect( read_mount( mounts, `/.babysit-antigravity-settings.json` ) ).toEqual( { modelProvider: `gemini` } )
     } )
 
     it( `does not carry legacy Gemini authentication selection into an isolated profile`, () => {
         writeFileSync( join( dir, `settings.json` ), JSON.stringify( { security: { auth: { selectedType: `oauth-personal` } } } ) )
         const mounts = stage( { include_host_preferences: false } )
-        expect( read_mount( mounts, `/settings.json` ) ).toEqual( {} )
+        expect( read_mount( mounts, `/.babysit-antigravity-settings.json` ) ).toEqual( {} )
     } )
 
     it( `carries completed native onboarding without inventing consent`, () => {
@@ -603,7 +603,7 @@ describe( `antigravity_extra_mounts`, () => {
         for( const file of [ `config.json`, `mcp_config.json`, `hooks.json` ] ) writeFileSync( join( dir, file ), `{"host":{}}` )
         const mounts = stage( { include_host_preferences: false, completion_capture: {} } )
         expect( mounts.map( mount => mount.container ) ).toEqual( [
-            `/home/node/.gemini/antigravity-cli/settings.json`, `/home/node/.gemini/config/hooks.json`,
+            `/home/node/.babysit-antigravity-settings.json`, `/home/node/.gemini/config/hooks.json`,
         ] )
         expect( Object.keys( read_mount( mounts, `/hooks.json` ) ) ).toEqual( [ `babysit-completion` ] )
     } )
@@ -613,7 +613,7 @@ describe( `antigravity_extra_mounts`, () => {
         for( const file of [ `config.json`, `mcp_config.json`, `hooks.json`, `cache/onboarding.json` ] ) writeFileSync( join( dir, file ), `{"host":{}}` )
         const mounts = stage( { auth_probe: true, completion_capture: {} } )
         expect( mounts.map( mount => mount.container ) ).toEqual( [
-            `/home/node/.gemini/antigravity-cli/settings.json`, `/home/node/.gemini/config/hooks.json`,
+            `/home/node/.babysit-antigravity-settings.json`, `/home/node/.gemini/config/hooks.json`,
         ] )
         expect( read_mount( mounts, `/hooks.json` ) ).toEqual( {} )
     } )

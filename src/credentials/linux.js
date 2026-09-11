@@ -43,8 +43,9 @@ export const setup_linux_credentials = async ( agent, {
             `secret-tool lookup service "${ service }" username "${ account }" 2>/dev/null`,
             { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
         )
-        const credential = await read_source()
-        if( credential || existing_tmpfile && baseline?.credential_source === `keyring` ) {
+        const credential = existing_tmpfile ? null : await read_source()
+        const use_keyring = existing_tmpfile ? baseline?.credential_source === `keyring` : Boolean( credential )
+        if( use_keyring ) {
 
             const transport = existing_tmpfile ? null : build_private_tmpfile(
                 `creds-${ agent.name }`, `auth`, credential, { file_mode: 0o666 }

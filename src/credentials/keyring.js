@@ -1,6 +1,27 @@
 import { start_credential_sync } from './refresh.js'
 
 /**
+ * Decode go-keyring's macOS storage envelope, retaining legacy plain secrets.
+ * @param {string|null} value - Output from security find-generic-password -w
+ * @returns {string|null} Native secret content, or null for a malformed envelope
+ */
+export const decode_keyring_secret = value => {
+
+    if( !value ) return null
+    for( const [ prefix, encoding ] of [ [ `go-keyring-base64:`, `base64` ], [ `go-keyring-encoded:`, `hex` ] ] ) {
+        if( !value.startsWith( prefix ) ) continue
+        const encoded = value.slice( prefix.length )
+        const decoded = Buffer.from( encoded, encoding )
+        // Buffer decoding is permissive; malformed keychain content must fall
+        // back cleanly instead of staging a truncated credential.
+        if( decoded.toString( encoding ) !== ( encoding === `hex` ? encoded.toLowerCase() : encoded ) ) return null
+        return decoded.toString( `utf8` )
+    }
+    return value
+
+}
+
+/**
  * Keep keyring captures source-only and retain their origin across monitor handoff.
  * A locked desktop keyring must never turn a staged secret into a host file write.
  * @param {Function} read_source - Read the native keyring's raw credential JSON

@@ -8,7 +8,7 @@ import {
 } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
-import { start_keyring_sync } from './keyring.js'
+import { decode_keyring_secret, start_keyring_sync } from './keyring.js'
 
 const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
 
@@ -42,20 +42,25 @@ export const setup_darwin_credentials = async ( agent, {
     if( cred_config.keychain_service ) {
 
         const keychain_selector = `-s "${ cred_config.keychain_service }"${ cred_config.keychain_account ? ` -a "${ cred_config.keychain_account }"` : `` }`
+        const read_keychain = () => {
+            const value = run_command(
+                `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
+                { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
+            )
+            return cred_config.keychain_encoding === `go-keyring` ? decode_keyring_secret( value ) : value
+        }
 
-        // Phase 1: detect without reading secrets. Always run this — even
-        // when re-using an existing tmpfile (monitor path) — because we need
-        // to know whether the foreground took the keychain branch or the
-        // fallback_file branch, and the only signal is whether keychain has
-        // creds. Without this, a user on darwin whose keychain is empty but
-        // has a fallback auth.json would get a one-way keychain sync in the
-        // monitor instead of the bidirectional file sync the foreground set up.
-        const exists = run_command(
+        // Preserve the foreground source when reconnecting a monitor. Legacy
+        // Claude captures lack source metadata, so retain their detection path.
+        // Antigravity captures are new: an unmarked baseline is file-backed.
+        const pinned_source = existing_tmpfile && ( baseline?.credential_source || cred_config.keychain_encoding === `go-keyring` )
+        const exists = pinned_source ? null : run_command(
             `security find-generic-password ${ keychain_selector } 2>/dev/null`,
             { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
         )
+        const use_keychain = pinned_source ? baseline?.credential_source === `keyring` : exists !== null
 
-        if( exists !== null || existing_tmpfile && baseline?.credential_source === `keyring` ) {
+        if( use_keychain ) {
 
             let tmpfile = existing_tmpfile
 
@@ -72,10 +77,7 @@ export const setup_darwin_credentials = async ( agent, {
                 }
 
                 // Phase 2: capture after pre-flight rotation
-                const creds_json = run_command(
-                    `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
-                    { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
-                )
+                const creds_json = read_keychain()
 
                 if( creds_json ) {
 
@@ -107,10 +109,7 @@ export const setup_darwin_credentials = async ( agent, {
 
             if( tmpfile ) {
 
-                const read_source = async () => run_command(
-                    `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
-                    { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
-                )
+                const read_source = async () => read_keychain()
                 sync = start_keyring_sync( read_source, tmpfile, baseline )
                 baseline = sync.baseline()
 
