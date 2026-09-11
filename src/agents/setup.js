@@ -361,7 +361,7 @@ export const antigravity_extra_mounts = ( {
 
     const mounts = []
     const settings = build_antigravity_settings_tmpfile( join( antigravity_dir, `settings.json` ), { include_host_preferences } )
-    if( settings ) mounts.push( { host: settings, container: `/home/node/.gemini/antigravity-cli/settings.json` } )
+    if( settings ) mounts.push( { host: settings, container: `/home/node/.babysit-antigravity-settings.json` } )
 
     // Completed native onboarding includes account consent. Carry the user's
     // existing choice even when omitting visual preferences; never invent it.
@@ -400,7 +400,15 @@ export const antigravity_extra_mounts = ( {
     const hooks_file = build_tmpfile( `antigravity`, `hooks.json`, JSON.stringify( hooks, null, 2 ) )
     if( hooks_file ) mounts.push( { host: hooks_file, container: `/home/node/.gemini/config/hooks.json` } )
 
-    return mounts
+    // Native state uses atomic writes. Always copy seeds, including API-key-only
+    // launches, rather than binding files inside its writable state volume.
+    return mounts.map( mount => ( {
+        ...mount,
+        type: `seed_file`,
+        source: mount.host,
+        target: mount.container,
+        cleanup: mount.host,
+    } ) )
 
 }
 

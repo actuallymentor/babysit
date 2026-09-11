@@ -597,7 +597,7 @@ export const build_docker_command_args = ( options ) => {
     }
 
     // Agent-native resume state. Claude already needed this for projects/plans/
-    // todos; Codex, Gemini, and OpenCode also store local transcripts/session
+    // todos; Codex, Antigravity, and OpenCode also store local transcripts/session
     // indexes outside auth files, so fresh containers need persistent volumes
     // here or `resume --last` / `--session <id>` starts from an empty install.
     if( include_agent_state ) {

@@ -153,7 +153,7 @@ RUN mkdir -p \
         /home/node/.claude/todos \
         /home/node/.codex/sessions \
         /home/node/.codex/sqlite \
-        /home/node/.gemini/antigravity-cli \
+        /home/node/.gemini/antigravity-cli/cache \
         /home/node/.gemini/config \
         /home/node/.config/gh \
         /home/node/.config/opencode/plugins \

@@ -7,6 +7,7 @@ import { get_agent } from '../src/agents/index.js'
 import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
 import { setup_darwin_credentials } from '../src/credentials/darwin.js'
 import { setup_linux_credentials } from '../src/credentials/linux.js'
+import { decode_keyring_secret } from '../src/credentials/keyring.js'
 import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
 
 // Regression suite for the monitor-tmpfile fix.
@@ -572,7 +573,9 @@ describe( `Antigravity native keyring credentials`, () => {
                 commands.push( command )
                 expect( options.timeout_ms ).toBe( 10_000 )
                 if( !keyring_available ) return null
-                return platform === `darwin` && !command.includes( ` -w ` ) ? `found` : raw_credential
+                return platform === `darwin`
+                    ? command.includes( ` -w ` ) ? `go-keyring-base64:${ Buffer.from( raw_credential ).toString( `base64` ) }` : `found`
+                    : raw_credential
             }
             let foreground
             let monitor
@@ -643,6 +646,62 @@ describe( `Antigravity native keyring credentials`, () => {
                 rmSync( directory, { recursive: true, force: true } )
             }
 
+        } )
+
+    }
+
+} )
+
+describe( `native macOS go-keyring encoding`, () => {
+
+    it( `decodes current base64 and legacy hex while preserving plain JSON`, () => {
+        const value = JSON.stringify( { token: { refresh_token: `test-token` }, label: `café` } )
+        expect( decode_keyring_secret( `go-keyring-base64:${ Buffer.from( value ).toString( `base64` ) }` ) ).toBe( value )
+        expect( decode_keyring_secret( `go-keyring-encoded:${ Buffer.from( value ).toString( `hex` ) }` ) ).toBe( value )
+        expect( decode_keyring_secret( value ) ).toBe( value )
+    } )
+
+    it( `rejects malformed encoded secrets`, () => {
+        for( const value of [ null, ``, `go-keyring-base64:!invalid!`, `go-keyring-encoded:123`, `go-keyring-encoded:xx` ] ) {
+            expect( decode_keyring_secret( value ) ).toBeNull()
+        }
+    } )
+
+} )
+
+describe( `Antigravity credential source pinning`, () => {
+
+    for( const [ platform, setup ] of [ [ `linux`, setup_linux_credentials ], [ `darwin`, setup_darwin_credentials ] ] ) {
+
+        it( `${ platform }: retains bidirectional file sync when the desktop keyring unlocks before monitor handoff`, async () => {
+            const directory = mkdtempSync( join( tmpdir(), `babysit-keyring-unlock-test-` ) )
+            const path = join( directory, `antigravity-oauth-token` )
+            const native = get_agent( `antigravity` )
+            const agent = { ...native, credentials: { [ platform ]: { ...native.credentials[ platform ], file: path, fallback_file: path, env_key: null } } }
+            let foreground
+            let monitor
+            let lookups = 0
+            try {
+                writeFileSync( path, `file-original` )
+                foreground = await setup( agent, { run_command: () => null } )
+                await foreground.sync.stop()
+                const [ mount ] = foreground.mounts
+                writeFileSync( mount.source, `container-rotated` )
+                monitor = await setup( agent, {
+                    existing_tmpfile: mount.source,
+                    sync_baseline: foreground.sync.baseline(),
+                    run_command: () => { lookups += 1; return `stale-keyring` },
+                } )
+                await monitor.sync.stop()
+                expect( lookups ).toBe( 0 )
+                expect( readFileSync( path, `utf8` ) ).toBe( `container-rotated` )
+                expect( readFileSync( mount.source, `utf8` ) ).toBe( `container-rotated` )
+            } finally {
+                await monitor?.sync?.stop()
+                await foreground?.sync?.stop()
+                if( foreground?.cleanup_path ) rmSync( foreground.cleanup_path, { recursive: true, force: true } )
+                rmSync( directory, { recursive: true, force: true } )
+            }
         } )
 
     }

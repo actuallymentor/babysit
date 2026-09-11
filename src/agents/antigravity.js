@@ -8,6 +8,7 @@ export const antigravity = {
         darwin: {
             keychain_service: `gemini`,
             keychain_account: `antigravity`,
+            keychain_encoding: `go-keyring`,
             fallback_file: `~/.gemini/antigravity-cli/antigravity-oauth-token`,
             env_key: `GEMINI_API_KEY`,
         },

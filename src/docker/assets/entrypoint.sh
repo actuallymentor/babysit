@@ -98,7 +98,7 @@ run_agent() {
             set +a
         fi
         # Secondary agy invocations need the same API route as the frontend.
-        python3 /usr/local/bin/antigravity-auth.py || exit $?
+        python3 /usr/local/bin/antigravity-auth.py "$@" || exit $?
         exec "$@"
     ' babysit-agent "$@"
 }
