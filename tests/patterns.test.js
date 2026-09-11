@@ -68,17 +68,19 @@ This data is from a simulated source — for real-time, hit a weather API.
 `,
     },
 
-    gemini: {
-        plan_acceptance: `
-✦ I will research and implement the most efficient and idiomatic Bubble Sort in JavaScript. Here is my proposed plan:
+    antigravity: {
+        // Native tool and plan approval screens have not been verified.
+        plan_acceptance: null,
+        login_picker: `
+ Welcome to the Antigravity CLI. You are currently not signed in.
 
-  ...
+ Select login method:
+ > 1. Google OAuth
+   2. Use a Google Cloud project
 
-  Would you like me to proceed with this research?
+   ↑/↓ Navigate · enter Select
 `,
-        normal_chat_reply: `
-✦ The capital of France is Paris.
-`,
+        normal_chat_reply: `The capital of France is Paris.`,
     },
 
     opencode: {
@@ -105,10 +107,14 @@ describe( `plan patterns match real prompt fixtures`, () => {
     // Iterate the live registry rather than hardcoding the agent list — a
     // fifth agent added to src/agents/index.js without a fixture here
     // should fail loudly, not silently skip pattern coverage.
-    for ( const agent of SUPPORTED_AGENTS ) {
+    for( const agent of SUPPORTED_AGENTS ) {
 
         it( `${ agent }: plan_acceptance fixture matches at least one plan pattern`, () => {
             const patterns = get_patterns( agent ).plan
+            if( FIXTURES[ agent ].plan_acceptance === null ) {
+                expect( patterns ).toEqual( [] )
+                return
+            }
             expect( matches_patterns( FIXTURES[ agent ].plan_acceptance, patterns ) ).toBe( true )
         } )
 
@@ -137,6 +143,24 @@ describe( `claude tool-approval choice pattern`, () => {
         // The plan acceptance prompt shows "ctrl-g to edit in Vim" instead.
         // We rely on the choice patterns to fire on the tool-approval flow.
         expect( matches_patterns( FIXTURES.claude.tool_choice, get_patterns( `claude` ).choice ) ).toBe( true )
+    } )
+
+} )
+
+describe( `Antigravity native setup remains user-driven`, () => {
+
+    it( `does not auto-handle login, workspace trust or consent pickers`, () => {
+        const screens = [
+            FIXTURES.antigravity.login_picker,
+            `Do you trust the contents of this project?\n> Yes, I trust this folder\n↑/↓ Navigate · enter Confirm`,
+            `Terms of Service & Data Use\n> [ ] Yes, I agree\n↑/↓ Navigate · enter Toggle`,
+            `Choose your color scheme:\n> terminal\n↑/↓ Navigate · enter Confirm`,
+        ]
+        const { plan, choice } = get_patterns( `antigravity` )
+        for( const screen of screens ) {
+            expect( matches_patterns( screen, plan ) ).toBe( false )
+            expect( matches_patterns( screen, choice ) ).toBe( false )
+        }
     } )
 
 } )

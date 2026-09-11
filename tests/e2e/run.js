@@ -35,15 +35,15 @@ mkdirSync( workspaces_root, { recursive: true } )
 mkdirSync( workspace_tmp, { recursive: true } )
 mkdirSync( join( home, `.claude` ), { recursive: true } )
 mkdirSync( join( home, `.codex` ), { recursive: true } )
-mkdirSync( join( home, `.gemini` ), { recursive: true } )
+mkdirSync( join( home, `.gemini/antigravity-cli` ), { recursive: true } )
 mkdirSync( join( home, `.local/share/opencode` ), { recursive: true } )
 writeFileSync( join( home, `.claude/.credentials.json` ), JSON.stringify( { refresh_token: `e2e-claude-token` } ) )
 writeFileSync( join( home, `.codex/auth.json` ), JSON.stringify( { refresh_token: `e2e-original-token` } ) )
-writeFileSync( join( home, `.gemini/oauth_creds.json` ), JSON.stringify( { refresh_token: `e2e-gemini-token` } ) )
+writeFileSync( join( home, `.gemini/antigravity-cli/antigravity-oauth-token` ), JSON.stringify( { refresh_token: `e2e-antigravity-token` } ) )
 writeFileSync( join( home, `.local/share/opencode/auth.json` ), JSON.stringify( { refresh_token: `e2e-opencode-token` } ) )
 
 for( const agent of SUPPORTED_AGENTS ) {
-    symlinkSync( join( repo_root, `tests/e2e/assets/fake-agent.mjs` ), join( host_bin, agent ) )
+    symlinkSync( join( repo_root, `tests/e2e/assets/fake-agent.mjs` ), join( host_bin, agent === `antigravity` ? `agy` : agent ) )
 }
 
 const docker = async ( args, options = {} ) => {

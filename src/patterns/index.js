@@ -1,6 +1,6 @@
 import { claude_patterns } from './claude.js'
 import { codex_patterns } from './codex.js'
-import { gemini_patterns } from './gemini.js'
+import { antigravity_patterns } from './antigravity.js'
 import { opencode_patterns } from './opencode.js'
 
 /**
@@ -9,7 +9,7 @@ import { opencode_patterns } from './opencode.js'
 export const patterns = {
     claude: claude_patterns,
     codex: codex_patterns,
-    gemini: gemini_patterns,
+    antigravity: antigravity_patterns,
     opencode: opencode_patterns,
 }
 

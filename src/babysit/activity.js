@@ -1,6 +1,6 @@
 import { strip_ansi } from './matcher.js'
 
-const SUPPORTED_AGENTS = new Set( [ `codex`, `claude`, `gemini`, `opencode` ] )
+const SUPPORTED_AGENTS = new Set( [ `codex`, `claude`, `antigravity`, `opencode` ] )
 
 /**
  * Read activity from the agent's visible controls, rather than transcript motion.
@@ -39,8 +39,8 @@ export const agent_activity = ( output, agent_name ) => {
         if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
 
-    case `gemini`:
-        if( /(?:^|[│┃])\s*>?\s*Type your message or @path\/to\/file\b/m.test( footer ) ) return `idle`
+    case `antigravity`:
+        if( /^\s*>\s*$/m.test( footer ) && /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
 
     case `opencode`:

@@ -6,7 +6,7 @@ export const COMPLETION_PLUGIN_PATH = `/home/node/.config/opencode/plugins/babys
 // Kept in an imported JS module so Bun's standalone build includes the helper.
 // Python is already installed in the image; its TOML parser preserves arbitrary
 // existing Codex notify arrays without guessing at TOML syntax.
-export const COMPLETION_HELPER_SOURCE = String.raw`import json, os, pathlib, subprocess, sys, tempfile, datetime, tomllib, re, fcntl, uuid
+export const COMPLETION_HELPER_SOURCE = String.raw`import json, os, pathlib, subprocess, sys, tempfile, datetime, tomllib, re, fcntl, uuid, sqlite3
 
 
 def root_hook(agent):
@@ -59,6 +59,45 @@ def codex_root_session(session):
     return False
 
 
+
+def antigravity_root_session(session):
+    if not re.fullmatch(r'[a-fA-F0-9-]{36}', session):
+        return False
+    root = pathlib.Path.home() / '.gemini/antigravity-cli'
+    database = root / 'conversations' / (session + '.db')
+    if not database.is_file() or database.is_symlink():
+        return False
+    # Native source 17 is CORTEX_TRAJECTORY_SOURCE_CLI. In-process subagents
+    # share the CLI PID, so ancestry alone cannot establish the root binding.
+    with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=2) as db:
+        return db.execute('SELECT 1 FROM trajectory_meta WHERE cascade_id = ? AND source = 17 LIMIT 1', (session,)).fetchone() is not None
+
+
+def antigravity_response(session, payload):
+    if payload.get('fullyIdle') is not True or payload.get('error'):
+        return None
+    if payload.get('terminationReason') not in ('NO_TOOL_CALL', 'model_stop'):
+        return None
+    expected = pathlib.Path.home() / '.gemini/antigravity-cli/brain' / session / '.system_generated/logs/transcript_full.jsonl'
+    supplied = payload.get('transcriptPath')
+    if not isinstance(supplied, str) or pathlib.Path(supplied) != expected or expected.is_symlink():
+        return None
+    # The Stop hook supplies the full transcript. Keep only the final visible
+    # model response, never tool output or the separate thinking field.
+    latest = None
+    with expected.open() as stream:
+        for line in stream:
+            record = json.loads(line)
+            if record.get('type') == 'USER_INPUT':
+                latest = None
+            elif record.get('source') == 'MODEL' and record.get('type') == 'PLANNER_RESPONSE':
+                latest = record
+    if not latest or latest.get('status') != 'DONE' or latest.get('tool_calls'):
+        return None
+    payload['turn_id'] = str(payload.get('executionNum', '')) + ':' + str(latest.get('step_index', ''))
+    return latest.get('content')
+
+
 def durable_write(path, content):
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
     try:
@@ -81,7 +120,7 @@ def persist_receipt(agent, name, content):
     if os.environ.get('BABYSIT_RECOVERY_IDENTITY') != '1':
         return
     state = {'claude': '/home/node/.claude/projects', 'codex': '/home/node/.codex/sessions',
-             'gemini': '/home/node/.gemini/tmp', 'opencode': '/home/node/.local/share/opencode'}[agent]
+             'antigravity': '/home/node/.gemini/antigravity-cli', 'opencode': '/home/node/.local/share/opencode'}[agent]
     persisted = pathlib.Path(state, '.babysit-identities')
     persisted.mkdir(mode=0o700, parents=True, exist_ok=True)
     parent = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
@@ -102,16 +141,20 @@ def save_exit(agent, status, interrupted):
 def save(agent, payload):
     if agent == 'codex' and payload.get('type') not in ('agent-turn-complete', 'babysit-session-identity'):
         return
-    if agent in ('claude', 'gemini') and payload.get('hook_event_name') not in ('SessionStart', 'Stop' if agent == 'claude' else 'AfterAgent'):
+    if agent == 'claude' and payload.get('hook_event_name') not in ('SessionStart', 'Stop'):
+        return
+    if agent == 'antigravity' and payload.get('hook_event_name') not in ('PreInvocation', 'Stop'):
         return
     if not root_hook(agent):
         return
-    session = payload.get('thread-id') if agent == 'codex' else payload.get('session_id')
+    session = payload.get('thread-id') if agent == 'codex' else payload.get('conversationId') if agent == 'antigravity' else payload.get('session_id')
     if not isinstance(session, str) or not session or len(session) > 256:
         return
     if payload.get('agent_id') or payload.get('parent_session_id'):
         return
     if agent == 'codex' and not codex_root_session(session):
+        return
+    if agent == 'antigravity' and not antigravity_root_session(session):
         return
     path = pathlib.Path(os.environ['BABYSIT_COMPLETION_FILE'])
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -119,7 +162,7 @@ def save(agent, payload):
     fcntl.flock(lock, fcntl.LOCK_EX)
     binding = path.parent / 'session'
     if binding.exists() and binding.read_text() != session:
-        if payload.get('hook_event_name') != 'SessionStart' and agent not in ('codex', 'opencode'):
+        if payload.get('hook_event_name') not in ('SessionStart', 'PreInvocation') and agent not in ('codex', 'opencode'):
             return
     identity = json.dumps(dict(
         version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'], agent=agent,
@@ -135,10 +178,10 @@ def save(agent, payload):
         if payload.get('hook_event_name') != 'Stop':
             return
         text = payload.get('last_assistant_message')
-    elif agent == 'gemini':
-        if payload.get('hook_event_name') != 'AfterAgent':
+    elif agent == 'antigravity':
+        if payload.get('hook_event_name') != 'Stop':
             return
-        text = payload.get('prompt_response')
+        text = antigravity_response(session, payload)
     else:
         text = payload.get('text')
     if not isinstance(text, str) or not text.strip():
@@ -178,6 +221,21 @@ def launch(agent, command):
     os.environ['BABYSIT_COMPLETION_ROOT_PID'] = str(os.getpid())
     original = command.copy()
     os.environ.pop('BABYSIT_COMPLETION_RESUME_ID', None)
+    if agent == 'antigravity':
+        # agy otherwise warns and silently starts a new conversation for an
+        # unavailable --conversation ID. Refuse that before any prompt can run.
+        options = command[:command.index('--')] if '--' in command else command
+        for index, argument in enumerate(options):
+            if argument != '--conversation' and not argument.startswith('--conversation='):
+                continue
+            session = options[index + 1] if argument == '--conversation' and index + 1 < len(options) else argument.removeprefix('--conversation=')
+            try:
+                valid = antigravity_root_session(session)
+            except (OSError, sqlite3.Error):
+                valid = False
+            if not valid:
+                print('Cannot resume Antigravity: exact native conversation is unavailable.', file=sys.stderr)
+                sys.exit(1)
     if agent == 'opencode':
         # An explicit resume ID is authoritative; never infer it from recency.
         options = command[:command.index('--')] if '--' in command else command
@@ -219,6 +277,8 @@ if __name__ == '__main__':
         # Completion reporting must never block or alter an agent response.
         try:
             payload = json.loads(sys.argv[3]) if mode == 'codex' else json.load(sys.stdin)
+            if mode == 'antigravity':
+                payload['hook_event_name'] = sys.argv[2]
             save(mode, payload)
         except Exception:
             pass
@@ -302,17 +362,23 @@ export const completion_capture_mounts = agent => {
 
 /**
  * Append completion and session-binding hooks, retaining the user's hooks.
- * @param {Object} settings - Agent settings snapshot
- * @param {string} agent - Claude or Gemini
+ * @param {Object} settings - Claude settings or Antigravity hooks.json snapshot
+ * @param {string} agent - Claude or Antigravity
  * @returns {Object} Updated settings
  */
 export const add_completion_hooks = ( settings, agent ) => {
 
-    const event = agent === `claude` ? `Stop` : `AfterAgent`
+    if( agent === `antigravity` ) {
+        settings[ `babysit-completion` ] = Object.fromEntries( [ `PreInvocation`, `Stop` ].map( event => [ event, [ {
+            type: `command`, command: `python3 ${ COMPLETION_HELPER_PATH } antigravity ${ event }`, timeout: 5,
+        } ] ] ) )
+        return settings
+    }
+
     const command = `python3 ${ COMPLETION_HELPER_PATH } ${ agent }`
-    const hook = { hooks: [ { type: `command`, command, timeout: agent === `gemini` ? 5000 : 5 } ] }
+    const hook = { hooks: [ { type: `command`, command, timeout: 5 } ] }
     settings.hooks = { ...settings.hooks }
-    for( const name of [ `SessionStart`, event ] ) {
+    for( const name of [ `SessionStart`, `Stop` ] ) {
         settings.hooks[ name ] = [ ...settings.hooks[ name ] || [], hook ]
     }
     return settings

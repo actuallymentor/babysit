@@ -65,3 +65,6 @@
 - 2026-09-10: Validate `BABYSIT_HOME` with 902 CLI tests, web/browser/tmux/PTY checks, custom-root Docker lifecycles, and all four default-root crash-recovery adapters. Compiled CLI writes, real Compose expansion, and systemd syntax checks pass. Nested-Docker clone launch remains skipped by the existing suite.
 
 - 2026-09-10: Post-commit review added a real service-account storage-access prerequisite, including missing roots, regular files, broken symlinks, and unwritable roots. Keep access checks read-only during recovery setup.
+
+- 2026-09-11: User requested replacing Gemini CLI with Antigravity, real testing, and push. Verified agy native interactive/hooks/resume behavior with local model responses; retained explicit limitation on live Google account validation.
+- 2026-09-11: Antigravity replacement validation passed: 926 CLI tests, browser/bridge/prune checks, four real agy local-endpoint checks, final Docker image/API-provider bootstrap, and all four agents' lifecycle/crash recovery. Nested clone E2E skipped by harness; live Google auth pending user login. Installed agy 1.2.1 here at user request.

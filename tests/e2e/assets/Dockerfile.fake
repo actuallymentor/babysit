@@ -6,7 +6,7 @@ COPY fake-agent.mjs /usr/local/e2e-bin/fake-agent.mjs
 RUN chmod +x /usr/local/e2e-bin/fake-agent.mjs \
     && ln -sf /usr/local/e2e-bin/fake-agent.mjs /usr/local/e2e-bin/codex \
     && ln -sf /usr/local/e2e-bin/fake-agent.mjs /usr/local/e2e-bin/claude \
-    && ln -sf /usr/local/e2e-bin/fake-agent.mjs /usr/local/e2e-bin/gemini \
+    && ln -sf /usr/local/e2e-bin/fake-agent.mjs /usr/local/e2e-bin/agy \
     && ln -sf /usr/local/e2e-bin/fake-agent.mjs /usr/local/e2e-bin/opencode
 
 ENV PATH="/usr/local/e2e-bin:${PATH}"

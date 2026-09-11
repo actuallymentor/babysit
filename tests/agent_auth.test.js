@@ -135,8 +135,8 @@ describe( `host agent auth checks`, () => {
             .toEqual( [ `-p`, prompt, `--no-session-persistence` ] )
         expect( build_host_auth_args( get_agent( `codex` ), prompt ) )
             .toEqual( [ `exec`, `--ephemeral`, `--skip-git-repo-check`, `--color`, `never`, prompt ] )
-        expect( build_host_auth_args( get_agent( `gemini` ), prompt ) )
-            .toEqual( [ `--skip-trust`, `-p`, prompt ] )
+        expect( build_host_auth_args( get_agent( `antigravity` ), prompt ) )
+            .toEqual( [ `--print`, prompt ] )
         expect( build_host_auth_args( get_agent( `opencode` ), prompt, {
             route: {},
             env: {},
@@ -426,11 +426,10 @@ describe( `host agent auth checks`, () => {
 
         try {
             mkdirSync( join( home_dir, `.codex` ) )
-            mkdirSync( join( home_dir, `.gemini` ) )
+            mkdirSync( join( home_dir, `.gemini`, `antigravity-cli` ), { recursive: true } )
             writeFileSync( rc_path, `CUSTOM_API_KEY=test\n` )
             writeFileSync( join( home_dir, `.codex`, `config.toml` ), `model_provider = "custom"\n` )
-            writeFileSync( join( home_dir, `.gemini`, `settings.json` ), `{}` )
-            writeFileSync( join( home_dir, `.gemini`, `google_accounts.json` ), `{}` )
+            writeFileSync( join( home_dir, `.gemini`, `antigravity-cli`, `settings.json` ), `{}` )
 
             expect( resolve_host_auth_context_files( {}, {
                 agent: get_agent( `codex` ),
@@ -442,15 +441,14 @@ describe( `host agent auth checks`, () => {
                 codex_config: join( home_dir, `.codex`, `config.toml` ),
             } )
             expect( resolve_host_auth_context_files( { ignore_host_agents_md: true }, {
-                agent: get_agent( `gemini` ),
+                agent: get_agent( `antigravity` ),
                 env: {},
                 home_dir,
             } ) ).toEqual( {
-                gemini_settings: {
-                    path: join( home_dir, `.gemini`, `settings.json` ),
+                antigravity_settings: {
+                    path: join( home_dir, `.gemini`, `antigravity-cli`, `settings.json` ),
                     transform: expect.any( Function ),
                 },
-                gemini_account: join( home_dir, `.gemini`, `google_accounts.json` ),
             } )
         } finally {
             rmSync( home_dir, { recursive: true, force: true } )
@@ -461,11 +459,11 @@ describe( `host agent auth checks`, () => {
     it( `selects configured host auth-check agents`, () => {
         const agents = select_host_auth_check_agents( {
             read_config: () => ( {
-                auth_check_agents: [ `codex`, `gemini`, `missing` ],
+                auth_check_agents: [ `codex`, `antigravity`, `missing` ],
             } ),
         } )
 
-        expect( agents.map( agent => agent.name ) ).toEqual( [ `codex`, `gemini` ] )
+        expect( agents.map( agent => agent.name ) ).toEqual( [ `codex`, `antigravity` ] )
     } )
 
     it( `runs a Dockerized agent auth command and treats exit zero as authenticated`, async () => {
@@ -555,7 +553,7 @@ describe( `host agent auth checks`, () => {
     } )
 
     it( `requires the prompt response to include ok`, async () => {
-        const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
+        const result = await run_host_agent_auth_check( get_agent( `antigravity` ), {
             prompt: `hello`,
             prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( { code: 0, stdout: `choose an auth method` } ),
@@ -584,7 +582,7 @@ describe( `host agent auth checks`, () => {
     } )
 
     it( `classifies missing underscored API-key environment variables as unauthenticated`, async () => {
-        const result = await run_host_agent_auth_check( get_agent( `gemini` ), {
+        const result = await run_host_agent_auth_check( get_agent( `antigravity` ), {
             prompt: `hello`,
             prepare_launch: fake_prepared_launch(),
             spawn_fn: fake_spawn( {
@@ -1067,14 +1065,14 @@ describe( `host agent auth checks`, () => {
         const names = unauthenticated_agent_names( [
             { name: `codex`, status: `skipped`, authenticated: false },
             { name: `claude`, status: `cancelled`, authenticated: false },
-            { name: `gemini`, status: `unauthenticated`, authenticated: false },
+            { name: `antigravity`, status: `unauthenticated`, authenticated: false },
             { name: `opencode`, status: `failed`, authenticated: false },
             { name: `legacy`, authenticated: false },
         ] )
 
-        expect( names ).toEqual( [ `gemini`, `legacy` ] )
+        expect( names ).toEqual( [ `antigravity`, `legacy` ] )
         expect( failed_agent_names( [
-            { name: `gemini`, status: `unauthenticated` },
+            { name: `antigravity`, status: `unauthenticated` },
             { name: `opencode`, status: `failed` },
         ] ) ).toEqual( [ `opencode` ] )
     } )
@@ -1141,11 +1139,11 @@ describe( `host agent auth checks`, () => {
         } )
 
         await expect(
-            confirm_continue_with_unauthenticated_agents( [ `gemini` ], { input, output } )
+            confirm_continue_with_unauthenticated_agents( [ `antigravity` ], { input, output } )
         ).resolves.toBe( false )
         expect( rendered ).toBe(
             [
-                `Unauthenticated agents: gemini.`,
+                `Unauthenticated agents: antigravity.`,
                 `Run \`babysit doctor --auth\` to check authentication explicitly.`,
                 `Exit? [Y/n] \n`,
             ].join( `\n` )

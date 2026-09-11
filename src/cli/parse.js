@@ -32,9 +32,11 @@ const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents` ] )
  */
 export const parse_args = ( argv ) => {
 
+    if( argv[0] === `gemini` ) throw new Error( `Gemini CLI support was replaced by Antigravity. Use babysit antigravity; existing Gemini conversations cannot be resumed with Antigravity.` )
+
     // Pre-process so a bare `--log` (no value) becomes `--log=` and mri's
     // `string` consumer doesn't grab the next flag as the value.
-    const prepared = normalise_value_flags( argv )
+    const prepared = normalise_value_flags( argv[0] === `agy` ? [ `antigravity`, ...argv.slice( 1 ) ] : argv )
 
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.

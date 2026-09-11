@@ -6,10 +6,8 @@ with simple rules.
 
 Supports [Claude](https://docs.anthropic.com/en/docs/claude-code),
 [Codex](https://github.com/openai/codex),
-[Gemini](https://github.com/google-gemini/gemini-cli), and
-[OpenCode](https://github.com/anomalyco/opencode). Gemini supports enterprise
-Code Assist and API-key accounts. Individual Google accounts moved to
-Antigravity, which Babysit does not support.
+[Antigravity CLI](https://antigravity.google/docs/cli/overview/), and
+[OpenCode](https://github.com/anomalyco/opencode).
 
 ## Install
 
@@ -29,7 +27,7 @@ babysit "feature 1"             # Launcher with a session name
 babysit claude --yolo
 babysit codex --clone --name "feature 1"
 babysit codex --sandbox --loop
-babysit gemini --mudbox
+babysit antigravity --mudbox
 ```
 
 The launcher selects an agent CLI on the Model row. Use ↑/↓ to navigate,
@@ -43,6 +41,14 @@ keep their existing behavior and do not read or update menu defaults. The menu
 requires an interactive terminal; scripts should use explicit agent commands.
 
 Codex defaults to `gpt-6-astra` with `medium` reasoning.
+
+Antigravity runs Google's `agy` CLI. Sign in with `agy` on the host first, or
+export `GEMINI_API_KEY` for API-key access. Babysit carries the credentials into
+the container; `GEMINI_API_KEY` takes precedence over OAuth. Complete Antigravity's
+first-run setup and workspace trust prompt before sending a task; `--yolo` does
+not bypass that native setup. Gemini CLI sessions are not migrated to Antigravity.
+Linux desktop keyring capture requires `secret-tool` (`libsecret-tools`);
+file-based credentials and API keys work without it.
 
 Detach with `Ctrl+B d`. Reattach with `babysit open`. Unrecognized flags pass
 through to the agent:
@@ -168,9 +174,10 @@ If its effort lookup fails, OpenCode warns and uses the TUI variant for that req
 Supported values come from the current model; they are not limited to `high`.
 
 Requires the updated Docker image and supported CLIs (verified with Codex 0.153.4
-and OpenCode 1.18.29). Existing containers need a new launch. Claude and Gemini
-are unsupported. Explicit remote/headless sessions, Codex `--profile`, and
-OpenCode `--pure` retain their normal launch without effort controls.
+and OpenCode 1.18.29). Existing containers need a new launch. Claude and Antigravity
+do not support live `babysit effort` controls; Antigravity accepts `--effort` at
+launch. Explicit remote/headless sessions, Codex `--profile`, and OpenCode `--pure`
+retain their normal launch without effort controls.
 
 ## Supervision
 
@@ -306,7 +313,8 @@ npm run test:all
 ```
 
 `test:all` checks CLI units, web API/browser interactions, browser-to-tmux
-delivery, and Docker session lifecycles. Requires Docker, tmux, Python 3, and
+delivery, real Antigravity CLI behavior, and Docker session lifecycles. Requires
+Docker, tmux, Python 3, `agy` (`AGY_E2E_BINARY` overrides discovery), and
 Chrome/Chromium (`CHROME_PATH` overrides discovery). Missing prerequisites fail
 the run. Pull requests and main pushes run the same suite. Clone E2E requires
 host execution; nested Docker runs skip it, while CI runs it on the host.
@@ -318,6 +326,7 @@ npm run test:cli
 npm run test:web
 npm run test:bridge # Build web assets first: npm run build --prefix web
 npm run test:prune # Interactive CLI pruning through a real terminal
+npm run test:antigravity # Real agy TUI/hooks/resume against a local model fixture
 npm run test:e2e   # Docker launch, send, detach, resume, recovery, cleanup
 node tests/e2e/status.js # Focused activity regression with Docker and tmux
 ```

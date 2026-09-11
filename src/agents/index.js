@@ -1,6 +1,6 @@
 import { claude } from './claude.js'
 import { codex } from './codex.js'
-import { gemini } from './gemini.js'
+import { antigravity } from './antigravity.js'
 import { opencode } from './opencode.js'
 
 /**
@@ -9,7 +9,7 @@ import { opencode } from './opencode.js'
 const agents = {
     claude,
     codex,
-    gemini,
+    antigravity,
     opencode,
 }
 
@@ -20,7 +20,7 @@ export const SUPPORTED_AGENTS = Object.keys( agents )
 
 /**
  * Get an agent adapter by name
- * @param {string} name - Agent name (claude, codex, gemini, opencode)
+ * @param {string} name - Agent name (claude, codex, antigravity, opencode)
  * @returns {Object|null} Agent adapter or null if unknown
  */
 export const get_agent = ( name ) => agents[ name ] || null

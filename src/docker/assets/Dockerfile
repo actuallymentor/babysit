@@ -153,7 +153,8 @@ RUN mkdir -p \
         /home/node/.claude/todos \
         /home/node/.codex/sessions \
         /home/node/.codex/sqlite \
-        /home/node/.gemini/tmp \
+        /home/node/.gemini/antigravity-cli \
+        /home/node/.gemini/config \
         /home/node/.config/gh \
         /home/node/.config/opencode/plugins \
         /home/node/.local/share/opencode \
@@ -170,6 +171,8 @@ RUN mkdir -p \
 # image needs to point to a baked file anymore.
 COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY antigravity-auth.py /usr/local/bin/antigravity-auth.py
+COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit
@@ -181,12 +184,12 @@ RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 
-# Codex (OpenAI), Gemini CLI, and Puppeteer — refresh together via npm as root.
+# Codex (OpenAI) and Puppeteer — refresh together via npm as root.
 # Corepack gives agents pnpm/yarn when project package-manager metadata expects
 # them. The root-level symlink makes the global Puppeteer package resolvable by
 # both CommonJS and ESM scripts anywhere below /workspace.
 RUN corepack enable \
-    && npm install -g @openai/codex @google/gemini-cli puppeteer \
+    && npm install -g @openai/codex puppeteer \
     && mkdir -p /node_modules \
     && ln -s "$(npm root -g)/puppeteer" /node_modules/puppeteer
 
@@ -208,6 +211,9 @@ RUN set -eux; \
         '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' \
         '[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"' \
         >> /home/node/.bashrc
+
+# Antigravity — native amd64/arm64 CLI, checksum verified.
+RUN bash /usr/local/bin/install-antigravity.sh
 
 # Claude Code — installs into /home/node
 RUN curl -fsSL https://claude.ai/install.sh | bash
@@ -237,7 +243,7 @@ RUN set -eux; \
         pkgconf pkg-config pstree fuser killall socat getfacl setfacl \
         inotifywait inotifywatch entr shfmt git-filter-repo \
         ctags ctags-universal readtags qpdf \
-        codex gemini claude opencode babysit \
+        codex agy claude opencode babysit \
     ; do \
         gosu node sh -c 'command -v "$1"' babysit-command "$cmd"; \
     done; \

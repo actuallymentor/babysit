@@ -6,7 +6,9 @@ import { spawnSync } from 'node:child_process'
 import { CHECK_TRANSCRIPT, verify_session_transcript, refresh_durable_identity, read_durable_exit } from '../src/sessions/transcript.js'
 
 let directory
-beforeEach( () => { directory = mkdtempSync( join( tmpdir(), `babysit-transcripts-` ) ) } )
+beforeEach( () => {
+    directory = mkdtempSync( join( tmpdir(), `babysit-transcripts-` ) )
+} )
 afterEach( () => rmSync( directory, { recursive: true, force: true } ) )
 
 const fixture = ( file, content ) => {
@@ -48,13 +50,24 @@ describe( `exact native transcript verification`, () => {
         expect( check( `codex`, `root` ) ).toBe( false )
     } )
 
-    it( `supports Gemini legacy JSON and current JSONL metadata with exact IDs`, () => {
-        const file = fixture( `.gemini/tmp/project/chats/session-date-short.json`, JSON.stringify( { sessionId: `root`, projectHash: `project`, messages: [] }, null, 2 ) )
-        expect( check( `gemini`, `root` ) ).toBe( true )
-        expect( check( `gemini`, `roo` ) ).toBe( false )
+    it( `requires Antigravity exact native CLI trajectory data rather than transcript filenames`, () => {
+        const file = join( directory, `.gemini/antigravity-cli/conversations/root.db` )
+        mkdirSync( join( directory, `.gemini/antigravity-cli/conversations` ), { recursive: true } )
+        const setup = spawnSync( `python3`, [ `-c`, `import sqlite3,sys
+with sqlite3.connect(sys.argv[1]) as db:
+ db.execute('CREATE TABLE trajectory_meta (cascade_id TEXT, source INTEGER)')
+ db.execute('CREATE TABLE steps (idx INTEGER)')
+ db.execute('INSERT INTO trajectory_meta VALUES (?, ?)', ('root', 17))
+ db.execute('INSERT INTO steps VALUES (0)')`, file ] )
+        expect( setup.status ).toBe( 0 )
+        expect( check( `antigravity`, `root` ) ).toBe( true )
+        expect( check( `antigravity`, `roo` ) ).toBe( false )
+        spawnSync( `python3`, [ `-c`, `import sqlite3,sys
+with sqlite3.connect(sys.argv[1]) as db: db.execute('UPDATE trajectory_meta SET source = 16')`, file ] )
+        expect( check( `antigravity`, `root` ) ).toBe( false )
         rmSync( file )
-        fixture( `.gemini/tmp/project/chats/session-date-short.jsonl`, `${ JSON.stringify( { sessionId: `root`, projectHash: `project` } ) }\n${ JSON.stringify( { id: `message`, type: `user`, content: `Continue` } ) }\n` )
-        expect( check( `gemini`, `root` ) ).toBe( true )
+        fixture( `.gemini/antigravity-cli/brain/root/.system_generated/logs/transcript.jsonl`, { type: `USER_INPUT`, content: `Hi` } )
+        expect( check( `antigravity`, `root` ) ).toBe( false )
     } )
 
     it( `validates OpenCode legacy JSON instead of trusting a filename`, () => {
@@ -92,7 +105,9 @@ os._exit(0)`, file ] )
     it( `checks existing volume names before running an isolated read-only probe`, async () => {
         const calls = []
         const session = { agent: `codex`, agent_session_id: `root`, original_pwd: directory, image_id: `sha256:${ `a`.repeat( 64 ) }` }
-        await verify_session_transcript( session, { run_command: async ( command, args ) => { calls.push( args ) } } )
+        await verify_session_transcript( session, { run_command: async ( command, args ) => {
+            calls.push( args )
+        } } )
         expect( calls[ 0 ] ).toContain( `inspect` )
         expect( calls[ 1 ] ).toContain( `--read-only` )
         expect( calls[ 1 ] ).toContain( `/tmp:rw,nosuid,nodev,size=512m` )

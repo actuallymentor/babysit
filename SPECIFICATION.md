@@ -1,4 +1,4 @@
-This cli is called `babysit`. It is designed as a supervisor for LLM coding agent clis like `claude`, `codex`, `gemini`, and `opencode`. It is the spiritual successor of [sir-claudius](https://github.com/actuallymentor/sir-claudius). You should clone and read the claudius source code to learn from the lessons of that project timeline. You do NOT have to implement all sir-claudius features.
+This cli is called `babysit`. It is designed as a supervisor for LLM coding agent clis like `claude`, `codex`, `antigravity`, and `opencode`. It is the spiritual successor of [sir-claudius](https://github.com/actuallymentor/sir-claudius). You should clone and read the claudius source code to learn from the lessons of that project timeline. You do NOT have to implement all sir-claudius features.
 
 In order to implement the coding agents properly, you will need to browse the web for their documentation.
 
@@ -136,7 +136,7 @@ Check if the specification is fully implemented
 `babysit prune` - reports the managed clone count and interactively prunes copies unused for 30 days by default, all copies not in use, or copies older than a custom whole number of days. It previews candidates and requires explicit default-no confirmation.
 `babysit prune --list` - noninteractively lists all managed clone copies with their allocated directory sizes, last-use times, status, and paths.
 `babysit codex --ignore-host-agents-md` - starts a codex session without host-global agent instructions, skills, or preferences. Host credentials remain mounted, and project-local instructions inside `/workspace` still apply.
-`babysit gemini --mudbox --yolo` - starts a gemini session in mudbox mode, so the current directory is mounted read-only and the agent can explore files but not modify them. Also sets AGENT_AUTONOMY_MODE to yolo, sets system prompt accordingly, and sets dangerourly skip permissions or equivalent for maximum agent autonomy.
+`babysit antigravity --mudbox --yolo` - starts an Antigravity CLI session in mudbox mode, so the current directory is mounted read-only and the agent can explore files but not modify them. Also sets AGENT_AUTONOMY_MODE to yolo, sets system prompt accordingly, and sets dangerourly skip permissions or equivalent for maximum agent autonomy.
 `babysit opencode resume xxxx-xxxx-xxxx-xxxx --yolo` - resumes a opencode session with the given id, in yolo mode (AGENT_AUTONOMY_MODE=yolo, system prompt configured accordingly, and maximum agent autonomy permissions enabled).
 
 ## Feature list in no particular order

@@ -1,9 +1,10 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { log } from '../utils/log.js'
 import { run_sync } from '../utils/exec.js'
-import { copy_host_file_to_private_tmpfile, private_credential_tmpdir } from '../utils/tmpfile.js'
+import { build_private_tmpfile, copy_host_file_to_private_tmpfile, private_credential_tmpdir } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
+import { start_keyring_sync } from './keyring.js'
 
 const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
 
@@ -33,8 +34,38 @@ export const setup_linux_credentials = async ( agent, {
     let baseline = sync_baseline
     let cleanup_path = private_credential_tmpdir( existing_tmpfile )
 
-    // File-based credentials (Claude, OpenCode, Codex OAuth, Gemini OAuth)
-    if( cred_config.file ) {
+    if( cred_config.secret_service ) {
+
+        // go-keyring stores these exact attributes in the desktop Secret Service.
+        // Missing secret-tool or a locked/unavailable keyring falls back to a file.
+        const { service, account } = cred_config.secret_service
+        const read_source = async () => run_command(
+            `secret-tool lookup service "${ service }" username "${ account }" 2>/dev/null`,
+            { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
+        )
+        const credential = await read_source()
+        if( credential || existing_tmpfile && baseline?.credential_source === `keyring` ) {
+
+            const transport = existing_tmpfile ? null : build_private_tmpfile(
+                `creds-${ agent.name }`, `auth`, credential, { file_mode: 0o666 }
+            )
+            const tmpfile = existing_tmpfile || transport?.file
+            if( tmpfile ) {
+                if( transport ) {
+                    cleanup_path = transport.directory
+                    mounts.push( { type: `synced_file`, source: tmpfile, target: agent.container_paths.creds } )
+                }
+                sync = start_keyring_sync( read_source, tmpfile, baseline )
+                baseline = sync.baseline()
+                log.info( `Credentials loaded from Linux Secret Service (${ service })` )
+            }
+
+        }
+
+    }
+
+    // OAuth files remain bidirectional so container refreshes reach the host.
+    if( !sync && cred_config.file ) {
 
         const expanded = resolve_credential_file( cred_config.file )
 

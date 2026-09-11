@@ -8,6 +8,7 @@ import {
 } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
+import { start_keyring_sync } from './keyring.js'
 
 const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
 
@@ -40,6 +41,8 @@ export const setup_darwin_credentials = async ( agent, {
     // Keychain-based credentials (e.g. Claude on macOS)
     if( cred_config.keychain_service ) {
 
+        const keychain_selector = `-s "${ cred_config.keychain_service }"${ cred_config.keychain_account ? ` -a "${ cred_config.keychain_account }"` : `` }`
+
         // Phase 1: detect without reading secrets. Always run this — even
         // when re-using an existing tmpfile (monitor path) — because we need
         // to know whether the foreground took the keychain branch or the
@@ -48,11 +51,11 @@ export const setup_darwin_credentials = async ( agent, {
         // has a fallback auth.json would get a one-way keychain sync in the
         // monitor instead of the bidirectional file sync the foreground set up.
         const exists = run_command(
-            `security find-generic-password -s "${ cred_config.keychain_service }" 2>/dev/null`,
+            `security find-generic-password ${ keychain_selector } 2>/dev/null`,
             { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
         )
 
-        if( exists !== null ) {
+        if( exists !== null || existing_tmpfile && baseline?.credential_source === `keyring` ) {
 
             let tmpfile = existing_tmpfile
 
@@ -70,7 +73,7 @@ export const setup_darwin_credentials = async ( agent, {
 
                 // Phase 2: capture after pre-flight rotation
                 const creds_json = run_command(
-                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`,
+                    `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
                     { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
                 )
 
@@ -105,10 +108,11 @@ export const setup_darwin_credentials = async ( agent, {
             if( tmpfile ) {
 
                 const read_source = async () => run_command(
-                    `security find-generic-password -s "${ cred_config.keychain_service }" -w 2>/dev/null`,
+                    `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
                     { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
                 )
-                sync = start_credential_sync( read_source, tmpfile, null, baseline || {} )
+                sync = start_keyring_sync( read_source, tmpfile, baseline )
+                baseline = sync.baseline()
 
                 log.info( `Credentials loaded from macOS Keychain (${ cred_config.keychain_service })` )
 

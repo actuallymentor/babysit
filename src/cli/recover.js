@@ -17,6 +17,7 @@ import { is_monitor_alive } from './monitor_process.js'
 /** Explain why a durable launch cannot be automatically replayed. */
 export const recovery_blocker = ( session, { replay = true } = {} ) => {
 
+    if( session.agent === `gemini` ) return `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.`
     if( session.recovery_version !== 1 ) return `Legacy session has no recovery intent; use babysit resume explicitly`
     if( !session.expected_open ) return `Intentionally closed`
     if( session.modifiers?.includes( `sandbox` ) ) return `Sandbox state is ephemeral`
@@ -41,7 +42,7 @@ const continuation_result = session => {
 
 }
 
-const AUTH_ENVIRONMENT = [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `GEMINI_CLI_HOME`, `OPENCODE_CONFIG_DIR` ]
+const AUTH_ENVIRONMENT = [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
 
 /** Scope credential cleanup and relaunch to the original host profile. */
 const use_launch_environment = session => {

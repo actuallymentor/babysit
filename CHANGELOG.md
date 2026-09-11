@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0 — 2026-09-11
+
+### Breaking
+- Replace Gemini CLI with Antigravity (`babysit antigravity` / `babysit agy`).
+- Reject legacy Gemini sessions; start a new Antigravity conversation.
+
+### Added
+- Carry native Antigravity credentials, settings, hooks, and conversation state.
+- Verify interactive completion and exact resume with the real `agy` binary.
+
 ## 0.44.0 — 2026-09-10
 
 ### Added
