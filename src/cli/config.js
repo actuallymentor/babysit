@@ -1,5 +1,14 @@
 import { SUPPORTED_AGENTS } from '../agents/index.js'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+import { BABYSIT_DIR, SESSIONS_DIR, CLONES_DIR, AGENTS_DIR, TMUX_SOCKET } from '../utils/paths.js'
+import { get_image_name } from '../docker/update.js'
+import { read_launch_defaults } from '../babysit/launch_defaults.js'
+import { web_bridge_paths } from '../web_bridge/paths.js'
+import { read_recovery_status } from './config_status.js'
 import {
+    BABYSIT_CONFIG_PATH,
     DEFAULT_AUTH_CHECK_AGENTS,
     read_babysit_config,
     normalise_auth_check_agents,
@@ -49,7 +58,7 @@ export const parse_auth_check_agent_selection = ( input, {
 }
 
 /**
- * `babysit config` — edit host-level Babysit settings.
+ * `babysit config` — inspect effective settings without creating configuration.
  * @param {Object} cmd - Parsed command
  * @param {Object} [io]
  * @param {NodeJS.ReadableStream} [io.input] - Prompt input
@@ -59,7 +68,8 @@ export const parse_auth_check_agent_selection = ( input, {
 export const cmd_config = async ( cmd, {
     input = process.stdin,
     output = process.stdout,
-    config_path = undefined,
+    config_path = BABYSIT_CONFIG_PATH,
+    recovery_status = read_recovery_status,
 } = {} ) => {
 
     const current_config = read_babysit_config( { config_path } )
@@ -77,7 +87,36 @@ export const cmd_config = async ( cmd, {
         return
     }
 
-    output.write( `\nbabysit config\n\n` )
+    const recovery = await recovery_status()
+    const defaults = read_launch_defaults()
+    const web = web_bridge_paths()
+    const file_status = path => `${ path } (${ existsSync( path ) ? `present` : `not present` })`
+    const toggle = enabled => enabled ? `on` : `off`
+    const rows = [
+        [ `Home directory`, `${ BABYSIT_DIR } (${ process.env.BABYSIT_HOME ? `BABYSIT_HOME` : `default` })` ],
+        [ `Config file`, file_status( config_path ) ],
+        [ `Sessions directory`, SESSIONS_DIR ],
+        [ `Clones directory`, CLONES_DIR ],
+        [ `Agent configuration`, AGENTS_DIR ],
+        [ `Host rc`, process.env.BABYSIT_HOST_BABYSITRC
+            ? `${ process.env.BABYSIT_HOST_BABYSITRC } (inherited)`
+            : file_status( join( homedir(), `.babysitrc` ) ) ],
+        [ `Workspace config`, file_status( join( process.cwd(), `babysit.yaml` ) ) ],
+        [ `Tmux socket`, TMUX_SOCKET ],
+        [ `Docker image`, get_image_name() ],
+        [ `Web bridge directory`, web.root ],
+        [ `Web access file`, file_status( web.access ) ],
+        [ `Recovery unit`, recovery.unit ],
+        [ `Recovery installed`, recovery.installed === null ? `unknown` : recovery.installed ? `yes` : `no` ],
+        [ `Recovery enablement`, recovery.enabled ],
+        [ `Recovery state`, recovery.active === `unknown` ? `unknown (systemd unavailable or inaccessible)` : recovery.active ],
+        [ `Menu default agent`, defaults.agent ],
+        [ `Menu default mode`, defaults.mode ],
+        [ `Menu default flags`, `yolo ${ toggle( defaults.yolo ) }, clone ${ toggle( defaults.clone ) }, loop ${ toggle( defaults.loop ) }, Docker access ${ toggle( defaults.docker ) }` ],
+    ]
+
+    output.write( `\nbabysit config\n\n${ rows.map( ( [ label, value ] ) => `${ `${ label }:`.padEnd( 24 ) }${ value }` ).join( `\n` ) }\n\n` )
+    output.write( `Boot recovery setup: babysit recover init (Ubuntu/systemd)\n` )
     output.write( `Startup authentication: active agent plus supported host-installed CLIs, with concurrent misses and a 12-hour auth-input-bound success cache\n` )
     output.write( `Explicit checks: babysit doctor --auth [agent|all]\n` )
     output.write(

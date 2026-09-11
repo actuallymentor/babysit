@@ -21,7 +21,7 @@ Usage:
   babysit recover [session_id]        Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
   babysit close <session_id>           Close intentionally; disable recovery for this launch
-  babysit config                       Configure babysit settings
+  babysit config                       Show settings and setup status
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit web init                     Initialize or rotate babysit-web access
   babysit doctor --auth [agent|all]    Verify real agent authentication

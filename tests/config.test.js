@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { PassThrough } from 'stream'
@@ -88,6 +89,43 @@ describe( `babysit config`, () => {
         expect( rendered ).toContain( `Startup authentication: active agent plus supported host-installed CLIs` )
         expect( rendered ).toContain( `babysit doctor --auth` )
         expect( rendered ).toContain( `Legacy authentication selection: codex, claude` )
+    } )
+
+    it( `prints effective CLI paths without creating settings or exposing credentials`, () => {
+        const directory = mkdtempSync( join( tmpdir(), `babysit-config-status-` ) )
+        const home = join( directory, `account` )
+        const state = join( directory, `custom state` )
+        const web = join( directory, `web` )
+        const marker = join( home, `rc-was-sourced` )
+        const secret = `do-not-print-this-test-secret`
+        mkdirSync( home )
+        writeFileSync( join( home, `.babysitrc` ), `touch '${ marker }'\nTOKEN=${ secret }\n` )
+        const env = { ...process.env, HOME: home, BABYSIT_HOME: state,
+            BABYSIT_WEB_BRIDGE_DIR: web, BABYSIT_TMUX_SOCKET: `config-test`,
+            BABYSIT_DOCKER_IMAGE: `example/babysit:test`,
+        }
+        delete env.BABYSIT_HOST_BABYSITRC
+
+        try {
+            const run_config = () => execFileSync( process.execPath, [ `src/index.js`, `config` ], { env, encoding: `utf8` } )
+            const output = run_config()
+            for( const expected of [ `${ state } (BABYSIT_HOME)`, join( state, `sessions` ), join( state, `clones` ), web, `config-test`, `example/babysit:test`, `Recovery installed:` ] ) {
+                expect( output ).toContain( expected )
+            }
+            expect( output ).not.toContain( secret )
+            expect( existsSync( state ) ).toBe( false )
+            expect( existsSync( web ) ).toBe( false )
+            expect( existsSync( marker ) ).toBe( false )
+
+            mkdirSync( state )
+            writeFileSync( join( state, `launch-defaults.json` ), JSON.stringify( { global: { agent: `antigravity`, mode: `mudbox`, yolo: true } } ) )
+            const configured = run_config()
+            expect( configured ).toMatch( /Menu default agent:\s+antigravity/ )
+            expect( configured ).toMatch( /Menu default mode:\s+mudbox/ )
+            expect( configured ).toContain( `yolo on` )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
     } )
 
 } )

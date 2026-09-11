@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 — 2026-09-11
+
+### Added
+- Show effective paths, menu defaults, and setup status with `babysit config`.
+- Report recovery installation, enablement, and runtime state separately.
+
 ## 1.0.0 — 2026-09-11
 
 ### Breaking
