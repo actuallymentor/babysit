@@ -279,6 +279,16 @@ the service publishes no host port. Preserve the original host,
 - Authentication checks use real model requests and cache successes for 12
   hours. Add `--refresh` to `babysit doctor --auth` to bypass the cache.
 
+Inspect effective settings without changing files:
+
+```bash
+babysit config
+```
+
+Shows storage/config paths, Docker image, tmux socket, web access file, menu
+defaults for the current workspace, and boot recovery status. Unavailable
+systemd checks report `unknown`; enabled and runtime state are separate.
+
 Set an absolute host storage path in your shell profile:
 
 ```bash
