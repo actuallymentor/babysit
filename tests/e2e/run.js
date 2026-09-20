@@ -206,6 +206,11 @@ const latest_session = () => {
     return sessions.sort( ( a, b ) => String( b.started_at ).localeCompare( String( a.started_at ) ) )[0]
 }
 
+const capture = async ( session ) => {
+    const { stdout } = await tmux( [ `capture-pane`, `-t`, session.tmux_session, `-p`, `-S`, `-1000` ] )
+    return stdout
+}
+
 const launch_babysit_command = async ( workspace, args, timeout_ms = 360_000 ) => {
 
     // In a non-TTY test process, Babysit's foreground tmux attach exits
@@ -227,6 +232,12 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 360_000 ) =
         }
     }, 10_000 )
 
+    // Tmux exists before the fixture composer accepts input. Each replacement
+    // has a fresh pane, so this cannot reuse a previous launch's marker file.
+    await wait_until( `agent composer ${ session.tmux_session }`, async () =>
+        ( await capture( session ) ).includes( `FAKE_AGENT_READY` )
+    )
+
     return {
         ...session,
         launch_stdout: launch_result.stdout,
@@ -242,11 +253,6 @@ const launch_agent = async ( workspace, agent, args, timeout_ms = 360_000 ) => l
 
 const launch_babysit = async ( workspace, args, timeout_ms = 360_000 ) =>
     launch_agent( workspace, `codex`, args, timeout_ms )
-
-const capture = async ( session ) => {
-    const { stdout } = await tmux( [ `capture-pane`, `-t`, session.tmux_session, `-p`, `-S`, `-1000` ] )
-    return stdout
-}
 
 const send_text = async ( session, text ) => {
     const buffer_name = `babysit-e2e-${ process.pid }-${ Date.now() }-${ Math.random().toString( 36 ).slice( 2 ) }`

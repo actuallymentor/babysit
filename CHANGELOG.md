@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.2 — 2026-09-20
+
+### Fixed
+- Capture completed Codex replies after resuming app-server threads natively.
+- Wait for the resumed test agent before sending its exit command.
+
+### Added
+- Verify real Codex completion capture across normal and YOLO resumes.
+
 ## 1.1.1 — 2026-09-20
 
 ### Fixed

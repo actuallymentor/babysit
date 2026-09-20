@@ -3,12 +3,13 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { createServer } from 'node:http'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
+import { COMPLETION_HELPER_SOURCE, COMPLETION_HELPER_PATH } from '../../src/agents/completion_capture.js'
 
 // The real CLI, remote frontend and persisted rollout exercise Codex's argument
 // validation and permission handling. Only model inference is a local fixture.
@@ -19,7 +20,10 @@ const workspace = join( root, `workspace` )
 const socket = `babysit-codex-resume-e2e-${ process.pid }`
 const session = `contract`
 const binary = process.env.CODEX_E2E_BINARY ? resolve( process.env.CODEX_E2E_BINARY ) : `codex`
-const launcher = fileURLToPath( new URL( `../../src/docker/assets/effort/launch.mjs`, import.meta.url ) )
+const effort = join( root, `effort` )
+const launcher = join( effort, `launch.mjs` )
+const helper = join( root, `capture.py` )
+const completion_file = join( root, `completion`, `message.json` )
 const exec_file = promisify( execFile )
 const run = async ( command, args, options = {} ) => ( await exec_file( command, args, {
     timeout: 30_000, maxBuffer: 2 * 1024 * 1024, ...options,
@@ -42,6 +46,13 @@ const rollouts = () => {
     }
 }
 const records = () => rollouts().flatMap( name => readFileSync( join( codex_home, `sessions`, name ), `utf8` ).trim().split( `\n` ).filter( Boolean ).map( line => JSON.parse( line ) ) )
+const read_completion = () => {
+    try {
+        return JSON.parse( readFileSync( completion_file, `utf8` ) )
+    } catch {
+        return null
+    }
+}
 const model_requests = []
 let server
 
@@ -51,6 +62,14 @@ try {
     } )
     await run( `tmux`, [ `-V` ] )
     for( const directory of [ workspace, codex_home ] ) mkdirSync( directory, { recursive: true } )
+    writeFileSync( helper, COMPLETION_HELPER_SOURCE )
+    // Remap only the container's fixed capture path into isolated test storage.
+    // Both the native notify chain and the managed observer use the real helper.
+    cpSync( fileURLToPath( new URL( `../../src/docker/assets/effort`, import.meta.url ) ), effort, { recursive: true } )
+    for( const file of [ `launch.mjs`, `codex-completion.mjs` ] ) {
+        const path = join( effort, file )
+        writeFileSync( path, readFileSync( path, `utf8` ).replaceAll( COMPLETION_HELPER_PATH, helper ) )
+    }
     server = createServer( async ( request, response ) => {
         try {
             const chunks = []
@@ -88,11 +107,16 @@ requires_openai_auth = false
 [projects.${ JSON.stringify( workspace ) }]
 trust_level = "trusted"
 ` )
-    const env = { ...process.env, HOME: home, CODEX_HOME: codex_home, TERM: `xterm-256color` }
+    const env = {
+        ...process.env, HOME: home, CODEX_HOME: codex_home, TERM: `xterm-256color`,
+        BABYSIT_COMPLETION_FILE: completion_file,
+        BABYSIT_COMPLETION_LAUNCH_ID: `11111111-1111-1111-1111-111111111111`,
+    }
+    delete env.BABYSIT_RECOVERY_IDENTITY
     delete env.OPENAI_API_KEY
     delete env.OPENAI_BASE_URL
     const launch = args => run( `tmux`, [ `-L`, socket, `new-session`, `-d`, `-s`, session, `-x`, `110`, `-y`, `35`,
-        process.execPath, launcher, binary, ...args,
+        process.execPath, launcher, `python3`, helper, `launch`, `codex`, binary, ...args,
     ], { env, cwd: workspace } )
     const submit = async prompt => {
         await tmux( [ `send-keys`, `-l`, `-t`, session, prompt ] )
@@ -104,10 +128,11 @@ trust_level = "trusted"
         await until( `native CLI exit`, async () => !await tmux( [ `has-session`, `-t`, session ] ).then( () => true, () => false ) )
     }
     let thread_id
+    let previous_turn
     for( const [ index, mode ] of [ `normal`, `normal`, `yolo` ].entries() ) {
         const flags = mode === `yolo` ? [ `--dangerously-bypass-approvals-and-sandbox` ] : [ `--sandbox`, `danger-full-access`, `--ask-for-approval`, `on-request` ]
         await launch( [ ...flags, ...thread_id ? [ `resume`, thread_id ] : [] ] )
-        await until( `${ mode } composer`, async () => ( await capture() ).includes( `›` ) )
+        await until( `${ mode } composer`, async () => ( await capture() ).includes( `› Ask Codex to do anything` ) )
         await submit( `NATIVE_TURN_${ index + 1 }` )
         await until( `${ mode } completed turn`, () => records().filter( record => record.type === `event_msg` && record.payload.type === `task_complete` ).length === index + 1 )
         const persisted = records()
@@ -120,7 +145,14 @@ trust_level = "trusted"
         assert.equal( context.sandbox_policy.type, `danger-full-access` )
         await until( `rendered completed reply`, async () => ( await capture() ).includes( `Native completed turn ${ index + 1 }.` ) )
         assert.ok( model_requests.some( request => JSON.stringify( request ).includes( `NATIVE_TURN_1` ) && JSON.stringify( request ).includes( `NATIVE_TURN_${ index + 1 }` ) ), `Resumed model context includes the original turn` )
-        console.log( `PASS real Codex launcher ${ index ? `resume` : `start` } (${ mode }): completed turn, exact thread and effective permissions` )
+        await until( `${ mode } completion capture`, () => read_completion()?.text === `Native completed turn ${ index + 1 }.` )
+        const completion = read_completion()
+        assert.equal( completion.agent, `codex` )
+        assert.equal( completion.session_id, thread_id )
+        assert.equal( completion.launch_id, env.BABYSIT_COMPLETION_LAUNCH_ID )
+        assert.notEqual( completion.turn_id, previous_turn )
+        previous_turn = completion.turn_id
+        console.log( `PASS real Codex launcher ${ index ? `resume` : `start` } (${ mode }): completed turn, exact thread, effective permissions and completion capture` )
         await stop()
     }
 } finally {

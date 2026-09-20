@@ -76,3 +76,5 @@
 
 - 2026-09-20: Diagnosed production Codex resume exit 1 as remote permission-override rejection, followed by stale-ID supersession rejection. Preserve permissions via native resume/fork; resolve historical launch aliases and add real native/Docker regressions.
 - 2026-09-20 validation: full `npm run test:all` passed (951 CLI tests, browser/bridge, native Codex/Antigravity, Docker lifecycle and all four recovery adapters). Four release binaries built; Linux binary smoke-tested against isolated and read-only host state. Nested clone E2E remains delegated to host CI.
+
+- 2026-09-20: Postcommit real-Codex review found native resume retains app-server source metadata; corrected completion capture and added real normal/YOLO notification assertions.
