@@ -136,6 +136,7 @@ trust_level = "trusted"
         await submit( `NATIVE_TURN_${ index + 1 }` )
         await until( `${ mode } completed turn`, () => records().filter( record => record.type === `event_msg` && record.payload.type === `task_complete` ).length === index + 1 )
         const persisted = records()
+        assert.equal( persisted.find( record => record.type === `session_meta` ).payload.source, `vscode` )
         const ids = new Set( persisted.filter( record => record.type === `session_meta` ).map( record => record.payload.id ) )
         assert.equal( ids.size, 1, `Resume must retain the exact native thread` )
         thread_id ||= [ ...ids ][ 0 ]
