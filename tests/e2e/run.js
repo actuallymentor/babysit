@@ -694,7 +694,6 @@ babysit: []
     const boundaries = JSON.parse(
         readFileSync( join( session.clone_path, `e2e-clone-boundaries.json` ), `utf8` )
     )
-    const prompt = readFileSync( join( session.clone_path, `e2e-initial-prompt.txt` ), `utf8` )
     const { stdout: clone_branch_output } = await run(
         `git`, [ `-C`, session.clone_path, `branch`, `--show-current` ]
     )
@@ -705,7 +704,12 @@ babysit: []
     ensure( boundaries.clone_visible, `source files are missing from /workspace` )
     ensure( boundaries.original_visible, `source workspace is missing from /original` )
     ensure( existsSync( join( workspace, `e2e-explicit-original-write.txt` ) ), `/original is not writable` )
-    ensure( prompt.includes( `/workspace is a copy of /original` ), `clone prompt omitted the workspace boundary` )
+    // Readline records pasted newlines separately; the initial marker contains
+    // only the task line. Verify the safety paragraph reached accepted input.
+    await wait_until( `clone prompt workspace boundary`, () =>
+        readFileSync( join( session.clone_path, `e2e-fake-agent.log` ), `utf8` )
+            .split( `\n` ).some( line => /^\S+ input "/.test( line ) && line.includes( `/workspace is a copy of /original` ) )
+    )
     ensure( clone_branch_output.trim() === `babysit/feature-1-${ session.clone_id }`, `clone branch name is incorrect` )
     ensure( original_branch_after_output.trim() === original_branch, `clone launch changed the original Git branch` )
 
