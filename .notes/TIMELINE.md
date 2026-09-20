@@ -71,3 +71,5 @@
 - 2026-09-11: Independent review fixed native trust preservation during host reseeding, pinned credential-source handoff, and macOS go-keyring envelope decoding. Final validation: 935 CLI tests, five real agy endpoint-fixture checks including fresh headless auth and reseeded resume, rebuilt image trust/cache proof, repeated Antigravity Docker recovery. Live Google login still pending.
 
 - 2026-09-11: Extend existing babysit config as a read-only effective-settings summary. Separate recovery installation, boot enablement and runtime state; unreachable systemd means unknown. Preserve the legacy auth-selection write flag.
+
+- 2026-09-20: Recast README as a terse quick reference per explicit documentation preferences; retain operational caveats.

@@ -1,148 +1,117 @@
 # babysit
 
-Run LLM coding agents in durable Docker and tmux sessions. Babysit keeps them
-alive after you detach, restores their sessions, and responds to terminal output
-with simple rules.
+Durable Docker + tmux sessions for coding agents. Detach, resume, recover;
+automate terminal responses with YAML rules.
 
 Supports [Claude](https://docs.anthropic.com/en/docs/claude-code),
 [Codex](https://github.com/openai/codex),
-[Antigravity CLI](https://antigravity.google/docs/cli/overview/), and
+[Antigravity](https://antigravity.google/docs/cli/overview/), and
 [OpenCode](https://github.com/anomalyco/opencode).
 
-## Install
+## Quick start
 
-Requires macOS or Linux, Docker, tmux, and Git.
+Requires **macOS/Linux, Docker, tmux, Git**. Installs to `~/.local/bin`; no sudo.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts/install.sh | bash
-```
 
-The installer puts `babysit` in `~/.local/bin` without sudo.
-
-## Start
-
-```bash
-babysit                         # Interactive launcher
-babysit "feature 1"             # Launcher with a session name
+babysit                                 # Interactive launcher
+babysit "feature 1"                      # Launcher with session name
 babysit claude --yolo
 babysit codex --clone --name "feature 1"
 babysit codex --sandbox --loop
 babysit antigravity --mudbox
 ```
 
-The launcher selects an agent CLI on the Model row. Use ↑/↓ to navigate,
-←/→ to select Model or Mode, type on Name, and Space to toggle Docker, YOLO,
-Clone, or Loop. Enter launches; Esc/Ctrl+C cancels. Mode cycles through Regular,
-Sandbox, and Mudbox; Clone requires Regular and switches back automatically.
+**Detach:** `Ctrl+B d` · **Reattach:** `babysit open` · **Reference:** `babysit --help`
 
-Menu selections persist per workspace directory, with the latest global selection
-as fallback for new directories. Names are not remembered. Explicit agent commands
-keep their existing behavior and do not read or update menu defaults. The menu
-requires an interactive terminal; scripts should use explicit agent commands.
+Unknown flags pass through: `babysit claude --yolo --model sonnet --effort high`.
+Explicit models override defaults. Codex defaults to `gpt-6-astra`, effort `medium`.
 
-Codex defaults to `gpt-6-astra` with `medium` reasoning.
+### Launcher
 
-Antigravity runs Google's `agy` CLI. Sign in with `agy` on the host first, or
-export `GEMINI_API_KEY` for API-key access. Babysit carries the credentials into
-the container; `GEMINI_API_KEY` takes precedence over OAuth. Complete Antigravity's
-first-run setup and workspace trust prompt before sending a task; `--yolo` does
-not bypass that native setup. Gemini CLI sessions are not migrated to Antigravity.
-Linux desktop keyring capture requires `secret-tool` (`libsecret-tools`);
-file-based credentials and API keys work without it.
+| Input | Action |
+|---|---|
+| ↑/↓ | Navigate rows |
+| ←/→ | Select agent CLI (Model) or Mode |
+| Type on Name | Set session name |
+| Space | Toggle Docker, YOLO, Clone, Loop |
+| Enter / Esc / Ctrl+C | Launch / cancel / cancel |
 
-Detach with `Ctrl+B d`. Reattach with `babysit open`. Unrecognized flags pass
-through to the agent:
+Mode: Regular → Sandbox → Mudbox. Clone forces Regular.
+Selections persist per workspace; new workspaces inherit the latest global selection.
+Names never persist. Explicit agent commands ignore menu defaults; use them in scripts.
 
-```bash
-babysit claude --yolo --model sonnet --effort high
-```
+### Antigravity setup
 
-An explicit model flag replaces Babysit's default model selection.
+- Sign in with host `agy`, or export `GEMINI_API_KEY` (takes precedence over OAuth).
+- Complete native first-run setup and workspace trust; `--yolo` does not bypass them.
+- Linux keyring capture needs `secret-tool` (`libsecret-tools`); files/API keys do not.
+- Gemini CLI sessions cannot migrate to Antigravity.
 
-## Modes
+## Flags
 
-| Flag | Workspace | Use |
-|---|---|---|
-| _(none)_ | Read-write mount | Normal work |
-| `--yolo` | Read-write mount | Maximum autonomy; skip agent permissions |
-| `--sandbox` | No mount | Ephemeral research or experiments |
-| `--mudbox` | Read-only mount | Reviews and analysis |
-| `--clone` | Durable copy plus `/original` | Isolated work with explicit merge-back |
-| `--docker` | Additive | Use the host Docker daemon |
-| `--ignore-host-agents-md` | Additive | Exclude host instructions and preferences; keep credentials |
-| `--port PORT` or `--port H:C` | Additive | Publish a container port; repeat as needed |
-| `--loop` | Additive | Continue when the agent becomes idle |
+| Flag | Effect |
+|---|---|
+| _(none)_ | Read-write workspace mount |
+| `--yolo` | Maximum autonomy; skip agent permissions |
+| `--sandbox` | No workspace mount; ephemeral |
+| `--mudbox` | Read-only workspace mount |
+| `--clone` | Durable workspace copy + `/original`; explicit merge-back |
+| `--docker` | Host Docker daemon access |
+| `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
+| `--port PORT` / `--port H:C` | Publish port; repeatable |
+| `--loop` | Continue on idle |
+| `--log[=PATH]` | Append raw tmux output to file |
 
-Modes combine. `--clone` cannot combine with `--sandbox` or `--mudbox`.
-`--docker` weakens `--sandbox` and `--mudbox` because the Docker socket controls
-the host daemon.
+`--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
+the socket controls the host daemon, including in Sandbox/Mudbox.
 
 ## Sessions
 
-| Command | Result |
+| Command | Effect |
 |---|---|
-| `babysit list` | List active sessions |
-| `babysit list --all` | Include IDs and tmux names |
-| `babysit open [id\|name\|number]` | Attach to an active session |
-| `babysit resume` | List this workspace's session history |
-| `babysit resume --all` | List history from every workspace |
-| `babysit resume <id> [flags]` | Restore a Babysit session |
-| `babysit recover [id]` | Recover interrupted sessions across workspaces, detached |
-| `babysit recover --dry-run [--json]` | Inspect recovery candidates and blockers |
-| `babysit recover --no-continue [id]` | Reopen without submitting a continuation |
-| `babysit recover init` | Enable Ubuntu boot recovery for this account |
-| `babysit close <id>` | Close intentionally; exclude this launch from recovery |
-| `babysit prune --list` | Show managed clone usage |
+| `babysit list [--all]` | Active sessions; `--all` adds IDs/tmux names |
+| `babysit open [id\|name\|number]` | Attach |
+| `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
+| `babysit resume <id> [flags]` | Restore saved session |
+| `babysit close <id>` | Close intentionally; retire launch from recovery |
+| `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Remove unused clones interactively |
-| `babysit doctor --auth [agent]` | Verify agent authentication |
-| `babysit update` | Update Babysit, agent tools, and the image |
+| `babysit doctor --auth [agent] [--refresh]` | Real auth check; bypass 12h cache with `--refresh` |
+| `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
+| `babysit update` | Update Babysit, agent tools, image |
 
-Pruning needs writable space for lock records and recovery journals. If the
-filesystem is full, free some space first, then retry `babysit prune`.
-
-Detaching or exiting the agent (for example, `/exit`) shows the remaining active
-sessions.
-
-`babysit list` samples current panes over one second. Agent input/interrupt
-controls determine `idle`/`running`; unrecognized screens fall back to output
-stability. Unreadable panes show `unknown`. Attachment is reported separately.
-
-Use `--log[=PATH]` to append raw tmux output to a file. Run `babysit --help` for
-the complete CLI reference.
+Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
+input/interrupt controls → idle/running; otherwise output stability; unreadable → unknown.
+Attachment is separate. Pruning needs free space for locks/journals.
 
 ### Recovery
 
-`babysit recover` restores sessions left open through power loss, reboot, or
-process failure. It resumes the exact saved conversation and submits:
-“You were interrupted. Check the current state, then continue unfinished work.”
-Idle sessions are included. Live agents keep running; missing monitors are repaired.
-Repeated recovery does not duplicate a running session. Attach with `babysit open`.
+| Command | Effect |
+|---|---|
+| `babysit recover [id]` | Recover interrupted sessions, detached, across workspaces |
+| `babysit recover --dry-run [--json]` | Inspect candidates/blockers |
+| `babysit recover --no-continue [id]` | Reopen without sending continuation |
+| `babysit recover init` | Enable Ubuntu boot recovery for this account |
 
-Normal agent exit and `babysit close <id>` retire a session. Detaching and host
-shutdown preserve recovery intent. Only sessions launched with recovery support
-are eligible; use `babysit resume` for older history. Sandbox sessions remain
-ephemeral. Missing transcripts, changed workspace configuration, unsupported
-launch arguments, and unavailable prerequisites are reported instead of guessed.
-Model/effort/variant options, modes, ports, credential-home paths, and the original
-image are retained; credentials are reloaded. Custom tmux sockets require the same
-`BABYSIT_TMUX_SOCKET`. Unflushed work and in-flight subprocesses cannot be restored.
+Resumes the saved conversation, then sends: “You were interrupted. Check the current
+state, then continue unfinished work.” Includes idle sessions; preserves live agents,
+repairs missing monitors, avoids duplicate running sessions. Attach with `babysit open`.
 
-If a second crash makes continuation delivery uncertain, recovery reports it.
-Inspect the conversation, then use `--no-continue` to acknowledge without resending.
-This does not undo input already submitted or actions already completed.
+| Preserved | Limits |
+|---|---|
+| Detach/shutdown recovery intent | Normal exit / `close` retires session |
+| Model, effort, variant, modes, ports, image, credential-home paths | Credentials reloaded |
+| Saved conversation | Unflushed work / in-flight subprocesses lost; Sandbox stays ephemeral |
+| Supported launch configuration | Missing transcripts, changed config, unsupported args/prerequisites block recovery |
 
-On Ubuntu with system Docker, run `babysit recover init` as the session owner
-(let it prompt for sudo internally). It installs and enables `babysit-recover-<uid>.service` for
-the next boot; it does not restart current sessions. The account needs direct
-Docker access. The installer prompts for sudo authorization in a terminal;
-unattended installation needs root or cached/passwordless sudo. Initialization checks
-Babysit, storage access, `sh`, `tmux`, `docker`, `cat`, `ps`, and Docker access as the service user
-with a clean boot environment. It records an absolute Babysit path and explicit PATH;
-login shell settings are not loaded. Explicit `sudo babysit recover init` preserves
-the original account but can lose custom PATH entries—prefer normal-user invocation.
-Its home/workspaces and credentials must be available before login; login-unlocked homes/keyrings and
-rootless/remote Docker need separate host setup and are not supported by this installer.
-Rerun initialization after moving the executable or adding workspace mount dependencies.
+Older sessions need `resume`. Custom sockets need the same `BABYSIT_TMUX_SOCKET`.
+Uncertain continuation delivery after a second crash: inspect the conversation,
+then acknowledge with `--no-continue`; already-submitted input remains effective.
+
+**Ubuntu boot recovery:** system Docker, direct Docker access, home/workspaces/credentials
+available before login. Run as session owner; the command requests sudo internally.
 
 ```bash
 babysit recover init
@@ -150,46 +119,45 @@ journalctl -u "babysit-recover-$(id -u).service"
 sudo systemctl disable "babysit-recover-$(id -u).service" # Disable future boot recovery
 ```
 
-Boot recovery uses bounded retries, reports failures in the journal, and leaves
-successful sessions running. Stopping the service suspends its sessions while
-preserving recovery intent; use `babysit close` to retire individual sessions.
+- Enables next-boot recovery; leaves current sessions alone. Bounded retries; failures in journal.
+- Stop service → suspend its sessions, preserve recovery intent. `close` → retire session.
+- Captures absolute executable, PATH, `BABYSIT_HOME`; login shell settings are not loaded.
+- Rerun after moving executable/storage or adding workspace mount dependencies.
+- Checks storage, Docker access, Babysit, `sh`, `tmux`, `docker`, `cat`, `ps` as service user.
+- Unattended init needs root or cached/passwordless sudo. Avoid a `sudo` prefix: it can strip PATH/storage exports.
+- Login-unlocked homes/keyrings and rootless/remote Docker require separate host setup.
 
-## Change reasoning effort
+## Reasoning effort
 
-Inside a newly started Codex or OpenCode session, agents can run:
+Inside a newly launched Codex/OpenCode session:
 
 ```bash
-babysit effort          # Current setting and supported levels for this model
-babysit effort high
+babysit effort          # Current setting + supported levels
+babysit effort high     # Next model request, including within this turn
 babysit effort low
 ```
 
-Changes apply to the next model request, including within the current turn.
-Requests already running finish with their original effort. The model stays the same.
+Current request finishes unchanged; model stays fixed. Levels come from the model.
 
-Codex updates its native thread and active-turn settings, including the TUI footer.
-OpenCode uses a session-specific plugin override; its footer still shows the TUI's
-own variant. Run `babysit effort default` in OpenCode to restore that variant.
-If its effort lookup fails, OpenCode warns and uses the TUI variant for that request.
-Supported values come from the current model; they are not limited to `high`.
+| Agent | Behavior |
+|---|---|
+| Codex | Updates native thread/turn settings and TUI footer |
+| OpenCode | Session plugin override; footer retains TUI variant. `effort default` restores it; lookup failure warns and falls back to it |
+| Claude / Antigravity | No live controls; Antigravity accepts launch-time `--effort` |
 
-Requires the updated Docker image and supported CLIs (verified with Codex 0.153.4
-and OpenCode 1.18.29). Existing containers need a new launch. Claude and Antigravity
-do not support live `babysit effort` controls; Antigravity accepts `--effort` at
-launch. Explicit remote/headless sessions, Codex `--profile`, and OpenCode `--pure`
-retain their normal launch without effort controls.
+Requires updated image/new container; verified with Codex 0.153.4 / OpenCode 1.18.29.
+Remote/headless sessions, Codex `--profile`, OpenCode `--pure`: normal launch without controls.
 
 ## Supervision
 
-The first run creates `babysit.yaml`. This compact example shows its core shape.
-Rules are evaluated from top to bottom; the first match wins.
+First launch creates `babysit.yaml`. Rules run top-down; first match wins.
 
 ```yaml
 config:
     idle_timeout_s: 300
 
 babysit:
-    # Uncomment only the rules you want.
+    # Uncomment wanted rules.
     # - on: plan
     #   do: accept
     #   timeout: 10
@@ -199,44 +167,28 @@ babysit:
     #   timeout: 30:00
 ```
 
-Triggers: `idle`, `plan`, `choice`, a quoted literal, or `/regex/flags`.
+| Setting | Values |
+|---|---|
+| `on` | `idle`, `plan`, `choice`, quoted literal, `/regex/flags` |
+| `do` | `enter`, `accept`, `shift_tab`, named `config.commands` command, text, Markdown file |
+| `timeout` | `SS`, `MM:SS`, `HH:MM:SS` |
+| Markdown steps | Separate with `===`; wait for idle between steps |
+| `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going` |
 
-Actions: `enter`, `accept`, `shift_tab`, a command named under
-`config.commands`, text to submit, or a Markdown file. Split Markdown workflows
-on `===` to wait for idle between steps. Timeouts accept `SS`, `MM:SS`, or
-`HH:MM:SS`.
-
-`--loop` uses the first available instruction source:
-
-1. `./LOOP.md`
-2. `~/.agents/LOOP.md` (skipped with `--ignore-host-agents-md`)
-3. `Keep going`
+`--ignore-host-agents-md` skips the host `LOOP.md`.
 
 ## Mobile web companion
 
-Initialize the host bridge and print its access token:
-
 ```bash
-babysit web init
+babysit web init         # Initialize bridge, print token; rerun to rotate token
+
+# Local: http://127.0.0.1:3000
+BABYSIT_WEB_UID="$(id -u)" \
+BABYSIT_WEB_GID="$(id -g)" \
+docker compose -f examples/compose.web.local.yml up --build -d
 ```
 
-Running sessions discover the bridge after initialization. When upgrading from
-an older Babysit version, exit and resume existing sessions once to load the
-updated monitor and terminal helpers.
-
-The web view shows the latest completed reply, retaining it while the agent
-works on the next turn. Expand **Terminal output** to see live tool steps and
-prompts. After upgrading from screen-based message capture, exit and resume
-existing sessions to enable completion capture; the first new reply fills the
-message view.
-
-Use the **app menu** for theme (system/light/dark), text size (100–150%),
-installation, updates, and logout. Text also scales with viewport width.
-On mobile, **Reply ↓** jumps to the composer. Draft while busy; send once
-unlocked. **Copy** copies code blocks. Heartbeat age describes host freshness,
-not reply age; delivery status confirms handoff to the agent, not completion.
-
-Run the production Compose example behind a TLS proxy:
+Production behind a TLS proxy:
 
 ```bash
 BABYSIT_WEB_UID="$(id -u)" \
@@ -246,74 +198,50 @@ BABYSIT_WEB_PUBLIC_ORIGIN="https://babysit.example.com" \
 docker compose -f examples/compose.web.yml up -d
 ```
 
-For loopback-only local use:
+- Proxy → `http://babysit-web:3000` on shared network; no published host port.
+- Preserve original host, `X-Forwarded-Proto`, `X-Forwarded-For`.
+- Keep bridge directory private. Companion gets sanitized state + request queue; no Docker/tmux/home/workspace access.
+- Custom bridge: same absolute `BABYSIT_WEB_BRIDGE_DIR` for Babysit and Compose.
+- Running sessions discover newly initialized bridges. After upgrades, exit/resume old sessions to load updated monitor/capture helpers; first new reply fills the view.
 
-```bash
-BABYSIT_WEB_UID="$(id -u)" \
-BABYSIT_WEB_GID="$(id -g)" \
-docker compose -f examples/compose.web.local.yml up --build -d
-```
+| Control / indicator | Meaning |
+|---|---|
+| Message view | Latest completed reply; retained while busy |
+| Terminal output | Live tool steps/prompts |
+| Reply ↓ | Jump to composer; draft while busy, send when unlocked |
+| Copy | Copy code block |
+| App menu | Theme, text size (100–150%), install, update, logout |
+| Heartbeat age | Host freshness |
+| Delivery status | Handoff to agent; completion comes later |
 
-Open `http://127.0.0.1:3000`. The companion receives sanitized session state and
-a request queue—not Docker, tmux, home-directory, or workspace access. Keep
-`~/.babysit/web-bridge` private; run `babysit web init` again to rotate its
-token.
+Text also scales with viewport width.
 
-Route the production proxy to `http://babysit-web:3000` on the shared network;
-the service publishes no host port. Preserve the original host,
-`X-Forwarded-Proto`, and `X-Forwarded-For`. To move the bridge, set
-`BABYSIT_WEB_BRIDGE_DIR` to the same absolute path for Babysit and Compose.
-
-## Runtime
-
-- The agent runs as a non-root user in a Docker container inside tmux.
-- A detached monitor applies `babysit.yaml` rules and keeps credentials in sync.
-- Agent state lives in persistent Docker volumes. Babysit metadata lives under
-  `${BABYSIT_HOME:-$HOME/.babysit}`.
-- Codex settings are copied into a temporary container configuration; the host
-  file stays untouched. Invalid TOML produces a configuration error before staging.
-- `node_modules` and `.venv` use named volumes by default to avoid host/container
-  binary conflicts. Set `config.isolate_dependencies: false` to disable this.
-- The image includes all supported agent CLIs, common coding tools, Chrome,
-  Puppeteer, Xvfb, Poppler, and qpdf.
-- Authentication checks use real model requests and cache successes for 12
-  hours. Add `--refresh` to `babysit doctor --auth` to bypass the cache.
-
-Inspect effective settings without changing files:
+## Configuration & storage
 
 ```bash
 babysit config
+export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 ```
 
-Shows storage/config paths, Docker image, tmux socket, web access file, menu
-defaults for the current workspace, and boot recovery status. Unavailable
-systemd checks report `unknown`; enabled and runtime state are separate.
+| Location / setting | Contents / effect |
+|---|---|
+| `${BABYSIT_HOME:-$HOME/.babysit}` | Config, sessions, clones, caches, recovery, default web bridge |
+| `BABYSIT_WEB_BRIDGE_DIR` | Override bridge path; match Compose environment |
+| Docker volumes | Persistent agent state; isolated `node_modules` / `.venv` |
+| `config.isolate_dependencies: false` | Disable dependency volumes |
+| `~/.babysitrc` | Shell setup before agent launch; skipped by `--ignore-host-agents-md` |
 
-Set an absolute host storage path in your shell profile:
-
-```bash
-export BABYSIT_HOME="/mnt/storage/babysit"
-```
-
-Unset or empty uses `~/.babysit`; relative paths and literal `~` are rejected.
-This relocates Babysit config, sessions, clones, caches, recovery data, and the
-default web bridge. `BABYSIT_WEB_BRIDGE_DIR` overrides the bridge location;
-export the same settings for Compose. Agent credentials and Docker volumes
-keep their existing locations. Existing state is not migrated automatically.
-The tmux socket is unchanged; this setting alone does not create an isolated instance.
-
-For boot recovery, run `babysit recover init` as the session owner, without a
-`sudo` prefix (sudo may strip the export). Rerun it after changing `BABYSIT_HOME`; the service captures the path for reboot.
-Set this variable in the host environment, not the container-sourced rc file.
-
-If `~/.babysitrc` exists, Babysit sources it before launching the agent. Use it
-for local environment variables and tool setup. `--ignore-host-agents-md` skips
-this file because executable shell cannot be separated safely from host
-preferences.
+- `BABYSIT_HOME`: unset/empty → default; relative paths/literal `~` rejected. No automatic migration.
+- Set storage on host, not in container rc. Export matching settings for Compose; rerun `recover init` after changes.
+- Credentials, Docker volumes, tmux socket retain their locations; storage override alone does not isolate instances.
+- Agent runs non-root in Docker/tmux; detached monitor applies rules and syncs credentials.
+- Codex config is staged in a temporary copy; invalid TOML fails before staging.
+- Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf.
+- `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.
 
 ## Develop
 
-Requires [Bun](https://bun.sh).
+Requires **Bun**. Build outputs: static Linux/macOS binaries in `dist/`.
 
 ```bash
 npm install
@@ -322,31 +250,19 @@ npm run build
 npm run test:all
 ```
 
-`test:all` checks CLI units, web API/browser interactions, browser-to-tmux
-delivery, real Antigravity CLI behavior, and Docker session lifecycles. Requires
-Docker, tmux, Python 3, `agy` (`AGY_E2E_BINARY` overrides discovery), and
-Chrome/Chromium (`CHROME_PATH` overrides discovery). Missing prerequisites fail
-the run. Pull requests and main pushes run the same suite. Clone E2E requires
-host execution; nested Docker runs skip it, while CI runs it on the host.
+| Check | Scope |
+|---|---|
+| `npm run test:cli` | CLI units |
+| `npm run test:web` | Web API + browser interactions |
+| `npm run test:bridge` | Browser → tmux; first `npm run build --prefix web` |
+| `npm run test:prune` | Interactive pruning through real terminal |
+| `npm run test:antigravity` | Real agy TUI/hooks/resume against local model fixture |
+| `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
+| `node tests/e2e/status.js` | Focused Docker/tmux activity regression |
 
-Focused checks:
+`test:all` runs all suites, also on PRs/main pushes. Requires Docker, tmux, Python 3,
+`agy` (`AGY_E2E_BINARY` override), Chrome/Chromium (`CHROME_PATH` override).
+Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.
+E2E uses real Docker/tmux without model API calls.
 
-```bash
-npm run test:cli
-npm run test:web
-npm run test:bridge # Build web assets first: npm run build --prefix web
-npm run test:prune # Interactive CLI pruning through a real terminal
-npm run test:antigravity # Real agy TUI/hooks/resume against a local model fixture
-npm run test:e2e   # Docker launch, send, detach, resume, recovery, cleanup
-node tests/e2e/status.js # Focused activity regression with Docker and tmux
-```
-
-`npm run build` creates static Linux and macOS binaries in `dist/`. The E2E
-suite exercises real Docker and tmux sessions without calling model APIs.
-
-See [SPECIFICATION.md](SPECIFICATION.md) for the design contract and
-[CHANGELOG.md](CHANGELOG.md) for release history.
-
-## License
-
-MIT
+[Design contract](SPECIFICATION.md) · [Changelog](CHANGELOG.md) · MIT

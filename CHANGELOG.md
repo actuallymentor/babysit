@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Condense README into a command-first quick reference.
+
 ## 1.1.0 — 2026-09-11
 
 ### Added
