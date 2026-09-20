@@ -14,7 +14,9 @@ Requires **macOS/Linux, Docker, tmux, Git**. Installs to `~/.local/bin`; no sudo
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts/install.sh | bash
+```
 
+```bash
 babysit                                 # Interactive launcher
 babysit "feature 1"                      # Launcher with session name
 babysit claude --yolo
@@ -40,7 +42,8 @@ Explicit models override defaults. Codex defaults to `gpt-6-astra`, effort `medi
 
 Mode: Regular → Sandbox → Mudbox. Clone forces Regular.
 Selections persist per workspace; new workspaces inherit the latest global selection.
-Names never persist. Explicit agent commands ignore menu defaults; use them in scripts.
+Names never persist. Menu requires a TTY; explicit agent commands ignore defaults.
+Use explicit commands in scripts.
 
 ### Antigravity setup
 
@@ -64,7 +67,7 @@ Names never persist. Explicit agent commands ignore menu defaults; use them in s
 | `--loop` | Continue on idle |
 | `--log[=PATH]` | Append raw tmux output to file |
 
-`--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
+Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
 
 ## Sessions
