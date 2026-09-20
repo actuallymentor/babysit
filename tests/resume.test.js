@@ -12,6 +12,7 @@ import {
     select_resumable_sessions,
 } from '../src/cli/resume.js'
 import {
+    cmd_start,
     cleanup_failed_launch_credentials,
     resolve_agent_resume_target,
     resolve_session_display_name,
@@ -19,6 +20,7 @@ import {
     should_ignore_host_agent_context,
     should_send_initial_prompt,
 } from '../src/cli/start.js'
+import { resolve_current_session } from '../src/sessions/recovery.js'
 import { generate_session_id } from '../src/sessions/store.js'
 
 // Build realistic metadata without touching the developer's session registry.
@@ -161,7 +163,9 @@ describe( `cmd_resume session listing`, () => {
 
         await cmd_resume( { session_id: null, flags: { all: true } }, {
             list_stored_sessions_fn: () => [ pruned, ...sessions ],
-            print_sessions: value => { rendered_sessions = value },
+            print_sessions: value => {
+                rendered_sessions = value
+            },
         } )
 
         expect( rendered_sessions ).toEqual( sessions )
@@ -539,7 +543,9 @@ describe( `cmd_resume live clone recovery`, () => {
         } } ) ).toBe( true )
         expect( is_monitor_alive( null ) ).toBe( false )
         expect( is_monitor_alive( 123, null, {
-            kill: () => { throw new Error( `missing` ) },
+            kill: () => {
+                throw new Error( `missing` )
+            },
         } ) ).toBe( false )
         expect( is_monitor_alive( 123, `expected-token`, {
             kill: () => {},
@@ -937,6 +943,128 @@ describe( `failed launch credential cleanup`, () => {
         expect( result.flush_error.message ).toBe( `host credential write failed` )
         expect( calls ).toEqual( [] )
 
+    } )
+
+} )
+
+
+describe( `replacement launch aliases`, () => {
+
+    const original = { ...make_session( process.cwd() ), babysit_id: `original`, agent_session_id: `native-id`, superseded_by: `replacement` }
+    const replacement = { ...original, babysit_id: `replacement`, resumed_from: `original`, superseded_by: `latest`, tmux_session: `replacement-tmux` }
+    const latest = { ...replacement, babysit_id: `latest`, resumed_from: `replacement`, superseded_by: null, status: `failed`, tmux_session: `latest-tmux`, modifiers: [ `sandbox` ], name: `current name`, ports: [ `8080:8080` ] }
+    const sessions = [ latest, replacement, original ]
+    const load = id => sessions.find( session => session.babysit_id === id )
+
+    it( `retries the latest failed launch from the original ID`, async () => {
+
+        let launched
+        await cmd_resume( { session_id: original.babysit_id }, {
+            load_session_fn: load,
+            list_stored_sessions_fn: () => sessions,
+            has_session_fn: async () => false,
+            start: async cmd => {
+                launched = cmd
+            },
+        } )
+        expect( launched.stored_session ).toBe( latest )
+        expect( launched.session_id ).toBe( `native-id` )
+
+    } )
+
+    it( `attaches to a live successor without starting another launch`, async () => {
+
+        let opened
+        await cmd_resume( { session_id: original.babysit_id }, {
+            load_session_fn: load,
+            list_stored_sessions_fn: () => sessions,
+            has_session_fn: async name => name === latest.tmux_session,
+            open_session: async cmd => {
+                opened = cmd
+            },
+            start: async () => {
+                throw new Error( `Unexpected duplicate launch` )
+            },
+        } )
+        expect( opened.session_id ).toBe( latest.tmux_session )
+
+    } )
+
+    it( `shows only current launches and their failure status`, async () => {
+
+        const output = await capture_console( () => cmd_resume( { flags: { all: true } }, {
+            list_stored_sessions_fn: () => sessions,
+        } ) )
+        expect( output ).toContain( `latest` )
+        expect( output ).toContain( `failed` )
+        expect( output ).not.toContain( `original` )
+        expect( output ).not.toContain( `replacement` )
+
+    } )
+
+    for( const explicit_agent of [ false, true ] ) it( `revalidates ${ explicit_agent ? `explicit-agent` : `agent-less` } resume after lock acquisition`, async () => {
+
+        let locked = false
+        let released = false
+        let launched
+        const initial = { ...original, superseded_by: null }
+        const load_after_lock = id => id === `original` && !locked ? initial : load( id )
+        await cmd_start( {
+            verb: `resume`, agent: `claude`, session_id: `original`, flags: {}, passthrough: [],
+            ...explicit_agent ? {} : { stored_session: initial, metadata_resolved: true },
+        }, {
+            load_session_fn: load_after_lock,
+            acquire_lock: () => {
+                locked = true
+                return () => {
+                    released = true
+                }
+            },
+            resume: ( cmd, options ) => cmd_resume( cmd, {
+                ...options,
+                list_stored_sessions_fn: () => sessions,
+                has_session_fn: async () => false,
+            } ),
+            start: async cmd => {
+                expect( locked ).toBe( true )
+                expect( released ).toBe( false )
+                launched = cmd
+                cmd.on_handoff()
+            },
+        } )
+        expect( launched.stored_session ).toBe( latest )
+        expect( launched.session_id ).toBe( `native-id` )
+        expect( launched.flags.yolo ).toBe( false )
+        expect( launched.flags.sandbox ).toBe( true )
+        expect( launched.flags.name ).toBe( `current name` )
+        expect( launched.flags.ports ).toEqual( [ `8080:8080` ] )
+        expect( released ).toBe( true )
+
+    } )
+
+} )
+
+
+describe( `resume alias integrity`, () => {
+
+    const parent = { babysit_id: `parent`, agent: `codex`, pwd: process.cwd() }
+    const child = { ...parent, babysit_id: `child`, resumed_from: `parent` }
+
+    it( `finds a durable child before the superseded pointer is saved`, () => {
+        expect( resolve_current_session( parent, { list: () => [ child, parent ] } ) ).toBe( child )
+    } )
+
+    it( `rejects missing replacements instead of launching the stale parent`, () => {
+        expect( () => resolve_current_session( { ...parent, superseded_by: `missing` }, {
+            list: () => [ parent ], load: () => null,
+        } ) ).toThrow( `Replacement session is missing: missing` )
+    } )
+
+    it( `rejects replacement cycles`, () => {
+        const cyclic = [ { ...parent, superseded_by: `child` }, { ...child, superseded_by: `parent` } ]
+        expect( () => resolve_current_session( cyclic[0], {
+            list: () => cyclic, load: id => cyclic.find( session => session.babysit_id === id ),
+        } ) ).toThrow( `Session replacement cycle` )
     } )
 
 } )

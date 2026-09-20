@@ -11,6 +11,8 @@ import { observe_completions } from './codex-completion.mjs'
 const COMMANDS = new Set( `agents exec e review login logout mcp plugin mcp-server app-server remote-control completion update doctor sandbox debug apply a resume queue archive delete migrate-rollouts unarchive fork cloud cloud-tasks exec-server features help app execpolicy responses-api-proxy stdio-to-uds`.split( ` ` ) )
 const VALUE_FLAGS = new Set( [ `-c`, `--config`, `--enable`, `--disable`, `--remote`, `--remote-auth-token-env`, `-i`, `--image`, `-m`, `--model`, `--local-provider`, `-p`, `--profile`, `-s`, `--sandbox`, `-C`, `--cd`, `--add-dir`, `-a`, `--ask-for-approval` ] )
 const CONFIG_FLAGS = { '-m': `model`, '--model': `model`, '-s': `sandbox_mode`, '--sandbox': `sandbox_mode`, '-a': `approval_policy`, '--ask-for-approval': `approval_policy` }
+const PERMISSION_FLAGS = new Set( [ `-s`, `--sandbox`, `-a`, `--ask-for-approval`, `--add-dir`, `--yolo`, `--dangerously-bypass-approvals-and-sandbox`, `--full-auto`, `--approve-for-me`, `--not-so-yolo` ] )
+const PERMISSION_CONFIG = new Set( [ `approval_policy`, `approvals_reviewer`, `sandbox_mode`, `default_permissions`, `permissions`, `network`, `sandbox_workspace_write` ] )
 const OPENCODE_COMMANDS = new Set( `completion acp mcp attach run generate debug console providers auth agent upgrade uninstall serve web models stats export import github pr session plugin plug db help`.split( ` ` ) )
 const OPENCODE_VALUES = new Set( [ `--log-level`, `--port`, `--hostname`, `--mdns-domain`, `--cors`, `-m`, `--model`, `-s`, `--session`, `--prompt`, `--agent`, `--replay-limit` ] )
 
@@ -32,6 +34,7 @@ export function codex_launch_plan( args ) {
     let oss = false
     let bypass = false
     let strict_config = false
+    let permission_override = false
 
     for( let index = 0; index < args.length; index++ ) {
         const token = args[ index ]
@@ -44,6 +47,8 @@ export function codex_launch_plan( args ) {
 
         if( [ `--help`, `-h`, `--version`, `-V` ].includes( flag ) ) return { managed: false }
         if( [ `--remote`, `--remote-auth-token-env` ].includes( flag ) ) return { managed: false }
+        if( PERMISSION_FLAGS.has( flag ) ) permission_override = true
+        if( [ `-c`, `--config` ].includes( flag ) && PERMISSION_CONFIG.has( value?.split( /[.=]/ )[ 0 ].trim().replace( /["']/g, `` ) ) ) permission_override = true
         if( !token.startsWith( `-` ) && !command ) command = token
         if( [ `-p`, `--profile` ].includes( flag ) ) profile = value
         if( [ `-C`, `--cd` ].includes( flag ) ) cwd = resolve( value )
@@ -61,6 +66,14 @@ export function codex_launch_plan( args ) {
     }
 
     if( COMMANDS.has( command ) && ![ `resume`, `fork` ].includes( command ) ) return { managed: false }
+
+    // Remote resume/fork rejects explicit permissions, including -c overrides.
+    // Dropping them silently restores the old policy. Native launch preserves
+    // the requested policy and exact conversation; only live effort is absent.
+    if( [ `resume`, `fork` ].includes( command ) && permission_override ) return {
+        managed: false,
+        warning: `Codex ${ command } uses the native CLI to preserve permissions; live babysit effort controls are unavailable.`,
+    }
     // Codex 0.153.4 rejects app-server --profile. Preserve profile behavior
     // instead of silently starting its server with another configuration.
     if( profile ) return { managed: false, warning: `Codex profiles do not support managed effort in this CLI version; using the original launch.` }

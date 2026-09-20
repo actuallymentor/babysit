@@ -71,6 +71,8 @@ import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
 import { command_exists } from '../utils/exec.js'
 import { acquire_clone_lock, prepare_clone_workspace } from '../clone.js'
+import { cmd_resume } from './resume.js'
+import { cmd_open } from './open.js'
 import { cmd_monitor } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { cmd_list, format_session_status_label } from './list.js'
@@ -934,13 +936,19 @@ export const record_launch_progress = ( id, fields, { recovering = false, update
  * Start a new babysit session
  * @param {Object} cmd - Parsed command { agent, flags, passthrough }
  */
-export const cmd_start = async ( cmd ) => {
+export const cmd_start = async ( cmd, {
+    load_session_fn = load_session,
+    acquire_lock = acquire_session_lock,
+    resume = cmd_resume,
+    start = start_session,
+    open = cmd_open,
+} = {} ) => {
 
-    const stored = cmd.stored_session || resolve_stored_agent_resume_session( cmd, get_agent( cmd.agent ) || {} )
+    const stored = cmd.stored_session || resolve_stored_agent_resume_session( cmd, get_agent( cmd.agent ) || {}, load_session_fn )
     if( cmd.agent === `gemini` || stored?.agent === `gemini` || stored?.agent_mismatch === `gemini` ) {
         throw new Error( `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.` )
     }
-    const release = cmd.lifecycle_locked ? () => {} : acquire_session_lock( stored ? session_lock_key( stored ) : `launch:${ randomUUID() }` )
+    const release = cmd.lifecycle_locked ? () => {} : acquire_lock( stored ? session_lock_key( stored ) : `launch:${ randomUUID() }` )
     let released = false
     const handoff = () => {
         if( !released ) release()
@@ -948,8 +956,24 @@ export const cmd_start = async ( cmd ) => {
     }
     const launch = { ...cmd, on_handoff: handoff }
     try {
-        if( stored && load_session( stored.babysit_id )?.superseded_by ) throw new Error( `Session was superseded; use its current launch` )
-        return await start_session( launch )
+        // Re-read aliases under the same workspace lock used by recovery. A
+        // concurrent resume may have replaced the launch since CLI lookup.
+        if( stored && !cmd.recovering ) {
+            if( stored.agent_mismatch ) throw new Error( `Session ${ cmd.session_id } belongs to ${ stored.agent_mismatch }, not ${ cmd.agent }` )
+            return await resume( { ...cmd, session_id: stored.babysit_id, flags: cmd.flags }, {
+                load_session_fn,
+                start: async resolved => {
+                    Object.assign( launch, resolved )
+                    return start( launch )
+                },
+                open_session: async target => {
+                    handoff()
+                    return open( target )
+                },
+            } )
+        }
+        if( stored && load_session_fn( stored.babysit_id )?.superseded_by ) throw new Error( `Recovery target was superseded: ${ stored.babysit_id }` )
+        return await start( launch )
     } finally {
         launch.release_clone_lock?.()
         handoff()

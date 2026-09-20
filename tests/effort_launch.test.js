@@ -97,7 +97,7 @@ const alive = pid => {
 describe( `Codex managed launch arguments`, () => {
 
     it( `keeps model, provider, effort, sandbox and feature overrides on the server`, () => {
-        const plan = codex_launch_plan( [ `resume`, `thread-id`, `--model`, `custom-model`, `-c`, `model_provider="custom"`, `--config=model_reasoning_effort="low"`, `--sandbox`, `danger-full-access`, `--ask-for-approval`, `on-request`, `--disable`, `apps` ] )
+        const plan = codex_launch_plan( [ `--model`, `custom-model`, `-c`, `model_provider="custom"`, `--config=model_reasoning_effort="low"`, `--sandbox`, `danger-full-access`, `--ask-for-approval`, `on-request`, `--disable`, `apps` ] )
         expect( plan.managed ).toBe( true )
         expect( plan.server_args ).toEqual( [ `app-server`, `-c`, `model_provider="custom"`, `-c`, `model_reasoning_effort="low"`, `-c`, `features.apps=false`, `-c`, `model="custom-model"`, `-c`, `sandbox_mode="danger-full-access"`, `-c`, `approval_policy="on-request"`, `-c`, `features.step_model_switching=true` ] )
     } )
@@ -108,6 +108,29 @@ describe( `Codex managed launch arguments`, () => {
         expect( server_args ).toContain( `model_reasoning_effort="medium"` )
         expect( server_args ).toContain( `approval_policy="never"` )
         expect( server_args ).toContain( `sandbox_mode="danger-full-access"` )
+    } )
+
+    it( `uses native resume and fork when permissions cannot be honored remotely`, () => {
+        const overrides = [
+            [ `--dangerously-bypass-approvals-and-sandbox` ], [ `--yolo` ],
+            [ `--sandbox`, `danger-full-access` ], [ `-sread-only` ],
+            [ `--ask-for-approval=never` ], [ `-a`, `on-request` ],
+            [ `--add-dir`, `/extra` ], [ `--full-auto` ],
+            [ `--approve-for-me` ], [ `--not-so-yolo` ],
+            [ `-c`, `approval_policy="never"` ], [ `--config=sandbox_mode="read-only"` ],
+            [ `-cpermissions.custom.filesystem="read-only"` ],
+            [ `-c`, `"network".enabled=false` ], [ `-c`, `approvals_reviewer="user"` ],
+            [ `-c`, `default_permissions="custom"` ], [ `-c`, `sandbox_workspace_write.network_access=false` ],
+        ]
+        for( const command of [ `resume`, `fork` ] ) {
+            for( const flags of overrides ) {
+                expect( codex_launch_plan( [ ...flags, command, `thread-id` ] ) ).toMatchObject( {
+                    managed: false, warning: expect.stringContaining( `preserve permissions` ),
+                } )
+            }
+        }
+        // Prompt text after -- must never be interpreted as a permission flag.
+        expect( codex_launch_plan( [ `resume`, `thread-id`, `--`, `--yolo` ] ).managed ).toBe( true )
     } )
 
     it( `does not turn noninteractive commands, help or explicit remote clients into managed sessions`, () => {
@@ -151,6 +174,18 @@ describe( `OpenCode managed launch arguments`, () => {
 } )
 
 describe( `managed launcher lifecycle`, () => {
+
+    it( `passes native resume permissions unchanged without an inherited effort endpoint`, async () => {
+        const files = fixture()
+        const args = [ `--dangerously-bypass-approvals-and-sandbox`, `resume`, `thread-id` ]
+        const { code, stderr } = await run_fixture( files, args, { BABYSIT_EFFORT_ENDPOINT: `ws://parent:1` } ).result
+        expect( code ).toBe( 0 )
+        const tui = await wait_for_file( join( files.directory, `tui.json` ) )
+        expect( tui.args ).toEqual( args )
+        expect( tui.endpoint ).toBeUndefined()
+        expect( existsSync( join( files.directory, `server.json` ) ) ).toBe( false )
+        expect( stderr ).toContain( `live babysit effort controls are unavailable` )
+    }, 10_000 )
 
     it( `keeps noisy background stderr out of a real terminal while preserving frontend output`, async () => {
         const files = fixture()

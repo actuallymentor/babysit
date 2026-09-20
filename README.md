@@ -45,13 +45,6 @@ Selections persist per workspace; new workspaces inherit the latest global selec
 Names never persist. Menu requires a TTY; explicit agent commands ignore defaults.
 Use explicit commands in scripts.
 
-### Antigravity setup
-
-- Sign in with host `agy`, or export `GEMINI_API_KEY` (takes precedence over OAuth).
-- Complete native first-run setup and workspace trust; `--yolo` does not bypass them.
-- Linux keyring capture needs `secret-tool` (`libsecret-tools`); files/API keys do not.
-- Gemini CLI sessions cannot migrate to Antigravity.
-
 ## Flags
 
 | Flag | Effect |
@@ -88,6 +81,7 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; otherwise output stability; unreadable → unknown.
 Attachment is separate. Pruning needs free space for locks/journals.
+Old resume IDs follow their latest launch; history shows current launches and saved status.
 
 ### Recovery
 
@@ -150,6 +144,7 @@ Current request finishes unchanged; model stays fixed. Levels come from the mode
 
 Requires updated image/new container; verified with Codex 0.153.4 / OpenCode 1.18.29.
 Remote/headless sessions, Codex `--profile`, OpenCode `--pure`: normal launch without controls.
+Codex resume/fork with permission flags uses the native CLI; no live effort controls.
 
 ## Supervision
 
@@ -260,11 +255,13 @@ npm run test:all
 | `npm run test:bridge` | Browser → tmux; first `npm run build --prefix web` |
 | `npm run test:prune` | Interactive pruning through real terminal |
 | `npm run test:antigravity` | Real agy TUI/hooks/resume against local model fixture |
+| `npm run test:codex` | Real Codex resume and permissions against local model fixture |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
 | `node tests/e2e/status.js` | Focused Docker/tmux activity regression |
 
 `test:all` runs all suites, also on PRs/main pushes. Requires Docker, tmux, Python 3,
-`agy` (`AGY_E2E_BINARY` override), Chrome/Chromium (`CHROME_PATH` override).
+`agy` (`AGY_E2E_BINARY` override), `codex` (`CODEX_E2E_BINARY` override),
+Chrome/Chromium (`CHROME_PATH` override).
 Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.
 E2E uses real Docker/tmux without model API calls.
 

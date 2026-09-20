@@ -1,9 +1,21 @@
 # Changelog
 
-## Unreleased
+## 1.1.1 — 2026-09-20
+
+### Fixed
+- Preserve Codex resume/fork permissions through native launch.
+- Follow historical resume IDs to their current live or retryable launch.
+- Wait for native Antigravity exit before test cleanup.
+
+### Added
+- Exercise real Codex resume and permission changes in CI.
+
+### Removed
+- Remove Antigravity-specific setup from README.
 
 ### Changed
 - Condense README into a command-first quick reference.
+- Use native Codex resume with permissions; omit live effort controls.
 
 ## 1.1.0 — 2026-09-11
 
