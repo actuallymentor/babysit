@@ -78,3 +78,5 @@
 - 2026-09-20 validation: full `npm run test:all` passed (951 CLI tests, browser/bridge, native Codex/Antigravity, Docker lifecycle and all four recovery adapters). Four release binaries built; Linux binary smoke-tested against isolated and read-only host state. Nested clone E2E remains delegated to host CI.
 
 - 2026-09-20: Postcommit real-Codex review found native resume retains app-server source metadata; corrected completion capture and added real normal/YOLO notification assertions.
+
+- 2026-09-20: Host CI exposed fixture races hidden by slow nested Docker: wait for fake composer readiness, inspect every accepted line of clone guidance, and acknowledge native Codex submission rather than relying on display timing.

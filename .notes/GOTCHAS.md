@@ -148,3 +148,5 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 140. **Superseded does not mean running.** A durable replacement may fail or exit. Historical resume handles must follow the current launch under the workspace lifecycle lock; preserve early replacement records for crash recovery.
 
 141. **Codex source records provenance, not current transport.** A managed root retains `vscode` metadata on native resume. Completion capture must accept that root while retaining ancestry checks and rejecting structured subagent sources.
+
+142. **Codex can render an editable composer before submission is enabled.** Native TUI tests must observe turn-start acknowledgment; rendering alone and fixed delays do not establish readiness. Never resend the prompt text while awaiting submission.
