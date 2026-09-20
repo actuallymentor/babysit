@@ -40,6 +40,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tmux python3 jq
           bash src/docker/assets/install-antigravity.sh
+          npm install -g @openai/codex@0.154.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           npm ci
           npm ci --prefix web

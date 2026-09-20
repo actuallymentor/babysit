@@ -4,7 +4,7 @@ import { resolve, join } from 'path'
 import { hostname } from 'os'
 import { run } from '../utils/exec.js'
 import { docker_command_prefix } from '../docker/run.js'
-import { session_workspace } from './store.js'
+import { load_session, list_stored_sessions, session_workspace } from './store.js'
 
 export const RECOVERY_PROMPT = `You were interrupted. Check the current state, then continue unfinished work.`
 
@@ -104,5 +104,31 @@ export const select_recovery_sessions = ( sessions, id = null ) => {
         }
         return false
     } )
+
+}
+
+/** Resolve historical launch aliases, including a crash before the parent pointer was saved. */
+export const resolve_current_session = ( session, {
+    load = load_session,
+    list = list_stored_sessions,
+} = {} ) => {
+
+    if( !session ) return null
+    const sessions = list()
+    const seen = new Set()
+    let current = session
+    while( current ) {
+        if( seen.has( current.babysit_id ) ) throw new Error( `Session replacement cycle at ${ current.babysit_id }` )
+        seen.add( current.babysit_id )
+        const next = current.superseded_by
+            ? load( current.superseded_by )
+            : sessions.find( candidate => candidate.resumed_from === current.babysit_id )
+        if( current.superseded_by && !next ) throw new Error( `Replacement session is missing: ${ current.superseded_by }` )
+        if( !next ) return current
+        if( next.agent !== current.agent || session_lock_key( next ) !== session_lock_key( current ) ) {
+            throw new Error( `Session replacement changed agent or workspace: ${ next.babysit_id }` )
+        }
+        current = next
+    }
 
 }

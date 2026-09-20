@@ -631,7 +631,17 @@ babysit: []
     ensure( args.includes( native_id ), `resumed Codex command did not use the captured native session id` )
     ensure( initial_prompt_count === 1, `resume should not receive the initial prompt again` )
 
+    // Historical aliases attach to the current launch with either syntax.
+    for( const command of [ [ `resume` ], [ `codex`, `resume` ] ] ) {
+        const attached = await launch_babysit_command( workspace, [ ...command, session.babysit_id ] )
+        ensure( attached.babysit_id === resumed.babysit_id, `historical resume created a duplicate live launch` )
+    }
+
     await stop_session( resumed )
+    const retried = await launch_babysit_command( workspace, [ `codex`, `resume`, session.babysit_id ] )
+    ensure( retried.resumed_from === resumed.babysit_id, `historical resume did not retry the current launch` )
+    ensure( retried.agent_session_id === native_id, `historical resume changed the native conversation` )
+    await stop_session( retried )
 
 }
 

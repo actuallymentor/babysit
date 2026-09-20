@@ -73,3 +73,6 @@
 - 2026-09-11: Extend existing babysit config as a read-only effective-settings summary. Separate recovery installation, boot enablement and runtime state; unreachable systemd means unknown. Preserve the legacy auth-selection write flag.
 
 - 2026-09-20: Recast README as a terse quick reference per explicit documentation preferences; retain operational caveats.
+
+- 2026-09-20: Diagnosed production Codex resume exit 1 as remote permission-override rejection, followed by stale-ID supersession rejection. Preserve permissions via native resume/fork; resolve historical launch aliases and add real native/Docker regressions.
+- 2026-09-20 validation: full `npm run test:all` passed (951 CLI tests, browser/bridge, native Codex/Antigravity, Docker lifecycle and all four recovery adapters). Four release binaries built; Linux binary smoke-tested against isolated and read-only host state. Nested clone E2E remains delegated to host CI.

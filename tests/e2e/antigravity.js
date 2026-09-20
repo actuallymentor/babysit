@@ -180,8 +180,10 @@ try {
     assert.ok( model_requests.some( text => text.includes( `FIRST_NATIVE_TURN` ) && text.includes( `SECOND_NATIVE_TURN` ) ), `Resumed model context includes the first user turn` )
     await until( `rendered resumed reply`, async () => ( await capture() ).includes( `Native resumed answer.` ) )
     console.log( `PASS real --conversation resume retains trust after host reseed, UUID, history and completion capture` )
+    await submit( `/exit` )
+    await until( `resumed native CLI exit`, async () => !await tmux( [ `has-session`, `-t`, session ] ).then( () => true, () => false ) )
 } finally {
     await tmux( [ `kill-server` ] ).catch( () => {} )
     if( server ) await new Promise( closed => server.close( closed ) )
-    rmSync( root, { recursive: true, force: true } )
+    rmSync( root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } )
 }

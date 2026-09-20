@@ -11,6 +11,7 @@ import {
 import { has_session } from '../tmux/session.js'
 import { cmd_open } from './open.js'
 import { cmd_start, spawn_monitor_daemon } from './start.js'
+import { recovery_candidates, resolve_current_session } from '../sessions/recovery.js'
 import { is_monitor_alive } from './monitor_process.js'
 
 export { is_monitor_alive } from './monitor_process.js'
@@ -85,8 +86,8 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null } =
         : `Resumable babysit sessions:`
 
     console.log( `\n${ heading }\n` )
-    console.log( `  ${ pad( `BABYSIT ID`, 24 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `AGENT SESSION ID`, 38 ) }  ${ pad( `STARTED`, 19 ) }  WORKSPACE` )
-    console.log( `  ${ `-`.repeat( 147 ) }` )
+    console.log( `  ${ pad( `BABYSIT ID`, 24 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `AGENT SESSION ID`, 38 ) }  ${ pad( `STARTED`, 19 ) }  ${ pad( `STATUS`, 12 ) }  WORKSPACE` )
+    console.log( `  ${ `-`.repeat( 161 ) }` )
 
     sessions.forEach( session => {
 
@@ -95,7 +96,7 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null } =
         const started_at = format_started_at( session.started_at )
 
         const workspace = session_workspace( session )
-        console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ workspace || `-` }` )
+        console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ pad( session.status || `unknown`, 12 ) }  ${ workspace || `-` }` )
 
     } )
 
@@ -193,23 +194,27 @@ export const resolve_resume_target = ( session ) => {
  * @param {Function} [options.spawn_monitor=spawn_monitor_daemon] - Detached monitor restarter
  * @param {Function} [options.update_session_fn=update_session] - Session metadata updater
  */
-export const cmd_resume = async ( cmd, {
-    start = cmd_start,
-    load_session_fn = load_session,
-    list_stored_sessions_fn = list_stored_sessions,
-    print_sessions = print_resumable_sessions_table,
-    get_cwd = process.cwd,
-    has_session_fn = has_session,
-    open_session = cmd_open,
-    monitor_is_alive = is_monitor_alive,
-    spawn_monitor = spawn_monitor_daemon,
-    update_session_fn = update_session,
-} = {} ) => {
+export const cmd_resume = async ( cmd, options = {} ) => {
+
+    const {
+        start = cmd_start,
+        load_session_fn = load_session,
+        list_stored_sessions_fn = list_stored_sessions,
+        print_sessions = print_resumable_sessions_table,
+        get_cwd = process.cwd,
+        has_session_fn = has_session,
+        open_session = cmd_open,
+        monitor_is_alive = is_monitor_alive,
+        spawn_monitor = spawn_monitor_daemon,
+        update_session_fn = update_session,
+    } = options
 
     const { session_id, flags = {}, passthrough = [] } = cmd
 
     if( !session_id ) {
-        const stored_sessions = list_stored_sessions_fn()
+        const history = list_stored_sessions_fn()
+        const candidates = recovery_candidates( history )
+        const stored_sessions = candidates.length === history.length ? history : candidates
         const sessions = stored_sessions.some( session => session.clone_pruned_at )
             ? stored_sessions.filter( session => !session.clone_pruned_at )
             : stored_sessions
@@ -226,9 +231,20 @@ export const cmd_resume = async ( cmd, {
     }
 
     // Look up session metadata
-    const session = load_session_fn( session_id )
+    const session = resolve_current_session( load_session_fn( session_id ), {
+        load: load_session_fn,
+        list: list_stored_sessions_fn,
+    } )
 
     if( session ) {
+
+        // Both resume syntaxes enter the lifecycle lock before deciding whether
+        // to attach or relaunch. cmd_start delegates back with a launch callback.
+        if( start === cmd_start ) return start( { ...cmd, agent: session.agent, stored_session: session }, {
+            load_session_fn,
+            resume: ( command, locked_options ) => cmd_resume( command, { ...options, ...locked_options } ),
+            open: open_session,
+        } )
 
         if( session.clone_pruned_at ) {
             throw new Error( `Clone workspace was pruned at ${ session.clone_pruned_at }: ${ session.clone_path }` )
