@@ -118,22 +118,33 @@ trust_level = "trusted"
     const launch = args => run( `tmux`, [ `-L`, socket, `new-session`, `-d`, `-s`, session, `-x`, `110`, `-y`, `35`,
         process.execPath, launcher, `python3`, helper, `launch`, `codex`, binary, ...args,
     ], { env, cwd: workspace } )
-    const submit = async prompt => {
-        await tmux( [ `send-keys`, `-l`, `-t`, session, prompt ] )
-        await delay( 200 )
-        await tmux( [ `send-keys`, `-t`, session, `Enter` ] )
+    const submit = async ( prompt, accepted ) => {
+        // Codex startup_draft.rs renders an editable provisional composer before
+        // Enter is enabled (chat_composer.rs: Startup Draft Handoff).
+        // Paste once, then submit the pending draft until the native turn starts.
+        await tmux( [ `set-buffer`, `-b`, `input`, prompt ] )
+        await tmux( [ `paste-buffer`, `-b`, `input`, `-p`, `-d`, `-t`, session ] )
+        await until( `accepted input ${ prompt }`, async () => {
+            if( await accepted() ) return true
+            try {
+                const draft = ( await capture() ).split( `\n` ).findLast( line => line.startsWith( `›` ) )
+                if( draft?.trim() === `› ${ prompt }` ) await tmux( [ `send-keys`, `-t`, session, `Enter` ] )
+            } catch ( error ) {
+                // /exit can close tmux between the acknowledgment and capture.
+                if( await accepted() ) return true
+                throw error
+            }
+            return false
+        } )
     }
-    const stop = async () => {
-        await submit( `/exit` )
-        await until( `native CLI exit`, async () => !await tmux( [ `has-session`, `-t`, session ] ).then( () => true, () => false ) )
-    }
+    const stop = () => submit( `/exit`, async () => !await tmux( [ `has-session`, `-t`, session ] ).then( () => true, () => false ) )
     let thread_id
     let previous_turn
     for( const [ index, mode ] of [ `normal`, `normal`, `yolo` ].entries() ) {
         const flags = mode === `yolo` ? [ `--dangerously-bypass-approvals-and-sandbox` ] : [ `--sandbox`, `danger-full-access`, `--ask-for-approval`, `on-request` ]
         await launch( [ ...flags, ...thread_id ? [ `resume`, thread_id ] : [] ] )
         await until( `${ mode } composer`, async () => ( await capture() ).includes( `› Ask Codex to do anything` ) )
-        await submit( `NATIVE_TURN_${ index + 1 }` )
+        await submit( `NATIVE_TURN_${ index + 1 }`, () => records().filter( record => record.type === `event_msg` && record.payload.type === `task_started` ).length === index + 1 )
         await until( `${ mode } completed turn`, () => records().filter( record => record.type === `event_msg` && record.payload.type === `task_complete` ).length === index + 1 )
         const persisted = records()
         assert.equal( persisted.find( record => record.type === `session_meta` ).payload.source, `vscode` )
