@@ -222,8 +222,8 @@ spawnSync(notify[0], [...notify.slice(1), JSON.stringify({type: 'agent-turn-comp
         expect( execute( `codex`, [] ).text ).toBe( `Native child reply` )
     } )
 
-    it( `rejects a nested native Codex when the root is already native`, () => {
-        codex_metadata( `nested`, `cli` )
+    it( `rejects a nested native Codex resuming app-server history`, () => {
+        codex_metadata( `nested`, `vscode` )
         const node_path = spawnSync( `node`, [ `-p`, `process.execPath` ], { encoding: `utf8` } ).stdout.trim()
         const native = join( directory, `codex` )
         const child = join( directory, `child.cjs` )
@@ -255,13 +255,16 @@ require('child_process').spawnSync(${ JSON.stringify( native ) }, [${ JSON.strin
         expect( JSON.parse( readFileSync( arguments_file, `utf8` ) ) ).toEqual( [ `--version` ] )
     } )
 
-    it( `captures managed app-server roots while excluding child and unmanaged remote sessions`, () => {
+    it( `captures app-server roots after native resume while excluding child sessions`, () => {
         codex_metadata( `root`, `vscode` )
         codex_metadata( `child`, { subagent: { parent_thread_id: `root` } } )
         const root = { type: `agent-turn-complete`, 'thread-id': `root`, 'last-assistant-message': `Managed final` }
         delete env.BABYSIT_EFFORT_AGENT
         delete env.BABYSIT_EFFORT_ENDPOINT
-        expect( execute( `codex`, [ root ] ) ).toBeNull()
+        expect( execute( `codex`, [
+            root,
+            { type: `agent-turn-complete`, 'thread-id': `child`, 'last-assistant-message': `Wrong native child` },
+        ] ).text ).toBe( `Managed final` )
 
         env.BABYSIT_EFFORT_AGENT = `codex`
         env.BABYSIT_EFFORT_ENDPOINT = `ws://127.0.0.1:12345`

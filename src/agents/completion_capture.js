@@ -49,12 +49,11 @@ def codex_root_session(session):
             metadata = json.loads(file.readline(65536))
         if metadata.get('type') == 'session_meta':
             data = metadata.get('payload', {})
-            # A remote TUI on Babysit's owned app server records root sessions
-            # as vscode. Process ancestry still excludes independently launched
-            # CLIs, and structured subagent sources remain excluded here.
+            # Remote roots retain vscode provenance after native resume.
+            # root_hook checks current process ancestry; structured subagent
+            # sources remain excluded regardless of the current transport.
             source = data.get('source')
-            managed = os.environ.get('BABYSIT_EFFORT_AGENT') == 'codex' and os.environ.get('BABYSIT_EFFORT_ENDPOINT', '').startswith('ws://127.0.0.1:')
-            if data.get('id') == session and (source == 'cli' or (managed and source == 'vscode')):
+            if data.get('id') == session and source in ('cli', 'vscode'):
                 return True
     return False
 

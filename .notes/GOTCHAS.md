@@ -146,3 +146,5 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 
 139. **Codex remote resume rejects permission overrides.** Codex 0.154.0 rejects permission flags and permission-related `-c` keys on remote resume/fork. Server-only config restores saved permissions instead of applying the requested change. Use native resume/fork when permissions are explicit; live effort control is unavailable on that path. Verify same conversation and per-turn permission changes with the real native CLI.
 140. **Superseded does not mean running.** A durable replacement may fail or exit. Historical resume handles must follow the current launch under the workspace lifecycle lock; preserve early replacement records for crash recovery.
+
+141. **Codex source records provenance, not current transport.** A managed root retains `vscode` metadata on native resume. Completion capture must accept that root while retaining ancestry checks and rejecting structured subagent sources.
