@@ -124,27 +124,57 @@ sudo systemctl disable "babysit-recover-$(id -u).service" # Disable future boot 
 - Unattended init needs root or cached/passwordless sudo. Avoid a `sudo` prefix: it can strip PATH/storage exports.
 - Login-unlocked homes/keyrings and rootless/remote Docker require separate host setup.
 
-## Reasoning effort
+## Model and effort
 
-Inside a newly launched Codex/OpenCode session:
+Inside a newly launched managed session:
 
 ```bash
-babysit effort          # Current setting + supported levels
-babysit effort high     # Next model request, including within this turn
-babysit effort low
+babysit model                 # Available models for this agent
+babysit model <model-name>     # Switch within this agent
+babysit effort                # Supported effort levels
+babysit effort high
+babysit model --status <id>    # Result of a queued terminal request
+babysit effort --status <id>
 ```
 
-Current request finishes unchanged; model stays fixed. Levels come from the model.
+Changes affect this session, not future launch defaults. Compatible effort is
+preserved; switching to an incompatible model selects its default effort.
+A request already running at the provider finishes unchanged.
 
 | Agent | Behavior |
 |---|---|
-| Codex | Updates native thread/turn settings and TUI footer |
-| OpenCode | Session plugin override; footer retains TUI variant. `effort default` restores it; lookup failure warns and falls back to it |
-| Claude / Antigravity | No live controls; Antigravity accepts launch-time `--effort` |
+| Codex | Native thread/turn settings; reports partial application if the active turn rejects a model change |
+| Claude | Native session-only pickers; effort can change during a turn |
+| OpenCode | Effort plugin; model picker applies on the next turn |
+| Antigravity | Native model/effort controls; waits for an idle composer |
 
-Requires updated image/new container; verified with Codex 0.153.4 / OpenCode 1.18.29.
-Remote/headless sessions, Codex `--profile`, OpenCode `--pure`: normal launch without controls.
-Codex resume/fork with permission flags uses the native CLI; no live effort controls.
+Terminal controls preserve drafts and existing dialogs, queue for up to 60 seconds,
+and return a request ID while pending. `--status` reports applied/failed results.
+Model catalogs and effort choices come from the installed CLI/provider.
+OpenCode `effort default` restores its TUI variant; plugin overrides do not update
+its footer. After a manual OpenCode model change, send a turn before querying its
+API-backed model/effort state.
+
+Requires an updated image and a new container with its host monitor running.
+Remote/headless sessions, Codex `--profile`, OpenCode `--pure`: normal launch
+without API controls. Codex resume/fork with permission flags uses the native CLI;
+its live controls remain unavailable.
+
+## Account usage
+
+```bash
+babysit usage                 # Host or container; no running session required
+babysit usage --json          # Structured results, including partial failures
+```
+
+Queries authenticated agents independently. Claude/Codex show provider quota
+windows and reset times; OpenRouter shows API-key budgets and spend. Unknown
+allowances stay unknown. Local token history is not an account limit.
+
+Internal provider endpoints are used where needed. Unsupported credentials/providers
+(including Antigravity quota retrieval) are labeled unavailable; other results remain
+visible. Exit 1 indicates unavailable usage or fetch errors. Missing authentication
+is reported separately. Usage reads do not start inference.
 
 ## Supervision
 
@@ -256,10 +286,13 @@ npm run test:all
 | `npm run test:prune` | Interactive pruning through real terminal |
 | `npm run test:antigravity` | Real agy TUI/hooks/resume against local model fixture |
 | `npm run test:codex` | Real Codex resume and permissions against local model fixture |
+| `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
 | `node tests/e2e/status.js` | Focused Docker/tmux activity regression |
 
-`test:all` runs all suites, also on PRs/main pushes. Requires Docker, tmux, Python 3,
+`test:all` runs the automated suites, also on PRs/main pushes. The optional
+`test:controls` smoke uses local Claude credentials and checks available account quotas.
+Requires Docker, tmux, Python 3,
 `agy` (`AGY_E2E_BINARY` override), `codex` (`CODEX_E2E_BINARY` override),
 Chrome/Chromium (`CHROME_PATH` override).
 Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.

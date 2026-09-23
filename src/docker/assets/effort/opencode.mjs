@@ -1,3 +1,5 @@
+import { opencode_selection } from './catalog.mjs'
+
 const metadata_key = `babysit_effort`
 
 /** Change the requesting OpenCode session's reasoning override through its own server. */
@@ -36,7 +38,8 @@ export const effort = async level => {
     // The native v2 session.model can differ from the legacy TUI's actual inference model.
     const messages = await request( `${ path }/message` )
     const user = messages.findLast( message => message.info.role === `user` )?.info
-    const model = user?.model ? { ...user.model, id: user.model.modelID } : session.model
+    const selected = opencode_selection( session_id, session, user )
+    const model = selected && { ...selected, id: selected.modelID }
     if( !model?.providerID || !model.id ) throw new Error( `OpenCode has not selected a model in this session yet.` )
 
     const providers = await request( `/provider` )

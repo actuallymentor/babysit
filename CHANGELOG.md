@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0 — 2026-09-23
+
+### Added
+- Add session-scoped model switching and native Claude/Antigravity effort controls.
+- Queue terminal controls safely with expiry and request status.
+- Add host/container account usage for Claude, Codex, and OpenRouter.
+
 ## 1.1.2 — 2026-09-20
 
 ### Fixed

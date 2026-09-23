@@ -1,7 +1,7 @@
 import { connect_rpc } from './rpc.mjs'
 
-// Catalogs and loaded threads can span several pages. Never guess from page one.
-const list_all = async ( rpc, method ) => {
+/** Collect a paginated Codex catalog without guessing from page one. */
+export const list_all = async ( rpc, method ) => {
     const data = []
     let cursor
     do {
