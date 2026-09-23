@@ -23,6 +23,7 @@ export const create_control_bridge = ( session, {
     if( !/^[a-f0-9-]{36}$/.test( launch_id || `` ) || !/^%\d+$/.test( pane || `` ) || !/^[a-f0-9]{12,64}$/.test( session.container_id || `` ) ) return null
     const [ command, ...prefix ] = docker_command_prefix()
     let task = null
+    let applying = false
     let closed = false
     let next_poll = 0
     let deadline = Infinity
@@ -54,10 +55,15 @@ export const create_control_bridge = ( session, {
             deadline = now() + remaining
             active()
             if( remaining <= 1_000 ) throw new Error( `Control request timed out before applying.` )
+            applying = true
             const result = await execute( {
                 agent: session.agent, operation: request.operation,
                 value: request.value, target: request.target, busy,
                 timeout_ms: Math.min( 8_000, remaining - 1_000 ),
+                // Expiry stops edits, but must still release a dialog we opened.
+                dismiss: async predicate => {
+                    if( !closed && predicate( await capture( pane ) ) ) await keys( pane, `Escape` )
+                },
                 capture: async () => {
                     active(); return capture( pane )
                 },
@@ -86,6 +92,9 @@ export const create_control_bridge = ( session, {
         get revision() {
             return revision
         },
+        get applying() {
+            return applying
+        },
         get busy() {
             return !!task
         },
@@ -96,6 +105,7 @@ export const create_control_bridge = ( session, {
                 // Leave monitor ticks for rules/web input even when Docker is slow.
                 next_poll = Math.max( next_poll, now() + 2_000 )
                 task = null
+                applying = false
             } )
         },
         async close() {

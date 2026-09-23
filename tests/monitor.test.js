@@ -369,6 +369,29 @@ describe( `web bridge coordination`, () => {
         expect( action_targets ).toEqual( [ `%42` ] )
     } )
 
+    it( `defers web input during control polls without publishing false busy state`, async () => {
+        let checks = 0
+        let requests = 0
+        const published = []
+        const control_bridge = { revision: 0, busy: true, applying: false, tick() {}, async close() {} }
+        await start_monitor( {
+            session_name: `babysit_test`, config: {}, rules: [], agent_patterns: {},
+            control_bridge,
+            web_bridge: {
+                publish: async ( { busy } ) => published.push( busy ),
+                process_requests: async () => { requests++; return { sent: true } },
+                close: async () => {},
+            },
+            has_session_fn: async () => ++checks <= 2,
+            capture_pane_fn: async () => `ready`,
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            write_loop_deadline_fn: () => null,
+            wait_fn: async () => { control_bridge.busy = false },
+        } )
+        expect( published ).toEqual( [ false, false ] )
+        expect( requests ).toBe( 1 )
+    } )
+
     it( `does not run a rule against a screen captured before a control finishes`, async () => {
         let alive_checks = 0
         let action_count = 0
