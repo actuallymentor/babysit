@@ -82,3 +82,29 @@ test( `slow empty polls leave time for monitor rules and web input`, async () =>
     expect( calls ).toBe( 2 )
     await bridge.close()
 } )
+
+test( `expired controls can dismiss their owned dialog but cannot keep typing`, async () => {
+    let time = 0
+    const sent = []
+    const bridge = create_control_bridge( session, {
+        now: () => time,
+        runner: async ( command, args ) => {
+            const input = JSON.parse( Buffer.from( args.at( -1 ), `base64` ) )
+            return Buffer.from( JSON.stringify( input.action === `take` ? {
+                id: `expiry`, operation: `model`, value: `sonnet`, remaining_ms: 2_000,
+            } : input ) ).toString( `base64` )
+        },
+        capture: async () => `Select model`,
+        keys: async ( pane, key ) => sent.push( key ),
+        execute: async ( { send_keys, dismiss } ) => {
+            time = 3_000
+            await expect( send_keys( `Enter` ) ).rejects.toThrow( `timed out` )
+            await dismiss( screen => screen === `Select model` )
+            throw new Error( `timed out` )
+        },
+    } )
+    bridge.tick()
+    await settle( bridge )
+    expect( sent ).toEqual( [ `Escape` ] )
+    await bridge.close()
+} )

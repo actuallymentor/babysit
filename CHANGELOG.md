@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 — 2026-09-23
+
+### Fixed
+- Preserve queued web input during terminal-control polls.
+- Close owned native dialogs after a control request times out.
+
 ## 1.2.0 — 2026-09-23
 
 ### Added

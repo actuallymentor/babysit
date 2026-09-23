@@ -298,10 +298,14 @@ export const start_monitor = async ( {
                     await web_bridge.publish( {
                         output: clean_output,
                         activity: agent_status,
-                        busy: action_busy || !!control_bridge?.busy || !input_allowed(),
+                        busy: action_busy || !!control_bridge?.applying || !input_allowed(),
                     } )
-                    const bridge_result = await web_bridge.process_requests( { busy: action_busy || !!control_bridge?.busy || !input_allowed() } )
-                    bridge_sent = bridge_result.sent
+                    // Polls reserve input briefly; leave web requests queued rather
+                    // than claiming and rejecting them during an empty poll.
+                    if( !control_bridge?.busy ) {
+                        const bridge_result = await web_bridge.process_requests( { busy: action_busy || !input_allowed() } )
+                        bridge_sent = bridge_result.sent
+                    }
                 } catch ( error ) {
                     log.debug( `Web bridge tick failed for ${ session_name }: ${ error.message }` )
                 }

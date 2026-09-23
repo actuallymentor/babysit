@@ -6,6 +6,26 @@ const pending = message => Object.assign( new Error( message ), { code: `CONTROL
 const unsupported = message => Object.assign( new Error( message ), { code: `CONTROL_UNSUPPORTED` } )
 const clean = value => value.toLowerCase().replace( /[^a-z0-9]/g, `` )
 
+// Cleanup must identify a live control dialog, not words left in transcript.
+// Match its native footer as well as its title, within the visible pane tail.
+const owned_dialog = ( agent, operation, screen ) => {
+    const tail = screen.split( `\n` ).slice( -35 ).join( `\n` )
+    if( agent === `claude` ) {
+        const model = /(?:^|\n)\s*Select model\s*\n[\s\S]*?Enter to set as default · s to use this session only · Esc to cancel/i
+        const effort = /(?:^|\n)\s*Effort\s*\n[\s\S]*?←\/→ to adjust · Enter to confirm · s for this session only · Esc to cancel/i
+        const cache = /(?:Change effort level\?|Switch model\?)[\s\S]*?Yes, switch to/i
+        return ( operation === `model` ? model : effort ).test( tail ) || cache.test( tail )
+    }
+    if( agent === `opencode` ) {
+        return /Select model\s+esc[\s\S]*?Connect provider ctrl\+a/i.test( tail )
+            || /(?:^|\n)\s*Select variant\s+esc\s*\n/i.test( tail )
+    }
+    if( agent === `antigravity` ) {
+        return /(?:Switch Model|Set Effort)\s*\n[\s\S]*?Keyboard:/i.test( tail )
+    }
+    return false
+}
+
 const wait_for = async ( capture, predicate, timeout_ms ) => {
     const deadline = Date.now() + timeout_ms
     while( Date.now() < deadline ) {
@@ -337,18 +357,33 @@ const antigravity_control = async ( { operation, value, target, capture, send_te
  */
 export const terminal_control = async ( {
     agent, operation, value, target, capture, send_text, send_keys,
-    busy = false, timeout_ms = DEFAULT_TIMEOUT_MS,
+    dismiss, busy = false, timeout_ms = DEFAULT_TIMEOUT_MS,
 } ) => {
     if( ![ `model`, `effort` ].includes( operation ) ) throw new Error( `Unknown terminal control '${ operation }'.` )
     if( value !== undefined && !/^[\x20-\x7E]{1,160}$/.test( value ) ) throw new Error( `Control value contains unsupported characters.` )
     if( typeof capture !== `function` || typeof send_text !== `function` || typeof send_keys !== `function` ) throw new Error( `Terminal control needs capture, send_text and send_keys callbacks.` )
     const screen = await capture()
     ensure_safe( agent, screen, busy )
-    const context = { operation, value, target, capture, send_text, send_keys, timeout_ms, screen_before: screen }
-    switch ( agent ) {
-    case `claude`: return claude_control( context )
-    case `opencode`: return opencode_control( context )
-    case `antigravity`: return antigravity_control( context )
-    default: throw unsupported( `${ agent } does not have a native terminal controller.` )
+    let opened = false
+    const tracked_send_text = async text => {
+        await send_text( text )
+        opened = true
+    }
+    const context = { operation, value, target, capture, send_text: tracked_send_text, send_keys, timeout_ms, screen_before: screen }
+    try {
+        switch ( agent ) {
+        case `claude`: return await claude_control( context )
+        case `opencode`: return await opencode_control( context )
+        case `antigravity`: return await antigravity_control( context )
+        default: throw unsupported( `${ agent } does not have a native terminal controller.` )
+        }
+    } catch ( error ) {
+        if( opened ) {
+            try {
+                if( dismiss ) await dismiss( current => owned_dialog( agent, operation, current ) )
+                else if( owned_dialog( agent, operation, await capture() ) ) await send_keys( `Escape` )
+            } catch { /* Preserve the control error if the pane has closed. */ }
+        }
+        throw error
     }
 }

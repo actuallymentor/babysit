@@ -56,6 +56,73 @@ describe( `native terminal controls`, () => {
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
     } )
 
+    test( `dismisses an owned Claude picker after guarded capture expires`, async () => {
+        const picker = `${ claude_ready }\nSelect model\n❯ 1. Sonnet  Sonnet 5\nEnter to set as default · s to use this session only · Esc to cancel`
+        let screen = claude_ready
+        let expired = false
+        const sent = []
+        const capture = async () => {
+            if( expired ) throw new Error( `deadline expired` )
+            return screen
+        }
+        const send_text = async text => {
+            sent.push( text )
+            screen = picker
+            expired = true
+        }
+        const send_keys = async key => {
+            sent.push( key )
+        }
+        const dismiss = async predicate => {
+            if( predicate( screen ) ) {
+                sent.push( `unguarded Escape` )
+                screen = claude_ready
+            }
+        }
+        await expect( terminal_control( { agent: `claude`, operation: `model`, capture, send_text, send_keys, dismiss } ) ).rejects.toThrow( `deadline expired` )
+        expect( sent ).toEqual( [ `/model`, `unguarded Escape` ] )
+        expect( screen ).toBe( claude_ready )
+    } )
+
+    test( `does not dismiss historical dialog text after a failed command`, async () => {
+        let screen = claude_ready
+        let expired = false
+        let dismissed = false
+        const capture = async () => {
+            if( expired ) throw new Error( `deadline expired` )
+            return screen
+        }
+        const send_text = async () => {
+            screen = `${ claude_ready }\n❯ Earlier note: Select model is in the manual.`
+            expired = true
+        }
+        const dismiss = async predicate => {
+            dismissed = predicate( screen )
+        }
+        await expect( terminal_control( { agent: `claude`, operation: `model`, capture, send_text, send_keys: async () => {}, dismiss } ) ).rejects.toThrow( `deadline expired` )
+        expect( dismissed ).toBe( false )
+    } )
+
+    test( `dismisses an OpenCode picker when its guarded cleanup also expires`, async () => {
+        const ready = `┃\n┃  Ask anything… "Fix broken tests"\n┃\n┃  Build · GPT-6 Luna OpenRouter\n╹▀▀▀▀▀▀`
+        let screen = `${ ready }\nSelect model  esc\nSearch\nRecent\nGPT-6 Luna  OpenRouter\nConnect provider ctrl+a`
+        let calls = 0
+        let dismissed = false
+        const capture = async () => {
+            if( ++calls > 2 ) throw new Error( `deadline expired` )
+            return calls === 1 ? ready : screen
+        }
+        const send_text = async () => {}
+        const dismiss = async predicate => {
+            dismissed = predicate( screen )
+            if( dismissed ) screen = ready
+        }
+        const target = { id: `openrouter/openai/gpt-5.6-luna`, provider_id: `openrouter`, name: `GPT-5.6 Luna`, effort: `default` }
+        await expect( terminal_control( { agent: `opencode`, operation: `model`, value: target.id, target, capture, send_text, send_keys: async () => {}, dismiss } ) ).rejects.toThrow( `deadline expired` )
+        expect( dismissed ).toBe( true )
+        expect( screen ).toBe( ready )
+    } )
+
     test( `uses Antigravity's exact model slug and checks the footer`, async () => {
         const changed = `Antigravity CLI 1.2.9\n> /model\n  ⎿  Model set to Gemini 3.8 Flash (High)\n────────────────\n>\n────────────────\n? for shortcuts   Gemini 3.8 Flash · high`
         const io = callbacks( agy_ready, ( _, action ) => action === `text` ? changed : agy_ready )
