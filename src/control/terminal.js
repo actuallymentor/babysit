@@ -8,13 +8,13 @@ const clean = value => value.toLowerCase().replace( /[^a-z0-9]/g, `` )
 
 // Cleanup must identify a live control dialog, not words left in transcript.
 // Match its native footer as well as its title, within the visible pane tail.
-const owned_dialog = ( agent, operation, screen ) => {
+const owned_dialog = ( agent, screen ) => {
     const tail = screen.split( `\n` ).slice( -35 ).join( `\n` )
     if( agent === `claude` ) {
         const model = /(?:^|\n)\s*Select model\s*\n[\s\S]*?Enter to set as default · s to use this session only · Esc to cancel/i
         const effort = /(?:^|\n)\s*Effort\s*\n[\s\S]*?←\/→ to adjust · Enter to confirm · s for this session only · Esc to cancel/i
         const cache = /(?:Change effort level\?|Switch model\?)[\s\S]*?Yes, switch to/i
-        return ( operation === `model` ? model : effort ).test( tail ) || cache.test( tail )
+        return model.test( tail ) || effort.test( tail ) || cache.test( tail )
     }
     if( agent === `opencode` ) {
         return /Select model\s+esc[\s\S]*?Connect provider ctrl\+a/i.test( tail )
@@ -196,17 +196,12 @@ const claude_control = async ( { operation, value, target, capture, send_text, s
 
     let selected
     let supports_effort = true
-    try {
-        if( operation === `model` ) ( { selected, supports_effort } = await choose_claude_model( value, target, rows, capture, send_keys ) )
-        else {
-            const choice = await choose_effort( value, picker, send_keys, capture )
-            if( !choice.applied ) throw unsupported( `${ value } is unavailable for the current Claude model. Supported: ${ choice.supported.join( `, ` ) }.` )
-            await send_keys( `s` )
-            selected = value
-        }
-    } catch ( error ) {
-        if( title.test( await capture() ) ) await send_keys( `Escape` )
-        throw error
+    if( operation === `model` ) ( { selected, supports_effort } = await choose_claude_model( value, target, rows, capture, send_keys ) )
+    else {
+        const choice = await choose_effort( value, picker, send_keys, capture )
+        if( !choice.applied ) throw unsupported( `${ value } is unavailable for the current Claude model. Supported: ${ choice.supported.join( `, ` ) }.` )
+        await send_keys( `s` )
+        selected = value
     }
 
     let result = await wait_for( capture, screen => claude_cache_warning( screen ) || claude_confirmation( screen, operation, selected ), timeout_ms )
@@ -270,37 +265,32 @@ const opencode_control = async ( { operation, value, target, capture, send_text,
     if( !target?.name ) throw new Error( `OpenCode model selection needs a resolved catalog target.` )
 
     await send_text( `/models` )
-    try {
-        await wait_for( capture, screen => /Select model\s+esc/i.test( screen ), timeout_ms )
-        await send_keys( `-l`, target.name )
-        const picker = await wait_for( capture, screen => opencode_picker_search( screen, `Select model`, target.name ), timeout_ms )
-        const rows = opencode_rows( picker )
-        const [ first ] = rows
-        if( !first || first.name !== target.name || clean( first.provider ) !== clean( target.provider_id ) ) {
-            throw unsupported( `OpenCode model '${ target.id }' was not the first exact picker result (${ first?.name || `none` } / ${ first?.provider || `none` }).` )
-        }
-        await send_keys( `Enter` )
-        const { effort } = target
-        const next = await wait_for( capture, screen => /Select variant\s+esc/i.test( screen ) || opencode_model_footer_matches( screen, target ), timeout_ms )
-        if( /Select variant\s+esc/i.test( next ) ) {
-            if( effort && effort !== `default` && target.efforts?.includes( effort ) ) {
-                await send_keys( `-l`, effort )
-                const filtered = await wait_for( capture, screen => opencode_picker_search( screen, `Select variant`, effort ), timeout_ms )
-                const lines = filtered.split( `\n` ).map( line => line.trim() )
-                const options = lines.filter( line => [ `Default`, ...target.efforts ].includes( line ) )
-                if( options[ 0 ] !== effort ) throw new Error( `OpenCode variant '${ effort }' was not the first exact picker result.` )
-                await send_keys( `Enter` )
-            } else await send_keys( `Escape` )
-        }
-        const result = await wait_for( capture, screen => opencode_model_footer_matches( screen, target ), timeout_ms )
-        if( !opencode_footer_matches( result, target, effort ) ) {
-            throw unsupported( `OpenCode kept ${ target.name } but did not select its ${ effort } variant. Choose another model first, then retry.` )
-        }
-        return { message: `Model selected: ${ target.id }${ effort && effort !== `default` ? ` (${ effort })` : `` }. It applies to the next OpenCode request.${ target.notice ? ` ${ target.notice }` : `` }`, applied: target.id }
-    } catch ( error ) {
-        if( /Select (?:model|variant)\s+esc/i.test( await capture() ) ) await send_keys( `Escape` )
-        throw error
+    await wait_for( capture, screen => /Select model\s+esc/i.test( screen ), timeout_ms )
+    await send_keys( `-l`, target.name )
+    const picker = await wait_for( capture, screen => opencode_picker_search( screen, `Select model`, target.name ), timeout_ms )
+    const rows = opencode_rows( picker )
+    const [ first ] = rows
+    if( !first || first.name !== target.name || clean( first.provider ) !== clean( target.provider_id ) ) {
+        throw unsupported( `OpenCode model '${ target.id }' was not the first exact picker result (${ first?.name || `none` } / ${ first?.provider || `none` }).` )
     }
+    await send_keys( `Enter` )
+    const { effort } = target
+    const next = await wait_for( capture, screen => /Select variant\s+esc/i.test( screen ) || opencode_model_footer_matches( screen, target ), timeout_ms )
+    if( /Select variant\s+esc/i.test( next ) ) {
+        if( effort && effort !== `default` && target.efforts?.includes( effort ) ) {
+            await send_keys( `-l`, effort )
+            const filtered = await wait_for( capture, screen => opencode_picker_search( screen, `Select variant`, effort ), timeout_ms )
+            const lines = filtered.split( `\n` ).map( line => line.trim() )
+            const options = lines.filter( line => [ `Default`, ...target.efforts ].includes( line ) )
+            if( options[ 0 ] !== effort ) throw new Error( `OpenCode variant '${ effort }' was not the first exact picker result.` )
+            await send_keys( `Enter` )
+        } else await send_keys( `Escape` )
+    }
+    const result = await wait_for( capture, screen => opencode_model_footer_matches( screen, target ), timeout_ms )
+    if( !opencode_footer_matches( result, target, effort ) ) {
+        throw unsupported( `OpenCode kept ${ target.name } but did not select its ${ effort } variant. Choose another model first, then retry.` )
+    }
+    return { message: `Model selected: ${ target.id }${ effort && effort !== `default` ? ` (${ effort })` : `` }. It applies to the next OpenCode request.${ target.notice ? ` ${ target.notice }` : `` }`, applied: target.id }
 }
 
 const antigravity_rows = screen => screen.split( `\n` ).flatMap( line => {
@@ -339,7 +329,6 @@ const antigravity_control = async ( { operation, value, target, capture, send_te
     if( operation === `effort` ) {
         const levels = effort_labels( picker )
         if( !levels.includes( value ) ) {
-            await send_keys( `Escape` )
             throw unsupported( `${ value } is unavailable for this Antigravity model. Supported: ${ levels.join( `, ` ) }.` )
         }
         await send_keys( `Escape` )
@@ -365,11 +354,17 @@ export const terminal_control = async ( {
     const screen = await capture()
     ensure_safe( agent, screen, busy )
     let opened = false
+    let escaped = false
     const tracked_send_text = async text => {
         await send_text( text )
         opened = true
+        escaped = false
     }
-    const context = { operation, value, target, capture, send_text: tracked_send_text, send_keys, timeout_ms, screen_before: screen }
+    const tracked_send_keys = async ( ...keys ) => {
+        await send_keys( ...keys )
+        if( keys.includes( `Escape` ) ) escaped = true
+    }
+    const context = { operation, value, target, capture, send_text: tracked_send_text, send_keys: tracked_send_keys, timeout_ms, screen_before: screen }
     try {
         switch ( agent ) {
         case `claude`: return await claude_control( context )
@@ -378,10 +373,10 @@ export const terminal_control = async ( {
         default: throw unsupported( `${ agent } does not have a native terminal controller.` )
         }
     } catch ( error ) {
-        if( opened ) {
+        if( opened && !escaped ) {
             try {
-                if( dismiss ) await dismiss( current => owned_dialog( agent, operation, current ) )
-                else if( owned_dialog( agent, operation, await capture() ) ) await send_keys( `Escape` )
+                if( dismiss ) await dismiss( current => owned_dialog( agent, current ) )
+                else if( owned_dialog( agent, await capture() ) ) await send_keys( `Escape` )
             } catch { /* Preserve the control error if the pane has closed. */ }
         }
         throw error

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.2 — 2026-09-23
+
+### Fixed
+- Avoid duplicate Escape during native-control cleanup and handle nested effort dialogs.
+
 ## 1.2.1 — 2026-09-23
 
 ### Fixed

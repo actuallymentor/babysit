@@ -84,6 +84,48 @@ describe( `native terminal controls`, () => {
         expect( screen ).toBe( claude_ready )
     } )
 
+    test( `sends one Escape for an unsupported Claude model despite stale rendering`, async () => {
+        const picker = `${ claude_ready }\nSelect model\n❯ 1. Sonnet  Sonnet 5\nEnter to set as default · s to use this session only · Esc to cancel`
+        const io = callbacks( claude_ready, () => picker )
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `unavailable-model`, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_UNSUPPORTED` } )
+        expect( io.sent.filter( event => event[ 1 ] === `Escape` ) ).toEqual( [ [ `keys`, `Escape` ] ] )
+    } )
+
+    test( `dismisses nested Claude effort picker after model fallback expires`, async () => {
+        const model_picker = `${ claude_ready }\nSelect model\n❯ 1. Haiku  Haiku 4.5\nEffort not supported for Haiku\nEnter to set as default · s to use this session only · Esc to cancel`
+        const model_confirmed = `${ claude_ready }\n❯ /model\n  ⎿  Set model to Haiku 4.5 for this session only`
+        const effort_picker = `${ model_confirmed }\nEffort\nlow     medium     high     xhigh      max\n←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`
+        let screen = claude_ready
+        let expired = false
+        const sent = []
+        const capture = async () => {
+            if( expired ) throw new Error( `deadline expired` )
+            return screen
+        }
+        const send_text = async text => {
+            sent.push( text )
+            if( text === `/model` ) screen = model_picker
+            else {
+                screen = effort_picker
+                expired = true
+            }
+        }
+        const send_keys = async key => {
+            sent.push( key )
+            if( key === `s` ) screen = model_confirmed
+        }
+        const dismiss = async predicate => {
+            if( predicate( screen ) ) {
+                sent.push( `unguarded Escape` )
+                screen = claude_ready
+            }
+        }
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `haiku`, capture, send_text, send_keys, dismiss } ) ).rejects.toThrow( `deadline expired` )
+        expect( sent.filter( event => event === `unguarded Escape` ) ).toEqual( [ `unguarded Escape` ] )
+        expect( sent ).toContain( `/effort` )
+        expect( screen ).toBe( claude_ready )
+    } )
+
     test( `does not dismiss historical dialog text after a failed command`, async () => {
         let screen = claude_ready
         let expired = false
