@@ -146,6 +146,11 @@ try {
     assert.match( models, /Sonnet/i )
     assert.ok( !( await capture() ).includes( `Select model` ), `Model listing left its owned picker open` )
     console.log( `PASS container model listing traversed native Claude picker and closed its dialog` )
+
+    await assert.rejects( async () => applied( `effort`, await helper( [ `effort`, `not-a-level` ] ) ), /unavailable for the current Claude model/ )
+    await until( `failed control closes its picker`, async () => !/^\s*Effort\s*$/m.test( await capture() ) )
+    assert.match( await applied( `effort`, await helper( [ `effort`, `low` ] ) ), /effort.*low.*session/i )
+    console.log( `PASS unsupported native effort closes its owned picker; following control succeeds` )
 } catch ( error ) {
     if( pane ) console.error( ( await capture().catch( () => `` ) ).replace( /[\w.+-]+@[\w.-]+/g, `[account]` ) )
     throw error
