@@ -369,6 +369,33 @@ describe( `web bridge coordination`, () => {
         expect( action_targets ).toEqual( [ `%42` ] )
     } )
 
+    it( `does not run a rule against a screen captured before a control finishes`, async () => {
+        let alive_checks = 0
+        let action_count = 0
+        const control_bridge = { revision: 0, busy: true, tick() {}, async close() {} }
+        await start_monitor( {
+            session_name: `babysit_test`,
+            config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
+            rules: [ make_rule() ],
+            agent_patterns: null,
+            agent: null,
+            control_bridge,
+            web_bridge: {
+                tmux_target: `%7`,
+                publish: async () => { control_bridge.revision++; control_bridge.busy = false },
+                process_requests: async () => ( { sent: false } ),
+                close: async () => {},
+            },
+            has_session_fn: async () => ++alive_checks <= 1,
+            capture_pane_fn: async () => `error`,
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            execute_action_fn: async () => { action_count++ },
+            write_loop_deadline_fn: () => null,
+            wait_fn: async () => null,
+        } )
+        expect( action_count ).toBe( 0 )
+    } )
+
     it( `does not match a second rule against the screen captured as an action finishes`, async () => {
         let action_done
         let publish_count = 0

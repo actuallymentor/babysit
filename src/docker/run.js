@@ -664,6 +664,8 @@ export const build_docker_command_args = ( options ) => {
     if( completion_capture && !auth_probe ) {
         flags.push( `-e`, `BABYSIT_COMPLETION_LAUNCH_ID=${ completion_capture.launch_id }` )
         flags.push( `-e`, `BABYSIT_COMPLETION_FILE=${ completion_capture.file }` )
+        flags.push( `-e`, `BABYSIT_CONTROL_ID=${ completion_capture.launch_id }` )
+        flags.push( `-e`, `BABYSIT_CONTROL_AGENT=${ agent.name }` )
         if( !mode.sandbox ) flags.push( `-e`, `BABYSIT_RECOVERY_IDENTITY=1` )
     }
 

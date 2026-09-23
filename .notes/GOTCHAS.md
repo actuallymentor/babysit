@@ -150,3 +150,11 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 141. **Codex source records provenance, not current transport.** A managed root retains `vscode` metadata on native resume. Completion capture must accept that root while retaining ancestry checks and rejecting structured subagent sources.
 
 142. **Codex can render an editable composer before submission is enabled.** Native TUI tests must observe turn-start acknowledgment; rendering alone and fixed delays do not establish readiness. Never resend the prompt text while awaiting submission.
+
+143. **Native control acceptance needs readback.** OpenCode's v2 model setter changes metadata while its TUI keeps the old model. Claude/Antigravity pickers can consume rapid arrows differently than expected. Verify native confirmation/footer; never equate sent keys or HTTP 204 with an effective switch.
+144. **Terminal control history is not an active dialog.** Match actual dialog titles/composer boundaries, not words such as “Set effort” anywhere in scrollback. Preserve multiline drafts. A control completing during awaited monitor I/O invalidates the earlier captured screen just like an automation action does.
+145. **OpenCode's latest user message lags a native model switch.** Until a newer message exists, use the confirmed launch/session-scoped selection for model/effort validation. A manual native picker change is only observable to API helpers after the next user message.
+146. **Quota units are provider-defined.** Codex primary windows can be weekly, Claude scoped limits may exist only in generic limits[], and OpenRouter limits belong to individual API keys. Do not divide lifetime spend by a daily budget or manufacture absolute token allowances.
+
+- Native Claude model catalogs can paginate to three visible rows; walk the picker before resolving aliases. Non-effort models retain hidden effort, so reset it session-only to the verified native default.
+- Queue deadlines use container-reported remaining duration, not host/container wall-clock comparison; terminal results cannot overwrite an already expired failure.

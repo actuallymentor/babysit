@@ -1476,6 +1476,7 @@ async function start_session( cmd ) {
 
         // Persist the container and capture identity before it can start work.
         base_session_data.completion_capture = completion_capture
+        base_session_data.control_id = completion_capture.launch_id
         base_session_data.agent_exit_sentinel = agent_exit_sentinel
         base_session_data.container_id = prepared_launch.container_id
         base_session_data.image_id = await container_image( prepared_launch.container_id )
@@ -1627,6 +1628,7 @@ async function start_session( cmd ) {
             agent_exit_sentinel,
             completion_capture,
             container_id: prepared_launch.container_id,
+            control_id: completion_capture.launch_id,
             status: `active`,
         }
         session_data = record_launch_progress( babysit_id, session_data )

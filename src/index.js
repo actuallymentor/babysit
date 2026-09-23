@@ -22,7 +22,8 @@ import { cmd_prune } from './cli/prune.js'
 import { cmd_web } from './cli/web.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
-import { run_effort } from './docker/assets/effort/command.mjs'
+import { run_effort, run_model } from './docker/assets/effort/command.mjs'
+import { run_usage } from './cli/usage.js'
 
 // Subcommands that need a dep check before they run. `help` and `--version`
 // are pure metadata reads, `__monitor` is a background daemon that inherits
@@ -38,6 +39,14 @@ const main = async () => {
     // Keep the container helper and full CLI's effort syntax identical.
     if( process.argv[2] === `effort` ) {
         console.log( await run_effort( process.argv.slice( 3 ) ) )
+        return
+    }
+    if( process.argv[2] === `model` ) {
+        console.log( await run_model( process.argv.slice( 3 ) ) )
+        return
+    }
+    if( process.argv[2] === `usage` ) {
+        process.exitCode = await run_usage( process.argv.slice( 3 ) )
         return
     }
 

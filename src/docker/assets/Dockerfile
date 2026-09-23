@@ -174,7 +174,9 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY antigravity-auth.py /usr/local/bin/antigravity-auth.py
 COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
+COPY usage/ /opt/usage/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
+    && ln -s /opt/babysit-effort /opt/effort \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
 

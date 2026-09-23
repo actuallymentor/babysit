@@ -135,6 +135,7 @@ export const start_monitor = async ( {
     agent,
     web_bridge = null,
     open_web_bridge_fn = null,
+    control_bridge = null,
     tmux_target = session_name,
     on_session_id,
     on_tick,
@@ -158,6 +159,7 @@ export const start_monitor = async ( {
     let action_busy = false
     let reset_after_action = false
     let agent_target = web_bridge?.tmux_target || tmux_target
+    let control_revision = control_bridge?.revision || 0
 
     const begin_action = ( rule, now ) => {
 
@@ -196,6 +198,10 @@ export const start_monitor = async ( {
         while( true ) {
 
             on_tick?.()
+            if( control_bridge && control_bridge.revision !== control_revision ) {
+                idle_tracker.reset()
+                control_revision = control_bridge.revision
+            }
 
             if( reset_after_action ) {
                 idle_tracker.reset()
@@ -286,14 +292,15 @@ export const start_monitor = async ( {
             // Babysit action keeps ownership of the pane and rejects web input
             // explicitly instead of interleaving keystrokes.
             let bridge_sent = false
+            control_bridge?.tick( { blocked: action_busy || !input_allowed(), busy: agent_status === `running` } )
             if( web_bridge ) {
                 try {
                     await web_bridge.publish( {
                         output: clean_output,
                         activity: agent_status,
-                        busy: action_busy || !input_allowed(),
+                        busy: action_busy || !!control_bridge?.busy || !input_allowed(),
                     } )
-                    const bridge_result = await web_bridge.process_requests( { busy: action_busy || !input_allowed() } )
+                    const bridge_result = await web_bridge.process_requests( { busy: action_busy || !!control_bridge?.busy || !input_allowed() } )
                     bridge_sent = bridge_result.sent
                 } catch ( error ) {
                     log.debug( `Web bridge tick failed for ${ session_name }: ${ error.message }` )
@@ -309,15 +316,16 @@ export const start_monitor = async ( {
             // A long action can finish while this tick is awaiting tmux or
             // bridge I/O. Reset before evaluating the captured pre-finish
             // screen so it cannot immediately trigger another rule.
-            if( reset_after_action ) {
+            if( reset_after_action || control_bridge && control_bridge.revision !== control_revision ) {
                 idle_tracker.reset()
+                control_revision = control_bridge?.revision || 0
                 reset_after_action = false
                 action_task = null
                 await wait_fn( POLL_INTERVAL_MS )
                 continue
             }
 
-            if( action_busy || !input_allowed() ) {
+            if( action_busy || control_bridge?.busy || !input_allowed() ) {
                 await wait_fn( POLL_INTERVAL_MS )
                 continue
             }
@@ -342,6 +350,7 @@ export const start_monitor = async ( {
         }
     } finally {
         await finish_action()
+        if( control_bridge ) await control_bridge.close()
         if( web_bridge ) await web_bridge.close()
     }
 
