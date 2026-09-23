@@ -71,7 +71,7 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
 | `babysit resume <id> [flags]` | Restore saved session |
-| `babysit close <id>` | Close intentionally; retire launch from recovery |
+| `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Remove unused clones interactively |
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check; bypass 12h cache with `--refresh` |
@@ -286,6 +286,7 @@ npm run test:all
 | `npm run test:prune` | Interactive pruning through real terminal |
 | `npm run test:antigravity` | Real agy TUI/hooks/resume against local model fixture |
 | `npm run test:codex` | Real Codex resume and permissions against local model fixture |
+| `npm run test:close` | Real Docker/tmux numbered close and list renumbering (requires E2E image) |
 | `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
 | `node tests/e2e/status.js` | Focused Docker/tmux activity regression |

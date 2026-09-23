@@ -20,7 +20,7 @@ Usage:
   babysit prune [--list]               Remove unused clone workspaces
   babysit recover [session_id]        Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
-  babysit close <session_id>           Close intentionally; disable recovery for this launch
+  babysit close <number|session_id>    Close intentionally; disable recovery for this launch
   babysit config                       Show settings and setup status
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session

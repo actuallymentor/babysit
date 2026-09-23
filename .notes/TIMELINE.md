@@ -82,3 +82,5 @@
 - 2026-09-20: Host CI exposed fixture races hidden by slow nested Docker: wait for fake composer readiness, inspect every accepted line of clone guidance, and acknowledge native Codex submission rather than relying on display timing.
 
 - 2026-09-23: Added model/effort controls and account usage after CLI/API research. User selected within-agent, session-only changes; incompatible effort uses target default; unsafe terminal controls queue with timeout; internal usage endpoints allowed. Native controls and host/container usage verified in isolated sessions; Antigravity account quota retrieval remains explicitly unavailable without a validated authenticated interface.
+
+- 2026-09-23: `babysit close` accepts the same live-list numbers as `open`; invalid numbers and missing metadata fail without falling back to a different launch.

@@ -98,7 +98,7 @@ export const parse_args = ( argv ) => {
             ? [ `--dry-run`, `--json`, `--no-continue`, `--boot`, `--shutdown` ] : []  ] )
         const unexpected = prepared.slice( 1 ).filter( argument => argument !== selector && !allowed.has( argument ) )
         if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown ${ verb } argument: ${ unexpected[0] || positionals[2] }` )
-        if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <session_id>` )
+        if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <number|session_id>` )
         if( args.shutdown && ( selector || args.boot || args.json || args[ `dry-run` ] || args.continue === false ) ) throw new Error( `--shutdown cannot be combined with recovery options` )
         if( args.boot && ( selector || args[ `dry-run` ] ) ) throw new Error( `--boot requires an unfiltered recovery sweep` )
         return {

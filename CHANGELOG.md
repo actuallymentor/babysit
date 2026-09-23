@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0 — 2026-09-23
+
+### Added
+- Close active sessions by their `babysit list` number: `babysit close 1`.
+
 ## 1.2.2 — 2026-09-23
 
 ### Fixed
