@@ -283,13 +283,22 @@ export const close_session = async ( session, { shutdown = false } = {}, {
 
 }
 
-/** Close a selected session, or suspend this account's expected-open launches at shutdown. */
-export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, close = close_session, print = console.log } = {} ) => {
+/** Close a listed number or stored session ID, preserving intentional-close handling. */
+export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, sessions = list_sessions, close = close_session, print = console.log } = {} ) => {
 
     // Recovery reports the original ID even when a retry creates a new launch.
     // Keep that ID usable for retiring the whole conversation's current leaf.
     const { records } = inspect_records()
-    const [ session ] = select_recovery_sessions( records.map( record => record.session ), cmd.session_id )
+    let session
+    if( /^\d+$/.test( cmd.session_id ) ) {
+        // Match list/open ordinals before metadata lookup. Stored history has
+        // a different order and may contain inactive or superseded launches.
+        const active = await sessions( { strict: true } )
+        const selected = active[ Number( cmd.session_id ) - 1 ]
+        if( !selected ) throw new Error( `No active session numbered ${ cmd.session_id }. Run babysit list to see active sessions.` )
+        session = records.find( record => record.session.tmux_session === selected.name )?.session
+        if( !session ) throw new Error( `No stored session found for active session numbered ${ cmd.session_id } (${ selected.name }).` )
+    } else [ session ] = select_recovery_sessions( records.map( record => record.session ), cmd.session_id )
     if( !session ) throw new Error( `No stored session found: ${ cmd.session_id }` )
     await close( session )
     print( `Closed ${ session.babysit_id }; it will not be recovered.` )
