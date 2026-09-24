@@ -53,16 +53,20 @@ export const parse_args = ( argv ) => {
         const explicit_value = [ `true`, `false` ].includes( prepared[ index + 1 ] )
         return arg.startsWith( `-` ) && boolean && !explicit_value ? `${ arg }=true` : arg
     } )
-    const args = mri( parseable, {
+    const parse = tokens => mri( tokens, {
         boolean: [ ...BOOLEAN_FLAGS ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
 
+    const args = parse( parseable )
     const positionals = args._
-    const verb = positionals[0] || null
+    // Agent prompts after -- must not introduce a Babysit command or subcommand.
+    // A resume command already selected before -- may still take its ID after it.
+    const command_positionals = separator === -1 ? positionals : parse( parseable.slice( 0, separator ) )._
+    const verb = command_positionals[0] || null
     const resume_selector = verb === `resume` ? positionals[1] : positionals[2]
-    const numbered_resume = ( verb === `resume` || is_agent( verb ) && positionals[1] === `resume` )
+    const numbered_resume = ( verb === `resume` || is_agent( verb ) && command_positionals[1] === `resume` )
         && /^\d+$/.test( resume_selector )
     const uses_resume_history = verb === `resume` && !positionals[1] || numbered_resume
     const flags = {
@@ -211,7 +215,7 @@ export const parse_args = ( argv ) => {
         let session_id = null
 
         // babysit claude resume <id>
-        if( positionals[1] === `resume` ) {
+        if( command_positionals[1] === `resume` ) {
             sub_verb = `resume`
             session_id = positionals[2]
         }
@@ -273,7 +277,7 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
     const passthrough = []
     let skip_next = false
     let selector_consumed = false
-    let literal_arguments = false
+    let literal_passthrough = null
 
     for( const [ index, arg ] of argv.entries() ) {
 
@@ -284,15 +288,14 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
 
         // After --, only the unconsumed selector belongs to Babysit. Everything
         // else is literal agent input, including flag names and repeated IDs.
-        if( arg === `--` && !literal_arguments ) {
-            literal_arguments = true
-            passthrough.push( arg )
+        if( arg === `--` && !literal_passthrough ) {
+            literal_passthrough = []
             continue
         }
 
         // Skip the agent name and verb only in the command portion.
-        if( !literal_arguments && agent_name && arg === agent_name ) continue
-        if( !literal_arguments && arg === `resume` ) continue
+        if( !literal_passthrough && agent_name && arg === agent_name ) continue
+        if( !literal_passthrough && arg === `resume` ) continue
 
         // Skip the resume session id (the agent adapter injects it via flags.resume)
         if( session_id && !selector_consumed && arg === session_id ) {
@@ -300,8 +303,8 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
             continue
         }
 
-        if( literal_arguments ) {
-            passthrough.push( arg )
+        if( literal_passthrough ) {
+            literal_passthrough.push( arg )
             continue
         }
 
@@ -331,7 +334,9 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
         }
     }
 
-    return passthrough
+    // A separator with no remaining input is inert; forwarding it would mark
+    // an otherwise replayable resume as containing unsupported agent arguments.
+    return literal_passthrough?.length ? [ ...passthrough, `--`, ...literal_passthrough ] : passthrough
 
 }
 
