@@ -163,3 +163,5 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - Session numbers are command-scoped: `list` feeds `open`/`close`, workspace history feeds both resume syntaxes (`--all` selects global history), and `recover --dry-run` feeds `recover`. Re-list before acting if sessions changed; use IDs for durable references. Numeric resume selectors must resolve before lifecycle locking, never reach the native agent as IDs.
 
 - A CLI `--` separator is never a value-taking flag. Resume still consumes its one positional selector after that separator; later tokens (including repeated IDs and Babysit flag names) remain literal agent input. Literal `resume` after `--` cannot introduce an agent subcommand. Omit an empty separator so it does not disable durable recovery.
+
+- Browser session fixtures need a live heartbeat: slow CI startup can outlast the 30-second state TTL before login. Refresh file mtime without recreating deliberately deleted state; API tests separately cover stale heartbeats.

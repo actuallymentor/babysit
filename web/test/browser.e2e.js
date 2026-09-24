@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import puppeteer from 'puppeteer-core'
@@ -65,6 +65,15 @@ const server = create_app( {
 await new Promise( resolve_listen => server.listen( 0, `127.0.0.1`, resolve_listen ) )
 const origin = `http://127.0.0.1:${ server.address().port }`
 const browser = await puppeteer.launch( { executablePath: chrome_path, headless: true } )
+
+// Mimic the monitor heartbeat, including after slow browser startup. Leave deleted sessions gone.
+const refresh_heartbeat = () => {
+    if( !existsSync( state_file ) ) return
+    const now = new Date()
+    utimesSync( state_file, now, now )
+}
+refresh_heartbeat()
+const heartbeat = setInterval( refresh_heartbeat, 1_000 )
 
 try {
     await browser.defaultBrowserContext().overridePermissions( origin, [ `clipboard-read`, `clipboard-sanitized-write` ] )
@@ -332,6 +341,7 @@ try {
     assert.equal( await page.evaluate( async () => ( await fetch( `/api/sessions` ) ).status ), 401 )
     assert.deepEqual( browser_errors, [] )
 } finally {
+    clearInterval( heartbeat )
     await browser.close()
     await new Promise( resolve_close => server.close( resolve_close ) )
     rmSync( fixture, { force: true, recursive: true } )
