@@ -86,3 +86,5 @@
 - 2026-09-23: Added model/effort controls and account usage after CLI/API research. User selected within-agent, session-only changes; incompatible effort uses target default; unsafe terminal controls queue with timeout; internal usage endpoints allowed. Native controls and host/container usage verified in isolated sessions; Antigravity account quota retrieval remains explicitly unavailable without a validated authenticated interface.
 
 - 2026-09-23: `babysit close` accepts the same live-list numbers as `open`; invalid numbers and missing metadata fail without falling back to a different launch.
+
+- 2026-09-24: Published v1.4.0 numbered resume/recovery support. Full host CI passed, including real terminal selection and all four recovery adapters. Release CI exposed a static browser heartbeat expiring on slow startup; reproduced with a 35-second launch delay and fixed the fixture. An unrelated five-second credential-test timeout passed on rerun. Published binaries and both multiarchitecture Docker images verified.
