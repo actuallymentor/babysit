@@ -273,6 +273,7 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
     const passthrough = []
     let skip_next = false
     let selector_consumed = false
+    let literal_arguments = false
 
     for( const [ index, arg ] of argv.entries() ) {
 
@@ -281,15 +282,26 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
             continue
         }
 
-        // Skip the agent name (when there is one)
-        if( agent_name && arg === agent_name ) continue
+        // After --, only the unconsumed selector belongs to Babysit. Everything
+        // else is literal agent input, including flag names and repeated IDs.
+        if( arg === `--` && !literal_arguments ) {
+            literal_arguments = true
+            passthrough.push( arg )
+            continue
+        }
 
-        // Skip known verbs
-        if( arg === `resume` ) continue
+        // Skip the agent name and verb only in the command portion.
+        if( !literal_arguments && agent_name && arg === agent_name ) continue
+        if( !literal_arguments && arg === `resume` ) continue
 
         // Skip the resume session id (the agent adapter injects it via flags.resume)
         if( session_id && !selector_consumed && arg === session_id ) {
             selector_consumed = true
+            continue
+        }
+
+        if( literal_arguments ) {
+            passthrough.push( arg )
             continue
         }
 
