@@ -35,7 +35,7 @@ describe( `CLI help`, () => {
 
         const help = lines.join( `\n` )
         expect( help ).toContain( `List this workspace's sessions or resume one` )
-        expect( help ).toContain( `with "resume", show every workspace` )
+        expect( help ).toContain( `with "resume [number]", use every workspace` )
         expect( help ).toContain( `babysit resume --all` )
 
     } )

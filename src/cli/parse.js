@@ -20,6 +20,8 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ]
+
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
@@ -40,15 +42,29 @@ export const parse_args = ( argv ) => {
 
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
-    const args = mri( prepared, {
-        boolean: [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ],
+    // mri consumes a boolean's next positional and coerces digit strings to
+    // numbers (01 -> 1, large IDs -> 1e+33). Give bare booleans an explicit
+    // value for parsing only; agent passthrough retains the original tokens.
+    const separator = prepared.indexOf( `--` )
+    const parseable = prepared.map( ( arg, index ) => {
+        if( separator !== -1 && index > separator ) return arg
+        const name = arg.replace( /^-+/, `` )
+        const boolean = BOOLEAN_FLAGS.includes( name ) || arg === `-h` || arg === `-v`
+        const explicit_value = [ `true`, `false` ].includes( prepared[ index + 1 ] )
+        return arg.startsWith( `-` ) && boolean && !explicit_value ? `${ arg }=true` : arg
+    } )
+    const args = mri( parseable, {
+        boolean: [ ...BOOLEAN_FLAGS ],
         string: [ `name`, `log`, `port`, `auth-check-agents` ],
         alias: { h: `help`, v: `version` },
     } )
 
     const positionals = args._
     const verb = positionals[0] || null
-    const is_resume_history_listing = verb === `resume` && !positionals[1]
+    const resume_selector = verb === `resume` ? positionals[1] : positionals[2]
+    const numbered_resume = ( verb === `resume` || is_agent( verb ) && positionals[1] === `resume` )
+        && /^\d+$/.test( resume_selector )
+    const uses_resume_history = verb === `resume` && !positionals[1] || numbered_resume
     const flags = {
         help: args.help || false,
         version: args.version || false,
@@ -60,9 +76,9 @@ export const parse_args = ( argv ) => {
         docker: args.docker || false,
         yes: args.yes || false,
         ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
-        // Command-scoped: list and selector-less resume consume `--all`, while
+        // Command-scoped: list and resume history/number selectors consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
-        all: ( verb === `list` || is_resume_history_listing ) && ( args.all || false ),
+        all: ( verb === `list` || uses_resume_history ) && ( args.all || false ),
         list: verb === `prune` && ( args.list || false ),
         name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
@@ -182,7 +198,7 @@ export const parse_args = ( argv ) => {
                 prepared,
                 null,
                 session_id,
-                is_resume_history_listing ? [ `all` ] : []
+                uses_resume_history ? [ `all` ] : []
             ),
         }
     }
@@ -203,7 +219,7 @@ export const parse_args = ( argv ) => {
         // Collect passthrough args (unknown flags for the agent CLI).
         // Drop the session id when present so the agent adapter is the only place
         // that injects the resume flag — otherwise the id appears twice.
-        const passthrough = collect_passthrough( prepared, agent, session_id )
+        const passthrough = collect_passthrough( prepared, agent, session_id, numbered_resume ? [ `all` ] : [] )
 
         return { verb: sub_verb, agent, session_id, flags, passthrough }
 
@@ -256,8 +272,9 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
 
     const passthrough = []
     let skip_next = false
+    let selector_consumed = false
 
-    for( const arg of argv ) {
+    for( const [ index, arg ] of argv.entries() ) {
 
         if( skip_next ) {
             skip_next = false
@@ -271,7 +288,10 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
         if( arg === `resume` ) continue
 
         // Skip the resume session id (the agent adapter injects it via flags.resume)
-        if( session_id && arg === session_id ) continue
+        if( session_id && !selector_consumed && arg === session_id ) {
+            selector_consumed = true
+            continue
+        }
 
         // Skip known babysit flags. For value-taking flags written without `=`,
         // we also need to drop the following token — otherwise `--log foo.log`
@@ -287,6 +307,16 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
 
         // Everything else is passthrough
         passthrough.push( arg )
+
+        // A flag value is agent input even when it equals the session number,
+        // agent name, or a Babysit verb. Preserve the pair before inspecting
+        // further positional tokens, including flags before the selector.
+        const next = argv[ index + 1 ]
+        if( arg.startsWith( `-` ) && !arg.includes( `=` ) && !clean.startsWith( `no-` )
+            && !BOOLEAN_FLAGS.includes( clean ) && next && !next.startsWith( `-` ) ) {
+            passthrough.push( next )
+            skip_next = true
+        }
     }
 
     return passthrough

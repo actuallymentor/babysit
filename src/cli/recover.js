@@ -198,14 +198,22 @@ async function recover_batch( cmd, { inspect = inspect_stored_sessions, recover 
 
     const flags = cmd.flags || {}
     const { records, invalid_files } = inspect()
-    const selected = select_recovery_sessions( records.map( record => record.session ), cmd.session_id )
+    const sessions = records.map( record => record.session )
+    // Recovery numbers belong to the global sweep, including blocked launches,
+    // so dry-run output remains a useful selector even without a live tmux pane.
+    const candidates = recovery_candidates( sessions ).filter( session => session.expected_open !== false )
+    const numbered = /^\d+$/.test( cmd.session_id )
+    const selected = numbered
+        ? [ candidates[ Number( cmd.session_id ) - 1 ] ].filter( Boolean )
+        : cmd.session_id ? select_recovery_sessions( sessions, cmd.session_id ) : candidates
+    if( numbered && !selected.length ) throw new Error( `No recovery session numbered ${ cmd.session_id }. Run babysit recover --dry-run to see recovery numbers.` )
     if( cmd.session_id && !selected.length ) throw new Error( `No current session found: ${ cmd.session_id }` )
     const results = invalid_files.map( path => ( { id: path, status: `blocked`, reason: `Malformed session record` } ) )
+    const result_numbers = new Map()
     // Boot recovery must never fail its unit after starting successful children:
     // systemd would terminate the whole cgroup. Failures stay visible in the journal.
     const deadline = Date.now() + 25 * 60_000
     for( const session of selected ) {
-        if( !cmd.session_id && session.expected_open === false ) continue
         try {
             if( Date.now() >= deadline ) throw new Error( `Boot recovery time budget exhausted; run babysit recover manually` )
             let result
@@ -233,9 +241,14 @@ async function recover_batch( cmd, { inspect = inspect_stored_sessions, recover 
         } catch ( error ) {
             results.push( { id: session.babysit_id, status: `blocked`, reason: error.message } )
         }
+        const number = candidates.indexOf( session ) + 1
+        if( number ) result_numbers.set( results.at( -1 ), number )
     }
     if( !flags.json && !results.length ) console.log( `No interrupted sessions to recover.` )
-    else if( !flags.json ) results.forEach( result => console.log( `${ result.id }: ${ result.status }${ result.recovered_id ? ` → ${ result.recovered_id }` : `` }${ result.reason ? ` — ${ result.reason }` : `` }` ) )
+    else if( !flags.json ) results.forEach( result => {
+        const number = result_numbers.get( result )
+        console.log( `${ number ? `${ number }. ` : `` }${ result.id }: ${ result.status }${ result.recovered_id ? ` → ${ result.recovered_id }` : `` }${ result.reason ? ` — ${ result.reason }` : `` }` )
+    } )
     if( !flags.boot && results.some( result => result.status === `blocked` ) ) process.exitCode = 1
     return results
 

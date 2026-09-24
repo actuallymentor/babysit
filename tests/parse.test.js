@@ -377,3 +377,36 @@ describe( `Antigravity command alias`, () => {
     } )
 
 } )
+
+
+describe( `numbered resume passthrough`, () => {
+
+    it( `preserves literal selectors after the option separator`, () => {
+        expect( parse_args( [ `resume`, `--`, `--all` ] ).session_id ).toBe( `--all` )
+    } )
+
+    for( const prefix of [ [ `resume` ], [ `claude`, `resume` ] ] ) {
+        it( `preserves repeated numbers in agent arguments for ${ prefix.join( ` ` ) }`, () => {
+            const cmd = parse_args( [ ...prefix, `1`, `--max-turns`, `1`, `1` ] )
+            expect( cmd.session_id ).toBe( `1` )
+            expect( cmd.passthrough ).toEqual( [ `--max-turns`, `1`, `1` ] )
+        } )
+
+        it( `preserves matching option values before the selector for ${ prefix.join( ` ` ) }`, () => {
+            const cmd = parse_args( [ ...prefix, `--max-turns`, `1`, `1`, `--all` ] )
+            expect( cmd.session_id ).toBe( `1` )
+            expect( cmd.flags.all ).toBe( true )
+            expect( cmd.passthrough ).toEqual( [ `--max-turns`, `1` ] )
+        } )
+
+        it( `handles --all before the numeric selector for ${ prefix.join( ` ` ) }`, () => {
+            for( const selector of [ `1`, `01`, `0`, `999999999999999999999999999999999` ] ) {
+                const cmd = parse_args( [ ...prefix, `--all`, selector ] )
+                expect( cmd.session_id ).toBe( selector )
+                expect( cmd.flags.all ).toBe( true )
+                expect( cmd.passthrough ).toEqual( [] )
+            }
+        } )
+    }
+
+} )
