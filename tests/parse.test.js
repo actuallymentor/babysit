@@ -382,10 +382,30 @@ describe( `Antigravity command alias`, () => {
 describe( `numbered resume passthrough`, () => {
 
     it( `preserves literal selectors after the option separator`, () => {
-        expect( parse_args( [ `resume`, `--`, `--all` ] ).session_id ).toBe( `--all` )
+        const cmd = parse_args( [ `resume`, `--`, `--all` ] )
+        expect( cmd.session_id ).toBe( `--all` )
+        expect( cmd.passthrough ).toEqual( [ `--` ] )
     } )
 
     for( const prefix of [ [ `resume` ], [ `claude`, `resume` ] ] ) {
+        it( `consumes selectors after -- without submitting them as prompts for ${ prefix.join( ` ` ) }`, () => {
+            for( const selector of [ `1`, `20260802-120000-babe`, `f72495ac-3298-4b45-8247-d9f9015ed257` ] ) {
+                const cmd = parse_args( [ ...prefix, `--`, selector ] )
+                expect( cmd.session_id ).toBe( selector )
+                expect( cmd.passthrough ).toEqual( [ `--` ] )
+            }
+        } )
+
+        it( `preserves literal flags and repeated selectors after -- for ${ prefix.join( ` ` ) }`, () => {
+            for( const selector of [ `1`, `20260802-120000-babe` ] ) {
+                const literal = [ `--`, `--all`, `--yolo`, selector, `resume`, `claude` ]
+                const cmd = parse_args( [ ...prefix, selector, ...literal ] )
+                expect( cmd.flags.all ).toBe( false )
+                expect( cmd.flags.yolo ).toBe( false )
+                expect( cmd.passthrough ).toEqual( literal )
+            }
+        } )
+
         it( `preserves repeated numbers in agent arguments for ${ prefix.join( ` ` ) }`, () => {
             const cmd = parse_args( [ ...prefix, `1`, `--max-turns`, `1`, `1` ] )
             expect( cmd.session_id ).toBe( `1` )
