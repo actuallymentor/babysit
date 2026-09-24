@@ -37,6 +37,7 @@ import {
 } from '../src/cli/prune.js'
 import { load_session, save_session, update_session } from '../src/sessions/store.js'
 import { list_sessions } from '../src/tmux/session.js'
+import { prune_unused_docker } from '../src/docker/prune.js'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 
@@ -49,6 +50,49 @@ const output_collector = () => {
     }
 
 }
+
+describe( `Docker cleanup`, () => {
+
+    it( `keeps recovery containers and pinned images while using the configured Docker prefix`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-docker-prune-` ) )
+        const calls = []
+
+        try {
+            save_session( {
+                babysit_id: `held-session`,
+                container_id: `held-id`,
+                container_name: `held-name`,
+                image_id: `sha256:held`,
+                credentials_cleaned: false,
+            }, { directory } )
+
+            const summary = await prune_unused_docker( {
+                sessions_dir: directory,
+                command_prefix: [ `sudo`, `docker` ],
+                run_command: async ( command, args ) => {
+                    calls.push( [ command, ...args ] )
+                    if( args[1] === `container` && args[2] === `ls` ) return `held-id\theld-name\nother-id\tother-name`
+                    if( args[1] === `image` && args[2] === `ls` ) return `sha256:held\nsha256:other`
+                    return ``
+                },
+            } )
+
+            expect( calls.every( call => call[0] === `sudo` && call[1] === `docker` ) ).toBe( true )
+            expect( calls.map( call => call.slice( 2, 4 ) ) ).toEqual( [
+                [ `container`, `ls` ], [ `image`, `ls` ], [ `container`, `rm` ],
+                [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
+            ] )
+            expect( calls.find( call => call[2] === `container` && call[3] === `rm` )[4] ).toBe( `other-id` )
+            expect( calls.find( call => call[2] === `image` && call[3] === `rm` )[4] ).toBe( `sha256:other` )
+            expect( summary ).toContain( `removed 1 stopped containers and 1 images` )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+} )
 
 describe( `clone prune storage`, () => {
 
@@ -541,6 +585,38 @@ describe( `prune command interaction`, () => {
         expect( docker_calls ).toBe( 1 )
         expect( rendered() ).toContain( `Total reclaimed space: 1GB` )
         expect( rendered() ).toContain( `No clone workspaces found.` )
+
+    } )
+
+    it( `skips Docker on no and reports Docker failures without blocking clone selection`, async () => {
+
+        const { output, rendered } = output_collector()
+        const answer_sets = [ [ `n`, ``, `` ], [ `y`, `2`, `yes` ] ]
+        let docker_calls = 0
+        let clone_calls = 0
+
+        for( const answers of answer_sets ) {
+            await cmd_prune( { flags: {} }, {
+                input: { isTTY: true },
+                output,
+                ask: async () => answers.shift(),
+                inspect_inventory: async () => inventory,
+                recover_prunes: async () => ( { recovered: [], failed: [] } ),
+                prune_docker: async () => {
+                    docker_calls++
+                    throw new Error( `Docker unavailable` )
+                },
+                prune_clone: async () => {
+                    clone_calls++
+                    return { pruned: true }
+                },
+                now: () => now,
+            } )
+        }
+
+        expect( docker_calls ).toBe( 1 )
+        expect( clone_calls ).toBe( 1 )
+        expect( rendered() ).toContain( `Could not prune Docker: Docker unavailable` )
 
     } )
 

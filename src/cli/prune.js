@@ -11,9 +11,9 @@ import {
     recover_prune_operations,
 } from '../prune.js'
 import { inspect_docker_container_state } from '../docker/file_transport.js'
+import { prune_unused_docker } from '../docker/prune.js'
 import { inspect_stored_sessions, update_session } from '../sessions/store.js'
 import { list_sessions } from '../tmux/session.js'
-import { run } from '../utils/exec.js'
 import { CLONES_DIR, SESSIONS_DIR } from '../utils/paths.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { format_table } from './list.js'
@@ -417,7 +417,7 @@ export const cmd_prune = async ( cmd, {
     inspect_inventory = options => inspect_clone_inventory( options ),
     prune_clone = prune_managed_clone,
     recover_prunes = recover_prune_operations,
-    prune_docker = () => run( `docker`, [ `system`, `prune`, `--all`, `--force` ], {}, 10 * 60_000 ),
+    prune_docker = prune_unused_docker,
     ask = null,
     now = Date.now,
 } = {} ) => {
@@ -453,7 +453,8 @@ export const cmd_prune = async ( cmd, {
 
         if( clean_docker ) {
             try {
-                write_line( output, await prune_docker() )
+                write_line( output, `Pruning unused Docker resources...` )
+                write_line( output, await prune_docker( { sessions_dir } ) )
             } catch ( error ) {
                 write_line( output, `Could not prune Docker: ${ error.message }` )
             }

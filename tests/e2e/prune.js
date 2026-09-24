@@ -129,14 +129,19 @@ try {
     mkdirSync( bin )
     const docker_calls = join( root, `docker-calls` )
     const docker = join( bin, `docker` )
-    writeFileSync( docker, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${ docker_calls }'\nprintf 'Total reclaimed space: 1GB\\n'\n`, { mode: 0o755 } )
+    writeFileSync( docker, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${ docker_calls }'\n`, { mode: 0o755 } )
     const cleaned = await interactive( [
         [ `volumes kept)? [y/N] `, `yes` ],
         [ `Choose [1]: `, `` ],
     ], { PATH: `${ bin }:${ process.env.PATH }` } )
-    assert.match( cleaned, /Total reclaimed space: 1GB/ )
-    assert.equal( readFileSync( docker_calls, `utf8` ).trim(), `system prune --all --force` )
-    console.log( `PASS confirmed Docker cleanup invokes system prune without volumes` )
+    assert.match( cleaned, /Docker: removed 0 stopped containers and 0 images/ )
+    assert.deepEqual( readFileSync( docker_calls, `utf8` ).trim().split( `\n` ), [
+        `container ls --all --filter status=exited --no-trunc --format {{.ID}}\t{{.Names}}`,
+        `image ls --all --no-trunc --quiet`,
+        `network prune --force`,
+        `builder prune --force`,
+    ] )
+    console.log( `PASS confirmed Docker cleanup inspects resources and prunes networks/cache without volumes` )
 } finally {
     release_lock?.()
     await tmux( [ `kill-server` ] ).catch( () => {} )
