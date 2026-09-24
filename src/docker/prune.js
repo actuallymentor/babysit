@@ -25,13 +25,18 @@ export const prune_unused_docker = async ( {
 
     const sessions = stored.records.map( ( { session } ) => session )
     const saved_containers = new Set( sessions.flatMap( session => [ session.container_id, session.container_name ] ).filter( Boolean ) )
-    const saved_images = new Set( sessions.map( session => session.image_id ).filter( Boolean ) )
+    const saved_images = new Set( sessions.filter( session => !session.clone_pruned_at )
+        .map( session => session.image_id ).filter( Boolean ) )
     const [ command, ...prefix_args ] = command_prefix
     const docker = ( args, timeout_ms = 30_000 ) => run_command( command, [ ...prefix_args, ...args ], {}, timeout_ms )
 
     // Enumerate before deleting anything; a failed Docker inspection must not
     // turn missing state into permission to remove a recovery resource.
-    const containers = lines( await docker( [ `container`, `ls`, `--all`, `--filter`, `status=exited`, `--no-trunc`, `--format`, `{{.ID}}\t{{.Names}}` ] ) )
+    const containers = lines( await docker( [
+        `container`, `ls`, `--all`,
+        `--filter`, `status=created`, `--filter`, `status=exited`, `--filter`, `status=dead`,
+        `--no-trunc`, `--format`, `{{.ID}}\t{{.Names}}`,
+    ] ) )
         .map( row => row.split( `\t` ) )
     const images = new Set( lines( await docker( [ `image`, `ls`, `--all`, `--no-trunc`, `--quiet` ] ) ) )
     if( containers.some( ( [ id, name ] ) => !id || !name ) ) {
@@ -41,10 +46,12 @@ export const prune_unused_docker = async ( {
     let removed_images = 0
 
     for( const [ id, name ] of containers ) {
-        if( saved_containers.has( id ) || saved_containers.has( name ) ) continue
+        // Other accounts can share this daemon. Their Babysit records are not
+        // readable here, so keep every Babysit-named container.
+        if( name.startsWith( `babysit-` ) || saved_containers.has( id ) || saved_containers.has( name ) ) continue
 
         try {
-            await docker( [ `container`, `rm`, id ] )
+            await docker( [ `container`, `rm`, id ], 2 * 60_000 )
             removed_containers++
         } catch {
             // Another process may have restarted or removed this container.
@@ -55,7 +62,7 @@ export const prune_unused_docker = async ( {
         if( saved_images.has( image ) ) continue
 
         try {
-            await docker( [ `image`, `rm`, image ] )
+            await docker( [ `image`, `rm`, image ], 2 * 60_000 )
             removed_images++
         } catch {
             // Docker keeps images used by containers or multiple tags.
