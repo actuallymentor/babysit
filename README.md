@@ -82,7 +82,7 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; otherwise output stability; unreadable → unknown.
 Attachment is separate. Pruning needs free space for locks/journals.
-Docker cleanup removes stopped containers and images not needed by saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Docker also keeps images still used by other containers. Volumes stay intact; cleanup requires a separate confirmation. `prune --list` only lists clones.
+Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
 Numbers use each command's current listing:

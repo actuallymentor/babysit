@@ -136,7 +136,7 @@ try {
     ], { PATH: `${ bin }:${ process.env.PATH }` } )
     assert.match( cleaned, /Docker: removed 0 stopped containers and 0 images/ )
     assert.deepEqual( readFileSync( docker_calls, `utf8` ).trim().split( `\n` ), [
-        `container ls --all --filter status=exited --no-trunc --format {{.ID}}\t{{.Names}}`,
+        `container ls --all --filter status=created --filter status=exited --filter status=dead --no-trunc --format {{.ID}}\t{{.Names}}`,
         `image ls --all --no-trunc --quiet`,
         `network prune --force`,
         `builder prune --force`,

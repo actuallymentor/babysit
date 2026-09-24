@@ -66,14 +66,19 @@ describe( `Docker cleanup`, () => {
                 image_id: `sha256:held`,
                 credentials_cleaned: false,
             }, { directory } )
+            save_session( {
+                babysit_id: `pruned-session`,
+                image_id: `sha256:old`,
+                clone_pruned_at: new Date().toISOString(),
+            }, { directory } )
 
             const summary = await prune_unused_docker( {
                 sessions_dir: directory,
                 command_prefix: [ `sudo`, `docker` ],
                 run_command: async ( command, args ) => {
                     calls.push( [ command, ...args ] )
-                    if( args[1] === `container` && args[2] === `ls` ) return `held-id\theld-name\nother-id\tother-name`
-                    if( args[1] === `image` && args[2] === `ls` ) return `sha256:held\nsha256:other`
+                    if( args[1] === `container` && args[2] === `ls` ) return `held-id\theld-name\nexternal-id\tbabysit-external\nother-id\tother-name`
+                    if( args[1] === `image` && args[2] === `ls` ) return `sha256:held\nsha256:other\nsha256:old`
                     return ``
                 },
             } )
@@ -81,11 +86,38 @@ describe( `Docker cleanup`, () => {
             expect( calls.every( call => call[0] === `sudo` && call[1] === `docker` ) ).toBe( true )
             expect( calls.map( call => call.slice( 2, 4 ) ) ).toEqual( [
                 [ `container`, `ls` ], [ `image`, `ls` ], [ `container`, `rm` ],
-                [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
+                [ `image`, `rm` ], [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
             ] )
             expect( calls.find( call => call[2] === `container` && call[3] === `rm` )[4] ).toBe( `other-id` )
             expect( calls.find( call => call[2] === `image` && call[3] === `rm` )[4] ).toBe( `sha256:other` )
-            expect( summary ).toContain( `removed 1 stopped containers and 1 images` )
+            expect( calls.find( call => call[4] === `external-id` ) ).toBeUndefined()
+            expect( summary ).toContain( `removed 1 stopped containers and 2 images` )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `aborts before deletion when session records or Docker listings are unreadable`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-docker-prune-` ) )
+        const calls = []
+        const run_command = async ( command, args ) => {
+            calls.push( args.slice( 0, 2 ) )
+            if( args[0] === `container` ) return `malformed-row`
+            return `sha256:unused`
+        }
+
+        try {
+            writeFileSync( join( directory, `bad.json` ), `{` )
+            await expect( prune_unused_docker( { sessions_dir: directory, run_command } ) )
+                .rejects.toThrow( `Session registry unreadable` )
+            expect( calls ).toEqual( [] )
+
+            unlinkSync( join( directory, `bad.json` ) )
+            await expect( prune_unused_docker( { sessions_dir: directory, run_command } ) )
+                .rejects.toThrow( `Docker container listing unreadable` )
+            expect( calls ).toEqual( [ [ `container`, `ls` ], [ `image`, `ls` ] ] )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
