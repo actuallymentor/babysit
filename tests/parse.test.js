@@ -384,7 +384,21 @@ describe( `numbered resume passthrough`, () => {
     it( `preserves literal selectors after the option separator`, () => {
         const cmd = parse_args( [ `resume`, `--`, `--all` ] )
         expect( cmd.session_id ).toBe( `--all` )
-        expect( cmd.passthrough ).toEqual( [ `--` ] )
+        expect( cmd.passthrough ).toEqual( [] )
+    } )
+
+    it( `keeps literal resume prompts on the agent start path`, () => {
+        for( const prompt of [ [ `resume` ], [ `resume`, `1` ] ] ) {
+            const cmd = parse_args( [ `claude`, `--`, ...prompt ] )
+            expect( cmd.verb ).toBe( `start` )
+            expect( cmd.session_id ).toBeNull()
+            expect( cmd.passthrough ).toEqual( [ `--`, ...prompt ] )
+        }
+    } )
+
+    it( `preserves a literal separator while dropping an empty one`, () => {
+        expect( parse_args( [ `resume`, `1`, `--` ] ).passthrough ).toEqual( [] )
+        expect( parse_args( [ `resume`, `1`, `--`, `--` ] ).passthrough ).toEqual( [ `--`, `--` ] )
     } )
 
     for( const prefix of [ [ `resume` ], [ `claude`, `resume` ] ] ) {
@@ -392,7 +406,7 @@ describe( `numbered resume passthrough`, () => {
             for( const selector of [ `1`, `20260802-120000-babe`, `f72495ac-3298-4b45-8247-d9f9015ed257` ] ) {
                 const cmd = parse_args( [ ...prefix, `--`, selector ] )
                 expect( cmd.session_id ).toBe( selector )
-                expect( cmd.passthrough ).toEqual( [ `--` ] )
+                expect( cmd.passthrough ).toEqual( [] )
             }
         } )
 
