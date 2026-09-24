@@ -74,7 +74,7 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
 | `babysit prune --list` | Managed clone usage |
-| `babysit prune` | Remove unused clones interactively |
+| `babysit prune` | Interactively prune unused Docker data and managed clones |
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check; bypass 12h cache with `--refresh` |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image |
@@ -82,6 +82,7 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; otherwise output stability; unreadable → unknown.
 Attachment is separate. Pruning needs free space for locks/journals.
+Docker cleanup removes stopped containers, unused networks and images, and build cache across the current Docker daemon. It keeps volumes and requires a separate confirmation. `prune --list` only lists clones.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
 Numbers use each command's current listing:

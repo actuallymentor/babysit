@@ -522,10 +522,32 @@ describe( `prune command interaction`, () => {
 
     } )
 
+    it( `prunes Docker even when no clone workspaces exist`, async () => {
+
+        const { output, rendered } = output_collector()
+        let docker_calls = 0
+        await cmd_prune( { flags: {} }, {
+            input: { isTTY: true },
+            output,
+            ask: async () => `yes`,
+            inspect_inventory: async () => ( { ...inventory, clones: [] } ),
+            recover_prunes: async () => ( { recovered: [], failed: [] } ),
+            prune_docker: async () => {
+                docker_calls++
+                return `Total reclaimed space: 1GB`
+            },
+        } )
+
+        expect( docker_calls ).toBe( 1 )
+        expect( rendered() ).toContain( `Total reclaimed space: 1GB` )
+        expect( rendered() ).toContain( `No clone workspaces found.` )
+
+    } )
+
     it( `uses the 30-day default and requires explicit final confirmation`, async () => {
 
         const { output, rendered } = output_collector()
-        const answers = [ ``, `yes` ]
+        const answers = [ ``, ``, `yes` ]
         const pruned = []
         await cmd_prune( { flags: {} }, {
             input: { isTTY: true },
@@ -548,7 +570,7 @@ describe( `prune command interaction`, () => {
 
     it( `supports all-unused and custom-day choices`, async () => {
 
-        for( const answers of [ [ `2`, `y` ], [ `3`, `invalid`, `0`, `y` ] ] ) {
+        for( const answers of [ [ ``, `2`, `y` ], [ ``, `3`, `invalid`, `0`, `y` ] ] ) {
             const { output } = output_collector()
             let calls = 0
             await cmd_prune( { flags: {} }, {
@@ -579,7 +601,7 @@ describe( `prune command interaction`, () => {
                 { session: { babysit_id: `new-session` } },
             ],
         }
-        const answers = [ `3`, `0`, `y` ]
+        const answers = [ ``, `3`, `0`, `y` ]
         const inventory_calls = []
 
         await cmd_prune( { flags: {} }, {
@@ -616,7 +638,7 @@ describe( `prune command interaction`, () => {
             prune_clone: async () => { calls++ },
         } ) ).rejects.toThrow( `requires an interactive terminal` )
 
-        const answers = [ ``, `` ]
+        const answers = [ ``, ``, `` ]
         await cmd_prune( { flags: {} }, {
             input: { isTTY: true },
             output,

@@ -13,6 +13,7 @@ import {
 import { inspect_docker_container_state } from '../docker/file_transport.js'
 import { inspect_stored_sessions, update_session } from '../sessions/store.js'
 import { list_sessions } from '../tmux/session.js'
+import { run } from '../utils/exec.js'
 import { CLONES_DIR, SESSIONS_DIR } from '../utils/paths.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { format_table } from './list.js'
@@ -393,7 +394,7 @@ const session_marker = sessions_dir => async ( session_ids, pruned_at ) => {
 }
 
 /**
- * List clone usage or interactively prune unused managed workspaces.
+ * List clone usage or interactively prune unused Docker data and managed workspaces.
  * @param {Object} cmd - Parsed prune command
  * @param {Object} [dependencies]
  * @param {NodeJS.ReadableStream} [dependencies.input] - Interactive input
@@ -404,6 +405,7 @@ const session_marker = sessions_dir => async ( session_ids, pruned_at ) => {
  * @param {Function} [dependencies.prune_clone] - Managed deletion function
  * @param {Function} [dependencies.recover_prunes] - Interrupted prune recovery
  * @param {Function} [dependencies.ask] - Prompt reader, injectable for tests
+ * @param {Function} [dependencies.prune_docker] - Docker cleanup runner
  * @param {Function} [dependencies.now] - Epoch millisecond reader
  * @returns {Promise<void>}
  */
@@ -415,6 +417,7 @@ export const cmd_prune = async ( cmd, {
     inspect_inventory = options => inspect_clone_inventory( options ),
     prune_clone = prune_managed_clone,
     recover_prunes = recover_prune_operations,
+    prune_docker = () => run( `docker`, [ `system`, `prune`, `--all`, `--force` ], {}, 10 * 60_000 ),
     ask = null,
     now = Date.now,
 } = {} ) => {
@@ -440,15 +443,27 @@ export const cmd_prune = async ( cmd, {
         return
     }
 
-    if( !initial.clones.length ) {
-        write_line( output, `No clone workspaces found.` )
-        return
-    }
-
     const rl = ask ? null : createInterface( { input, output } )
     const question = ask || ( prompt => rl.question( prompt ) )
 
     try {
+        const clean_docker = /^(?:y|yes)$/i.test( ( await question(
+            `Prune unused Docker containers, networks, images, and build cache (all projects; volumes kept)? [y/N] `
+        ) ).trim() )
+
+        if( clean_docker ) {
+            try {
+                write_line( output, await prune_docker() )
+            } catch ( error ) {
+                write_line( output, `Could not prune Docker: ${ error.message }` )
+            }
+        }
+
+        if( !initial.clones.length ) {
+            write_line( output, `No clone workspaces found.` )
+            return
+        }
+
         const policy = await choose_policy( question, output )
         const candidates = select_prune_candidates( initial.clones, policy, now() )
 

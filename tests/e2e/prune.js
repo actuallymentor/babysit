@@ -64,12 +64,12 @@ finally:
     sys.stdout.buffer.write(output)
 `
 
-const interactive = async steps => {
+const interactive = async ( steps, overrides = {} ) => {
 
     const { stdout } = await run( `python3`, [
         `-c`, terminal_driver, JSON.stringify( steps ), process.execPath,
         join( repository, `src/index.js` ), `prune`,
-    ], { env, cwd: root, timeout: 30_000 } )
+    ], { env: { ...env, ...overrides }, cwd: root, timeout: 30_000 } )
     return stdout
 
 }
@@ -100,17 +100,17 @@ try {
     assert.match( listing.stdout, /protected: recovery pending/ )
     console.log( `PASS prune --list identifies real tmux and clone locks plus recovery intent` )
 
-    const cancelled = await interactive( [ [ `Choose [1]: `, `2` ], [ `? [y/N] `, `` ] ] )
+    const cancelled = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `` ] ] )
     assert.match( cancelled, /Prune cancelled/ )
     assert.ok( existsSync( join( clones_dir, `unused-one` ) ) )
     assert.ok( existsSync( join( clones_dir, `unused-two` ) ) )
     console.log( `PASS interactive prune defaults to cancellation` )
 
-    const recent = await interactive( [ [ `Choose [1]: `, `` ] ] )
+    const recent = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `` ] ] )
     assert.match( recent, /No clone workspaces match that policy/ )
     console.log( `PASS default 30-day policy preserves recent clones` )
 
-    const pruned = await interactive( [ [ `Choose [1]: `, `2` ], [ `? [y/N] `, `y` ] ] )
+    const pruned = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `y` ] ] )
     assert.match( pruned, /Pruned 2 of 2 clone workspaces/ )
     assert.doesNotMatch( pruned, /Could not prune|Skipped/ )
     for( const clone_id of [ `unused-one`, `unused-two` ] ) {
@@ -124,6 +124,19 @@ try {
     }
     assert.equal( readFileSync( join( source, `payload.txt` ), `utf8` ), `Keep original workspace intact\n` )
     console.log( `PASS select 2 + confirm y removes inactive clones and preserves active/protected clones and source` )
+
+    const bin = join( root, `bin` )
+    mkdirSync( bin )
+    const docker_calls = join( root, `docker-calls` )
+    const docker = join( bin, `docker` )
+    writeFileSync( docker, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${ docker_calls }'\nprintf 'Total reclaimed space: 1GB\\n'\n`, { mode: 0o755 } )
+    const cleaned = await interactive( [
+        [ `volumes kept)? [y/N] `, `yes` ],
+        [ `Choose [1]: `, `` ],
+    ], { PATH: `${ bin }:${ process.env.PATH }` } )
+    assert.match( cleaned, /Total reclaimed space: 1GB/ )
+    assert.equal( readFileSync( docker_calls, `utf8` ).trim(), `system prune --all --force` )
+    console.log( `PASS confirmed Docker cleanup invokes system prune without volumes` )
 } finally {
     release_lock?.()
     await tmux( [ `kill-server` ] ).catch( () => {} )
