@@ -166,4 +166,4 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 
 - Browser session fixtures need a live heartbeat: slow CI startup can outlast the 30-second state TTL before login. Refresh file mtime without recreating deliberately deleted state; API tests separately cover stale heartbeats.
 
-- `babysit prune` Docker cleanup runs against the current daemon, including other projects. Keep its own explicit confirmation and omit `--volumes`; clone age selection does not constrain Docker cleanup.
+- `babysit prune` Docker cleanup runs against the current daemon, including other projects. Preserve every saved session's container and pinned image before deleting Docker resources. Docker image removal without force keeps images used by containers. Keep a separate confirmation and preserve volumes; clone age selection does not constrain Docker cleanup.

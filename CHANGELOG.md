@@ -3,7 +3,7 @@
 ## 1.5.0 — 2026-09-24
 
 ### Added
-- Prune unused Docker containers, networks, images, and build cache from `babysit prune` after confirmation; keep volumes.
+- Prune unused Docker resources while preserving saved sessions and volumes.
 
 ## 1.4.0 — 2026-09-24
 
