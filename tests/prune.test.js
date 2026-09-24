@@ -110,12 +110,12 @@ describe( `Docker cleanup`, () => {
 
         try {
             writeFileSync( join( directory, `bad.json` ), `{` )
-            await expect( prune_unused_docker( { sessions_dir: directory, run_command } ) )
+            await expect( prune_unused_docker( { sessions_dir: directory, run_command, command_prefix: [ `docker` ] } ) )
                 .rejects.toThrow( `Session registry unreadable` )
             expect( calls ).toEqual( [] )
 
             unlinkSync( join( directory, `bad.json` ) )
-            await expect( prune_unused_docker( { sessions_dir: directory, run_command } ) )
+            await expect( prune_unused_docker( { sessions_dir: directory, run_command, command_prefix: [ `docker` ] } ) )
                 .rejects.toThrow( `Docker container listing unreadable` )
             expect( calls ).toEqual( [ [ `container`, `ls` ], [ `image`, `ls` ] ] )
         } finally {
