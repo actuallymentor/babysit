@@ -17,7 +17,7 @@ Usage:
   babysit list [--all]                 List active sessions and launch flags
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
-  babysit prune [--list]               Remove unused clone workspaces
+  babysit prune [--list]               Prune unused Docker data and clone workspaces
   babysit recover [id|number]         Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
   babysit close <number|session_id>    Close intentionally; disable recovery for this launch
