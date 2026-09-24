@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0 — 2026-09-24
+
+### Added
+- Resume sessions by history number, including explicit-agent and `--all` forms.
+- Recover sessions by the numbers shown in `recover --dry-run`.
+
 ## 1.3.0 — 2026-09-23
 
 ### Added

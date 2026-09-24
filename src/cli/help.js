@@ -13,12 +13,12 @@ babysit — supervisor for LLM coding agent CLIs
 Usage:
   babysit ["session name"]           Open the interactive launch menu
   babysit <agent> [flags]              Start a new session
-  babysit <agent> resume <id> [flags]  Resume a previous session
+  babysit <agent> resume <id|number>  Resume a previous session
   babysit list [--all]                 List active sessions and launch flags
   babysit open [id|name|number]        Attach to an active session
-  babysit resume [session_id] [flags]  List this workspace's sessions or resume one
+  babysit resume [id|number] [flags]  List this workspace's sessions or resume one
   babysit prune [--list]               Remove unused clone workspaces
-  babysit recover [session_id]        Recover interrupted sessions, detached
+  babysit recover [id|number]         Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
   babysit close <number|session_id>    Close intentionally; disable recovery for this launch
   babysit config                       Show settings and setup status
@@ -45,7 +45,7 @@ Flags:
   --port H:C      Publish host port H to container port C
   --auth          With "babysit doctor", make real model-backed auth checks
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
-  --all           With "list", show full details; with "resume", show every workspace
+  --all           With "list", show full details; with "resume [number]", use every workspace
   --dry-run       With "recover", inspect without restarting
   --json          With "recover", print machine-readable results
   --no-continue   With "recover", reopen without submitting a continuation
@@ -54,6 +54,13 @@ Flags:
   --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)
   -h, --help      Show this help
   -v, --version   Show version
+
+Session numbers:
+  open/close:     Rows from babysit list
+  resume:         Rows from babysit resume (use --all for global history)
+  <agent> resume: Same resume rows; the selected session must match the agent
+  recover:        Rows from babysit recover --dry-run (all workspaces)
+  Numbers follow the current listing; use IDs for durable references.
 
 Any unrecognised flags are passed through to the coding agent CLI.
 
@@ -71,6 +78,10 @@ Examples:
   babysit list --all
   babysit resume
   babysit resume --all
+  babysit resume 1
+  babysit resume 1 --all
+  babysit recover --dry-run
+  babysit recover 1
   babysit prune
   babysit prune --list
   babysit web init

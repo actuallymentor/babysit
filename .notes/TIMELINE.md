@@ -1,5 +1,7 @@
 # Timeline
 
+- **2026-09-24 (numbered session actions)**: Added numbered workspace/global resume history for both resume syntaxes and global recovery candidate selection. Existing active-list numbers remain the selectors for open/close; numeric selection follows each command’s displayed inventory. Prepared v1.4.0; combined suite and real numbered CLI/PTY checks passed (clone E2E skipped inside Docker).
+
 - **2026-09-07 (Codex model preference)**: Selected GPT-6 Astra from current official OpenAI guidance and set medium reasoning at the user’s request. Other agent model preferences remain separate.
 
 - **2026-09-07 (README simplification)**: Reworked the README from a long-form implementation narrative into a compact operator quick reference. Kept installation, modes, session commands, supervision syntax, web setup, runtime guarantees, and development commands; delegated design history and internals to the specification and changelog.

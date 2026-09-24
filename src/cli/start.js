@@ -71,7 +71,7 @@ import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
 import { command_exists } from '../utils/exec.js'
 import { acquire_clone_lock, prepare_clone_workspace } from '../clone.js'
-import { cmd_resume } from './resume.js'
+import { cmd_resume, resolve_numbered_resume } from './resume.js'
 import { cmd_open } from './open.js'
 import { cmd_monitor } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
@@ -938,11 +938,15 @@ export const record_launch_progress = ( id, fields, { recovering = false, update
  */
 export const cmd_start = async ( cmd, {
     load_session_fn = load_session,
+    list_stored_sessions_fn = list_stored_sessions,
+    get_cwd = process.cwd,
     acquire_lock = acquire_session_lock,
     resume = cmd_resume,
     start = start_session,
     open = cmd_open,
 } = {} ) => {
+
+    if( cmd.verb === `resume` ) cmd = resolve_numbered_resume( cmd, { list_stored_sessions_fn, get_cwd } )
 
     const stored = cmd.stored_session || resolve_stored_agent_resume_session( cmd, get_agent( cmd.agent ) || {}, load_session_fn )
     if( cmd.agent === `gemini` || stored?.agent === `gemini` || stored?.agent_mismatch === `gemini` ) {

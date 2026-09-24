@@ -159,3 +159,5 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - Native Claude model catalogs can paginate to three visible rows; walk the picker before resolving aliases. Non-effort models retain hidden effort, so reset it session-only to the verified native default.
 - Queue deadlines use container-reported remaining duration, not host/container wall-clock comparison; terminal results cannot overwrite an already expired failure.
 - Control polling reserves input until Docker responds; defer web requests during that reservation instead of rejecting them. Owned-dialog cleanup must remain available after an edit deadline expires.
+
+- Session numbers are command-scoped: `list` feeds `open`/`close`, workspace history feeds both resume syntaxes (`--all` selects global history), and `recover --dry-run` feeds `recover`. Re-list before acting if sessions changed; use IDs for durable references. Numeric resume selectors must resolve before lifecycle locking, never reach the native agent as IDs.

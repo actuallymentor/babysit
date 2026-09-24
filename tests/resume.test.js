@@ -20,6 +20,7 @@ import {
     should_ignore_host_agent_context,
     should_send_initial_prompt,
 } from '../src/cli/start.js'
+import { parse_args } from '../src/cli/parse.js'
 import { resolve_current_session } from '../src/sessions/recovery.js'
 import { generate_session_id } from '../src/sessions/store.js'
 
@@ -147,7 +148,7 @@ describe( `cmd_resume session listing`, () => {
         } )
 
         expect( rendered_sessions ).toBe( sessions )
-        expect( rendered_options ).toEqual( { workspace: null } )
+        expect( rendered_options ).toEqual( { workspace: null, all: true } )
 
     } )
 
@@ -237,7 +238,7 @@ describe( `cmd_resume session listing`, () => {
         expect( output ).toContain( `019fc7ec-c1a0-7000-8000-000000000002` )
         expect( output ).toContain( `claude` )
         expect( output ).toContain( `20260802-120000-babe` )
-        expect( output ).toContain( `Resume one with: babysit resume <babysit_id>` )
+        expect( output ).toContain( `Resume one with: babysit resume <number|babysit_id>` )
 
     } )
 
@@ -1065,6 +1066,148 @@ describe( `resume alias integrity`, () => {
         expect( () => resolve_current_session( cyclic[0], {
             list: () => cyclic, load: id => cyclic.find( session => session.babysit_id === id ),
         } ) ).toThrow( `Session replacement cycle` )
+    } )
+
+} )
+
+
+describe( `numbered resume actions`, () => {
+
+    const cwd = process.cwd()
+    const other = { babysit_id: `elsewhere`, agent: `codex`, pwd: `/other`, agent_session_id: `native-other` }
+    const old = { babysit_id: `old`, agent: `claude`, pwd: cwd }
+    const current = { babysit_id: `current`, agent: `claude`, pwd: cwd, resumed_from: `old`, agent_session_id: `native-current` }
+    const pruned = { babysit_id: `pruned`, agent: `claude`, pwd: cwd, clone_pruned_at: `2026-09-24` }
+    const history = [ other, pruned, current, old ]
+    const dependencies = {
+        list_stored_sessions_fn: () => history,
+        load_session_fn: id => history.find( session => session.babysit_id === id ),
+        get_cwd: () => cwd,
+        has_session_fn: async () => false,
+    }
+
+    it( `selects the visible workspace row after hiding retired and pruned launches`, async () => {
+        let launch
+        await cmd_resume( parse_args( [ `resume`, `1`, `--yolo` ] ), {
+            ...dependencies,
+            start: async cmd => {
+                launch = cmd
+            },
+        } )
+        expect( launch.session_id ).toBe( `native-current` )
+        expect( launch.stored_session.babysit_id ).toBe( `current` )
+        expect( launch.flags.yolo ).toBe( true )
+        expect( launch.passthrough ).toEqual( [] )
+    } )
+
+    it( `uses global history with --all and retains agent passthrough`, async () => {
+        let launch
+        await cmd_resume( parse_args( [ `resume`, `1`, `--all`, `--model`, `example` ] ), {
+            ...dependencies,
+            start: async cmd => {
+                launch = cmd
+            },
+        } )
+        expect( launch.session_id ).toBe( `native-other` )
+        expect( launch.passthrough ).toEqual( [ `--model`, `example` ] )
+    } )
+
+    it( `falls back to global history outside known workspaces`, async () => {
+        let launch
+        await cmd_resume( parse_args( [ `resume`, `1` ] ), {
+            ...dependencies,
+            get_cwd: () => `/unknown`,
+            start: async cmd => {
+                launch = cmd
+            },
+        } )
+        expect( launch.session_id ).toBe( `native-other` )
+    } )
+
+    it( `attaches a selected live session`, async () => {
+        let opened
+        await cmd_resume( parse_args( [ `resume`, `1` ] ), {
+            ...dependencies,
+            load_session_fn: id => ( { ...dependencies.load_session_fn( id ), tmux_session: `babysit_live` } ),
+            has_session_fn: async () => true,
+            open_session: async cmd => {
+                opened = cmd
+            },
+            start: async () => {
+                throw new Error( `Must not relaunch` )
+            },
+        } )
+        expect( opened.session_id ).toBe( `babysit_live` )
+    } )
+
+    it( `pins explicit-agent selection before acquiring the lifecycle lock`, async () => {
+        let resolved
+        let locked = false
+        await cmd_start( parse_args( [ `codex`, `resume`, `1`, `--all` ] ), {
+            ...dependencies,
+            list_stored_sessions_fn: () => {
+                expect( locked ).toBe( false )
+                return history
+            },
+            acquire_lock: () => {
+                locked = true
+                return () => {}
+            },
+            resume: async cmd => {
+                resolved = cmd
+            },
+        } )
+        expect( resolved.session_id ).toBe( `elsewhere` )
+        expect( resolved.passthrough ).toEqual( [] )
+    } )
+
+    it( `rejects an explicit agent mismatch without selecting a different row`, async () => {
+        await expect( cmd_start( parse_args( [ `codex`, `resume`, `1` ] ), {
+            ...dependencies,
+            acquire_lock: () => () => {},
+            start: async () => {
+                throw new Error( `Unexpected launch` )
+            },
+        } ) ).rejects.toThrow( `belongs to claude, not codex` )
+    } )
+
+    it( `rejects invalid numbers instead of forwarding them as native IDs`, async () => {
+        for( const selector of [ `0`, `99`, `9999999999999999999999999999999` ] ) {
+            for( const args of [ [ `resume`, selector ], [ `claude`, `resume`, selector ] ] ) {
+                const cmd = parse_args( args )
+                const run = cmd.agent ? cmd_start : cmd_resume
+                await expect( run( cmd, dependencies ) ).rejects.toThrow( `No resumable session numbered ${ selector }` )
+            }
+        }
+        await expect( cmd_resume( parse_args( [ `resume`, `1` ] ), {
+            ...dependencies, list_stored_sessions_fn: () => [],
+        } ) ).rejects.toThrow( `No resumable session numbered 1` )
+    } )
+
+    it( `preserves resolved numeric native IDs during internal recovery`, async () => {
+        let launched
+        await cmd_start( {
+            verb: `resume`, agent: `claude`, session_id: `42`,
+            recovering: true, metadata_resolved: true, stored_session: current,
+        }, {
+            ...dependencies,
+            list_stored_sessions_fn: () => {
+                throw new Error( `Must not resolve native ID` )
+            },
+            acquire_lock: () => () => {},
+            start: async cmd => {
+                launched = cmd
+            },
+        } )
+        expect( launched.session_id ).toBe( `42` )
+    } )
+
+    it( `prints sequential numbers and the global selection hint`, async () => {
+        const output = await capture_console( () => cmd_resume( parse_args( [ `resume`, `--all` ] ), dependencies ) )
+        expect( output ).toMatch( /1\s+elsewhere/ )
+        expect( output ).toMatch( /2\s+current/ )
+        expect( output ).not.toContain( `pruned` )
+        expect( output ).toContain( `babysit resume <number|babysit_id> --all` )
     } )
 
 } )

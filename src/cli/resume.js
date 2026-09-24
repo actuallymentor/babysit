@@ -66,6 +66,50 @@ export const select_resumable_sessions = ( sessions, cwd ) => {
 }
 
 
+// Listing and numbered selection must use exactly the same ordered history.
+const resume_history = ( history, flags, cwd ) => {
+
+    const candidates = recovery_candidates( history )
+    const current = candidates.length === history.length ? history : candidates
+    const sessions = current.some( session => session.clone_pruned_at )
+        ? current.filter( session => !session.clone_pruned_at )
+        : current
+    const visible = flags.all ? sessions : select_resumable_sessions( sessions, cwd )
+
+    return {
+        sessions: visible,
+        workspace: visible.length < sessions.length ? resolve( cwd ) : null,
+    }
+
+}
+
+/**
+ * Pin a resume-history number to its durable ID before entering lifecycle locks.
+ * Both resume syntaxes use the same workspace scope; the explicit agent is
+ * validated afterward so a number never silently selects a different row.
+ * @param {Object} cmd - Parsed resume command
+ * @param {Object} [options] - History and workspace readers
+ * @returns {Object} Command with a durable session ID, or the unchanged command
+ */
+export const resolve_numbered_resume = ( cmd, {
+    list_stored_sessions_fn = list_stored_sessions,
+    get_cwd = process.cwd,
+} = {} ) => {
+
+    if( cmd.metadata_resolved || !/^\d+$/.test( cmd.session_id ) ) return cmd
+
+    const flags = cmd.flags || {}
+    const { sessions } = resume_history( list_stored_sessions_fn(), flags, flags.all ? null : get_cwd() )
+    const session = sessions[ Number( cmd.session_id ) - 1 ]
+    if( !session ) {
+        throw new Error( `No resumable session numbered ${ cmd.session_id }. Run babysit resume${ flags.all ? ` --all` : `` } to see session numbers.` )
+    }
+
+    return { ...cmd, session_id: session.babysit_id }
+
+}
+
+
 /**
  * Print every Babysit-managed session that can be reopened. Babysit IDs stay
  * visible as the canonical resume handle because they restore the agent,
@@ -73,8 +117,9 @@ export const select_resumable_sessions = ( sessions, cwd ) => {
  * @param {Object[]} sessions - Stored Babysit session metadata, newest first
  * @param {Object} [options]
  * @param {string|null} [options.workspace=null] - Workspace scope when rows are filtered
+ * @param {boolean} [options.all=false] - Preserve global numbering in the resume hint
  */
-export const print_resumable_sessions_table = ( sessions, { workspace = null } = {} ) => {
+export const print_resumable_sessions_table = ( sessions, { workspace = null, all = false } = {} ) => {
 
     if( sessions.length === 0 ) {
         console.log( `No resumable babysit sessions.` )
@@ -86,23 +131,23 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null } =
         : `Resumable babysit sessions:`
 
     console.log( `\n${ heading }\n` )
-    console.log( `  ${ pad( `BABYSIT ID`, 24 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `AGENT SESSION ID`, 38 ) }  ${ pad( `STARTED`, 19 ) }  ${ pad( `STATUS`, 12 ) }  WORKSPACE` )
+    console.log( `  ${ pad( `#`, 3 ) }  ${ pad( `BABYSIT ID`, 24 ) }  ${ pad( `NAME`, 24 ) }  ${ pad( `AGENT`, 10 ) }  ${ pad( `AGENT SESSION ID`, 38 ) }  ${ pad( `STARTED`, 19 ) }  ${ pad( `STATUS`, 12 ) }  WORKSPACE` )
     console.log( `  ${ `-`.repeat( 161 ) }` )
 
-    sessions.forEach( session => {
+    sessions.forEach( ( session, index ) => {
 
         const name = session.name || `-`
         const agent_session_id = session.agent_session_id || `-`
         const started_at = format_started_at( session.started_at )
 
         const workspace = session_workspace( session )
-        console.log( `  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ pad( session.status || `unknown`, 12 ) }  ${ workspace || `-` }` )
+        console.log( `  ${ pad( index + 1, 3 ) }  ${ pad( session.babysit_id, 24 ) }  ${ pad( name, 24 ) }  ${ pad( session.agent, 10 ) }  ${ pad( agent_session_id, 38 ) }  ${ pad( started_at, 19 ) }  ${ pad( session.status || `unknown`, 12 ) }  ${ workspace || `-` }` )
 
     } )
 
     if( workspace ) console.log( `\nShow every workspace with: babysit resume --all` )
 
-    console.log( `\nResume one with: babysit resume <babysit_id>\n` )
+    console.log( `\nResume one with: babysit resume <number|babysit_id>${ all ? ` --all` : `` }\n` )
 
 }
 
@@ -209,24 +254,14 @@ export const cmd_resume = async ( cmd, options = {} ) => {
         update_session_fn = update_session,
     } = options
 
+    cmd = resolve_numbered_resume( cmd, { list_stored_sessions_fn, get_cwd } )
     const { session_id, flags = {}, passthrough = [] } = cmd
 
     if( !session_id ) {
-        const history = list_stored_sessions_fn()
-        const candidates = recovery_candidates( history )
-        const stored_sessions = candidates.length === history.length ? history : candidates
-        const sessions = stored_sessions.some( session => session.clone_pruned_at )
-            ? stored_sessions.filter( session => !session.clone_pruned_at )
-            : stored_sessions
-        const current_cwd = flags.all ? null : get_cwd()
-        const visible_sessions = flags.all
-            ? sessions
-            : select_resumable_sessions( sessions, current_cwd )
-        const workspace = visible_sessions.length < sessions.length
-            ? resolve( current_cwd )
-            : null
-
-        print_sessions( visible_sessions, { workspace } )
+        const { sessions, workspace } = resume_history(
+            list_stored_sessions_fn(), flags, flags.all ? null : get_cwd()
+        )
+        print_sessions( sessions, { workspace, ...flags.all ? { all: true } : {} } )
         return
     }
 

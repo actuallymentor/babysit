@@ -70,7 +70,8 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 | `babysit list [--all]` | Active sessions; `--all` adds IDs/tmux names |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
-| `babysit resume <id> [flags]` | Restore saved session |
+| `babysit resume <id\|number> [flags]` | Restore saved session |
+| `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Remove unused clones interactively |
@@ -83,13 +84,22 @@ input/interrupt controls → idle/running; otherwise output stability; unreadabl
 Attachment is separate. Pruning needs free space for locks/journals.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
+Numbers use each command's current listing:
+
+- `open N` / `close N`: `babysit list`.
+- `resume N` / `<agent> resume N`: `babysit resume`; use `resume N --all`
+  for rows from `babysit resume --all` (also supported with an explicit agent).
+- `recover N`: `babysit recover --dry-run`, across workspaces.
+
+Re-list after sessions change; use IDs for durable references.
+
 ### Recovery
 
 | Command | Effect |
 |---|---|
-| `babysit recover [id]` | Recover interrupted sessions, detached, across workspaces |
+| `babysit recover [id\|number]` | Recover interrupted sessions, detached, across workspaces |
 | `babysit recover --dry-run [--json]` | Inspect candidates/blockers |
-| `babysit recover --no-continue [id]` | Reopen without sending continuation |
+| `babysit recover --no-continue [id\|number]` | Reopen without sending continuation |
 | `babysit recover init` | Enable Ubuntu boot recovery for this account |
 
 Resumes the saved conversation, then sends: “You were interrupted. Check the current
@@ -286,6 +296,7 @@ npm run test:all
 | `npm run test:prune` | Interactive pruning through real terminal |
 | `npm run test:antigravity` | Real agy TUI/hooks/resume against local model fixture |
 | `npm run test:codex` | Real Codex resume and permissions against local model fixture |
+| `npm run test:numbers` | Real CLI history/recovery selectors and PTY resume attach/detach |
 | `npm run test:close` | Real Docker/tmux numbered close and list renumbering (requires E2E image) |
 | `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
