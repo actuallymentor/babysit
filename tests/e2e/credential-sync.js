@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -70,10 +70,18 @@ try {
         replace_host( renewed )
         await until_container( renewed )
 
-        // Container-originated refresh still reaches the host at final flush.
+        // Container-originated refresh still reaches the host on reconciliation.
         await docker( [ `exec`, container, `sh`, `-c`, `printf '%s' '${ original }' > ${ target }` ] )
-        await credentials.sync.stop()
+        await credentials.sync.flush()
         assert.equal( readFileSync( host, `utf8` ), original )
+
+        // Distinguish real read errors from logout, which removes the file.
+        unlinkSync( host )
+        mkdirSync( host )
+        await assert.rejects( credentials.sync.flush(), { code: `EISDIR` } )
+        rmSync( host, { recursive: true } )
+        await credentials.sync.stop()
+        assert.equal( existsSync( host ), false )
         assert.equal( await docker( [ `inspect`, `--format`, `{{.State.Running}}`, container ] ), `true` )
         rmSync( credentials.cleanup_path, { recursive: true, force: true } )
         credentials = null

@@ -43,9 +43,8 @@ export const build_credential_sync_baseline = ( source_path, tmpfile_path ) => {
 const REFRESH_INTERVAL_MS = 300_000
 const WATCH_DEBOUNCE_MS = 200
 
-// Codex stores a JSON object. A login can briefly truncate or
-// remove its file; never forward that intermediate state or overwrite it
-// with the container's old login. Keep parser errors free of secret content.
+// Codex stores a JSON object. Never forward a partial write or include its
+// secret content in a parser error. Absence is handled separately as logout.
 const validate_source = ( content ) => {
     try {
         const value = JSON.parse( content )
@@ -120,6 +119,14 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         try {
 
             const source = await read_source()
+            // Logout deletes auth.json. Do not resurrect that login from the
+            // container or block shutdown; a later file recreation wins even
+            // if it restores the same content as the previous host login.
+            if( source_path && source === null ) {
+                source_changed = true
+                last_source_hash = null
+                return
+            }
             if( source_path ) validate_source( source )
             const source_hash = source ? hash_credential_content( source ) : null
 
@@ -154,6 +161,11 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             // the source-wins policy applies to that window too; otherwise the
             // just-pulled, older container token could overwrite the new login.
             const latest_source = await read_source()
+            if( source_path && latest_source === null ) {
+                source_changed = true
+                last_source_hash = null
+                return
+            }
             if( source_path ) validate_source( latest_source )
             const latest_source_hash = latest_source
                 ? hash_credential_content( latest_source )

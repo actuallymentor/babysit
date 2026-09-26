@@ -5,6 +5,7 @@
 ### Fixed
 - Sync Codex host re-login promptly through a debounced credential watcher.
 - Retain credential state during incomplete host login writes.
+- Respect host Codex logout without restoring credentials or blocking cleanup.
 
 ## 1.5.0 — 2026-09-24
 

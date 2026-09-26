@@ -109,7 +109,10 @@ export const setup_linux_credentials = async ( agent, {
             const read_source = async () => {
                 try {
                     return readFileSync( expanded, `utf-8` )
-                } catch {
+                } catch ( error ) {
+                    // Only an absent Codex file means logout. Other failures
+                    // must retain recovery state rather than discard tokens.
+                    if( agent.name === `codex` && error.code !== `ENOENT` ) throw error
                     return null
                 }
             }

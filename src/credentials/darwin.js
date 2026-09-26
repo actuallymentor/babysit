@@ -190,7 +190,9 @@ const stage_credential_file = ( agent, file_pattern, existing_tmpfile = null, sy
     const read_source = async () => {
         try {
             return readFileSync( expanded, `utf-8` )
-        } catch {
+        } catch ( error ) {
+            // Only an absent Codex file means logout; retain other read failures.
+            if( agent.name === `codex` && error.code !== `ENOENT` ) throw error
             return null
         }
     }
