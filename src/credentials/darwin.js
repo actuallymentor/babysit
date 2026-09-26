@@ -209,7 +209,10 @@ const stage_credential_file = ( agent, file_pattern, existing_tmpfile = null, sy
         }
     }
 
-    const sync = start_credential_sync( read_source, tmpfile, write_destination, baseline || {} )
+    const sync = start_credential_sync( read_source, tmpfile, write_destination, {
+        ...baseline,
+        source_path: agent.name === `codex` ? expanded : null,
+    } )
     log.info( `Credentials loaded from file: ${ expanded }` )
 
     return {

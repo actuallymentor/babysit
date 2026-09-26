@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
@@ -265,6 +265,174 @@ describe( `start_credential_sync`, () => {
         expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"X"}` )
         expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( `{"token":"X"}` )
 
+    } )
+
+} )
+
+describe( `host credential watcher`, () => {
+
+    let dir, host_path, tmpfile_path, sync, container_content, pushes, pulls
+    const original = `{"token":"original"}`
+    const renewed = `{"token":"renewed"}`
+    const wait = ms => new Promise( resolve => setTimeout( resolve, ms ) )
+    const until = async predicate => {
+        const deadline = Date.now() + 3_000
+        while( !predicate() && Date.now() < deadline ) await wait( 20 )
+        expect( predicate() ).toBe( true )
+    }
+
+    const replace_host = content => {
+        const replacement = join( dir, `replacement` )
+        writeFileSync( replacement, content )
+        renameSync( replacement, host_path )
+    }
+
+    const transport = () => ( {
+        push: async path => {
+            container_content = readFileSync( path, `utf-8` )
+            pushes.push( container_content )
+        },
+        pull: async path => {
+            pulls += 1
+            writeFileSync( path, container_content )
+        },
+    } )
+
+    beforeEach( () => {
+        dir = mkdtempSync( join( tmpdir(), `babysit-watch-` ) )
+        host_path = join( dir, `auth.json` )
+        tmpfile_path = join( dir, `staged.json` )
+        writeFileSync( host_path, original )
+        writeFileSync( tmpfile_path, original )
+        container_content = original
+        pushes = []
+        pulls = 0
+        sync = start_credential_sync(
+            async () => {
+                try { return readFileSync( host_path, `utf-8` ) } catch { return null }
+            },
+            tmpfile_path,
+            async content => writeFileSync( host_path, content ),
+            { source_path: host_path }
+        )
+    } )
+
+    afterEach( async () => {
+        try { await sync.stop() } finally { rmSync( dir, { recursive: true, force: true } ) }
+    } )
+
+    it( `observes repeated atomic replacements without a flush or restart`, async () => {
+        sync.set_transport( transport() )
+        replace_host( renewed )
+        await until( () => container_content === renewed )
+        replace_host( original )
+        await until( () => container_content === original )
+        expect( pushes ).toEqual( [ renewed, original ] )
+        expect( pulls ).toBe( 0 )
+    } )
+
+    it( `ignores duplicate content, unrelated files, and its own host writeback`, async () => {
+        sync.set_transport( transport() )
+        await wait( 30 )
+        writeFileSync( join( dir, `config.toml` ), `unrelated` )
+        replace_host( original )
+        await wait( 350 )
+        expect( pushes ).toEqual( [] )
+        expect( pulls ).toBe( 0 )
+
+        container_content = renewed
+        await sync.flush()
+        await wait( 350 )
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( renewed )
+        expect( pushes ).toEqual( [] )
+        expect( pulls ).toBe( 1 )
+    } )
+
+    it( `retains state through partial writes and deletion, then syncs the completed login`, async () => {
+        sync.set_transport( transport() )
+        await wait( 30 )
+        writeFileSync( host_path, `{"token":` )
+        await wait( 350 )
+        await expect( sync.flush() ).rejects.toThrow( `missing or incomplete` )
+        expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( original )
+        unlinkSync( host_path )
+        await wait( 350 )
+        expect( pushes ).toEqual( [] )
+        expect( pulls ).toBe( 0 )
+        replace_host( renewed )
+        await until( () => container_content === renewed )
+    } )
+
+    it( `catches changes before connection without advancing the staged baseline`, async () => {
+        replace_host( renewed )
+        await wait( 350 )
+        expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( original )
+        sync.set_transport( transport() )
+        await until( () => container_content === renewed )
+    } )
+
+    it( `serializes a host replacement during a container pull`, async () => {
+        let release_pull
+        let pulling = false
+        const pull_gate = new Promise( resolve => { release_pull = resolve } )
+        const connected = transport()
+        sync.set_transport( {
+            ...connected,
+            pull: async path => {
+                pulling = true
+                await pull_gate
+                await connected.pull( path )
+                pulling = false
+            },
+            push: async path => {
+                expect( pulling ).toBe( false )
+                await connected.push( path )
+            },
+        } )
+        const flush = sync.flush()
+        await until( () => pulling )
+        replace_host( renewed )
+        await wait( 350 )
+        expect( pushes ).toEqual( [] )
+        release_pull()
+        await flush
+        await until( () => container_content === renewed )
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( renewed )
+        expect( pushes ).toEqual( [ renewed ] )
+    } )
+
+    it( `flushes a pending login on stop and closes the watcher`, async () => {
+        sync.set_transport( transport() )
+        await wait( 30 )
+        replace_host( renewed )
+        await sync.stop()
+        expect( container_content ).toBe( renewed )
+        replace_host( original )
+        const calls = pushes.length + pulls
+        await wait( 350 )
+        expect( pushes.length + pulls ).toBe( calls )
+    } )
+
+    it( `retries a failed push without consuming the new host credential`, async () => {
+        const connected = transport()
+        let attempts = 0
+        sync.set_transport( {
+            ...connected,
+            push: async path => {
+                attempts += 1
+                if( attempts === 1 ) throw new Error( `Docker unavailable` )
+                await connected.push( path )
+            },
+        } )
+        replace_host( renewed )
+        await until( () => attempts === 1 )
+        expect( container_content ).toBe( original )
+        expect( sync.baseline().baseline_source_hash ).toBe( hash_credential_content( original ) )
+
+        // The periodic and explicit fallback use this same queue.
+        await sync.flush()
+        expect( container_content ).toBe( renewed )
+        expect( pulls ).toBe( 0 )
     } )
 
 } )

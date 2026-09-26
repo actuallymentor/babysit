@@ -1,5 +1,6 @@
-import { readFileSync } from 'fs'
+import { readFileSync, watch } from 'fs'
 import { createHash } from 'crypto'
+import { basename, dirname } from 'path'
 
 import { log } from '../utils/log.js'
 import { rewrite_tmpfile } from '../utils/tmpfile.js'
@@ -40,6 +41,19 @@ export const build_credential_sync_baseline = ( source_path, tmpfile_path ) => {
 
 // Refresh interval for credential sync daemon (5 minutes)
 const REFRESH_INTERVAL_MS = 300_000
+const WATCH_DEBOUNCE_MS = 200
+
+// Codex stores a JSON object. A login can briefly truncate or
+// remove its file; never forward that intermediate state or overwrite it
+// with the container's old login. Keep parser errors free of secret content.
+const validate_source = ( content ) => {
+    try {
+        const value = JSON.parse( content )
+        if( value && typeof value === `object` && !Array.isArray( value ) ) return
+    } catch { /* Retry after the next file event or periodic reconciliation. */ }
+
+    throw new Error( `Host credential file is missing or incomplete; retaining sync state` )
+}
 
 /**
  * Start a bidirectional credential sync loop. Periodically:
@@ -65,6 +79,7 @@ const REFRESH_INTERVAL_MS = 300_000
  * @param {Function|null} [write_destination=null] - Async function that receives the tmpfile's
  *   updated content and writes it back to the host source. Pass null to keep sync one-way.
  * @param {Object} [options]
+ * @param {string|null} [options.source_path] - Host JSON file to watch once transport connects
  * @param {string|null} [options.baseline_source_hash] - Hash of the host source when the tmpfile
  *   was captured by the foreground process
  * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the sync copy when captured
@@ -72,13 +87,16 @@ const REFRESH_INTERVAL_MS = 300_000
  */
 export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null, options = {} ) => {
 
-    const { baseline_source_hash = null, baseline_tmpfile_hash = null } = options
+    const { baseline_source_hash = null, baseline_tmpfile_hash = null, source_path = null } = options
 
     let last_source_hash = baseline_source_hash
     let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
     let source_changed = false
     let transport = null
     let tick_queue = Promise.resolve()
+    let watcher = null
+    let watch_timer = null
+    let stopped = false
 
     // Seed both hashes from the initial tmpfile write — at start of session,
     // tmpfile content === source content, so they share a hash. The detached
@@ -97,11 +115,12 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         }
     }
 
-    const tick = async ( { throw_errors = false } = {} ) => {
+    const tick = async ( { throw_errors = false, source_only = false } = {} ) => {
 
         try {
 
             const source = await read_source()
+            if( source_path ) validate_source( source )
             const source_hash = source ? hash_credential_content( source ) : null
 
             // A deliberate host-side reauthentication wins. Push it through
@@ -121,6 +140,10 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
 
             }
 
+            // Watch events include our own writeback and unrelated directory
+            // activity. An unchanged host file must not cause a Docker pull.
+            if( source_only ) return
+
             // Pull first when the credential was staged with docker cp. This
             // makes the local tmpfile the same observation point the legacy
             // bind-mount sync used, while remaining daemon-host independent.
@@ -131,6 +154,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             // the source-wins policy applies to that window too; otherwise the
             // just-pulled, older container token could overwrite the new login.
             const latest_source = await read_source()
+            if( source_path ) validate_source( latest_source )
             const latest_source_hash = latest_source
                 ? hash_credential_content( latest_source )
                 : null
@@ -186,6 +210,33 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         return task
     }
 
+    const watch_source = () => {
+        if( !source_path || watcher || stopped ) return
+
+        try {
+            // Watch the directory: atomic login writes replace the file's
+            // inode, leaving a file watcher attached to the previous login.
+            watcher = watch( dirname( source_path ), { persistent: false }, ( event, filename ) => {
+                // Some runtimes coalesce a rename pair to its temporary name.
+                // Recheck on any rename; the content hash prevents extra copies.
+                if( stopped ) return
+                if( event !== `rename` && filename && filename.toString() !== basename( source_path ) ) return
+                clearTimeout( watch_timer )
+                watch_timer = setTimeout( () => {
+                    void queue_tick( { source_only: true } )
+                }, WATCH_DEBOUNCE_MS )
+                watch_timer.unref?.()
+            } )
+            watcher.on( `error`, () => {
+                watcher?.close()
+                watcher = null
+                log.warn( `Credential watcher unavailable; periodic sync remains active` )
+            } )
+        } catch {
+            log.warn( `Credential watcher unavailable; periodic sync remains active` )
+        }
+    }
+
     const interval = setInterval( () => {
         void queue_tick()
     }, REFRESH_INTERVAL_MS )
@@ -204,6 +255,12 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         source_changed: () => source_changed,
         set_transport: next_transport => {
             transport = next_transport
+            if( source_path && transport && !stopped ) {
+                watch_source()
+                // Close the capture-to-connect gap without consuming changes
+                // before the initial Docker credential copy has been staged.
+                void queue_tick( { source_only: true } )
+            }
         },
         // Reconcile an externally updated sync file without stopping the
         // long-lived session controller. Auth probes use this immediately
@@ -216,6 +273,9 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
         // otherwise be lost — host source would still have the now-invalidated
         // refresh_token, breaking the next babysit session.
         stop: async () => {
+            stopped = true
+            watcher?.close()
+            clearTimeout( watch_timer )
             clearInterval( interval )
             await queue_tick( { throw_errors: true } )
         },

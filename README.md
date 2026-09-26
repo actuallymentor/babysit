@@ -275,6 +275,8 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Credentials, Docker volumes, tmux socket retain their locations; storage override alone does not isolate instances.
 - Agent runs non-root in Docker/tmux; detached monitor applies rules and syncs credentials.
 - Codex config is staged in a temporary copy; invalid TOML fails before staging.
+- Codex host `auth.json` changes sync automatically; five-minute reconciliation remains as fallback.
+- Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
 - Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf.
 - `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.
 
@@ -302,6 +304,7 @@ npm run test:all
 | `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
 | `node tests/e2e/status.js` | Focused Docker/tmux activity regression |
+| `node tests/e2e/credential-sync.js` | Host login watcher → running Docker container; dummy credentials, requires E2E image |
 
 `test:all` runs the automated suites, also on PRs/main pushes. The optional
 `test:controls` smoke uses local Claude credentials and checks available account quotas.
