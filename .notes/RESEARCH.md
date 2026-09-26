@@ -1,5 +1,12 @@
 # Operational Research
 
+## Codex host re-login propagation — 2026-09-26
+
+- Diagnosis only; no runtime change. In an isolated Docker container using dummy credentials, atomic host credential replacement remained invisible after 1.5 seconds; explicitly flushing the existing sync updated the still-running container. The current periodic sync waits up to five minutes. Relevant sync/setup/transport tests: 40 passed.
+- Installed CLI reports 0.156.1. Its tagged [AuthManager source](https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/auth/manager.rs) caches auth until explicit reload; proactive refresh and 401 recovery perform guarded reloads for the same account. Changed auth clears its snapshot-scoped permanent refresh failure. Account changes are deliberately rejected by guarded reload. File propagation and process reload are separate boundaries; live OAuth failure/recovery was not exercised.
+- [Official authentication docs](https://developers.openai.com/codex/auth) distinguish file, keyring, auto, and ephemeral storage. A host file copy only carries refreshed credentials if the host login actually updated that file.
+- Candidate mitigation: cheap host-file change detection every 1–2 seconds, triggering serialized reconciliation only on changed valid content; retain slower container-to-host reconciliation. Handle atomic replacement, transient missing/partial writes, transport errors, and concurrent refreshes. Avoid unconditional frequent Docker copies or sharing the full host Codex home. Verify live same-account recovery before promising restart-free operation; preserve account-switch boundaries.
+
 ## Completed replies for the web bridge — 2026-09-07
 
 - Prefer completion payloads over terminal parsing: [Codex notify](https://learn.chatgpt.com/docs/config-file/config-advanced#notifications) provides `last-assistant-message`; [Claude Stop](https://code.claude.com/docs/en/hooks#stop) provides `last_assistant_message`; [Gemini AfterAgent](https://geminicli.com/docs/hooks/reference/#afteragent) provides `prompt_response`. Claude warns its transcript may lag the Stop payload.
