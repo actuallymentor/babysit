@@ -1,5 +1,7 @@
 # Gotchas
 
+- Credential directory watchers must tolerate atomic replacement and coalesced rename events. Bun can report only the temporary filename; recheck on any rename, then deduplicate by content. Watcher checks must not pull container state for unchanged host files. Incomplete/missing Codex JSON must preserve sync state, including during final flush.
+
 Keep only pitfalls that remain relevant to the current implementation. Numbers are stable references, so removed entries leave intentional gaps.
 
 1. **Two-phase Claude Keychain OAuth** — detect credential existence *before* the Claude `--version` pre-flight. Claude can rotate its token during that check, so capture the Keychain value *after* pre-flight. Codex, Gemini, and OpenCode do not rotate tokens on `--version`; see gotcha 41.

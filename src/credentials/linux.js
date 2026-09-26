@@ -129,7 +129,10 @@ export const setup_linux_credentials = async ( agent, {
                 }
             }
 
-            sync = start_credential_sync( read_source, tmpfile, write_destination, baseline || {} )
+            sync = start_credential_sync( read_source, tmpfile, write_destination, {
+                ...baseline,
+                source_path: agent.name === `codex` ? expanded : null,
+            } )
 
             log.info( `Credentials loaded from file: ${ expanded }` )
 

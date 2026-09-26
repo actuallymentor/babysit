@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 — 2026-09-26
+
+### Fixed
+- Sync Codex host re-login promptly through a debounced credential watcher.
+- Retain credential state during incomplete host login writes.
+
 ## 1.5.0 — 2026-09-24
 
 ### Added
