@@ -1,6 +1,6 @@
 # Gotchas
 
-- Credential directory watchers must tolerate atomic replacement and coalesced rename events. Bun can report only the temporary filename; recheck on any rename, then deduplicate by content. Watcher checks must not pull container state for unchanged host files. Incomplete/missing Codex JSON must preserve sync state, including during final flush.
+- Credential directory watchers must tolerate atomic replacement and coalesced rename events. Bun can report only the temporary filename; recheck on any rename, then deduplicate by content. Watcher checks must not pull container state for unchanged host files. Invalid Codex JSON/read errors must preserve recovery state. Missing files mean logout: do not resurrect host auth or block final cleanup.
 
 Keep only pitfalls that remain relevant to the current implementation. Numbers are stable references, so removed entries leave intentional gaps.
 

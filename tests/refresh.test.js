@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, unlinkSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, renameSync, unlinkSync, existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
@@ -433,6 +433,36 @@ describe( `host credential watcher`, () => {
         await sync.flush()
         expect( container_content ).toBe( renewed )
         expect( pulls ).toBe( 0 )
+    } )
+
+    it( `does not resurrect a host logout or fail final cleanup`, async () => {
+        sync.set_transport( transport() )
+        unlinkSync( host_path )
+        await sync.flush()
+        expect( sync.baseline().baseline_source_hash ).toBeNull()
+        expect( sync.source_changed() ).toBe( true )
+        await sync.stop()
+        expect( existsSync( host_path ) ).toBe( false )
+        expect( pulls ).toBe( 0 )
+        expect( pushes ).toEqual( [] )
+    } )
+
+    it( `respects logout during a pull and observes a restored login`, async () => {
+        const connected = transport()
+        sync.set_transport( {
+            ...connected,
+            pull: async path => {
+                unlinkSync( host_path )
+                container_content = renewed
+                await connected.pull( path )
+            },
+        } )
+        await sync.flush()
+        expect( existsSync( host_path ) ).toBe( false )
+        replace_host( original )
+        await until( () => container_content === original )
+        // Restore the normal pull for final cleanup.
+        sync.set_transport( connected )
     } )
 
 } )
