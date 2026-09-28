@@ -90,3 +90,5 @@
 - 2026-09-23: `babysit close` accepts the same live-list numbers as `open`; invalid numbers and missing metadata fail without falling back to a different launch.
 
 - 2026-09-24: Published v1.4.0 numbered resume/recovery support. Full host CI passed, including real terminal selection and all four recovery adapters. Release CI exposed a static browser heartbeat expiring on slow startup; reproduced with a 35-second launch delay and fixed the fixture. An unrelated five-second credential-test timeout passed on rerun. Published binaries and both multiarchitecture Docker images verified.
+
+- 2026-09-28: Diagnosed agent-driven `babysit model` failures on Claude Code 2.1.283 by driving the real controller against a live Claude pane, idle and mid-turn: slash-autocomplete false match orphaned the picker, mid-turn switches were reported as timeouts, and post-turn ghost suggestions blocked controls as drafts. Fixed picker detection, wrap-aware scan, mid-turn notice confirmation, and styled draft detection.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.2 — 2026-09-28
+
+### Fixed
+- Keep agent-requested Claude `/model` from orphaning its picker on slash autocomplete.
+- Confirm Claude model/effort switches made mid-turn instead of reporting timeouts.
+- Treat Claude's dim suggested prompt as an empty composer, not a user draft.
+- Scan Claude 2.1.283's wrapping, scrolling picker; reject update-only models.
+- Accept Claude API model IDs (e.g. `claude-opus-5-5`) and list ambiguous matches.
+
 ## 1.5.1 — 2026-09-26
 
 ### Fixed

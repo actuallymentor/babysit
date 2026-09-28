@@ -1,4 +1,5 @@
 import { setTimeout as wait } from 'node:timers/promises'
+import { strip_ansi } from '../babysit/matcher.js'
 
 const POLL_MS = 100
 const DEFAULT_TIMEOUT_MS = 8_000
@@ -11,7 +12,8 @@ const clean = value => value.toLowerCase().replace( /[^a-z0-9]/g, `` )
 const owned_dialog = ( agent, screen ) => {
     const tail = screen.split( `\n` ).slice( -35 ).join( `\n` )
     if( agent === `claude` ) {
-        const model = /(?:^|\n)\s*Select model\s*\n[\s\S]*?Enter to set as default · s to use this session only · Esc to cancel/i
+        // Rows Claude cannot select drop the Enter/s hints and show only Esc.
+        const model = /(?:^|\n)\s*Select model\s*\n[\s\S]*?Esc to cancel/i
         const effort = /(?:^|\n)\s*Effort\s*\n[\s\S]*?←\/→ to adjust · Enter to confirm · s for this session only · Esc to cancel/i
         const cache = /(?:Change effort level\?|Switch model\?)[\s\S]*?Yes, switch to/i
         return model.test( tail ) || effort.test( tail ) || cache.test( tail )
@@ -35,6 +37,10 @@ const wait_for = async ( capture, predicate, timeout_ms ) => {
     }
     throw new Error( `Agent control timed out waiting for its native UI.` )
 }
+
+// After each turn Claude pre-fills its composer with a dim suggested prompt.
+// Plain captures cannot tell that from typing, so drop dim runs from a styled one.
+const without_ghost_text = styled => strip_ansi( styled.replace( /\x1b\[2m[^\x1b]*/g, `` ) )
 
 // An existing panel or a person's draft belongs to them. Never close it or
 // type into it. The host retries CONTROL_PENDING after the screen is clear.
@@ -82,21 +88,32 @@ const move_to = async ( rows, number, send_keys, capture, parse ) => {
     if( selected_row( updated ) !== number ) throw new Error( `Native picker moved unexpectedly; selection was not applied.` )
 }
 
-const claude_rows = screen => screen.slice( screen.lastIndexOf( `Select model` ) ).split( `\n` ).flatMap( line => {
-    const match = line.match( /^\s*(❯)?\s*(\d+)\.\s+(.+?)\s*$/ )
+// Slash autocomplete can quote "Select model" inside a skill description
+// before Claude handles Enter. Only a whole title line starts the live picker.
+const claude_picker = screen => {
+    const title = [ ...screen.matchAll( /^[ \t]*Select model[ \t]*$/gm ) ].at( -1 )
+    return title ? screen.slice( title.index ) : ``
+}
+
+// Edge rows carry ↑/↓ scroll hints; the cursor replaces them when selected.
+const claude_rows = screen => claude_picker( screen ).split( `\n` ).flatMap( line => {
+    const match = line.match( /^\s*(❯)?\s*[↑↓]?\s*(\d+)\.\s+(.+?)\s*$/ )
     if( !match ) return []
     const [ , cursor, number, label ] = match
-    return [ { number: Number( number ), label: label.trim(), selected: Boolean( cursor ), disabled: /\(disabled\)/i.test( label ) } ]
+    const disabled = /\(disabled\)|Update Claude Code to use/i.test( label )
+    return [ { number: Number( number ), label: label.trim(), selected: Boolean( cursor ), disabled } ]
 } )
 
-// Claude renders only three model rows at a time. Walk its own picker to get
+// Claude shows a scrolling window of model rows. Walk its own picker to get
 // the full live catalog; Escape at the call site restores the original model.
+// Newer pickers wrap at both ends, so one returning cycle already saw every row.
 const scan_claude_models = async ( picker, capture, send_keys ) => {
     const seen = new Map()
     let screen = picker
     const remember = () => claude_rows( screen ).forEach( row => seen.set( row.number, row ) )
     remember()
-    for( const key of [ `Up`, `Down` ] ) {
+    walk: for( const key of [ `Up`, `Down` ] ) {
+        const visited = new Set( [ selected_row( claude_rows( screen ) ) ] )
         for( let step = 0; step < 30; step++ ) {
             const before = selected_row( claude_rows( screen ) )
             if( before === undefined ) throw new Error( `Claude model picker lost its selected row.` )
@@ -108,6 +125,9 @@ const scan_claude_models = async ( picker, capture, send_keys ) => {
                 if( selected_row( claude_rows( screen ) ) === before ) break
             }
             remember()
+            const reached = selected_row( claude_rows( screen ) )
+            if( visited.has( reached ) ) break walk
+            visited.add( reached )
         }
     }
     const current = selected_row( claude_rows( screen ) )
@@ -115,11 +135,16 @@ const scan_claude_models = async ( picker, capture, send_keys ) => {
         .map( row => ( { ...row, selected: row.number === current } ) )
 }
 
+const claude_alias = row => row.label.split( /\s{2,}/ )[ 0 ].replace( /\s*✔.*$/, `` ).trim()
+
+// API IDs such as claude-opus-5-5 name the same row as the alias "Opus 5.5".
+const claude_exact = ( row, value ) => clean( claude_alias( row ) ) === clean( value ).replace( /^claude/, `` )
+
 const claude_match = ( row, value, target ) => {
-    const alias = row.label.split( /\s{2,}/ )[ 0 ].replace( /\s*✔.*$/, `` ).trim()
+    const alias = claude_alias( row )
     const needle = clean( value )
     if( needle === `default` && alias.startsWith( `Default` ) ) return true
-    if( clean( alias ) === needle ) return true
+    if( claude_exact( row, value ) ) return true
     if( [ target?.name, target?.displayName ].some( name => name && clean( name ) === needle && clean( name ) === clean( alias ) ) ) return true
     const family = needle.match( /(?:opus|sonnet|haiku|fable)/ )?.[ 0 ]
     if( family && /\[1m\]/i.test( value ) ) return clean( alias ).startsWith( family ) && /1m context/i.test( alias )
@@ -127,7 +152,7 @@ const claude_match = ( row, value, target ) => {
 }
 
 const claude_model_entry = row => {
-    const alias = row.label.split( /\s{2,}/ )[ 0 ].replace( /\s*✔.*$/, `` ).trim()
+    const alias = claude_alias( row )
     const id = row.disabled ? null
         : /1m context/i.test( alias ) ? `${ alias.split( ` ` )[ 0 ].toLowerCase() }[1m]`
             : alias.startsWith( `Default` ) ? `default`
@@ -138,15 +163,19 @@ const claude_model_entry = row => {
 const choose_claude_model = async ( value, target, rows, capture, send_keys ) => {
     const candidates = rows.map( ( row, index ) => ( { row, index } ) ).filter( ( { row } ) => claude_match( row, value, target ) )
     const enabled = candidates.filter( ( { row } ) => !row.disabled )
-    const exact = enabled.filter( ( { row } ) => clean( row.label.split( /\s{2,}/ )[ 0 ] ) === clean( value ) )
-    const matches = exact.length ? exact : enabled
-    if( matches.length !== 1 ) throw unsupported( `Claude model '${ value }' is not uniquely available in the current picker.` )
+    const exact = candidates.filter( ( { row } ) => claude_exact( row, value ) )
+    const exact_enabled = exact.filter( ( { row } ) => !row.disabled )
+    if( exact.length && !exact_enabled.length ) throw unsupported( `${ claude_alias( exact[ 0 ].row ) } is unavailable in this Claude Code version.` )
+    const matches = exact_enabled.length ? exact_enabled : enabled
+    if( matches.length !== 1 ) {
+        const names = matches.map( ( { row } ) => claude_alias( row ) ).join( `, ` )
+        throw unsupported( `Claude model '${ value }' is not uniquely available in the current picker.${ names ? ` Matches: ${ names }.` : `` }` )
+    }
     const [ { row } ] = matches
-    if( row.disabled ) throw unsupported( `${ row.label } is disabled in this Claude Code version.` )
     await move_to( claude_rows( await capture() ), row.number, send_keys, capture, claude_rows )
     const supports_effort = !/Effort not supported for/i.test( await capture() )
     await send_keys( `s` )
-    return { selected: row.label.split( /\s{2,}/ )[ 0 ].replace( /\s*✔.*$/, `` ).trim(), supports_effort }
+    return { selected: claude_alias( row ), supports_effort }
 }
 
 const effort_labels = screen => {
@@ -167,24 +196,32 @@ const choose_effort = async ( value, screen, send_keys, capture ) => {
     return { applied: value, supported: levels }
 }
 
-const claude_cache_warning = screen => /(?:Change effort level\?|Switch model\?|full history gets re-read)/i.test( screen )
+// The live dialog sits at the bottom; older transcript text must not trigger Enter.
+const claude_cache_warning = screen => /(?:Change effort level\?|Switch model\?|full history gets re-read)/i.test( screen.split( `\n` ).slice( -20 ).join( `\n` ) )
+
+// Idle Claude echoes "❯ /model" and its result into the transcript. Mid-turn
+// it applies the change without an echo and shows only a transient
+// right-aligned notice, so accept either. The full name keeps a lingering
+// "Opus 5.5" notice from confirming a later "Opus 5".
 const claude_confirmation = ( screen, operation, selected ) => {
-    if( /(?:^|\n)\s*(?:Select model|Effort)\s*(?:\n|$)/i.test( screen ) ) return false
+    if( /(?:^|\n)\s*(?:Select model|Effort)\s*(?:\n|$)/i.test( screen ) || claude_cache_warning( screen ) ) return false
     const from = screen.lastIndexOf( `❯ /${ operation }` )
-    if( from < 0 ) return false
-    const latest = screen.slice( from )
+    const echoed = from < 0 ? `` : screen.slice( from )
+    const notices = screen.split( `\n` ).filter( line => /^ {20,}\S/.test( line ) ).join( `\n` )
     const actions = operation === `model` ? [ `Set model to`, `Kept model as` ] : [ `Set effort level to` ]
-    const chosen = operation === `model` ? selected.split( /[\s(]/ )[ 0 ] : selected
-    const unchanged = latest.includes( `Kept model as` )
-    return actions.some( action => latest.includes( action ) )
-        && ( unchanged || latest.includes( `this session only` ) )
-        && ( chosen === `Default` || latest.toLowerCase().includes( chosen.toLowerCase() ) )
+    const chosen = operation === `model` ? selected.replace( /\s*\(.*$/, `` ) : selected
+    const named = new RegExp( `(?:^|[^\\w.])${ chosen.replace( /[.*+?^${}()|[\]\\]/g, `\\$&` ) }(?![\\w.])`, `i` )
+    return [ echoed, notices ].some( latest => actions.some( action => latest.includes( action ) )
+        && ( latest.includes( `Kept model as` ) || latest.includes( `this session only` ) )
+        && ( chosen === `Default` || named.test( latest ) ) )
 }
 
 const claude_control = async ( { operation, value, target, capture, send_text, send_keys, timeout_ms, screen_before } ) => {
     await send_text( `/${ operation }` )
-    const title = operation === `model` ? /Select model/i : /(?:^|\n)\s*Effort\s*(?:\n|$)/i
-    const picker = await wait_for( capture, screen => title.test( screen ), timeout_ms )
+    const ready = operation === `model`
+        ? screen => selected_row( claude_rows( screen ) ) !== undefined
+        : screen => /(?:^|\n)\s*Effort\s*(?:\n|$)/i.test( screen )
+    const picker = await wait_for( capture, ready, timeout_ms )
 
     const rows = operation === `model` ? await scan_claude_models( picker, capture, send_keys ) : []
     if( !value ) {
@@ -213,8 +250,8 @@ const claude_control = async ( { operation, value, target, capture, send_text, s
     if( !claude_confirmation( result, operation, selected ) ) {
         throw new Error( `Claude did not confirm its new ${ operation }.` )
     }
-    const old_effort = screen_before.match( /[○●]\s+(low|medium|high|xhigh|max) · \/effort/i )?.[ 1 ]
-    const new_effort = result.match( /[○●]\s+(low|medium|high|xhigh|max) · \/effort/i )?.[ 1 ]
+    const old_effort = screen_before.match( /\b(low|medium|high|xhigh|max) · \/effort/i )?.[ 1 ]
+    const new_effort = result.match( /\b(low|medium|high|xhigh|max) · \/effort/i )?.[ 1 ]
     if( operation === `model` && !supports_effort ) {
         // Claude hides effort on non-reasoning models but keeps the old value
         // internally. Reset that latent value to its native high default so
@@ -345,14 +382,14 @@ const antigravity_control = async ( { operation, value, target, capture, send_te
  * A failed control never presses Escape on an unowned dialog.
  */
 export const terminal_control = async ( {
-    agent, operation, value, target, capture, send_text, send_keys,
+    agent, operation, value, target, capture, capture_styled, send_text, send_keys,
     dismiss, busy = false, timeout_ms = DEFAULT_TIMEOUT_MS,
 } ) => {
     if( ![ `model`, `effort` ].includes( operation ) ) throw new Error( `Unknown terminal control '${ operation }'.` )
     if( value !== undefined && !/^[\x20-\x7E]{1,160}$/.test( value ) ) throw new Error( `Control value contains unsupported characters.` )
     if( typeof capture !== `function` || typeof send_text !== `function` || typeof send_keys !== `function` ) throw new Error( `Terminal control needs capture, send_text and send_keys callbacks.` )
     const screen = await capture()
-    ensure_safe( agent, screen, busy )
+    ensure_safe( agent, capture_styled ? without_ghost_text( await capture_styled() ) : screen, busy )
     let opened = false
     let escaped = false
     const tracked_send_text = async text => {

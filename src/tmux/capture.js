@@ -6,14 +6,16 @@ import { TMUX_SOCKET } from '../utils/paths.js'
  * Capture the current visible pane content of a tmux session
  * @param {string} session_name - The session name
  * @param {number} [timeout_ms=5000] - Timeout in milliseconds
+ * @param {Object} [options]
+ * @param {boolean} [options.escapes=false] - Keep SGR styling, e.g. to tell dim ghost text from input
  * @returns {Promise<string>} The pane content
  */
-export const capture_pane = async ( session_name, timeout_ms = 5_000 ) => {
+export const capture_pane = async ( session_name, timeout_ms = 5_000, { escapes = false } = {} ) => {
 
     const task = run( `tmux`, [
         `-L`, TMUX_SOCKET,
         `capture-pane`, `-t`, session_name,
-        `-p`,
+        `-p`, ...escapes ? [ `-e` ] : [],
     ] )
 
     return promise_timeout( task, timeout_ms )
