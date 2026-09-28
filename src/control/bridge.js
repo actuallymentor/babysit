@@ -67,6 +67,9 @@ export const create_control_bridge = ( session, {
                 capture: async () => {
                     active(); return capture( pane )
                 },
+                capture_styled: async () => {
+                    active(); return capture( pane, 5_000, { escapes: true } )
+                },
                 send_text: async value => {
                     active(); return text( pane, value )
                 },

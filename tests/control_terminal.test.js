@@ -21,6 +21,67 @@ const callbacks = ( first, transition ) => {
 const claude_ready = `Claude Code v2.1.278\n● high · /effort\n────\n❯\u00a0Try "fix typecheck errors"\n────\nmanual mode on`
 const agy_ready = `Antigravity CLI 1.2.9\n────────────────\n>\n────────────────\n? for shortcuts   Gemini 3.1 Pro · high`
 
+// Claude Code 2.1.283's picker as captured live: a ten-row window with ↑/↓
+// scroll hints that wraps at both ends, and an update-only final row.
+const claude_catalog = [
+    [ `Default (recommended) ✔`, `Opus 5.5 · Best for everyday, complex tasks` ], [ `Opus 5.5`, `For complex work and everyday tasks` ],
+    [ `Fable 5.1`, `For your toughest challenges` ], [ `Haiku 4.5`, `Fastest for quick answers` ], [ `Sonnet 5`, `Efficient for routine tasks` ],
+    [ `Opus 5`, `Best for everyday, complex tasks` ], [ `Fable 5`, `Most capable for your hardest and longest-running tasks` ],
+    [ `Opus 4.8`, `Best for everyday, complex tasks` ], [ `Opus 4.7`, `Best for everyday, complex tasks` ], [ `Opus 4.6`, `Best for everyday, complex tasks` ],
+    [ `Sonnet 4.6`, `Efficient for routine tasks` ], [ `Sonnet 5.5`, `Update Claude Code to use this model` ],
+]
+const claude_picker_screen = ( cursor, top ) => {
+    const rows = claude_catalog.slice( top, top + 10 ).map( ( [ alias, note ], offset ) => {
+        const index = top + offset
+        const hint = index === cursor ? `❯` : offset === 0 && top > 0 ? `↑` : offset === 9 && index < claude_catalog.length - 1 ? `↓` : ` `
+        return `   ${ hint } ${ `${ index + 1 }.`.padEnd( 3 ) } ${ alias.padEnd( 24 ) } ${ note }`
+    } )
+    const footer = cursor === claude_catalog.length - 1 ? `   Esc to cancel` : `   ◐ Medium effort (default) ←/→ to adjust\n   Enter to set as default · s to use this session only · Esc to cancel`
+    return `${ claude_ready }\n   Select model\n   Switch between Claude models. Your pick becomes the default for new sessions.\n${ rows.join( `\n` ) }\n      … +2 models\n${ footer }`
+}
+
+// A stateful live-picker double: arrows wrap and scroll, `s` applies the row.
+const claude_live = ( { busy = false } = {} ) => {
+    let screen = claude_ready
+    let cursor = 0
+    let top = 0
+    const sent = []
+    const render = () => {
+        screen = claude_picker_screen( cursor, top )
+    }
+    const move = delta => {
+        cursor = ( cursor + delta + claude_catalog.length ) % claude_catalog.length
+        top = Math.min( Math.max( top, cursor - 9 ), cursor )
+        render()
+    }
+    return {
+        sent,
+        get screen() {
+            return screen
+        },
+        capture: async () => screen,
+        send_text: async text => {
+            sent.push( [ `text`, text ] )
+            // Slash autocomplete quotes a skill description before Enter lands.
+            screen = `${ claude_ready }\n  /shapeshift   Select model and reasoning effort for planning (user)\n❯ /model`
+            setTimeout( render, 30 )
+        },
+        send_keys: async key => {
+            sent.push( [ `keys`, key ] )
+            if( key === `Up` ) move( -1 )
+            if( key === `Down` ) move( 1 )
+            if( key === `Escape` ) screen = claude_ready
+            if( key === `s` && cursor < claude_catalog.length - 1 ) {
+                const alias = claude_catalog[ cursor ][ 0 ].replace( / ✔$/, `` )
+                // Mid-turn Claude skips the transcript echo and shows a notice.
+                screen = busy
+                    ? `${ claude_ready }\n${ ` `.repeat( 60 ) }Set model to ${ alias } for this session only`
+                    : `${ claude_ready }\n❯ /model\n  ⎿  Set model to ${ alias } for this session only`
+            }
+        },
+    }
+}
+
 describe( `native terminal controls`, () => {
 
     test( `leaves a Claude draft untouched`, async () => {
@@ -36,6 +97,61 @@ describe( `native terminal controls`, () => {
         expect( result.models.map( model => model.id ) ).toEqual( [ `sonnet`, `opus[1m]`, null ] )
         expect( io.sent[ 0 ] ).toEqual( [ `text`, `/model` ] )
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+    } )
+
+    test( `treats Claude's dim suggested prompt as empty but a typed draft as a draft`, async () => {
+        const suggestion = `${ claude_ready }\n❯\u00a0\x1b[2mRun it in the background instead\x1b[0m\n────`
+        const io = claude_live()
+        const result = await terminal_control( { agent: `claude`, operation: `model`, capture_styled: async () => suggestion, ...io } )
+        expect( result.models ).toHaveLength( 12 )
+
+        const typed = claude_live()
+        const draft = async () => `${ claude_ready }\n❯\u00a0\x1b[39mRun it in the background instead\n────`
+        await expect( terminal_control( { agent: `claude`, operation: `model`, capture_styled: draft, ...typed } ) ).rejects.toMatchObject( { code: `CONTROL_PENDING` } )
+        expect( typed.sent ).toEqual( [] )
+    } )
+
+    test( `waits past slash autocomplete and lists a wrapping Claude picker in one cycle`, async () => {
+        const io = claude_live()
+        const result = await terminal_control( { agent: `claude`, operation: `model`, ...io } )
+        expect( result.models ).toHaveLength( 12 )
+        expect( result.models.map( model => model.id ) ).toEqual( [ `default`, `opus-5.5`, `fable-5.1`, `haiku-4.5`, `sonnet-5`, `opus-5`, `fable-5`, `opus-4.8`, `opus-4.7`, `opus-4.6`, `sonnet-4.6`, null ] )
+        expect( io.sent.filter( ( [ , key ] ) => key === `Up` || key === `Down` ) ).toHaveLength( 12 )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+        expect( io.screen ).toBe( claude_ready )
+    } )
+
+    test( `switches Claude by API model ID mid-turn and reads its notice`, async () => {
+        const io = claude_live( { busy: true } )
+        const result = await terminal_control( { agent: `claude`, operation: `model`, value: `claude-fable-5-1`, busy: true, ...io } )
+        expect( result.applied ).toBe( `Fable 5.1` )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
+    } )
+
+    test( `a lingering Opus 5.5 notice does not confirm Opus 5`, async () => {
+        const io = claude_live( { busy: true } )
+        const stale = `${ claude_ready }\n${ ` `.repeat( 60 ) }Set model to Opus 5.5 for this session only`
+        let pressed = false
+        const capture = async () => pressed ? stale : io.capture()
+        const send_keys = async key => {
+            await io.send_keys( key )
+            pressed ||= key === `s`
+        }
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `opus-5`, busy: true, timeout_ms: 300, send_text: io.send_text, capture, send_keys } ) ).rejects.toThrow( `timed out` )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
+    } )
+
+    test( `rejects an update-only Claude model and closes the picker`, async () => {
+        const io = claude_live()
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `sonnet-5.5`, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_UNSUPPORTED` } )
+        expect( io.sent.filter( ( [ , key ] ) => key === `Escape` ) ).toHaveLength( 1 )
+        expect( io.screen ).toBe( claude_ready )
+    } )
+
+    test( `names ambiguous Claude family matches`, async () => {
+        const io = claude_live()
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `fable`, ...io } ) ).rejects.toThrow( `Matches: Fable 5.1, Fable 5.` )
+        expect( io.screen ).toBe( claude_ready )
     } )
 
     test( `selects Claude effort for this session and reads native confirmation`, async () => {
