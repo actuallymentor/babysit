@@ -111,8 +111,8 @@ describe( `native terminal controls`, () => {
         expect( typed.sent ).toEqual( [] )
     } )
 
-    test( `preserves dim Claude composer borders while ignoring its ghost suggestion`, async () => {
-        const styled = `Claude Code\n\x1b[2m────\x1b[0m\n❯ \x1b[2mTry a suggested task\n────\x1b[0m`
+    test.each( [ `Try a suggested task`, `Try refactoring the\nauth module` ] )( `preserves dim borders around ghost text: %s`, async suggestion => {
+        const styled = `Claude Code\n\x1b[2m────\x1b[0m\n❯ \x1b[2m${ suggestion }\n────\x1b[0m`
         const io = claude_live()
         const result = await terminal_control( { agent: `claude`, operation: `model`, capture_styled: async () => styled, ...io } )
         expect( result.models.length ).toBeGreaterThan( 0 )
@@ -170,7 +170,7 @@ describe( `native terminal controls`, () => {
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
     } )
 
-    test.each( [ `opus-5.5`, `claude-opus-5-5` ] )( `resolves %s from Claude's live family description`, async value => {
+    test.each( [ `opus-5.5`, `claude-opus-5-5`, `claude-opus-5-5-20260101` ] )( `resolves %s from Claude's live family description`, async value => {
         const picker = `${ claude_ready }\nSelect model\n❯ 1. Opus  Opus 5.5 · Best for everyday tasks\n  2. Default (recommended)  Opus 5.5 · Best for everyday tasks\n  3. Opus (1M context)  Opus 5.5 · Long sessions`
         const confirmed = `${ claude_ready }\n❯ /model\n  ⎿  Set model to Opus 5.5 for this session only`
         const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `s` ? confirmed : picker )
@@ -178,10 +178,10 @@ describe( `native terminal controls`, () => {
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
     } )
 
-    test( `rejects a version absent from Claude's live family description`, async () => {
+    test.each( [ `claude-opus-5-6`, `claude-opus-5-6-20260101` ] )( `rejects unadvertised version %s`, async value => {
         const picker = `${ claude_ready }\nSelect model\nSwitch between Claude models.\n❯ 1. Opus  Opus 5.5 · Best for everyday tasks`
         const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `Escape` ? claude_ready : picker )
-        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `claude-opus-5-6`, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_UNSUPPORTED` } )
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_UNSUPPORTED` } )
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
         expect( io.sent ).not.toContainEqual( [ `keys`, `s` ] )
     } )

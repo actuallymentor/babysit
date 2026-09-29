@@ -46,10 +46,12 @@ const without_ghost_text = styled => {
     const lines = styled.split( `\n` )
     const start = lines.findLastIndex( line => strip_ansi( line ).startsWith( `❯` ) )
     const end = lines.findIndex( ( line, index ) => index > start && strip_ansi( line ).startsWith( `──` ) )
+    if( start < 0 || end < 0 ) return strip_ansi( styled )
     // Borders are dim too. Remove suggestions only inside the composer, and
-    // keep each newline even when Claude leaves the dim style active across it.
-    return lines.map( ( line, index ) => strip_ansi( start >= 0 && index >= start && index < end
-        ? line.replace( /\x1b\[2m[^\x1b]*/g, `` ) : line ) ).join( `\n` )
+    // keep newlines when the dim style carries across wrapped suggestion rows.
+    const composer = lines.slice( start, end ).join( `\n` )
+        .replace( /\x1b\[2m[^\x1b]*/g, run => run.replace( /[^\n]/g, `` ) )
+    return strip_ansi( [ ...lines.slice( 0, start ), composer, ...lines.slice( end ) ].join( `\n` ) )
 }
 
 // An existing panel or a person's draft belongs to them. Never close it or
@@ -151,7 +153,7 @@ const claude_alias = row => row.label.split( /\s{2,}/ )[ 0 ].replace( /\s*✔.*$
 // API IDs such as claude-opus-5-5 name the same row as the alias "Opus 5.5".
 const claude_exact = ( row, value ) => {
     const alias = claude_alias( row )
-    const needle = clean( value ).replace( /^claude/, `` )
+    const needle = clean( value.replace( /-\d{8}$/, `` ) ).replace( /^claude/, `` )
     if( clean( alias ) === needle ) return true
     // Newer Claude catalogs put the version in the description of a family
     // alias. Default is not a versioned choice; context variants may be the
