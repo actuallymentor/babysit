@@ -164,6 +164,9 @@ export const confirm_default_yes = async ( question, {
 
 const CLONE_ACCESS_LIST_LIMIT = 20
 
+// Each round can reveal paths hidden inside a directory it just opened.
+const CLONE_ACCESS_MAX_ROUNDS = 10
+
 const mode_string = ( { directory, mode } ) => `${ directory ? `d` : `-` }${ [ 6, 3, 0 ]
     .map( shift => mode >> shift & 7 )
     .map( bits => `${ bits & 4 ? `r` : `-` }${ bits & 2 ? `w` : `-` }${ bits & 1 ? `x` : `-` }` )
@@ -228,6 +231,7 @@ export const prepare_clone_with_access_fix = async ( options, {
 } = {} ) => {
 
     const granted = new Set()
+    let rounds = 0
 
     while( true ) {
         try {
@@ -244,6 +248,9 @@ export const prepare_clone_with_access_fix = async ( options, {
                 throw new Error( `Clone aborted; fix the permissions above and retry.` )
             }
             if( !error.fixable ) throw new Error( `Clone aborted; fix the permissions above and retry.` )
+            if( granted.size && ++rounds >= CLONE_ACCESS_MAX_ROUNDS ) {
+                throw new Error( `Clone aborted after ${ rounds } permission fixes; run the chmod above and retry.` )
+            }
 
             const confirmed = assume_yes || await confirm( `Run this chmod now and retry the clone? [Y/n] ` )
             if( !confirmed ) throw new Error( `Clone aborted; run the chmod above and retry.` )

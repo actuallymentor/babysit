@@ -154,6 +154,20 @@ describe( `clone access fix boundaries`, () => {
         expect( attempts ).toBe( 2 )
     } )
 
+    it( `gives up after a bounded number of fix rounds`, async () => {
+        let attempts = 0
+        await expect( prepare_clone_with_access_fix( {}, {
+            assume_yes: true,
+            prepare: () => {
+                attempts++
+                const entry = { path: `/src/level-${ attempts }`, directory: true, mode: 0o600, uid: 1000, bits: `x` }
+                throw Object.assign( new Error( `blocked` ), { code: `CLONE_SOURCE_UNREADABLE`, source: `/src`, fixable: true, entries: [ entry ] } )
+            },
+            grant: entries => entries.length,
+        } ) ).rejects.toThrow( `Clone aborted after 10 permission fixes` )
+        expect( attempts ).toBe( 11 )
+    } )
+
     it( `switches to a find command for large trees`, () => {
         const entries = Array.from( { length: 25 }, ( _, index ) => ( { path: `/src/d${ index }`, directory: true, mode: 0o600, uid: 1000, bits: `x` } ) )
         const { report, command } = format_clone_access_report( { source: `/src`, entries } )
