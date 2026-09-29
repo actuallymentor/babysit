@@ -551,7 +551,7 @@ export const grant_clone_source_access = entries => {
     for( const { path, bits, dev, ino } of entries ) {
         if( !bits ) throw new Error( `No owner permission fix applies to ${ path }` )
         const current = lstatSync( path )
-        if( current.isSymbolicLink() || current.dev !== dev || current.ino !== ino ) {
+        if( current.isSymbolicLink() || current.dev !== dev || current.ino !== ino || current.uid !== process.getuid?.() ) {
             throw new Error( `Clone source changed since it was checked: ${ path }` )
         }
         const add = ( bits.includes( `r` ) ? 0o400 : 0 ) | ( bits.includes( `x` ) ? 0o100 : 0 )
