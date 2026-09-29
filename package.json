@@ -1,6 +1,6 @@
 {
   "name": "babysit",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "description": "A CLI supervisor for LLM coding agent CLIs",
   "type": "module",
   "main": "src/index.js",
@@ -23,7 +23,8 @@
     "test:codex": "node tests/e2e/codex-resume.js",
     "test:controls": "node tests/e2e/control-bridge.js",
     "test:close": "node tests/e2e/close.js",
-    "test:numbers": "node tests/e2e/session-numbers.js"
+    "test:numbers": "node tests/e2e/session-numbers.js",
+    "test:claude-dialog": "node tests/e2e/claude-dangerous-dialog.js"
   },
   "keywords": [
     "cli",

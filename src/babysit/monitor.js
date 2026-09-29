@@ -1,6 +1,7 @@
 import { wait } from 'mentie'
 import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
+import { send_keys } from '../tmux/send.js'
 import { has_session, kill_session, set_agent_status } from '../tmux/session.js'
 import { IdleTracker, strip_ansi, evaluate_rule } from './matcher.js'
 import { execute_action } from './actions.js'
@@ -17,6 +18,9 @@ const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
 
 // Debounce between consecutive fires of the same rule (sir-claudius lesson: redraw flicker)
 export const DEBOUNCE_MS = 3_000
+
+// Give an answered dialog time to close before judging a fresh one.
+export const APPROVAL_COOLDOWN_MS = 2_000
 
 /**
  * Read the supervised entrypoint's process exit marker from pane output.
@@ -122,6 +126,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Object} options.agent - Agent adapter
  * @param {Object|null} [options.web_bridge] - Optional filesystem bridge controller
  * @param {Function|null} [options.open_web_bridge_fn] - Retry bridge initialization until enabled
+ * @param {boolean} [options.approve_dangerous_commands=false] - YOLO: answer the agent's bypass-immune dangerous-command prompt with Yes
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_exit] - Callback when session ends
@@ -136,6 +141,7 @@ export const start_monitor = async ( {
     web_bridge = null,
     open_web_bridge_fn = null,
     control_bridge = null,
+    approve_dangerous_commands = false,
     tmux_target = session_name,
     on_session_id,
     on_tick,
@@ -147,6 +153,7 @@ export const start_monitor = async ( {
     kill_session_fn = kill_session,
     publish_agent_status_fn = publish_agent_status,
     execute_action_fn = execute_action,
+    send_keys_fn = send_keys,
     write_loop_deadline_fn = write_loop_deadline,
     wait_fn = wait,
 } ) => {
@@ -160,6 +167,7 @@ export const start_monitor = async ( {
     let reset_after_action = false
     let agent_target = web_bridge?.tmux_target || tmux_target
     let control_revision = control_bridge?.revision || 0
+    let approval_ready_at = 0
 
     const begin_action = ( rule, now ) => {
 
@@ -286,6 +294,19 @@ export const start_monitor = async ( {
                 await finish_action()
                 if( on_exit ) await on_exit( { exit_status } )
                 break
+            }
+
+            // YOLO: answer Claude's bypass-immune dangerous-command prompt the
+            // way a person would. Babysit's own input owners finish first; the
+            // prompt waits two minutes before Claude denies it on its own.
+            const dangerous = approve_dangerous_commands && agent?.dangerous_command_dialog?.( clean_output )
+            if( dangerous && !action_busy && !control_bridge?.busy && input_allowed() && Date.now() >= approval_ready_at ) {
+                log.info( `YOLO approved Claude's dangerous command prompt (${ dangerous.reason }): ${ dangerous.command.slice( 0, 200 ) }` )
+                await send_keys_fn( agent_target, `Enter` )
+                approval_ready_at = Date.now() + APPROVAL_COOLDOWN_MS
+                idle_tracker.reset()
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
             }
 
             // Publish first, then claim a bounded request batch. An in-flight

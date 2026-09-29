@@ -196,3 +196,12 @@ Agent model defaults and container tool pins last verified against primary sourc
 - Full container-helper→host-monitor→private-tmux→Claude path verified draft preservation, queued effort, session-only confirmation, status readback, and native model listing. Standalone host and image helper both returned real Claude/Codex/OpenRouter usage without starting inference.
 
 Native cleanup signatures verified in isolated captures: Claude Code 2.1.278 model footer `Enter to set as default · s to use this session only · Esc to cancel`, effort footer `←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`; Antigravity 1.2.9 picker footers start `Keyboard:`; OpenCode native model footer includes `Connect provider ctrl+a`. These are observed CLI strings, not API guarantees.
+
+## Claude Code 2.1.283 bypass-immune safety dialogs (2026-09-28)
+
+Source: strings in the native binary (`~/.local/share/claude/versions/2.1.283`).
+- Circuit-breaker table: `dangerousRemoval`, `outsideReadsBlocked`, `isolatePeerMachines`, `restrictedMode` are `bypassImmune: true` → they prompt even under `--dangerously-skip-permissions`. No setting/flag opts out.
+- `dangerousRemoval` (rm/rmdir) fires for: critical system dirs, workspace dir or any ancestor, `~`-rooted or unresolvable targets, `cd … && rm <relative glob>`, `$VAR/<top-level>` that could expand to `/`, `rm -r $(…)`. Babysit bind-mounts the real workspace, so an approved hit deletes host data.
+- In bypass mode the dialog carries an auto-deny window (`tengu_splendid_horizon`: 120 s, max 3 unanswered; after that it denies without a dialog). The deny text tells the model a person must approve and to use literal paths.
+- Env: `CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT` drops only the `$(…)` variant. `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT` removes the auto-deny window, so the dialog would block indefinitely (worse for unattended runs). Empty-variable check is server-gated (`tengu_bright_lake`).
+- "Allow reads outside the working directories?" is an auto-mode-only one-time question (`auto_mode_outside_reads`), not a bypass-mode dialog.
