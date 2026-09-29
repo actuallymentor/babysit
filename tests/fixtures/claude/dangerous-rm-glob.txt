@@ -1,0 +1,27 @@
+ ▐▛███▛█   Claude Code v2.1.283
+▝▜██████▀  Opus 5.5 · Claude Max
+ ▝▝   ▝▝   /workspace/project
+
+  Get to finished work sooner with Opus 5.5. Switch anytime with /model.
+  1 more notice hidden
+
+❯ Run exactly this one Bash command, nothing else, no file reads first: cd victim && rm -rf ./*
+
+  Deleting all non-hidden contents of victim directory
+  ⎿  $ cd victim && rm -rf ./*
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Bash command
+
+   cd victim && rm -rf ./*
+   Delete all non-hidden contents of victim directory
+
+ │ Dangerous rm operation on statically-unresolvable target: /workspace/project/*
+ ⚠ Claude Code will automatically deny this request in 1:43, to avoid blocking progress on an unattended session
+
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel · Tab to amend

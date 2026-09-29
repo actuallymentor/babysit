@@ -21,6 +21,59 @@ const is_initial_prompt_ready = output => {
 
 }
 
+// Claude Code 2.1.283 keeps its "Dangerous rm operation" check active under
+// --dangerously-skip-permissions (the check is bypass-immune) and auto-denies
+// it after two minutes. Captured shape, bottom of the pane:
+//
+//    Bash command
+//      <command>
+//      <description>
+//    │ Dangerous rm operation on <reason>
+//    ⚠ Claude Code will automatically deny this request in 1:58, …
+//    Do you want to proceed?
+//    ❯ 1. Yes
+//      2. No
+//    Esc to cancel · Tab to amend
+//
+// tests/e2e/claude-dangerous-dialog.js reports when this layout drifts.
+export const DANGEROUS_DIALOG = {
+    reason: /^\s*│?\s*(Dangerous rm(?:dir)? operation\b.*?)\s*$/,
+    question: /^\s*Do you want to proceed\?\s*$/,
+    approve: /^\s*❯\s*1\.\s+Yes\s*$/,
+    deny: /^\s*2\.\s+No\s*$/,
+    footer: /^\s*Esc to cancel\b/,
+    header: /^\s*Bash command\s*$/,
+}
+
+/**
+ * Find Claude's live dangerous-command dialog with its cursor on "Yes".
+ * Only the pane's bottom counts: the same words in transcript history or a
+ * cursor a person moved to "No" never match.
+ * @param {string} screen - ANSI-free pane capture
+ * @returns {{ command: string, reason: string } | null} Dialog details
+ */
+export const find_dangerous_command_dialog = screen => {
+
+    const lines = screen.split( `\n` ).filter( line => line.trim() ).slice( -20 )
+    const at = ( pattern, from = 0 ) => lines.findIndex( ( line, index ) => index >= from && pattern.test( line ) )
+
+    // The dialog replaces the composer, so its footer is the last line.
+    if( !DANGEROUS_DIALOG.footer.test( lines.at( -1 ) || `` ) ) return null
+
+    const question = at( DANGEROUS_DIALOG.question )
+    if( question < 0 || !DANGEROUS_DIALOG.approve.test( lines[ question + 1 ] || `` ) ) return null
+    if( !DANGEROUS_DIALOG.deny.test( lines[ question + 2 ] || `` ) ) return null
+
+    const reason_index = lines.findLastIndex( ( line, index ) => index < question && DANGEROUS_DIALOG.reason.test( line ) )
+    if( reason_index < 0 ) return null
+
+    const header = lines.findLastIndex( ( line, index ) => index < reason_index && DANGEROUS_DIALOG.header.test( line ) )
+    const command = header < 0 ? `` : lines[ header + 1 ].trim().replace( /^│\s*/, `` )
+
+    return { command, reason: lines[ reason_index ].match( DANGEROUS_DIALOG.reason )[ 1 ] }
+
+}
+
 export const claude = {
 
     name: `claude`,
@@ -91,6 +144,9 @@ export const claude = {
     // First-run/theme/trust screens reuse the splash and consume Enter too.
     // The shortcuts footer appears only with the interactive composer.
     initial_prompt_ready: is_initial_prompt_ready,
+
+    // YOLO monitors answer this bypass-immune prompt with Enter on "Yes".
+    dangerous_command_dialog: find_dangerous_command_dialog,
 
     /**
      * Get extra environment variables for this agent

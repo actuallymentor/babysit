@@ -50,7 +50,7 @@ Use explicit commands in scripts.
 | Flag | Effect |
 |---|---|
 | _(none)_ | Read-write workspace mount |
-| `--yolo` | Maximum autonomy; skip agent permissions |
+| `--yolo` | Maximum autonomy; skip agent permissions (Claude: also answers the bypass-immune "Dangerous rm operation" prompt) |
 | `--sandbox` | No workspace mount; ephemeral |
 | `--mudbox` | Read-only workspace mount |
 | `--clone` | Durable workspace copy + `/original`; explicit merge-back |
@@ -194,6 +194,7 @@ First launch creates `babysit.yaml`. Rules run top-down; first match wins.
 ```yaml
 config:
     idle_timeout_s: 300
+    yolo_approve_dangerous_commands: true # false: let Claude auto-deny its rm safety prompt
 
 babysit:
     # Uncomment wanted rules.
@@ -302,12 +303,14 @@ npm run test:all
 | `npm run test:numbers` | Real CLI history/recovery selectors and PTY resume attach/detach |
 | `npm run test:close` | Real Docker/tmux numbered close and list renumbering (requires E2E image) |
 | `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
+| `npm run test:claude-dialog` | Optional: real Claude "Dangerous rm" prompt still matches YOLO approval; prints a drift report after Claude updates |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
 | `node tests/e2e/status.js` | Focused Docker/tmux activity regression |
 | `node tests/e2e/credential-sync.js` | Host login watcher → running Docker container; dummy credentials, requires E2E image |
 
 `test:all` runs the automated suites, also on PRs/main pushes. The optional
 `test:controls` smoke uses local Claude credentials and checks available account quotas.
+`test:claude-dialog` uses local Claude credentials and one small model call; exit 1 means the dialog changed.
 Requires Docker, tmux, Python 3,
 `agy` (`AGY_E2E_BINARY` override), `codex` (`CODEX_E2E_BINARY` override),
 Chrome/Chromium (`CHROME_PATH` override).

@@ -24,6 +24,7 @@ config:
     # Prompt typed into the agent screen on launch. Set to null or "" to disable.
     initial_prompt: ${ format_initial_prompt( initial_prompt ) }
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as \`on: idle\`
+    yolo_approve_dangerous_commands: true # YOLO only: answer Claude's bypass-immune "Dangerous rm operation" prompt with Yes; false lets Claude auto-deny it
 
     # Named shell commands are opt-in. Uncomment and configure before use.
     # commands:
@@ -66,6 +67,7 @@ babysit:
 const DEFAULT_CONFIG = {
     initial_prompt: null,
     idle_timeout_s: 300,
+    yolo_approve_dangerous_commands: true,
     commands: {},
     lines_for_literal_match: 10,
     lines_for_regex_match: 10,

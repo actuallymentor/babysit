@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.5.2 — 2026-09-28
+## 1.6.0 — 2026-09-29
+
+### Added
+- YOLO answers Claude's bypass-immune "Dangerous rm operation" prompt (`yolo_approve_dangerous_commands`).
+- `npm run test:claude-dialog`: live drift report for that prompt after Claude updates.
 
 ### Fixed
 - Keep agent-requested Claude `/model` from orphaning its picker on slash autocomplete.

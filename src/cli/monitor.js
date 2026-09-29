@@ -334,6 +334,7 @@ export const cmd_monitor = async ( cmd ) => {
             agent,
             open_web_bridge_fn: () => open_web_bridge( { session } ),
             control_bridge: create_control_bridge( session ),
+            approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target: session.pane_id || session.tmux_session,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_tick: () => {
