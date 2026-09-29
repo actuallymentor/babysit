@@ -75,7 +75,7 @@ const claude_live = ( { busy = false } = {} ) => {
                 const alias = claude_catalog[ cursor ][ 0 ].replace( / ✔$/, `` )
                 // Mid-turn Claude skips the transcript echo and shows a notice.
                 screen = busy
-                    ? `${ claude_ready }\n${ ` `.repeat( 60 ) }Set model to ${ alias } for this session only`
+                    ? `Working…\n${ ` `.repeat( 60 ) }Set model to ${ alias } for this session only\n────\n❯\n────`
                     : `${ claude_ready }\n❯ /model\n  ⎿  Set model to ${ alias } for this session only`
             }
         },
@@ -111,6 +111,13 @@ describe( `native terminal controls`, () => {
         expect( typed.sent ).toEqual( [] )
     } )
 
+    test( `preserves dim Claude composer borders while ignoring its ghost suggestion`, async () => {
+        const styled = `Claude Code\n\x1b[2m────\x1b[0m\n❯ \x1b[2mTry a suggested task\n────\x1b[0m`
+        const io = claude_live()
+        const result = await terminal_control( { agent: `claude`, operation: `model`, capture_styled: async () => styled, ...io } )
+        expect( result.models.length ).toBeGreaterThan( 0 )
+    } )
+
     test( `waits past slash autocomplete and lists a wrapping Claude picker in one cycle`, async () => {
         const io = claude_live()
         const result = await terminal_control( { agent: `claude`, operation: `model`, ...io } )
@@ -130,7 +137,7 @@ describe( `native terminal controls`, () => {
 
     test( `a lingering Opus 5.5 notice does not confirm Opus 5`, async () => {
         const io = claude_live( { busy: true } )
-        const stale = `${ claude_ready }\n${ ` `.repeat( 60 ) }Set model to Opus 5.5 for this session only`
+        const stale = `Working…\n${ ` `.repeat( 60 ) }Set model to Opus 5.5 for this session only\n────\n❯\n────`
         let pressed = false
         const capture = async () => pressed ? stale : io.capture()
         const send_keys = async key => {
@@ -161,6 +168,46 @@ describe( `native terminal controls`, () => {
         const result = await terminal_control( { agent: `claude`, operation: `effort`, value: `low`, ...io } )
         expect( result.applied ).toBe( `low` )
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
+    } )
+
+    test.each( [ `opus-5.5`, `claude-opus-5-5` ] )( `resolves %s from Claude's live family description`, async value => {
+        const picker = `${ claude_ready }\nSelect model\n❯ 1. Opus  Opus 5.5 · Best for everyday tasks\n  2. Default (recommended)  Opus 5.5 · Best for everyday tasks\n  3. Opus (1M context)  Opus 5.5 · Long sessions`
+        const confirmed = `${ claude_ready }\n❯ /model\n  ⎿  Set model to Opus 5.5 for this session only`
+        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `s` ? confirmed : picker )
+        expect( ( await terminal_control( { agent: `claude`, operation: `model`, value, ...io } ) ).applied ).toBe( `Opus` )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
+    } )
+
+    test( `rejects a version absent from Claude's live family description`, async () => {
+        const picker = `${ claude_ready }\nSelect model\nSwitch between Claude models.\n❯ 1. Opus  Opus 5.5 · Best for everyday tasks`
+        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `Escape` ? claude_ready : picker )
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `claude-opus-5-6`, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_UNSUPPORTED` } )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+        expect( io.sent ).not.toContainEqual( [ `keys`, `s` ] )
+    } )
+
+    test( `clipped Claude model rows are dismissed even without a visible Escape hint`, async () => {
+        const picker = `Select model\nSwitch between Claude models. Your pick becomes the default for new sessions.\n❯ 1. Opus  Opus 5.5`
+        const clipped = `Select model\nSwitch between Claude models. Your pick becomes the default for new sessions.\n↑ 1. Opus  Opus 5.5`
+        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `Escape` ? claude_ready : clipped )
+        await expect( terminal_control( { agent: `claude`, operation: `model`, value: `opus-5.5`, ...io } ) ).rejects.toThrow( `clipped` )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+    } )
+
+    test( `reads wrapped Claude model confirmation on a narrow terminal`, async () => {
+        const picker = `${ claude_ready }\nSelect model\n❯ 1. Opus (1M context)  Opus 5.5`
+        const confirmed = `${ claude_ready }\n❯ /model\n  ⎿  Set model to Opus (1M context) for this session\n     only`
+        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `s` ? confirmed : picker )
+        const result = await terminal_control( { agent: `claude`, operation: `model`, value: `opus[1m]`, timeout_ms: 300, ...io } )
+        expect( result.applied ).toBe( `Opus (1M context)` )
+    } )
+
+    test( `reads a wide mid-turn effort notice directly above the composer`, async () => {
+        const picker = `${ claude_ready }\nEffort\nlow     medium     high     xhigh      max`
+        const confirmed = `Working…\n  Set effort level to low (this session only): Quick, straightforward impleme…\n────\n❯\n────`
+        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `s` ? confirmed : picker )
+        const result = await terminal_control( { agent: `claude`, operation: `effort`, value: `low`, busy: true, timeout_ms: 300, ...io } )
+        expect( result.applied ).toBe( `low` )
     } )
 
     test( `accepts a model ID emitted by Claude's picker`, async () => {

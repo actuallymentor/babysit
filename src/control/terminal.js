@@ -13,7 +13,9 @@ const owned_dialog = ( agent, screen ) => {
     const tail = screen.split( `\n` ).slice( -35 ).join( `\n` )
     if( agent === `claude` ) {
         // Rows Claude cannot select drop the Enter/s hints and show only Esc.
-        const model = /(?:^|\n)\s*Select model\s*\n[\s\S]*?Esc to cancel/i
+        // Compact panes can clip the cursor and footer. The native intro still
+        // identifies our dialog, so an error must not strand it on screen.
+        const model = /(?:^|\n)\s*Select model\s*\n(?:\s*Switch between Claude models\.|[\s\S]*?Esc to cancel)/i
         const effort = /(?:^|\n)\s*Effort\s*\n[\s\S]*?←\/→ to adjust · Enter to confirm · s for this session only · Esc to cancel/i
         const cache = /(?:Change effort level\?|Switch model\?)[\s\S]*?Yes, switch to/i
         return model.test( tail ) || effort.test( tail ) || cache.test( tail )
@@ -40,7 +42,15 @@ const wait_for = async ( capture, predicate, timeout_ms ) => {
 
 // After each turn Claude pre-fills its composer with a dim suggested prompt.
 // Plain captures cannot tell that from typing, so drop dim runs from a styled one.
-const without_ghost_text = styled => strip_ansi( styled.replace( /\x1b\[2m[^\x1b]*/g, `` ) )
+const without_ghost_text = styled => {
+    const lines = styled.split( `\n` )
+    const start = lines.findLastIndex( line => strip_ansi( line ).startsWith( `❯` ) )
+    const end = lines.findIndex( ( line, index ) => index > start && strip_ansi( line ).startsWith( `──` ) )
+    // Borders are dim too. Remove suggestions only inside the composer, and
+    // keep each newline even when Claude leaves the dim style active across it.
+    return lines.map( ( line, index ) => strip_ansi( start >= 0 && index >= start && index < end
+        ? line.replace( /\x1b\[2m[^\x1b]*/g, `` ) : line ) ).join( `\n` )
+}
 
 // An existing panel or a person's draft belongs to them. Never close it or
 // type into it. The host retries CONTROL_PENDING after the screen is clear.
@@ -116,7 +126,7 @@ const scan_claude_models = async ( picker, capture, send_keys ) => {
         const visited = new Set( [ selected_row( claude_rows( screen ) ) ] )
         for( let step = 0; step < 30; step++ ) {
             const before = selected_row( claude_rows( screen ) )
-            if( before === undefined ) throw new Error( `Claude model picker lost its selected row.` )
+            if( before === undefined ) throw new Error( `Claude model picker is clipped; enlarge the terminal and retry.` )
             await send_keys( key )
             try {
                 screen = await wait_for( capture, next => selected_row( claude_rows( next ) ) !== before, 500 )
@@ -124,8 +134,9 @@ const scan_claude_models = async ( picker, capture, send_keys ) => {
                 screen = await capture()
                 if( selected_row( claude_rows( screen ) ) === before ) break
             }
-            remember()
             const reached = selected_row( claude_rows( screen ) )
+            if( reached === undefined ) throw new Error( `Claude model picker is clipped; enlarge the terminal and retry.` )
+            remember()
             if( visited.has( reached ) ) break walk
             visited.add( reached )
         }
@@ -138,7 +149,18 @@ const scan_claude_models = async ( picker, capture, send_keys ) => {
 const claude_alias = row => row.label.split( /\s{2,}/ )[ 0 ].replace( /\s*✔.*$/, `` ).trim()
 
 // API IDs such as claude-opus-5-5 name the same row as the alias "Opus 5.5".
-const claude_exact = ( row, value ) => clean( claude_alias( row ) ) === clean( value ).replace( /^claude/, `` )
+const claude_exact = ( row, value ) => {
+    const alias = claude_alias( row )
+    const needle = clean( value ).replace( /^claude/, `` )
+    if( clean( alias ) === needle ) return true
+    // Newer Claude catalogs put the version in the description of a family
+    // alias. Default is not a versioned choice; context variants may be the
+    // only row for that family when a long-context model is already active.
+    if( !/^(?:opus|sonnet|haiku|fable)(?: \(1M context\))?$/i.test( alias ) ) return false
+    const description = row.label.split( /\s{2,}/ )[ 1 ] || ``
+    const versioned = description.match( /^([a-z]+ \d+(?:\.\d+)*)\b/i )?.[ 1 ]
+    return versioned && clean( versioned ) === needle
+}
 
 const claude_match = ( row, value, target ) => {
     const alias = claude_alias( row )
@@ -148,7 +170,7 @@ const claude_match = ( row, value, target ) => {
     if( [ target?.name, target?.displayName ].some( name => name && clean( name ) === needle && clean( name ) === clean( alias ) ) ) return true
     const family = needle.match( /(?:opus|sonnet|haiku|fable)/ )?.[ 0 ]
     if( family && /\[1m\]/i.test( value ) ) return clean( alias ).startsWith( family ) && /1m context/i.test( alias )
-    return family && ( needle === family || needle.startsWith( `claude` ) ) && clean( alias ).startsWith( family )
+    return family && [ family, `claude${ family }` ].includes( needle ) && clean( alias ).startsWith( family )
 }
 
 const claude_model_entry = row => {
@@ -166,7 +188,8 @@ const choose_claude_model = async ( value, target, rows, capture, send_keys ) =>
     const exact = candidates.filter( ( { row } ) => claude_exact( row, value ) )
     const exact_enabled = exact.filter( ( { row } ) => !row.disabled )
     if( exact.length && !exact_enabled.length ) throw unsupported( `${ claude_alias( exact[ 0 ].row ) } is unavailable in this Claude Code version.` )
-    const matches = exact_enabled.length ? exact_enabled : enabled
+    const standard = exact_enabled.filter( ( { row } ) => !/1m context/i.test( claude_alias( row ) ) )
+    const matches = standard.length ? standard : exact_enabled.length ? exact_enabled : enabled
     if( matches.length !== 1 ) {
         const names = matches.map( ( { row } ) => claude_alias( row ) ).join( `, ` )
         throw unsupported( `Claude model '${ value }' is not uniquely available in the current picker.${ names ? ` Matches: ${ names }.` : `` }` )
@@ -207,11 +230,13 @@ const claude_confirmation = ( screen, operation, selected ) => {
     if( /(?:^|\n)\s*(?:Select model|Effort)\s*(?:\n|$)/i.test( screen ) || claude_cache_warning( screen ) ) return false
     const from = screen.lastIndexOf( `❯ /${ operation }` )
     const echoed = from < 0 ? `` : screen.slice( from )
-    const notices = screen.split( `\n` ).filter( line => /^ {20,}\S/.test( line ) ).join( `\n` )
+    // Toasts sit directly above the composer. Long ones start at column two;
+    // their indentation is not a reliable signal on a narrow terminal.
+    const notices = screen.match( /(?:^|\n)[ \t]+((?:Set model to|Kept model as|Set effort level to)[^\n]*)\n─[^\n]*\n❯/ )?.[ 1 ] || ``
     const actions = operation === `model` ? [ `Set model to`, `Kept model as` ] : [ `Set effort level to` ]
     const chosen = operation === `model` ? selected.replace( /\s*\(.*$/, `` ) : selected
     const named = new RegExp( `(?:^|[^\\w.])${ chosen.replace( /[.*+?^${}()|[\]\\]/g, `\\$&` ) }(?![\\w.])`, `i` )
-    return [ echoed, notices ].some( latest => actions.some( action => latest.includes( action ) )
+    return [ echoed, notices ].map( text => text.replace( /\s+/g, ` ` ) ).some( latest => actions.some( action => latest.includes( action ) )
         && ( latest.includes( `Kept model as` ) || latest.includes( `this session only` ) )
         && ( chosen === `Default` || named.test( latest ) ) )
 }

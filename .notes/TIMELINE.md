@@ -98,3 +98,5 @@
 - 2026-09-29: Diagnosed a host `babysit clone` EACCES: `runpod-test-artifacts/.../__pycache__` was `drw-------` (umask 0177 Python). Clone now reports every unreadable path up front with the exact chmod, offers to run it, and retries.
 
 - 2026-09-29: Pushed 1ec2ea9..36222dd to main; Build & Release for v1.6.0 failed in test-web (api.test.js expected `pending`, got `claimed`). Cause: web bridge orphan sweep judged tracked requests by file mtime (written before fsync) while tracking used created_at (after rename); a slow CI fsync plus the test's 500 ms TTL deleted a still-pending request. Sweep now skips tracked requests. Filed #3/#4 for the remaining /model controller findings.
+
+- 2026-09-29: Reproduced Claude model-control failures with the real CLI: clipped picker escaped no cleanup, wrapped confirmations timed out, and versioned IDs failed against family-only rows. Added inference-free native regression coverage across terminal sizes, plus verified actual subagent-issued model/effort controls through Docker.

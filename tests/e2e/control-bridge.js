@@ -11,6 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { create_control_bridge } from '../../src/control/bridge.js'
+import { send_text } from '../../src/tmux/send.js'
 
 const execute = promisify( execFile )
 const run = async ( command, args, options = {} ) => ( await execute( command, args, {
@@ -35,18 +36,16 @@ let ticker
 let pane
 const exec = args => docker( [ `exec`, `--user`, `node`, container, ...args ] )
 const tmux = args => exec( [ `tmux`, `-L`, socket, ...args ] )
-const capture = () => tmux( [ `capture-pane`, `-p`, `-t`, pane ] )
+const capture = ( target = pane, timeout_ms, { escapes = false } = {} ) => tmux( [ `capture-pane`, `-p`, ...escapes ? [ `-e` ] : [], `-t`, target ] )
 const keys = async ( target, ...values ) => {
     assert.equal( target, pane )
     await tmux( [ `send-keys`, `-t`, target, ...values ] )
-    await delay( 120 )
 }
 const text = async ( target, value ) => {
     assert.equal( target, pane )
-    await tmux( [ `set-buffer`, `-b`, `control`, `--`, value ] )
-    await tmux( [ `paste-buffer`, `-p`, `-d`, `-b`, `control`, `-t`, target ] )
-    await delay( 180 )
-    await keys( target, `Enter` )
+    await send_text( target, value, {
+        runner: ( command, [ , , ...args ] ) => tmux( args ),
+    } )
 }
 const until = async ( description, predicate, timeout_ms = 45000 ) => {
     const deadline = Date.now() + timeout_ms
@@ -115,7 +114,7 @@ try {
         await docker( [ `cp`, join( temporary, source ), `${ container }:${ target }` ] )
         await docker( [ `exec`, container, `chown`, `node:node`, target ] )
     }
-    pane = await tmux( [ `new-session`, `-d`, `-P`, `-F`, `#{pane_id}`, `-s`, `native`, `-x`, `160`, `-y`, `50`, `-c`, project,
+    pane = await tmux( [ `new-session`, `-d`, `-P`, `-F`, `#{pane_id}`, `-s`, `native`, `-x`, `80`, `-y`, `24`, `-c`, project,
         `/home/node/.local/bin/claude --dangerously-skip-permissions --model sonnet`,
     ] )
     await until( `Claude idle composer`, async () => /^❯[ \u00a0]*(?:Try ".*)?$/m.test( await capture() ) )
@@ -151,6 +150,37 @@ try {
     await until( `failed control closes its picker`, async () => !/^\s*Effort\s*$/m.test( await capture() ) )
     assert.match( await applied( `effort`, await helper( [ `effort`, `low` ] ) ), /effort.*low.*session/i )
     console.log( `PASS unsupported native effort closes its owned picker; following control succeeds` )
+    if( process.env.BABYSIT_CONTROL_E2E_SUBAGENT === `1` ) {
+        // Optional paid inference: reproduce a helper invoked by a real child
+        // agent while the main pane is busy, rather than only by docker exec.
+        const started = Date.now()
+        await text( pane, `Delegate to one subagent via the Agent tool. Ask it to run babysit model opus-5.5, then babysit effort low, via Bash. Poll each Pending request using its status command until completed. Report the exact results.` )
+        const read_results = `
+            const fs = require('node:fs')
+            const root = '/tmp/.babysit-control-' + process.env.BABYSIT_CONTROL_ID
+            console.log(JSON.stringify(fs.readdirSync(root).filter(name => name.endsWith('.json'))
+                .map(name => JSON.parse(fs.readFileSync(root + '/' + name, 'utf8')))))
+        `
+        await until( `subagent model and effort results`, async () => {
+            const records = JSON.parse( await exec( [ `node`, `-e`, read_results ] ) ).filter( record => record.created_at >= started )
+            for( const record of records ) assert.notEqual( record.status, `failed`, record.message )
+            return [ [ `model`, `opus-5.5` ], [ `effort`, `low` ] ].every( ( [ operation, value ] ) =>
+                records.some( record => record.operation === operation && record.value === value && record.status === `applied` ) )
+        }, 90_000 )
+        const child_commands = await exec( [ `node`, `-e`, `
+            const fs = require('node:fs')
+            const root = '/home/node/.claude/projects'
+            const commands = fs.readdirSync(root, { recursive: true }).filter(name => /subagents\\/agent-.*\\.jsonl$/.test(name))
+                .flatMap(name => fs.readFileSync(root + '/' + name, 'utf8').trim().split('\\n').map(line => JSON.parse(line)))
+                .flatMap(entry => entry.message?.content || [])
+                .filter(block => block.type === 'tool_use' && block.name === 'Bash').map(block => block.input.command)
+            console.log(JSON.stringify(commands))
+        ` ] )
+        for( const command of [ `babysit model opus-5.5`, `babysit effort low` ] ) assert.ok( JSON.parse( child_commands ).some( text => text.includes( command ) ), `No child tool call for ${ command }` )
+        await until( `subagent control dialogs closed`, async () => !/^\s*(?:Select model|Effort)\s*$/m.test( await capture() ) )
+        console.log( `PASS real subagent helper calls: main-pane model/effort confirmed, dialogs closed` )
+    }
+
 } catch ( error ) {
     if( pane ) console.error( ( await capture().catch( () => `` ) ).replace( /[\w.+-]+@[\w.-]+/g, `[account]` ) )
     throw error

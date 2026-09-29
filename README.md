@@ -151,8 +151,10 @@ babysit model --status <id>    # Result of a queued terminal request
 babysit effort --status <id>
 ```
 
-Changes affect this session, not future launch defaults. Compatible effort is
-preserved; switching to an incompatible model selects its default effort.
+Changes affect this session, not future launch defaults. Claude subagent calls
+control the main session; they do not change the subagent's private model.
+Compatible effort is preserved; switching to an incompatible model selects its
+default effort.
 A request already running at the provider finishes unchanged.
 
 | Agent | Behavior |
@@ -305,6 +307,7 @@ npm run test:all
 | `npm run test:codex` | Real Codex resume and permissions against local model fixture |
 | `npm run test:numbers` | Real CLI history/recovery selectors and PTY resume attach/detach |
 | `npm run test:close` | Real Docker/tmux numbered close and list renumbering (requires E2E image) |
+| `npm run test:claude-controls` | Real Claude model/effort pickers, narrow panes, versioned IDs; no inference |
 | `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
 | `npm run test:claude-dialog` | Optional: real Claude "Dangerous rm" prompt still matches YOLO approval; prints a drift report after Claude updates |
 | `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
@@ -313,10 +316,12 @@ npm run test:all
 
 `test:all` runs the automated suites, also on PRs/main pushes. The optional
 `test:controls` smoke uses local Claude credentials and checks available account quotas.
+Set `BABYSIT_CONTROL_E2E_SUBAGENT=1` to also exercise real subagent-issued controls
+(requires paid inference).
 `test:claude-dialog` uses local Claude credentials and one small model call; exit 1 means the dialog changed.
 Requires Docker, tmux, Python 3,
 `agy` (`AGY_E2E_BINARY` override), `codex` (`CODEX_E2E_BINARY` override),
-Chrome/Chromium (`CHROME_PATH` override).
+Claude Code 2.1.284, Chrome/Chromium (`CHROME_PATH` override).
 Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.
 E2E uses real Docker/tmux without model API calls.
 
