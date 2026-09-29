@@ -63,6 +63,9 @@ Use explicit commands in scripts.
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
 
+`--clone` checks the whole source before copying. Paths you own but can't read (e.g. a `drw-------`
+`__pycache__`) are listed with the exact `chmod`; answer `y` (or pass `--yes`) to apply it and retry.
+
 ## Sessions
 
 | Command | Effect |

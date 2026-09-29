@@ -3,6 +3,7 @@
 ## 1.6.0 — 2026-09-29
 
 ### Added
+- `--clone` lists unreadable source paths with the exact `chmod`, offers to run it, and retries.
 - YOLO answers Claude's bypass-immune "Dangerous rm operation" prompt (`yolo_approve_dangerous_commands`).
 - `npm run test:claude-dialog`: live drift report for that prompt after Claude updates.
 

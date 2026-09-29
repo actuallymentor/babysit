@@ -94,3 +94,5 @@
 - 2026-09-28: Diagnosed agent-driven `babysit model` failures on Claude Code 2.1.283 by driving the real controller against a live Claude pane, idle and mid-turn: slash-autocomplete false match orphaned the picker, mid-turn switches were reported as timeouts, and post-turn ghost suggestions blocked controls as drafts. Fixed picker detection, wrap-aware scan, mid-turn notice confirmation, and styled draft detection.
 
 - 2026-09-29: User chose to bypass Claude's bypass-immune "Dangerous rm operation" prompt in YOLO. Monitor now answers the live dialog (toggle `yolo_approve_dangerous_commands`, default on). Added a live drift detector (`test:claude-dialog`, kept out of CI because it needs Claude auth) and an inference-free binary-string contract in `bun test`.
+
+- 2026-09-29: Diagnosed a host `babysit clone` EACCES: `runpod-test-artifacts/.../__pycache__` was `drw-------` (umask 0177 Python). Clone now reports every unreadable path up front with the exact chmod, offers to run it, and retries.

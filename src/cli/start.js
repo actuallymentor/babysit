@@ -1,7 +1,7 @@
 import { spawn, execSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'fs'
-import { join, resolve } from 'path'
+import { join, relative, resolve } from 'path'
 import { createInterface } from 'readline/promises'
 import { wait } from 'mentie'
 
@@ -21,6 +21,7 @@ import {
     DEFAULT_DOCKER_SOCKET,
     docker_daemon_status,
     resolve_docker_socket_path,
+    shell_quote,
 } from '../docker/run.js'
 import { prepare_docker_launch } from '../docker/launch.js'
 import {
@@ -70,7 +71,7 @@ import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
 import { command_exists } from '../utils/exec.js'
-import { acquire_clone_lock, prepare_clone_workspace } from '../clone.js'
+import { acquire_clone_lock, grant_clone_source_access, prepare_clone_workspace } from '../clone.js'
 import { cmd_resume, resolve_numbered_resume } from './resume.js'
 import { cmd_open } from './open.js'
 import { cmd_monitor } from './monitor.js'
@@ -157,6 +158,100 @@ export const confirm_default_yes = async ( question, {
         return allows_default_yes( await rl.question( question ) )
     } finally {
         rl.close()
+    }
+
+}
+
+const CLONE_ACCESS_LIST_LIMIT = 20
+
+const mode_string = ( { directory, mode } ) => `${ directory ? `d` : `-` }${ [ 6, 3, 0 ]
+    .map( shift => mode >> shift & 7 )
+    .map( bits => `${ bits & 4 ? `r` : `-` }${ bits & 2 ? `w` : `-` }${ bits & 1 ? `x` : `-` }` )
+    .join( `` ) }`
+
+/**
+ * Describe paths the clone audit could not read, with the exact fix command.
+ * @param {Object} error - CLONE_SOURCE_UNREADABLE error from prepare_clone_workspace
+ * @returns {{ report: string, command: string|null }} Human report and owner-bit chmod, when one applies
+ */
+export const format_clone_access_report = ( { source, entries } ) => {
+
+    const shown = entries.slice( 0, CLONE_ACCESS_LIST_LIMIT ).map( entry => {
+        const name = relative( source, entry.path ) || `.`
+        const why = !entry.bits
+            ? `owned by uid ${ entry.uid }; fix as that user or with sudo`
+            : entry.directory && entry.bits.includes( `x` )
+                ? `directory cannot be entered (no owner x)`
+                : `cannot be read (no owner r)`
+        return `  ${ mode_string( entry ) }  ${ name }  — ${ why }`
+    } )
+    if( entries.length > shown.length ) shown.push( `  …and ${ entries.length - shown.length } more` )
+
+    const fixable = entries.filter( entry => entry.bits )
+    const by_bits = Object.groupBy( fixable, entry => entry.bits )
+    const command = !fixable.length ? null
+        : fixable.length <= CLONE_ACCESS_LIST_LIMIT
+            ? Object.entries( by_bits ).map( ( [ bits, group ] ) => `chmod u+${ bits } ${ group.map( entry => shell_quote( entry.path ) ).join( ` ` ) }` ).join( ` && ` )
+            : [
+                `find ${ shell_quote( source ) } -user "$(id -u)" -type d ! -perm -u+rx -exec chmod u+rx {} +`,
+                `find ${ shell_quote( source ) } -user "$(id -u)" -type f ! -perm -u+r -exec chmod u+r {} +`,
+            ].join( ` && ` )
+
+    const uid = typeof process.getuid === `function` ? ` as uid ${ process.getuid() }` : ``
+    const report = [
+        `Clone cannot copy ${ entries.length } path(s) from ${ source }${ uid }:`,
+        ...shown,
+        ...command ? [ `Fix:`, `  ${ command }` ] : [],
+    ].join( `\n` )
+
+    return { report, command }
+
+}
+
+/**
+ * Prepare a clone; when the source audit finds paths the current user cannot
+ * read, show the chmod that fixes them, offer to run it, then retry. Only
+ * adds owner r/x on paths this user owns; never runs sudo.
+ * @param {Object} options - prepare_clone_workspace options
+ * @param {Object} [io]
+ * @param {boolean} [io.assume_yes=false] - Apply the fix without asking (--yes)
+ * @param {Function} [io.prepare] - Clone preparer, injected by tests
+ * @param {Function} [io.confirm] - Default-yes question, injected by tests
+ * @param {Function} [io.grant] - Owner-bit chmod, injected by tests
+ * @returns {Promise<Object>} prepare_clone_workspace result
+ */
+export const prepare_clone_with_access_fix = async ( options, {
+    assume_yes = false,
+    prepare = prepare_clone_workspace,
+    confirm = confirm_default_yes,
+    grant = grant_clone_source_access,
+} = {} ) => {
+
+    const granted = new Set()
+
+    while( true ) {
+        try {
+            return prepare( options )
+        } catch ( error ) {
+            if( error.code !== `CLONE_SOURCE_UNREADABLE` ) throw error
+
+            const { report } = format_clone_access_report( error )
+            log.error( report )
+
+            // A path that is still unreadable after chmod means the filesystem ignores modes.
+            if( error.entries.some( entry => granted.has( entry.path ) ) ) {
+                log.error( `chmod did not take effect; this filesystem may not honour Unix permissions.` )
+                throw new Error( `Clone aborted; fix the permissions above and retry.` )
+            }
+            if( !error.fixable ) throw new Error( `Clone aborted; fix the permissions above and retry.` )
+
+            const confirmed = assume_yes || await confirm( `Run this chmod now and retry the clone? [Y/n] ` )
+            if( !confirmed ) throw new Error( `Clone aborted; run the chmod above and retry.` )
+
+            const changed = grant( error.entries )
+            error.entries.forEach( entry => granted.add( entry.path ) )
+            log.info( `Granted owner access to ${ changed } path(s); retrying clone` )
+        }
     }
 
 }
@@ -1169,11 +1264,11 @@ async function start_session( cmd ) {
             }
 
             if( original_mount ) {
-                const prepared_clone = prepare_clone_workspace( {
+                const prepared_clone = await prepare_clone_with_access_fix( {
                     source: original_workspace,
                     clone_id,
                     name: stored_resume_session.name,
-                } )
+                }, { assume_yes: flags.yes } )
                 if( prepared_clone.clone_path !== resolve( stored_clone_path ) ) {
                     throw new Error( `Stored clone path does not match clone ownership metadata: ${ stored_clone_path }` )
                 }
@@ -1190,11 +1285,11 @@ async function start_session( cmd ) {
             }
         } else {
             log.info( `Copying ${ original_workspace } into clone ${ clone_id }` )
-            const prepared_clone = prepare_clone_workspace( {
+            const prepared_clone = await prepare_clone_with_access_fix( {
                 source: original_workspace,
                 clone_id,
                 name: session_display_name,
-            } )
+            }, { assume_yes: flags.yes } )
             const {
                 workspace: prepared_workspace,
                 clone_branch: prepared_branch,
