@@ -2,7 +2,9 @@ import { get_boot_id } from './sessions/lock.js'
 import { spawnSync } from 'child_process'
 import { createHash, randomUUID } from 'crypto'
 import {
+    accessSync,
     chmodSync,
+    constants,
     cpSync,
     linkSync,
     lstatSync,
@@ -460,7 +462,33 @@ const nested_git_pointer = ( path, source ) => {
 
 }
 
-const audit_source_tree = ( source, directory = source ) => {
+// Owner permission bits the current user is missing to copy an entry.
+// A directory needs read and search (x): `drw-------` lists its names, but
+// every stat inside it fails with EACCES.
+const missing_owner_bits = ( entry, directory ) => [
+    entry.mode & 0o400 ? `` : `r`,
+    directory && !( entry.mode & 0o100 ) ? `x` : ``,
+].join( `` )
+
+// Record why the current user cannot copy this entry, or null when it can.
+const access_problem = ( path, entry ) => {
+
+    const directory = entry.isDirectory()
+    try {
+        accessSync( path, directory ? constants.R_OK | constants.X_OK : constants.R_OK )
+        return null
+    } catch ( error ) {
+        if( error.code !== `EACCES` ) throw error
+    }
+
+    const owned = typeof process.getuid === `function` && entry.uid === process.getuid()
+    const bits = owned ? missing_owner_bits( entry, directory ) : ``
+    return { path, directory, mode: entry.mode & 0o777, uid: entry.uid, dev: entry.dev, ino: entry.ino, bits }
+
+}
+
+// Unreadable entries are collected, not fatal, so one report covers them all.
+const walk_source_tree = ( source, directory, blocked ) => {
 
     for( const name of readdirSync( directory ) ) {
         const path = join( directory, name )
@@ -472,12 +500,16 @@ const audit_source_tree = ( source, directory = source ) => {
         }
 
         if( entry.isDirectory() ) {
-            audit_source_tree( source, path )
+            const problem = access_problem( path, entry )
+            if( problem ) blocked.push( problem )
+            else walk_source_tree( source, path, blocked )
             continue
         }
 
         if( entry.isFile() ) {
-            if( name === `.git` && directory !== source ) nested_git_pointer( path, source )
+            const problem = access_problem( path, entry )
+            if( problem ) blocked.push( problem )
+            else if( name === `.git` && directory !== source ) nested_git_pointer( path, source )
             continue
         }
 
@@ -488,6 +520,45 @@ const audit_source_tree = ( source, directory = source ) => {
                 : `special file`
         throw new Error( `Clone source contains an unsupported ${ kind }: ${ path }` )
     }
+
+}
+
+const audit_source_tree = source => {
+
+    const problem = access_problem( source, lstatSync( source ) )
+    const blocked = problem ? [ problem ] : []
+    if( !problem ) walk_source_tree( source, source, blocked )
+    if( !blocked.length ) return
+
+    throw Object.assign( new Error( `Clone source has ${ blocked.length } path(s) the current user cannot read.` ), {
+        code: `CLONE_SOURCE_UNREADABLE`,
+        source,
+        entries: blocked,
+        fixable: blocked.every( item => item.bits ),
+    } )
+
+}
+
+/**
+ * Grant the owner permission bits a CLONE_SOURCE_UNREADABLE audit reported.
+ * Each path must still be the same inode and non-symlink it was when audited.
+ * @param {Array<{ path: string, bits: string, dev: number, ino: number }>} entries - Audited entries
+ * @returns {number} Paths changed
+ */
+export const grant_clone_source_access = entries => {
+
+    let changed = 0
+    for( const { path, bits, dev, ino } of entries ) {
+        if( !bits ) throw new Error( `No owner permission fix applies to ${ path }` )
+        const current = lstatSync( path )
+        if( current.isSymbolicLink() || current.dev !== dev || current.ino !== ino ) {
+            throw new Error( `Clone source changed since it was checked: ${ path }` )
+        }
+        const add = ( bits.includes( `r` ) ? 0o400 : 0 ) | ( bits.includes( `x` ) ? 0o100 : 0 )
+        chmodSync( path, current.mode & 0o7777 | add )
+        changed++
+    }
+    return changed
 
 }
 
