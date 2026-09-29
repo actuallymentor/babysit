@@ -3,7 +3,7 @@
 ## 1.6.1 — 2026-09-29
 
 ### Fixed
-- Resolve Claude versioned model names from live family descriptions.
+- Resolve Claude versioned/dated model IDs from live family descriptions.
 - Dismiss clipped Claude model pickers instead of leaving the modal stuck.
 - Recognize wrapped confirmations and mid-turn notices on narrow terminals.
 - Preserve dim composer borders when ignoring Claude prompt suggestions.
