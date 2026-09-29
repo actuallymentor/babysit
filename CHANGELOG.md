@@ -8,6 +8,7 @@
 - `npm run test:claude-dialog`: live drift report for that prompt after Claude updates.
 
 ### Fixed
+- Web: stop the orphan sweep dropping a queued message when a slow disk ages its file.
 - Keep agent-requested Claude `/model` from orphaning its picker on slash autocomplete.
 - Confirm Claude model/effort switches made mid-turn instead of reporting timeouts.
 - Treat Claude's dim suggested prompt as an empty composer, not a user draft.

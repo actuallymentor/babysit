@@ -43,3 +43,30 @@ test( `queue cleanup tolerates the host claiming a request after directory enume
         fs.rmSync( directory, { recursive: true, force: true } )
     }
 } )
+
+test( `orphan sweep leaves a tracked request whose file mtime predates its tracking`, () => {
+    // On a slow disk the payload's mtime is written before fsync and rename,
+    // while created_at is only set afterwards. Only the tracked-request TTL may
+    // expire a request this process queued; the orphan sweep is for leftovers.
+    const directory = fs.mkdtempSync( join( tmpdir(), `babysit-slow-fsync-` ) )
+    const store = new BridgeStore( {
+        request_dir: directory, state_dir: directory,
+        request_ttl_ms: 500, heartbeat_ttl_ms: 15_000,
+    } )
+    clearInterval( store.cleanup_timer )
+
+    try {
+        const session = { session_id: `session-1`, epoch: `epoch-1` }
+        const { request_id } = store.send( { session, text: `hello` } )
+        const [ filename ] = fs.readdirSync( directory )
+        const stale = new Date( Date.now() - 2_000 )
+        fs.utimesSync( join( directory, filename ), stale, stale )
+
+        store.cleanup_pending()
+
+        assert.ok( fs.existsSync( join( directory, filename ) ), `tracked request file survives the orphan sweep` )
+        assert.deepEqual( store.pending_for( { session_id: `session-1`, results: [] } ), [ { message: undefined, request_id, status: `pending` } ] )
+    } finally {
+        fs.rmSync( directory, { recursive: true, force: true } )
+    }
+} )

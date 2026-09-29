@@ -206,8 +206,13 @@ export class BridgeStore {
             if( request.status !== `pending` && now - request.created_at > 120_000 ) this.pending.delete( request_id )
         } )
 
+        // Requests this server queued expire above by created_at. Their mtime is
+        // written before fsync, so a slow disk would make it look older than it is.
+        const tracked = new Set( [ ...this.pending.values() ].map( request => request.filename ) )
+
         readdirSync( this.request_dir, { withFileTypes: true } )
-            .filter( entry => entry.isFile() && ( REQUEST_FILE_PATTERN.test( entry.name ) || TEMPORARY_FILE_PATTERN.test( entry.name ) ) )
+            .filter( entry => entry.isFile() && !tracked.has( entry.name ) )
+            .filter( entry => REQUEST_FILE_PATTERN.test( entry.name ) || TEMPORARY_FILE_PATTERN.test( entry.name ) )
             .forEach( entry => {
                 const path = join( this.request_dir, entry.name )
                 try {
