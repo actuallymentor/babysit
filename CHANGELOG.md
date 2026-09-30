@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.3 — 2026-09-30
+
+### Fixed
+- Avoid shared cache initialization races during parallel authentication.
+
 ## 1.9.2 — 2026-09-30
 
 ### Fixed
