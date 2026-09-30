@@ -324,6 +324,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Codex host `auth.json` changes sync automatically; five-minute reconciliation remains as fallback.
 - Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
 - Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf.
+- Launch prompts contain brief mode boundaries and browser/session-control hints.
 - `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.
 
 ## Develop

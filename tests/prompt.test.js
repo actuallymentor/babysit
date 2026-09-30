@@ -93,68 +93,59 @@ describe( `build_system_prompt`, () => {
 
     it( `returns the spec base prompt when no mode flags are set`, () => {
         const prompt = build_system_prompt( {} )
-        expect( prompt ).toContain( `running inside a Docker container` )
-        expect( prompt ).toContain( `Google Chrome, Puppeteer, and Xvfb are preinstalled` )
-        expect( prompt ).toContain( `pdfinfo` )
-        expect( prompt ).toContain( `pdftotext` )
-        expect( prompt ).toContain( `qpdf` )
+        expect( prompt ).toContain( `Running inside a Babysit container` )
+        expect( prompt ).toContain( `Puppeteer is installed` )
         expect( prompt ).toContain( `xvfb-run -a` )
-        expect( prompt ).toContain( `pkg-config` )
-        expect( prompt ).toContain( `killall` )
-        expect( prompt ).toContain( `inotifywatch` )
-        expect( prompt ).toContain( `git filter-repo` )
-        expect( prompt ).toContain( `Universal Ctags` )
-        expect( prompt ).toContain( `ctags-universal` )
-        expect( prompt ).toContain( `Never add \`--no-sandbox\`` )
-        expect( prompt ).toContain( `Do NOT add Co-Authored-By lines` )
+        expect( prompt ).toContain( `never \`--no-sandbox\`` )
+        expect( prompt ).toContain( `Never add Co-Authored-By commit lines` )
     } )
 
     it( `appends YOLO fragment when mode.yolo is set`, () => {
         const prompt = build_system_prompt( { yolo: true } )
-        expect( prompt ).toContain( `AGENT_AUTONOMY_MODE=yolo` )
-        expect( prompt ).toContain( `maximum autonomy` )
+        expect( prompt ).toContain( `YOLO mode:` )
+        expect( prompt ).toContain( `act autonomously` )
     } )
 
     it( `appends SANDBOX fragment when mode.sandbox is set`, () => {
         const prompt = build_system_prompt( { sandbox: true } )
-        expect( prompt ).toContain( `AGENT_AUTONOMY_MODE=sandbox` )
-        expect( prompt ).toContain( `/workspace directory is empty` )
+        expect( prompt ).toContain( `Sandbox:` )
+        expect( prompt ).toContain( `/workspace is empty` )
     } )
 
     it( `appends MUDBOX fragment when mode.mudbox is set`, () => {
         const prompt = build_system_prompt( { mudbox: true } )
-        expect( prompt ).toContain( `AGENT_AUTONOMY_MODE=mudbox` )
-        expect( prompt ).toContain( `READ-ONLY` )
+        expect( prompt ).toContain( `Mudbox:` )
+        expect( prompt ).toContain( `read-only` )
     } )
 
     it( `describes clone workspace boundaries`, () => {
         const prompt = build_system_prompt( { clone: true } )
         expect( prompt ).toContain( `/workspace is a copy of /original` )
         expect( prompt ).toContain( `Work in /workspace` )
-        expect( prompt ).toContain( `only touch /original when the user gives explicit instructions` )
+        expect( prompt ).toContain( `Modify /original only when explicitly instructed` )
     } )
 
     it( `combines yolo and mudbox fragments`, () => {
         const prompt = build_system_prompt( { yolo: true, mudbox: true } )
-        expect( prompt ).toContain( `READ-ONLY` )
-        expect( prompt ).toContain( `maximum autonomy` )
+        expect( prompt ).toContain( `read-only` )
+        expect( prompt ).toContain( `act autonomously` )
     } )
 
     it( `appends Docker socket guidance when mode.docker is set`, () => {
         const prompt = build_system_prompt( { docker: true } )
-        expect( prompt ).toContain( `Docker-outside-of-Docker is enabled` )
+        expect( prompt ).toContain( `Host Docker access enabled` )
         expect( prompt ).toContain( `BABYSIT_HOST_WORKSPACE` )
     } )
 
     it( `describes host-profile isolation when requested`, () => {
         const prompt = build_system_prompt( { ignore_host_agents_md: true } )
-        expect( prompt ).toContain( `Host-global coding-agent instructions` )
-        expect( prompt ).toContain( `host credentials are still available` )
+        expect( prompt ).toContain( `Host instructions, skills, and preferences are omitted` )
+        expect( prompt ).toContain( `authentication remain available` )
     } )
 
     it( `does not embed sandbox text when sandbox is false`, () => {
         const prompt = build_system_prompt( { yolo: true } )
-        expect( prompt ).not.toContain( `AGENT_AUTONOMY_MODE=sandbox` )
+        expect( prompt ).not.toContain( `Sandbox:` )
     } )
 
 } )
@@ -179,9 +170,9 @@ babysit:
                 modifiers: [ `yolo`, `docker`, `loop`, `ignore-host-agents-md` ],
             } )
 
-            expect( config.initial_prompt ).toContain( `AGENT_AUTONOMY_MODE=yolo` )
-            expect( config.initial_prompt ).toContain( `Docker-outside-of-Docker is enabled` )
-            expect( config.initial_prompt ).toContain( `Host-global coding-agent instructions` )
+            expect( config.initial_prompt ).toContain( `YOLO mode:` )
+            expect( config.initial_prompt ).toContain( `Host Docker access enabled` )
+            expect( config.initial_prompt ).toContain( `Host instructions, skills, and preferences are omitted` )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
         }
