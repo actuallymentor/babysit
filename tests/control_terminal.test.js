@@ -199,6 +199,16 @@ describe( `native terminal controls`, () => {
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
     } )
 
+    test.each( [ true, false ] )( `ignores transcript slider glyphs during effort readback (native cursor: %s)`, async visible => {
+        const stale = `Claude Code\n  Set effort level to low (this session only)\n────\n❯\n────`
+        const transcript = `▲ Next.js build\nlow     medium     high\n`
+        const slider = visible ? `                ▲\n` : ``
+        const picker = `${ transcript }Effort\n${ slider }low     medium  high\n←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`
+        const io = callbacks( stale, ( _, action, key ) => action === `text` ? picker : [ `s`, `Escape` ].includes( key ) ? stale : picker )
+        await expect( terminal_control( { agent: `claude`, operation: `effort`, value: `low`, ...io } ) ).rejects.toThrow( `did not confirm` )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+    } )
+
     test( `does not guess effort readback when the slider cursor is missing`, async () => {
         const stale = `Claude Code\n  Set effort level to low (this session only)\n────\n❯\n────`
         const picker = `low     medium     high\nEffort\n←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`

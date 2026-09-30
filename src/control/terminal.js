@@ -295,7 +295,10 @@ const claude_readback = async ( { operation, selected, capture, capture_styled, 
         const row = claude_rows( picker ).find( row => row.selected )
         matches = Boolean( row && clean( claude_alias( row ) ) === clean( selected ) )
     } else {
-        const lines = picker.split( `\n` )
+        // Transcript output can contain ▲ too (for example a build banner).
+        // Only the live effort dialog can supply the current slider value.
+        const title = [ ...picker.matchAll( /^[ \t]*Effort[ \t]*$/gim ) ].at( -1 )
+        const lines = title ? picker.slice( title.index ).split( `\n` ) : []
         const slider = lines.findIndex( line => line.includes( `▲` ) )
         const cursor = lines[ slider ]?.indexOf( `▲` )
         const levels = [ ...( lines[ slider + 1 ] || `` ).matchAll( /\b(low|medium|high|xhigh|max)\b/g ) ]

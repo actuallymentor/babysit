@@ -118,3 +118,5 @@
 - 2026-09-30: Clone review reproduced Docker-authored /workspace Git pointers and a concurrent worktree-creation race. Recognize the known mount prefix and validate the completed copy before publication.
 
 - 2026-09-30: Reviewed all four GitHub issues. Closed Antigravity migration #1 as already shipped; addressing Linux clone metadata #2 and Claude control freshness/styling #3–#4 with regression coverage.
+
+- 2026-09-30: Issue fixes passed local and GitHub suites; external review prompted picker-scoped effort readback and image-architecture-aware compiled storage tests. Linux clones intentionally use independent rsync copies, not reflinks.

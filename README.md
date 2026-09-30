@@ -65,6 +65,7 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 
 Linux copies preserve hard links within the clone, sparse files, timestamps, and supported ACLs/xattrs.
 Copies run as your user; privileged ownership/metadata remain limited by your permissions and filesystem.
+Copies use independent storage; filesystem reflinks are not requested.
 Completed clone reuse/resume does not require rsync.
 
 `--clone` preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
