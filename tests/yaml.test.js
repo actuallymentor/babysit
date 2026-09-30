@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { parse } from 'yaml'
 import { load_config, get_default_yaml } from '../src/babysit/yaml.js'
+import { base } from '../src/system_prompt/index.js'
 
 describe( `babysit.yaml`, () => {
 
@@ -25,7 +26,7 @@ describe( `babysit.yaml`, () => {
     it( `parses default config values`, () => {
         const { config } = load_config( tmpdir_path )
         expect( config.idle_timeout_s ).toBe( 300 )
-        expect( config.initial_prompt ).toContain( `running inside a Docker container` )
+        expect( config.initial_prompt ).toBe( base )
         expect( config.isolate_dependencies ).toBe( true )
         expect( config.lines_for_literal_match ).toBe( 10 )
     } )
@@ -107,7 +108,7 @@ babysit:
         const yaml = get_default_yaml()
         expect( yaml ).toContain( `idle_timeout_s` )
         expect( yaml ).toContain( `initial_prompt` )
-        expect( yaml ).toContain( `running inside a Docker container` )
+        expect( parse( yaml ).config.initial_prompt ).toBe( base )
         expect( yaml ).toContain( `babysit:` )
         expect( parse( yaml ).babysit ).toBeNull()
         expect( parse( yaml ).config.commands ).toBeUndefined()
