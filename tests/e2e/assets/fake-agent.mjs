@@ -3,7 +3,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { basename, dirname } from 'path'
 import { createInterface } from 'readline'
-import { spawn, spawnSync } from 'child_process'
+import { execFileSync, spawn, spawnSync } from 'child_process'
 
 const binary_name = process.argv[1] ? basename( process.argv[1] ) : `agent`
 const agent_name = binary_name === `agy` ? `antigravity` : binary_name
@@ -198,7 +198,14 @@ const handle_prompt = ( line ) => {
     }
 
     if( line.includes( `BABYSIT_E2E_CLONE_CHECK` ) ) {
+        // Exercise the real container mount: host-absolute Git pointers cannot work here.
+        const worktree = `${ workspace }/.claude/worktrees/agent-clone-regression`
+        const git = ( cwd, ...args ) => execFileSync( `git`, [ `-C`, cwd, ...args ], { encoding: `utf8` } )
+        git( workspace, `worktree`, `prune`, `--expire=now` )
+        git( worktree, `add`, `dirty.txt` )
+        git( worktree, `commit`, `-qm`, `clone-only worktree change` )
         const boundaries = {
+            worktree_committed: git( worktree, `log`, `-1`, `--format=%s` ).trim() === `clone-only worktree change`,
             clone_visible: existsSync( `${ workspace }/e2e-original-sentinel.txt` ),
             original_visible: existsSync( `/original/e2e-original-sentinel.txt` ),
         }

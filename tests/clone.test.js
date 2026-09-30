@@ -8,6 +8,7 @@ import {
     readFileSync,
     readlinkSync,
     readdirSync,
+    renameSync,
     rmSync,
     symlinkSync,
     writeFileSync,
@@ -367,7 +368,7 @@ describe( `clone Git handling`, () => {
             source,
             clone_id: `nested-pointer`,
             clones_dir,
-        } ) ).toThrow( `unsafe absolute gitdir` )
+        } ) ).toThrow( `resolves outside the clone source` )
 
     } )
 
@@ -384,6 +385,109 @@ describe( `clone Git handling`, () => {
             clone_id: `escaping-pointer`,
             clones_dir,
         } ) ).toThrow( `resolves outside the clone source` )
+
+    } )
+
+    it.each( [ false, true ] )( `isolates nested Claude worktrees with absolute commondir=%s`, absolute_common => {
+
+        initialize_repository( source )
+        const worktree_path = join( `.claude`, `worktrees`, `agent-test` )
+        const original_worktree = join( source, worktree_path )
+        run_git( source, [ `worktree`, `add`, `-b`, `agent-test`, original_worktree ] )
+        const metadata = join( source, `.git`, `worktrees`, `agent-test` )
+        if( absolute_common ) writeFileSync( join( metadata, `commondir` ), `${ join( source, `.git` ) }\n` )
+        writeFileSync( join( original_worktree, `tracked.txt` ), `original staged work\n` )
+        run_git( original_worktree, [ `add`, `tracked.txt` ] )
+        const original_files = [ `.git`, `tracked.txt` ].map( file => readFileSync( join( original_worktree, file ) ) )
+        const original_metadata = [ `index`, `HEAD`, `gitdir`, `commondir` ].map( file => readFileSync( join( metadata, file ) ) )
+        const original_refs = run_git( source, [ `show-ref` ] )
+
+        const result = prepare_clone_workspace( { source, clone_id: `nested-worktree`, clones_dir } )
+        const clone_worktree = join( result.workspace, worktree_path )
+        expect( run_git( clone_worktree, [ `rev-parse`, `--absolute-git-dir` ] ) )
+            .toBe( join( result.workspace, `.git`, `worktrees`, `agent-test` ) )
+        expect( run_git( clone_worktree, [ `rev-parse`, `--path-format=absolute`, `--git-common-dir` ] ) )
+            .toBe( join( result.workspace, `.git` ) )
+        expect( run_git( result.workspace, [ `worktree`, `list`, `--porcelain` ] ) ).toContain( `worktree ${ clone_worktree }` )
+        expect( run_git( result.workspace, [ `worktree`, `list`, `--porcelain` ] ) ).not.toContain( source )
+
+        // Simulate a different container mount and an unavailable source.
+        const moved_clone = join( directory, `mounted-workspace` )
+        renameSync( result.workspace, moved_clone )
+        const hidden_source = join( directory, `original-unmounted` )
+        renameSync( source, hidden_source )
+        const moved_worktree = join( moved_clone, worktree_path )
+        run_git( moved_clone, [ `worktree`, `prune`, `--expire`, `now` ] )
+        expect( run_git( moved_worktree, [ `status`, `--porcelain` ] ) ).toContain( `M  tracked.txt` )
+        writeFileSync( join( moved_worktree, `tracked.txt` ), `clone change\n` )
+        run_git( moved_worktree, [ `add`, `tracked.txt` ] )
+        run_git( moved_worktree, [ `-c`, `user.name=Test`, `-c`, `user.email=test@example.invalid`, `commit`, `-m`, `clone only` ] )
+        renameSync( hidden_source, source )
+
+        expect( run_git( source, [ `show-ref` ] ) ).toBe( original_refs )
+        expect( [ `.git`, `tracked.txt` ].map( file => readFileSync( join( original_worktree, file ) ) ) ).toEqual( original_files )
+        expect( [ `index`, `HEAD`, `gitdir`, `commondir` ].map( file => readFileSync( join( metadata, file ) ) ) ).toEqual( original_metadata )
+        expect( existsSync( join( metadata, `locked` ) ) ).toBe( false )
+
+    } )
+
+    it.each( [ `external`, `stale` ] )( `drops only copied registrations for %s worktrees`, kind => {
+
+        initialize_repository( source )
+        const outside = join( kind === `external` ? directory : source, `abandoned-worktree` )
+        run_git( source, [ `worktree`, `add`, `-b`, `external`, outside ] )
+        if( kind === `stale` ) rmSync( outside, { recursive: true } )
+        const before = run_git( source, [ `worktree`, `list`, `--porcelain` ] )
+        const result = prepare_clone_workspace( { source, clone_id: `external-registration`, clones_dir } )
+        expect( run_git( result.workspace, [ `worktree`, `list`, `--porcelain` ] ) ).not.toContain( outside )
+        expect( run_git( source, [ `worktree`, `list`, `--porcelain` ] ) ).toBe( before )
+        if( kind === `external` ) expect( run_git( outside, [ `status`, `--porcelain` ] ) ).toBe( `` )
+
+    } )
+
+    it.each( [ `commondir`, `gitdir`, `backlink`, `symlink`, `config` ] )( `rejects escaping linked worktree metadata: %s`, escape => {
+
+        initialize_repository( source )
+        const nested = join( source, `.claude`, `worktrees`, `agent-test` )
+        run_git( source, [ `worktree`, `add`, `-b`, `agent-test`, nested ] )
+        const metadata = join( source, `.git`, `worktrees`, `agent-test` )
+        if( escape === `backlink` ) writeFileSync( join( metadata, `gitdir` ), `${ join( directory, `outside`, `.git` ) }\n` )
+        if( escape === `config` ) writeFileSync( join( metadata, `config.worktree` ), `[core]\nworktree = ${ directory }\n` )
+        if( escape === `commondir` ) writeFileSync( join( metadata, `commondir` ), `${ directory }\n` )
+        if( escape === `gitdir` ) {
+            const external = join( directory, `external-metadata` )
+            mkdirSync( external )
+            writeFileSync( join( nested, `.git` ), `gitdir: ${ external }\n` )
+        }
+        if( escape === `symlink` ) {
+            const external = join( directory, `external-metadata` )
+            renameSync( metadata, external )
+            symlinkSync( external, metadata )
+        }
+        expect( () => prepare_clone_workspace( { source, clone_id: `escaping-metadata`, clones_dir } ) )
+            .toThrow( /outside the clone source|unsafe symlink/ )
+        expect( existsSync( join( clones_dir, `escaping-metadata` ) ) ).toBe( false )
+        expect( readdirSync( join( clones_dir, `.babysit-state`, `partials` ) ) ).toEqual( [] )
+
+    } )
+
+    it( `keeps relative submodule metadata isolated`, () => {
+
+        initialize_repository( source )
+        const upstream = join( directory, `submodule-upstream` )
+        mkdirSync( upstream )
+        initialize_repository( upstream )
+        run_git( source, [ `-c`, `protocol.file.allow=always`, `submodule`, `add`, upstream, `vendor/module` ] )
+        const original_index = readFileSync( join( source, `.git`, `modules`, `vendor`, `module`, `index` ) )
+        const result = prepare_clone_workspace( { source, clone_id: `submodule`, clones_dir } )
+        const cloned_module = join( result.workspace, `vendor`, `module` )
+        expect( run_git( cloned_module, [ `rev-parse`, `--show-toplevel` ] ) ).toBe( cloned_module )
+        expect( run_git( cloned_module, [ `rev-parse`, `--absolute-git-dir` ] ) )
+            .toBe( join( result.workspace, `.git`, `modules`, `vendor`, `module` ) )
+        writeFileSync( join( cloned_module, `tracked.txt` ), `clone only\n` )
+        run_git( cloned_module, [ `add`, `tracked.txt` ] )
+        expect( readFileSync( join( source, `.git`, `modules`, `vendor`, `module`, `index` ) ) ).toEqual( original_index )
+        expect( readFileSync( join( source, `vendor`, `module`, `tracked.txt` ), `utf8` ) ).toBe( `tracked\n` )
 
     } )
 

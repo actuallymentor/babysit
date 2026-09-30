@@ -444,20 +444,115 @@ const inspect_git_source = ( source, warn ) => {
 
 }
 
+// Resolve metadata before copying: an absolute path is safe only when its
+// real target will be copied too. Symlinked metadata cannot be relocated safely.
+const contained_git_path = ( source, path ) => {
+
+    if( !is_same_or_descendant( source, path ) ) {
+        throw new Error( `Nested Git metadata resolves outside the clone source: ${ path }` )
+    }
+    const target = realpathSync( path )
+    if( target !== path || !is_same_or_descendant( source, target ) ) {
+        throw new Error( `Nested Git metadata uses an unsafe symlink: ${ path }` )
+    }
+    return target
+
+}
+
 const nested_git_pointer = ( path, source ) => {
 
     const raw = readFileSync( path, `utf8` ).trim()
     const match = raw.match( /^gitdir:\s*(.+)$/i )
     if( !match ) throw new Error( `Invalid nested .git pointer: ${ path }` )
 
-    const pointer = match[1].trim()
-    if( isAbsolute( pointer ) ) {
-        throw new Error( `Nested .git pointer uses an unsafe absolute gitdir: ${ path }` )
+    return contained_git_path( source, resolve( dirname( path ), match[1].trim() ) )
+
+}
+
+// Prepare only metadata edits. Source files are never rewritten, and every
+// write is checked again against the copied tree before it is applied.
+const git_relocation_plan = ( source, git_entries ) => {
+
+    const writes = new Map()
+    const removals = []
+    const git_dirs = new Set()
+    const relative_link = ( file, target, prefix = `` ) => {
+        writes.set( file, { content: `${ prefix }${ relative( dirname( file ), target ) }\n` } )
     }
 
-    const git_dir = realpathSync( resolve( dirname( path ), pointer ) )
-    if( !is_same_or_descendant( source, git_dir ) ) {
-        throw new Error( `Nested .git pointer resolves outside the clone source: ${ path }` )
+    for( const path of git_entries ) {
+        const git_dir = lstatSync( path ).isDirectory() ? path : nested_git_pointer( path, source )
+        git_dirs.add( git_dir )
+        if( path !== git_dir ) relative_link( path, git_dir, `gitdir: ` )
+
+        const commondir = join( git_dir, `commondir` )
+        if( path_exists( commondir ) ) {
+            contained_git_path( source, commondir )
+            const common = contained_git_path( source, resolve( git_dir, readFileSync( commondir, `utf8` ).trim() ) )
+            git_dirs.add( common )
+            relative_link( commondir, common )
+        }
+
+        // Submodule core.worktree is normally relative to its metadata. Keep
+        // that supported layout, but reject overrides pointing elsewhere.
+        for( const filename of [ `config`, `config.worktree` ] ) {
+            const config = join( git_dir, filename )
+            if( !path_exists( config ) ) continue
+            contained_git_path( source, config )
+            const worktree = run_git( [ `config`, `--file`, config, `--get`, `core.worktree` ], { allow_failure: true } )
+            if( !worktree ) continue
+            contained_git_path( source, resolve( git_dir, worktree ) )
+            if( isAbsolute( worktree ) ) throw new Error( `Nested Git core.worktree must be relative: ${ config }` )
+        }
+    }
+
+    for( const git_dir of git_dirs ) {
+        const worktrees = join( git_dir, `worktrees` )
+        if( !path_exists( worktrees ) ) continue
+        contained_git_path( source, worktrees )
+        for( const name of readdirSync( worktrees ) ) {
+            const registration = contained_git_path( source, join( worktrees, name ) )
+            const backlink = contained_git_path( source, join( registration, `gitdir` ) )
+            const target = resolve( registration, readFileSync( backlink, `utf8` ).trim() )
+
+            // Registrations for checkouts outside the copied tree belong only
+            // to the original repository, including stale registrations.
+            if( !is_same_or_descendant( source, target ) || !path_exists( target ) ) {
+                if( git_dirs.has( registration ) ) {
+                    throw new Error( `Nested Git worktree backlink resolves outside the clone source: ${ backlink }` )
+                }
+                removals.push( registration )
+                continue
+            }
+            contained_git_path( source, target )
+            if( nested_git_pointer( target, source ) !== registration ) {
+                throw new Error( `Nested Git worktree backlink does not match its pointer: ${ backlink }` )
+            }
+            writes.set( backlink, { target } )
+            const locked = join( registration, `locked` )
+            if( !path_exists( locked ) ) {
+                // Old Git requires absolute backlinks. A container sees a
+                // different mount path, so prevent prune deleting its metadata.
+                writes.set( locked, { content: `Babysit clone may be mounted at a different path\n` } )
+            }
+        }
+    }
+
+    return { writes, removals }
+
+}
+
+const relocate_git_metadata = ( source, partial, destination, { writes, removals } ) => {
+
+    const copied_path = path => join( partial, relative( source, path ) )
+    for( const path of removals ) {
+        rmSync( contained_git_path( partial, copied_path( path ) ), { recursive: true } )
+    }
+    for( const [ path, { content, target } ] of writes ) {
+        const copied = copied_path( path )
+        contained_git_path( partial, dirname( copied ) )
+        if( path_exists( copied ) ) contained_git_path( partial, copied )
+        writeFileSync( copied, target ? `${ join( destination, relative( source, target ) ) }\n` : content )
     }
 
 }
@@ -488,7 +583,7 @@ const access_problem = ( path, entry ) => {
 }
 
 // Unreadable entries are collected, not fatal, so one report covers them all.
-const walk_source_tree = ( source, directory, blocked ) => {
+const walk_source_tree = ( source, directory, blocked, git_entries ) => {
 
     for( const name of readdirSync( directory ) ) {
         const path = join( directory, name )
@@ -502,14 +597,17 @@ const walk_source_tree = ( source, directory, blocked ) => {
         if( entry.isDirectory() ) {
             const problem = access_problem( path, entry )
             if( problem ) blocked.push( problem )
-            else walk_source_tree( source, path, blocked )
+            else {
+                if( name === `.git` ) git_entries.push( path )
+                walk_source_tree( source, path, blocked, git_entries )
+            }
             continue
         }
 
         if( entry.isFile() ) {
             const problem = access_problem( path, entry )
             if( problem ) blocked.push( problem )
-            else if( name === `.git` && directory !== source ) nested_git_pointer( path, source )
+            else if( name === `.git` && directory !== source ) git_entries.push( path )
             continue
         }
 
@@ -527,8 +625,9 @@ const audit_source_tree = source => {
 
     const problem = access_problem( source, lstatSync( source ) )
     const blocked = problem ? [ problem ] : []
-    if( !problem ) walk_source_tree( source, source, blocked )
-    if( !blocked.length ) return
+    const git_entries = []
+    if( !problem ) walk_source_tree( source, source, blocked, git_entries )
+    if( !blocked.length ) return git_relocation_plan( source, git_entries )
 
     throw Object.assign( new Error( `Clone source has ${ blocked.length } path(s) the current user cannot read.` ), {
         code: `CLONE_SOURCE_UNREADABLE`,
@@ -710,7 +809,7 @@ export const prepare_clone_workspace = ( {
         if( existing ) return existing
 
         const repository = inspect_git_source( original_workspace, warn )
-        audit_source_tree( original_workspace )
+        const git_relocations = audit_source_tree( original_workspace )
         const clone_branch = repository.kind === `root`
             ? clone_branch_name( name, clone_id )
             : null
@@ -731,6 +830,7 @@ export const prepare_clone_workspace = ( {
 
         try {
             copy_directory_contents( original_workspace, partial_path )
+            relocate_git_metadata( original_workspace, partial_path, clone_path, git_relocations )
             if( clone_branch ) create_clone_branch( partial_path, clone_branch, paths.hooks )
 
             if( path_exists( clone_path ) ) {

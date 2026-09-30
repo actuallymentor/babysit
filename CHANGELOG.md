@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.3 — 2026-09-30
+
+### Fixed
+- Clone repositories containing Claude worktrees without linking back to source.
+- Preserve nested worktree isolation across host and container paths.
+
 ## 1.8.2 — 2026-09-30
 
 ### Fixed
