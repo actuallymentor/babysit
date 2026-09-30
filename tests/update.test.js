@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'bun:test'
-import { is_compiled_binary, binary_platform_tag, is_on_path } from '../src/cli/update.js'
+import { is_compiled_binary, binary_platform_tag, is_on_path, update_docker_image } from '../src/cli/update.js'
 
 // is_compiled_binary reads process.argv[1] live, so we save/restore around each
 // case. Same heuristic the real spawn-monitor-daemon path uses; if this drifts
@@ -81,6 +81,78 @@ describe( `is_on_path`, () => {
     it( `does not match on substring (entries are exact-equal)`, () => {
         process.env.PATH = `/home/me/.local/bin/extra:/usr/bin`
         expect( is_on_path( `/home/me/.local/bin` ) ).toBe( false )
+    } )
+
+} )
+
+
+describe( `Docker image update`, () => {
+
+    const metadata = ( id, version ) => JSON.stringify( [ {
+        Id: id,
+        Config: { Labels: version ? { 'org.opencontainers.image.version': version } : null },
+    } ] )
+
+    const update = async ( before, after, pull_error ) => {
+        const messages = []
+        const calls = []
+        const original_log = console.log
+        console.log = message => messages.push( message )
+
+        try {
+            await update_docker_image( async ( command, args, options, timeout ) => {
+                calls.push( { command, args, timeout } )
+                if( args[0] === `pull` ) {
+                    if( pull_error ) throw pull_error
+                    return ``
+                }
+                const result = calls.length === 1 ? before : after
+                if( result instanceof Error ) throw result
+                return result
+            } )
+        } finally {
+            console.log = original_log
+        }
+
+        return { output: messages.join( `\n` ), calls }
+    }
+
+    it( `uses the full pull deadline and reports the downloaded image version`, async () => {
+        const { output, calls } = await update( metadata( `sha256:old`, `1.0.0` ), metadata( `sha256:new`, `2.0.0` ) )
+        expect( calls[1].timeout ).toBe( 120_000 )
+        expect( output ).toContain( `downloaded image: v2.0.0 (sha256:new)` )
+    } )
+
+    it( `reports a first download when no local image exists`, async () => {
+        const { output } = await update( new Error( `No such image` ), metadata( `sha256:new`, `v2.0.0` ) )
+        expect( output ).toContain( `downloaded image: v2.0.0 (sha256:new)` )
+    } )
+
+    it( `distinguishes an unchanged image from a new download`, async () => {
+        const image = metadata( `sha256:same`, `2.0.0` )
+        const { output } = await update( image, image )
+        expect( output ).toContain( `already up to date: v2.0.0` )
+        expect( output ).not.toContain( `downloaded image` )
+    } )
+
+    it( `identifies unlabelled images without claiming a release version`, async () => {
+        for( const version of [ undefined, `unknown` ] ) {
+            const { output } = await update( `[]`, metadata( `sha256:new`, version ) )
+            expect( output ).toContain( `version unavailable (sha256:new)` )
+        }
+    } )
+
+    it( `keeps successful pulls successful when metadata cannot be read`, async () => {
+        const { output } = await update( `[]`, new Error( `inspect failed` ) )
+        expect( output ).toContain( `docker pull succeeded (image version unavailable)` )
+        expect( output ).not.toContain( `docker pull failed` )
+    } )
+
+    it( `reports pull failures without claiming a downloaded version`, async () => {
+        const { output, calls } = await update( `[]`, `[]`, new Error( `registry unavailable` ) )
+        expect( output ).toContain( `docker pull failed: registry unavailable` )
+        expect( calls ).toHaveLength( 2 )
+        expect( output ).not.toContain( `downloaded image` )
     } )
 
 } )

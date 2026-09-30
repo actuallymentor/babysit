@@ -261,6 +261,9 @@ RUN set -eux; \
     gosu node node --input-type=module -e 'import p from "puppeteer"; if (typeof p.launch !== "function") process.exit(1)'; \
     gosu node bash -lc 'source "$NVM_DIR/nvm.sh" && command -v nvm'
 
+ARG BABYSIT_VERSION=unknown
+LABEL org.opencontainers.image.version="${BABYSIT_VERSION}"
+
 WORKDIR /workspace
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

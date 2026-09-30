@@ -241,23 +241,47 @@ const update_agents_repo = async () => {
 /**
  * Step 3 — pull the latest published babysit container image from Docker Hub.
  * This is what changes most often (rebuilt on every release of babysit).
+ * @param {Function} [run_command] - Command runner
+ * @returns {Promise<void>}
  */
-const update_docker_image = async () => {
+export const update_docker_image = async ( run_command = run ) => {
 
     const image = get_image_name()
 
     console.log( `[3/4] docker image` )
     console.log( `      ${ image }` )
 
+    // Missing images are normal on first install. Metadata failures must not
+    // prevent a pull or turn a successful download into a reported failure.
+    const inspect_image = async () => {
+        try {
+            const output = await run_command( `docker`, [ `image`, `inspect`, image ], {}, STEP_TIMEOUT_MS )
+            return JSON.parse( output )[0]
+        } catch {
+            return null
+        }
+    }
+
+    const previous = await inspect_image()
+
     try {
-        await promise_timeout(
-            run( `docker`, [ `pull`, image ] ),
-            DOCKER_PULL_TIMEOUT_MS
-        )
-        console.log( `      ✓ docker pull succeeded\n` )
+        // Set the subprocess deadline itself; an outer promise cannot extend it.
+        await run_command( `docker`, [ `pull`, image ], {}, DOCKER_PULL_TIMEOUT_MS )
     } catch ( e ) {
         console.log( `      ✗ docker pull failed: ${ e.message }\n` )
+        return
     }
+
+    const current = await inspect_image()
+    if( !current?.Id ) {
+        console.log( `      ✓ docker pull succeeded (image version unavailable)\n` )
+        return
+    }
+
+    const version = current.Config?.Labels?.[ `org.opencontainers.image.version` ]
+    const release = version && version !== `unknown` ? `v${ version.replace( /^v/, `` ) }` : `version unavailable`
+    const status = previous?.Id === current.Id ? `already up to date` : `downloaded image`
+    console.log( `      ✓ ${ status }: ${ release } (${ current.Id })\n` )
 
 }
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.10.0 — 2026-09-30
+
+### Added
+- Show downloaded image versions and IDs; distinguish unchanged images.
+
+### Fixed
+- Give Docker pulls the full 120-second update timeout.
+
 ## 1.9.4 — 2026-09-30
 
 ### Fixed
