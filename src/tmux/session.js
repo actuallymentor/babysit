@@ -178,7 +178,7 @@ export const attach_session = ( session_name, { exec_command = execSync } = {} )
 /**
  * Publish coding-agent activity on its tmux session for `babysit list`.
  * @param {string} session_name - Babysit tmux session name
- * @param {'idle'|'running'} status - Current coding-agent activity
+ * @param {'idle'|'running'|'waiting'} status - Current coding-agent activity
  * @param {Object} [options] - Command runner seam
  * @returns {Promise<boolean>} Whether tmux accepted the update
  */
@@ -272,7 +272,7 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
                 const [ name, tmux_status, created, stored_agent_status ] = line.split( `:` )
-                const agent_status = stored_agent_status === `idle` ? `idle` : `running`
+                const agent_status = [ `idle`, `waiting` ].includes( stored_agent_status ) ? stored_agent_status : `running`
                 return { name, attached: tmux_status === `attached`, created, agent_status }
             } )
 

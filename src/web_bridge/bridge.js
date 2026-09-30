@@ -281,7 +281,7 @@ export const create_web_bridge = ( {
          * Publish the latest allowlisted pane state and heartbeat.
          * @param {Object} snapshot - Current monitor snapshot
          * @param {string} snapshot.output - ANSI-cleaned pane output
-         * @param {'idle'|'running'} snapshot.activity - Agent activity
+         * @param {'idle'|'running'|'waiting'} snapshot.activity - Agent activity
          * @param {boolean} [snapshot.busy=false] - Whether a Babysit action owns input
          */
         async publish( { output, activity, busy = false } ) {
@@ -299,7 +299,7 @@ export const create_web_bridge = ( {
                 last_completion = completion
                 revision += 1
             }
-            current_activity = activity === `idle` ? `idle` : `running`
+            current_activity = [ `idle`, `waiting` ].includes( activity ) ? activity : `running`
 
             try {
                 attachment = await attachment_fn( session.tmux_session )

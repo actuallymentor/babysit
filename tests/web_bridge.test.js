@@ -184,6 +184,12 @@ describe( `per-session web bridge`, () => {
         expect( read_state().raw_screen ).toBe( output )
         const { revision } = read_state()
 
+        await bridge.publish( { output, activity: `waiting` } )
+        expect( read_state().activity ).toBe( `waiting` )
+        expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
+        expect( read_state().busy ).toBe( false )
+
+
         await bridge.publish( { output, activity: `running`, busy: true } )
         expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
         expect( read_state().revision ).toBe( revision )

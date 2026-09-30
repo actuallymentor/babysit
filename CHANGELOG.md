@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.9.0 — 2026-09-30
+
+### Added
+- Show `waiting` while Claude background shells outlive its foreground reply.
+- Preserve waiting status in CLI and web; pause idle-loop actions until completion.
+
+### Fixed
+- Relocate Claude worktrees created at Docker’s `/workspace` mount.
+
 ## 1.8.3 — 2026-09-30
 
 ### Fixed

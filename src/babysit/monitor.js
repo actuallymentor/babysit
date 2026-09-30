@@ -48,10 +48,10 @@ export const agent_exit_status = ( output = ``, sentinel = null ) => {
  * the monitor retries next tick.
  * @param {Object} options
  * @param {string} options.session_name - Babysit tmux session name
- * @param {'idle'|'running'} options.agent_status - Newly observed activity
- * @param {'idle'|'running'|null} options.last_agent_status - Last published activity
+ * @param {'idle'|'running'|'waiting'} options.agent_status - Newly observed activity
+ * @param {'idle'|'running'|'waiting'|null} options.last_agent_status - Last published activity
  * @param {Function} [options.publish=set_agent_status] - Tmux publisher seam
- * @returns {Promise<'idle'|'running'|null>} Last successfully published activity
+ * @returns {Promise<'idle'|'running'|'waiting'|null>} Last successfully published activity
  */
 export const publish_agent_status = async ( {
     session_name,
@@ -251,6 +251,10 @@ export const start_monitor = async ( {
             const idle_seconds = idle_tracker.update( clean_output )
             const agent_status = detect_agent_status( clean_output, agent?.name, idle_seconds )
 
+            // Background terminals are unfinished work, even when their pane
+            // is static. Restart the idle timer once their footer disappears.
+            if( agent_status === `waiting` ) idle_tracker.reset()
+
             // Store activity with the tmux session itself. Only transitions issue
             // a command, keeping the one-second monitor poll cheap. Failed writes
             // stay pending so a transient tmux error is retried on the next tick.
@@ -262,7 +266,7 @@ export const start_monitor = async ( {
 
             // Publish the idle countdown deadline for the statusline (only when it changes)
             if( idle_rule ) {
-                const deadline = idle_tracker.get_deadline( idle_timeout_s )
+                const deadline = agent_status === `waiting` ? `idle` : idle_tracker.get_deadline( idle_timeout_s )
                 if( deadline !== null && deadline !== last_written_deadline ) {
                     write_loop_deadline_fn( deadline )
                     last_written_deadline = deadline
@@ -361,6 +365,7 @@ export const start_monitor = async ( {
 
             for( const rule of rules ) {
 
+                if( rule.on.type === `idle` && agent_status === `waiting` ) continue
                 if( !should_fire_rule( rule, context, now ) ) continue
 
                 begin_action( rule, now )

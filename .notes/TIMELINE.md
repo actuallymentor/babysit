@@ -112,3 +112,7 @@
 - 2026-09-30: Post-commit review caught OpenCode installation overlapping the persistent user npm volume; moved bundled OpenCode beside Codex in the system prefix.
 
 - 2026-09-30: User reported clone rejecting Claude nested worktrees. Support contained worktree metadata, rewrite copied pointers, and preserve source isolation; regressions use real Git and container mount paths.
+
+- 2026-09-30: Live Claude session showed a completed reply with a running background shell. Added waiting activity from the native shell footer, propagated to CLI/web, and suspended idle-loop actions while waiting.
+
+- 2026-09-30: Clone review reproduced Docker-authored /workspace Git pointers and a concurrent worktree-creation race. Recognize the known mount prefix and validate the completed copy before publication.

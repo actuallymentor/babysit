@@ -23,7 +23,7 @@ const Badge = styled.span`
 
 /** Keeps observed agent activity separate from the send lock. */
 export function Status( { activity, busy } ) {
-    const label = activity === `idle` ? `Idle` : activity === `running` ? `Running` : `Activity unknown`
+    const label = activity === `idle` ? `Idle` : activity === `running` ? `Running` : activity === `waiting` ? `Waiting` : `Activity unknown`
     return <Badges>
         <Badge>{ label }</Badge>
         { busy && <Badge>Sending paused</Badge> }

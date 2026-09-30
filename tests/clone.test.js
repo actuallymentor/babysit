@@ -14,7 +14,7 @@ import {
     writeFileSync,
 } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, relative } from 'path'
 
 import {
     acquire_clone_lock,
@@ -388,16 +388,21 @@ describe( `clone Git handling`, () => {
 
     } )
 
-    it.each( [ false, true ] )( `isolates nested Claude worktrees with absolute commondir=%s`, absolute_common => {
+    it.each( [ `relative`, `absolute`, `container` ] )( `isolates nested Claude worktrees with %s metadata`, location => {
 
         initialize_repository( source )
         const worktree_path = join( `.claude`, `worktrees`, `agent-test` )
         const original_worktree = join( source, worktree_path )
         run_git( source, [ `worktree`, `add`, `-b`, `agent-test`, original_worktree ] )
         const metadata = join( source, `.git`, `worktrees`, `agent-test` )
-        if( absolute_common ) writeFileSync( join( metadata, `commondir` ), `${ join( source, `.git` ) }\n` )
+        if( location === `absolute` ) writeFileSync( join( metadata, `commondir` ), `${ join( source, `.git` ) }\n` )
         writeFileSync( join( original_worktree, `tracked.txt` ), `original staged work\n` )
         run_git( original_worktree, [ `add`, `tracked.txt` ] )
+        if( location === `container` ) {
+            writeFileSync( join( original_worktree, `.git` ), `gitdir: /workspace/.git/worktrees/agent-test\n` )
+            writeFileSync( join( metadata, `gitdir` ), `/workspace/${ worktree_path }/.git\n` )
+            writeFileSync( join( metadata, `commondir` ), `/workspace/.git\n` )
+        }
         const original_files = [ `.git`, `tracked.txt` ].map( file => readFileSync( join( original_worktree, file ) ) )
         const original_metadata = [ `index`, `HEAD`, `gitdir`, `commondir` ].map( file => readFileSync( join( metadata, file ) ) )
         const original_refs = run_git( source, [ `show-ref` ] )
@@ -431,12 +436,81 @@ describe( `clone Git handling`, () => {
 
     } )
 
-    it.each( [ `external`, `stale` ] )( `drops only copied registrations for %s worktrees`, kind => {
+    it.each( [ `nested`, `external` ] )( `rejects a %s worktree created after the source audit without publishing a clone`, location => {
+
+        initialize_repository( source )
+        mkdirSync( join( source, `.claude`, `worktrees` ), { recursive: true } )
+        const worktree = location === `nested`
+            ? join( source, `.claude`, `worktrees`, `late-agent` )
+            : join( directory, `late-external` )
+        // Isolate the fs hook in a real Node process; the first copy happens
+        // after auditing, exactly when another live agent can add a worktree.
+        const script = `
+            import fs from 'node:fs'
+            import { syncBuiltinESMExports } from 'node:module'
+            import { execFileSync } from 'node:child_process'
+            const copy = fs.cpSync
+            let added = false
+            fs.cpSync = (...args) => {
+                if (!added) {
+                    added = true
+                    execFileSync('git', ['-C', ${ JSON.stringify( source ) }, 'worktree', 'add', '-b', 'late-agent', ${ JSON.stringify( worktree ) }])
+                }
+                return copy(...args)
+            }
+            syncBuiltinESMExports()
+            const { prepare_clone_workspace } = await import(${ JSON.stringify( import.meta.resolve( `../src/clone.js` ) ) })
+            try {
+                prepare_clone_workspace(${ JSON.stringify( { source, clone_id: `copy-race`, clones_dir } ) })
+                process.exitCode = 1
+            } catch (error) {
+                process.stdout.write(error.message)
+            }
+        `
+        const result = spawnSync( `node`, [ `--input-type=module`, `-e`, script ], { encoding: `utf8` } )
+        expect( result.status ).toBe( 0 )
+        expect( result.stdout ).toContain( `Clone source changed while copying` )
+        expect( existsSync( join( clones_dir, `copy-race` ) ) ).toBe( false )
+        expect( readdirSync( join( clones_dir, `.babysit-state`, `partials` ) ) ).toEqual( [] )
+        expect( run_git( worktree, [ `status`, `--porcelain` ] ) ).toBe( `` )
+
+    } )
+
+    it( `preserves modern relative backlinks without adding a mount lock`, () => {
+
+        initialize_repository( source )
+        const nested = join( source, `.claude`, `worktrees`, `agent-test` )
+        run_git( source, [ `worktree`, `add`, `-b`, `agent-test`, nested ] )
+        const metadata = join( source, `.git`, `worktrees`, `agent-test` )
+        const backlink = `${ relative( metadata, join( nested, `.git` ) ) }\n`
+        writeFileSync( join( metadata, `gitdir` ), backlink )
+
+        const result = prepare_clone_workspace( { source, clone_id: `relative-backlink`, clones_dir } )
+        const copied_metadata = join( result.workspace, `.git`, `worktrees`, `agent-test` )
+        expect( readFileSync( join( copied_metadata, `gitdir` ), `utf8` ) ).toBe( backlink )
+        expect( existsSync( join( copied_metadata, `locked` ) ) ).toBe( false )
+        expect( run_git( join( result.workspace, `.claude`, `worktrees`, `agent-test` ), [ `status`, `--porcelain` ] ) ).toBe( `` )
+
+    } )
+
+    it.each( [ `/foreign`, `/workspace-other` ] )( `rejects unknown container prefix %s even when matching local metadata exists`, prefix => {
+
+        initialize_repository( source )
+        const nested = join( source, `.claude`, `worktrees`, `agent-test` )
+        run_git( source, [ `worktree`, `add`, `-b`, `agent-test`, nested ] )
+        writeFileSync( join( nested, `.git` ), `gitdir: ${ prefix }/.git/worktrees/agent-test\n` )
+        expect( () => prepare_clone_workspace( { source, clone_id: `foreign-prefix`, clones_dir } ) )
+            .toThrow( `outside the clone source` )
+
+    } )
+
+    it.each( [ `external`, `stale`, `missing-backlink` ] )( `drops only copied registrations for %s worktrees`, kind => {
 
         initialize_repository( source )
         const outside = join( kind === `external` ? directory : source, `abandoned-worktree` )
         run_git( source, [ `worktree`, `add`, `-b`, `external`, outside ] )
-        if( kind === `stale` ) rmSync( outside, { recursive: true } )
+        if( kind !== `external` ) rmSync( outside, { recursive: true } )
+        if( kind === `missing-backlink` ) rmSync( join( source, `.git`, `worktrees`, `abandoned-worktree`, `gitdir` ) )
         const before = run_git( source, [ `worktree`, `list`, `--porcelain` ] )
         const result = prepare_clone_workspace( { source, clone_id: `external-registration`, clones_dir } )
         expect( run_git( result.workspace, [ `worktree`, `list`, `--porcelain` ] ) ).not.toContain( outside )

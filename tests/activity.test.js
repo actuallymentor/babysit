@@ -22,6 +22,29 @@ describe( `agent activity controls`, () => {
         }
     } )
 
+    it( `keeps Claude waiting while background shells outlive the completed reply`, () => {
+        for( const footer of [
+            `⏵⏵ bypass permissions on · 1 shell · ← for agents`,
+            `  2 shells · ← for agents`,
+        ] ) {
+            const screen = `✻ Churned for 2m 4s · done 1:03 PM · 1 shell still running\n────\n❯ ok, keep going\n────\nyolo·docker workspace\n${ footer }`
+            expect( agent_status( screen, `claude`, 0 ) ).toBe( `waiting` )
+            expect( agent_status( screen, `claude`, 300 ) ).toBe( `waiting` )
+            expect( agent_status( `\x1b[32m${ screen }\x1b[0m\n\n`, `claude`, 300 ) ).toBe( `waiting` )
+            expect( agent_status( `✻ Working… (esc to interrupt)\n❯\n${ footer }`, `claude`, 300 ) ).toBe( `running` )
+        }
+    } )
+
+    it( `returns to idle when shells finish and ignores historical shell counts`, () => {
+        for( const screen of [
+            `✻ Churned · 1 shell still running\n❯\n? for shortcuts`,
+            `⏵⏵ bypass permissions on · 1 shell · ← for agents\n❯\n? for shortcuts`,
+            `❯\n0 shells · ← for agents\n? for shortcuts`,
+            `The task has 1 shell still running\n❯\n? for shortcuts`,
+        ] ) expect( agent_status( screen, `claude`, 300 ) ).toBe( `idle` )
+        expect( agent_activity( `❯\n1 shell · ← for agents`, `codex` ) ).toBeNull()
+    } )
+
     it( `recognizes approval controls as waiting for input despite cancellation hints`, () => {
         const dialogs = [
             [ `codex`, `Would you like to run the following command?\n› 1. Yes, proceed\n  2. No\n  Press enter to confirm or esc to cancel` ],

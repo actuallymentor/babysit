@@ -26,6 +26,15 @@ const capture_console = async ( fn ) => {
 
 describe( `print_active_sessions_table`, () => {
 
+    it( `shows waiting without changing attachment or session identity`, async () => {
+        const output = await capture_console( () => print_active_sessions_table(
+            [ { name: `babysit_background`, attached: false, agent_status: `waiting` } ],
+            [ { tmux_session: `babysit_background`, agent: `claude`, name: `background tasks` } ]
+        ) )
+
+        expect( output ).toMatch( /background tasks\s+waiting\s+detached\s+claude/ )
+    } )
+
     it( `shows compact rows and collapses unnamed session IDs into NAME`, async () => {
 
         const tmux_sessions = [
