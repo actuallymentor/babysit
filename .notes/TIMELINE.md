@@ -122,3 +122,4 @@
 - 2026-09-30: Issue fixes passed local and GitHub suites; external review prompted picker-scoped effort readback and image-architecture-aware compiled storage tests. Linux clones intentionally use independent rsync copies, not reflinks.
 
 - 2026-09-30: Final CI exposed Docker copy-up racing between parallel authentication containers on a fresh shared npm cache. Disable image seeding for shared cache volumes and ensure writable roots on startup.
+- 2026-09-30: A long-running container still had the pre-benchmark model helper despite workspace v1.9.4. Updated its installed helper from the existing repository implementation; real `babysit model` now returns available models followed by 30 live/cache-backed benchmark rows. Repository feature was already committed in 9abb9e7; running containers retain baked helper files until explicitly refreshed or replaced.
