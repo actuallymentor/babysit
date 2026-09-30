@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.0 — 2026-09-30
+
+### Added
+- Append 30 coding-ranked benchmarks to bare `babysit model` listings.
+- Preserve available models when benchmark retrieval fails or lacks a key.
+
 ## 1.7.1 — 2026-09-30
 
 ### Changed
