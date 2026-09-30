@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.1 — 2026-09-30
+
+### Fixed
+- Show only the image version in update output; omit the image hash.
+
 ## 1.10.0 — 2026-09-30
 
 ### Added

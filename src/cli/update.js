@@ -281,7 +281,7 @@ export const update_docker_image = async ( run_command = run ) => {
     const version = current.Config?.Labels?.[ `org.opencontainers.image.version` ]
     const release = version && version !== `unknown` ? `v${ version.replace( /^v/, `` ) }` : `version unavailable`
     const status = previous?.Id === current.Id ? `already up to date` : `downloaded image`
-    console.log( `      ✓ ${ status }: ${ release } (${ current.Id })\n` )
+    console.log( `      ✓ ${ status }: ${ release }\n` )
 
 }
 
