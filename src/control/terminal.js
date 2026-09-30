@@ -247,6 +247,7 @@ const claude_control = async ( { operation, value, target, capture, send_text, s
     await send_text( `/${ operation }` )
     const ready = operation === `model`
         ? screen => selected_row( claude_rows( screen ) ) !== undefined
+            || owned_dialog( `claude`, screen ) && claude_rows( screen ).length > 0
         : screen => /(?:^|\n)\s*Effort\s*(?:\n|$)/i.test( screen )
     const picker = await wait_for( capture, ready, timeout_ms )
 

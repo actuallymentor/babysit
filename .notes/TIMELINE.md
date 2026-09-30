@@ -106,3 +106,5 @@
 - 2026-09-30: Keep injected container prompts terse: mode boundaries and essential browser/control hints; omit tool inventories and redundant environment declarations.
 
 - 2026-09-30: Bare model listings now include 30 coding-ranked benchmarks; optional benchmark failures must preserve the available-model list.
+
+- 2026-09-30: Refresh published agent CLIs on each workflow attempt and expose their installed versions in build logs. CI pins track verified Codex/Claude releases.

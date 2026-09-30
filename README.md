@@ -327,6 +327,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Codex host `auth.json` changes sync automatically; five-minute reconciliation remains as fallback.
 - Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
 - Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf.
+- Image builds refresh agent CLIs on every run/attempt and log installed versions.
 - Launch prompts contain brief mode boundaries and browser/session-control hints.
 - `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.
 
@@ -365,7 +366,7 @@ Set `BABYSIT_CONTROL_E2E_SUBAGENT=1` to also exercise real subagent-issued contr
 `test:claude-dialog` uses local Claude credentials and one small model call; exit 1 means the dialog changed.
 Requires Docker, tmux, Python 3,
 `agy` (`AGY_E2E_BINARY` override), `codex` (`CODEX_E2E_BINARY` override),
-Claude Code 2.1.284, Chrome/Chromium (`CHROME_PATH` override).
+Claude Code 2.1.285, Chrome/Chromium (`CHROME_PATH` override).
 Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.
 E2E uses real Docker/tmux without model API calls.
 
