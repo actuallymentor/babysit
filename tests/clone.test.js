@@ -443,20 +443,24 @@ describe( `clone Git handling`, () => {
         const worktree = location === `nested`
             ? join( source, `.claude`, `worktrees`, `late-agent` )
             : join( directory, `late-external` )
-        // Isolate the fs hook in a real Node process; the first copy happens
+        // Isolate backend hooks in a real Node process; the first copy happens
         // after auditing, exactly when another live agent can add a worktree.
         const script = `
             import fs from 'node:fs'
             import { syncBuiltinESMExports } from 'node:module'
-            import { execFileSync } from 'node:child_process'
+            import child_process from 'node:child_process'
             const copy = fs.cpSync
+            const spawn = child_process.spawnSync
             let added = false
-            fs.cpSync = (...args) => {
-                if (!added) {
-                    added = true
-                    execFileSync('git', ['-C', ${ JSON.stringify( source ) }, 'worktree', 'add', '-b', 'late-agent', ${ JSON.stringify( worktree ) }])
-                }
-                return copy(...args)
+            const add_worktree = () => {
+                if (added) return
+                added = true
+                child_process.execFileSync('git', ['-C', ${ JSON.stringify( source ) }, 'worktree', 'add', '-b', 'late-agent', ${ JSON.stringify( worktree ) }])
+            }
+            fs.cpSync = (...args) => { add_worktree(); return copy(...args) }
+            child_process.spawnSync = (command, ...args) => {
+                if (command === 'rsync') add_worktree()
+                return spawn(command, ...args)
             }
             syncBuiltinESMExports()
             const { prepare_clone_workspace } = await import(${ JSON.stringify( import.meta.resolve( `../src/clone.js` ) ) })

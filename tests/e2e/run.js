@@ -20,6 +20,7 @@ const state_root = await mkdtemp( join( tmpdir(), `${ run_id }-` ) )
 const browser_seccomp_profile = ensure_chrome_seccomp_profile( {
     path: join( state_root, `chrome-seccomp.json` ),
 } )
+const compiled_cli = join( state_root, `babysit` )
 const home = join( state_root, `home` )
 const babysit_home = join( state_root, `custom state` )
 const host_bin = join( state_root, `bin` )
@@ -218,7 +219,7 @@ const launch_babysit_command = async ( workspace, args, timeout_ms = 360_000 ) =
     // In a non-TTY test process, Babysit's foreground tmux attach exits
     // immediately after cmd_start has saved session metadata. The E2E harness
     // intentionally uses that metadata to keep driving the detached tmux pane.
-    const launch_result = await run( `node`, [ join( repo_root, `src/index.js` ), ...args ], {
+    const launch_result = await run( compiled_cli, args, {
         cwd: workspace,
         env: e2e_env(),
         timeout_ms,
@@ -810,6 +811,7 @@ try {
     ensure( await command_ok( `tmux`, [ `-V` ] ), `tmux is required for E2E tests` )
     ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
 
+    await run( `bun`, [ `build`, `--compile`, `--minify`, join( repo_root, `src/index.js` ), `--outfile`, compiled_cli ] )
     await build_images()
     const { stdout: status_output } = await run( `node`, [ `tests/e2e/status.js` ], {
         env: { ...process.env, BABYSIT_E2E_BASE_IMAGE: base_image },

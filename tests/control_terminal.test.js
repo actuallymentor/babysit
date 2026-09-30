@@ -118,6 +118,95 @@ describe( `native terminal controls`, () => {
         expect( result.models.length ).toBeGreaterThan( 0 )
     } )
 
+    test.each( [
+        `\x1b[2;37m`, `\x1b[2m\x1b[37m`, `\x1b[2m\x1b[38;2;22;0;2m`, `\x1b[2m\x1b[38:2::22:0:2m`,
+    ] )( `recognizes dim suggestions across SGR changes: %s`, async style => {
+        const io = claude_live()
+        const styled = `Claude Code\n\x1b[2m────\x1b[m\n❯ ${ style }Suggested\nwrapped task\x1b[22m\n────`
+        const result = await terminal_control( { agent: `claude`, operation: `model`, capture_styled: async () => styled, ...io } )
+        expect( result.models ).toHaveLength( 12 )
+    } )
+
+    test.each( [ `\x1b[22m`, `\x1b[0m`, `\x1b[m` ] )( `keeps a real draft after dim reset %s`, async reset => {
+        const io = claude_live()
+        const styled = `Claude Code\n────\n❯ \x1b[2mSuggested${ reset }Actual draft\n────`
+        await expect( terminal_control( { agent: `claude`, operation: `model`, capture_styled: async () => styled, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_PENDING` } )
+        expect( io.sent ).toEqual( [] )
+    } )
+
+    test.each( [ `38;2;0;2;22`, `48;5;2`, `58;2;2;0;22`, `38:2::0:2:22` ] )( `never treats extended colour %s as dim intensity`, async parameters => {
+        const io = claude_live()
+        const styled = `Claude Code\n────\n❯ \x1b[${ parameters }mActual draft\n────`
+        await expect( terminal_control( { agent: `claude`, operation: `model`, capture_styled: async () => styled, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_PENDING` } )
+        expect( io.sent ).toEqual( [] )
+    } )
+
+    test.each( [ [ `model`, `toast` ], [ `model`, `transcript` ], [ `model`, `kept with changing footer` ], [ `effort`, `toast` ], [ `effort`, `transcript` ] ] )( `requires native readback when %s restores the same old %s`, async ( operation, source ) => {
+        for( const apply of [ false, true ] ) {
+            const value = operation === `model` ? `opus` : `low`
+            const notice = source === `kept with changing footer` ? `Kept model as Opus\n  progress 0`
+                : operation === `model` ? `Set model to Opus for this session only` : `Set effort level to low (this session only)`
+            const stale = source !== `transcript`
+                ? `Claude Code\n  ${ notice }\n────\n❯\n────`
+                : `Claude Code\n❯ /${ operation }\n  ⎿ ${ notice }\n────\n❯\n────`
+            let screen = stale
+            let current = operation === `model` ? 0 : 2
+            let cursor = current
+            let opened = 0
+            const render = () => {
+                screen = operation === `model`
+                    ? `Select model\nSwitch between Claude models.\n${ cursor === 0 ? `❯` : ` ` } 1. Sonnet\n${ cursor === 1 ? `❯` : ` ` } 2. Opus\nEnter to set as default · s to use this session only · Esc to cancel`
+                    : `Effort\n${ ` `.repeat( cursor * 8 ) }▲\nlow     medium  high\n←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`
+            }
+            const io = {
+                capture: async () => screen,
+                send_text: async () => {
+                    opened++
+                    cursor = current
+                    render()
+                },
+                send_keys: async key => {
+                    if( key === `s` ) {
+                        if( apply ) current = cursor
+                        screen = stale.replace( `progress 0`, `progress 1` )
+                    } else if( key === `Escape` ) screen = stale
+                    else {
+                        if( key === `Up` || key === `Down` ) cursor = 1 - cursor
+                        if( key === `Left` ) cursor = Math.max( 0, cursor - 1 )
+                        if( key === `Right` ) cursor = Math.min( 2, cursor + 1 )
+                        render()
+                    }
+                },
+            }
+            const action = terminal_control( { agent: `claude`, operation, value, timeout_ms: 300, ...io } )
+            if( apply ) expect( ( await action ).applied ).toBe( operation === `model` ? `Opus` : `low` )
+            else await expect( action ).rejects.toThrow( `did not confirm` )
+            expect( opened ).toBe( 2 )
+            expect( screen ).toBe( stale )
+        }
+    } )
+
+    test.each( [ `draft`, `dialog` ] )( `leaves a new %s untouched before Claude readback`, async kind => {
+        const stale = `Claude Code\n  Set effort level to low (this session only)\n────\n❯\n────`
+        const picker = `Effort\n▲\nlow     medium     high\n←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`
+        const external = kind === `draft` ? `Claude Code\n────\n❯ \x1b[37mMy new draft\n────`
+            : `Select model\nSwitch between Claude models.\n❯ 1. Opus\nEsc to cancel`
+        const io = callbacks( stale, ( _, action, key ) => action === `text` ? picker : key === `s` ? stale : picker )
+        let styled_captures = 0
+        const capture_styled = async () => ++styled_captures === 1 ? stale : external
+        await expect( terminal_control( { agent: `claude`, operation: `effort`, value: `low`, capture_styled, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_PENDING` } )
+        expect( io.sent.filter( ( [ action ] ) => action === `text` ) ).toEqual( [ [ `text`, `/effort` ] ] )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `s` ] )
+    } )
+
+    test( `does not guess effort readback when the slider cursor is missing`, async () => {
+        const stale = `Claude Code\n  Set effort level to low (this session only)\n────\n❯\n────`
+        const picker = `low     medium     high\nEffort\n←/→ to adjust · Enter to confirm · s for this session only · Esc to cancel`
+        const io = callbacks( stale, ( _, action, key ) => action === `text` ? picker : [ `s`, `Escape` ].includes( key ) ? stale : picker )
+        await expect( terminal_control( { agent: `claude`, operation: `effort`, value: `low`, ...io } ) ).rejects.toThrow( `did not confirm` )
+        expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+    } )
+
     test( `waits past slash autocomplete and lists a wrapping Claude picker in one cycle`, async () => {
         const io = claude_live()
         const result = await terminal_control( { agent: `claude`, operation: `model`, ...io } )
@@ -193,6 +282,23 @@ describe( `native terminal controls`, () => {
         const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? initial : key === `Escape` ? claude_ready : clipped )
         await expect( terminal_control( { agent: `claude`, operation: `model`, value: `opus-5.5`, ...io } ) ).rejects.toThrow( `clipped` )
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
+    } )
+
+    test.each( [ `model`, `effort` ] )( `reads multiline %s confirmations without borrowing unrelated lines`, async operation => {
+        const value = operation === `model` ? `Opus 5.5` : `low`
+        const notice = operation === `model`
+            ? `Set model to\n     Opus 5.5 for this session\n     only`
+            : `Set effort level to\n     low (this session\n     only): Quick implementation`
+        const picker = operation === `model`
+            ? `${ claude_ready }\nSelect model\n❯ 1. Opus 5.5  Best for complex work`
+            : `${ claude_ready }\nEffort\nlow     medium     high`
+        for( const confirmed of [
+            `${ claude_ready }\n❯ /${ operation }\n  ⎿  ${ notice }\n\nUnrelated output`,
+            `Working…\n  ${ notice }\n────\n❯\n────`,
+        ] ) {
+            const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `s` ? confirmed : picker )
+            expect( ( await terminal_control( { agent: `claude`, operation, value, ...io } ) ).applied ).toBe( value )
+        }
     } )
 
     test( `reads wrapped Claude model confirmation on a narrow terminal`, async () => {

@@ -109,7 +109,10 @@ try {
             const latest = screen.slice( screen.lastIndexOf( `❯ /model` ) ).replace( /\s+/g, ` ` )
             assert.match( latest, /(?:Set model to|Kept model as)/ )
             assert.ok( latest.includes( id === `sonnet` ? `Sonnet` : initial_model ), `Native model readback differs from ${ id }` )
-            assert.ok( latest.includes( `this session only` ), `Model ${ id } was not session-only` )
+            // Repeated identical confirmations require a native picker
+            // readback; Escape echoes "Kept model as" without a scope suffix.
+            assert.ok( latest.includes( `this session only` ) || latest.includes( `Kept model as` ), `Model ${ id } was not session-only` )
+            assert.equal( readFileSync( settings, `utf8` ), initial_settings, `Model ${ id } changed persisted settings` )
         }
         await closed()
         assert.deepEqual( ( await control( `effort` ) ).supported, listing.supported )
