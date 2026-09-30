@@ -334,6 +334,31 @@ const build_images = async () => {
     ], { timeout_ms: 300_000 } )
 }
 
+const run_fresh_shared_caches = async () => {
+    const paths = [ `/home/node/.npm`, `/home/node/.npm-global`, `/home/node/.cache` ]
+    const volumes = paths.map( ( _, index ) => `${ run_id }-cache-${ index }` )
+    const containers = [ 0, 1, 2, 3 ].map( index => `${ run_id }-cache-probe-${ index }` )
+    const mounts = paths.flatMap( ( path, index ) => [ `-v`, `${ volumes[index] }:${ path }:nocopy` ] )
+
+    try {
+        // First launch starts all auth probes together. Empty volumes must
+        // neither race during copy-up nor remain root-owned at the default UID.
+        const results = await Promise.allSettled( containers.map( ( name, index ) => docker( [
+            `run`, `--rm`, `--name`, name, ...mounts, base_image, `sh`, `-ec`,
+            `test "$(id -u)" = 1000; ${ paths.map( path =>
+                `test "$(stat -c %u ${ path })" = 1000; touch ${ path }/probe-${ index }`
+            ).join( `; ` ) }`,
+        ] ) ) )
+        for( const result of results ) {
+            if( result.status === `rejected` ) throw result.reason
+        }
+        console.log( `PASS four concurrent first-launch probes share writable cache volumes at UID 1000` )
+    } finally {
+        await docker( [ `rm`, `-f`, ...containers ] ).catch( () => null )
+        await docker( [ `volume`, `rm`, ...volumes ] )
+    }
+}
+
 const run_puppeteer_browser = async () => {
     const browser_script = `
         import { execFileSync } from 'child_process'
@@ -813,6 +838,7 @@ try {
 
     await run( `bun`, [ `build`, `--compile`, `--minify`, join( repo_root, `src/index.js` ), `--outfile`, compiled_cli ] )
     await build_images()
+    await run_fresh_shared_caches()
     const { stdout: status_output } = await run( `node`, [ `tests/e2e/status.js` ], {
         env: { ...process.env, BABYSIT_E2E_BASE_IMAGE: base_image },
     } )

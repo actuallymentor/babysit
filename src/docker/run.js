@@ -548,10 +548,11 @@ export const build_docker_command_args = ( options ) => {
 
     }
 
-    // Cache volumes (persistent across sessions)
-    flags.push( `-v`, `babysit-npm-cache:/home/node/.npm` )
-    flags.push( `-v`, `babysit-npm-global:/home/node/.npm-global` )
-    flags.push( `-v`, `babysit-uv-cache:/home/node/.cache` )
+    // Concurrent auth probes share these volumes. Skip image copy-up so first
+    // launch cannot race while Docker populates the same cache directory.
+    flags.push( `-v`, `babysit-npm-cache:/home/node/.npm:nocopy` )
+    flags.push( `-v`, `babysit-npm-global:/home/node/.npm-global:nocopy` )
+    flags.push( `-v`, `babysit-uv-cache:/home/node/.cache:nocopy` )
 
     // Mode environment
     if( mode.yolo ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=yolo` )

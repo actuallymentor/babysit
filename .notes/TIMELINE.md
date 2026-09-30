@@ -120,3 +120,5 @@
 - 2026-09-30: Reviewed all four GitHub issues. Closed Antigravity migration #1 as already shipped; addressing Linux clone metadata #2 and Claude control freshness/styling #3–#4 with regression coverage.
 
 - 2026-09-30: Issue fixes passed local and GitHub suites; external review prompted picker-scoped effort readback and image-architecture-aware compiled storage tests. Linux clones intentionally use independent rsync copies, not reflinks.
+
+- 2026-09-30: Final CI exposed Docker copy-up racing between parallel authentication containers on a fresh shared npm cache. Disable image seeding for shared cache volumes and ensure writable roots on startup.

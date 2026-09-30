@@ -515,6 +515,14 @@ describe( `agent home env vars`, () => {
 
 describe( `build_docker_command`, () => {
 
+    it( `disables copy-up for caches shared by concurrent auth probes`, () => {
+        const args = build_docker_command_args( make_options( { auth_probe: true } ) )
+
+        expect( args ).toContain( `babysit-npm-cache:/home/node/.npm:nocopy` )
+        expect( args ).toContain( `babysit-npm-global:/home/node/.npm-global:nocopy` )
+        expect( args ).toContain( `babysit-uv-cache:/home/node/.cache:nocopy` )
+    } )
+
     it( `prevents Watchtower from replacing active agent containers`, () => {
 
         const args = build_docker_command_args( make_options() )
