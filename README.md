@@ -143,7 +143,7 @@ sudo systemctl disable "babysit-recover-$(id -u).service" # Disable future boot 
 Inside a newly launched managed session:
 
 ```bash
-babysit model                 # Available models for this agent
+babysit model                 # Available models + top 30 coding benchmarks
 babysit model <model-name>     # Switch within this agent
 babysit effort                # Supported effort levels
 babysit effort high
@@ -184,6 +184,9 @@ babysit model --benchmarks --sort cost --limit 20   # Cheapest intelligence task
 babysit model --benchmarks --sort cost-per-point    # Cost/task ÷ intelligence
 babysit model --benchmarks --all --json             # Include missing metrics
 ```
+
+Bare `babysit model` appends `--benchmarks --limit 30` after available models.
+A missing benchmark key or API failure leaves the model list visible.
 
 Sorts: `coding` (default), `intelligence`, `agentic`, `cost`, `cost-per-point`,
 `name`. Scores descend; costs and names ascend. Missing values sort last.

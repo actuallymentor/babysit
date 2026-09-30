@@ -14,6 +14,7 @@ OpenCode: 'default' restores the TUI's variant; overrides do not update its foot
 
 export const model_help = `Usage: babysit model [model-name]
 List models or switch within the current managed agent session.
+With no arguments, append the top 30 complete benchmarks, sorted by coding.
 Preserves compatible effort, otherwise uses the new model's default.
 Terminal controls queue for up to 60s; --status <request-id> reads the result.
 
@@ -43,8 +44,7 @@ export const run_effort = async args => {
 }
 
 /** List or switch models in the caller's agent; never migrate conversations. */
-export const run_model = async args => {
-    if( args.includes( `--benchmarks` ) ) return run_benchmarks( args )
+const model_control = async args => {
     const parsed = parse_control( args, model_help )
     if( parsed.help ) return parsed.help
     if( parsed.status_id ) return terminal_request( `model`, parsed )
@@ -70,4 +70,17 @@ export const run_model = async args => {
     }
     if( agent === `claude` ) return terminal_request( `model`, parsed )
     throw new Error( `Model control is unavailable. Run inside a newly started managed agent session.` )
+}
+
+/** Supplement bare model listings without making benchmarks a control dependency. */
+export const run_model = async ( args, { control = model_control, benchmarks = run_benchmarks } = {} ) => {
+    if( args.includes( `--benchmarks` ) ) return benchmarks( args )
+    const result = await control( args )
+    if( args.length ) return result
+    try {
+        return `${ result }\n\n${ await benchmarks( [ `--benchmarks`, `--limit`, `30` ] ) }`
+    } catch ( error ) {
+        // A missing API key or offline endpoint must not hide available models.
+        return `${ result }\n\n${ error.message }`
+    }
 }
