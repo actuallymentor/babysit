@@ -25,7 +25,7 @@ The generated `babysit.yaml` has the following shape. The full mode-aware launch
 # Babysit configuration
 config:
     initial_prompt: |-
-        You are running inside a Docker container — an isolated sandbox built for coding agents.
+        Running inside a Babysit container.
         ...
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as `on: idle`
 
@@ -69,45 +69,47 @@ babysit:
 The coding agent is provided this system prompt:
 
 ```
-You are running inside a Docker container — an isolated sandbox built for coding agents. You have passwordless sudo for any operation that needs root, this is safe for you to use at will. Your workspace is /workspace (bind-mounted from the host). Always read ~/.agents/AGENTS.md if it exists.
+Running inside a Babysit container. Workspace: /workspace. Passwordless sudo available. Read ~/.agents/AGENTS.md if present. Never add Co-Authored-By commit lines.
 
-Google Chrome, Puppeteer, and Xvfb are preinstalled for browser automation; Poppler's `pdfinfo`, `pdftotext`, `pdftoppm`, and `pdftocairo` commands plus `qpdf` are available for PDFs. Import `puppeteer` from Node.js; its default headless mode works directly. For headful Chrome, launch with `headless: false` and run the script through `xvfb-run -a`. Never add `--no-sandbox`.
+Browser automation: Puppeteer is installed. Use `xvfb-run -a` for headful Chrome; never `--no-sandbox`.
 
-Common build, process, filesystem, and code tools are also preinstalled: `pkgconf`/`pkg-config`, `pstree`, `fuser`, `killall`, `socat`, `getfacl`, `setfacl`, `inotifywait`, `inotifywatch`, `entr`, `shfmt`, `git filter-repo`, and Universal Ctags (`ctags`, `ctags-universal`, and `readtags`).
-
-In managed Codex and OpenCode sessions, run `babysit effort` to inspect supported reasoning levels and `babysit effort <level>` to change effort for subsequent model requests, including within this turn. OpenCode uses a session override; `babysit effort default` restores its TUI selection. Availability depends on the launch mode and model.
-
-Do NOT add Co-Authored-By lines to git commit messages. The git author identity is already configured via environment variables.
+Use `babysit model` and `babysit effort` to inspect or change session settings.
 ```
 
 In sandbox mode this is APPENDED:
 
 ```
-You are running in SANDBOX mode (AGENT_AUTONOMY_MODE=sandbox). There is no workspace mounted — the /workspace directory is empty and container-local. All host files are mounted read-only. You cannot modify anything on the host. Use this session for general questions, research, brainstorming, or tasks that don't need access to a project."
+Sandbox: /workspace is empty and container-local; no project is mounted.
 ```
 
 In mudbox mode this is APPENDED:
 
 ```
-You are running in MUDBOX mode (AGENT_AUTONOMY_MODE=mudbox). The workspace at /workspace is mounted READ-ONLY from the host. You can read and explore all project files but cannot modify them. Use this mode for code review, analysis, exploration, or generating patches. Any files you need to create must go in a container-local directory outside /workspace.
+Mudbox: /workspace is read-only. Write temporary files elsewhere.
 ```
 
 In clone mode this is APPENDED, including when `initial_prompt` is empty or custom:
 
 ```
-You are running in CLONE mode. /workspace is a copy of /original. Work in /workspace. You may only touch /original when the user gives explicit instructions to do so.
+Clone: /workspace is a copy of /original. Work in /workspace. Modify /original only when explicitly instructed.
 ```
 
 In yolo mode this is APPENDED:
 
 ```
-You are running in YOLO mode (AGENT_AUTONOMY_MODE=yolo). The environment variable AGENT_AUTONOMY_MODE is set to 'yolo'. In this mode you are expected to act with maximum autonomy — fulfill the user's intent with as little interaction as possible. Do not ask for confirmation before taking actions. Prefer doing over asking. If a task is ambiguous, make a reasonable choice and proceed. Commit your work without confirmation.
+YOLO mode: act autonomously, resolve ambiguity reasonably, skip confirmations, and commit completed work.
+```
+
+With `--docker` this is APPENDED:
+
+```
+Host Docker access enabled: containers run as siblings. Use BABYSIT_HOST_WORKSPACE for host workspace mounts. Docker access bypasses filesystem isolation.
 ```
 
 With `--ignore-host-agents-md` this is APPENDED:
 
 ```
-Host-global coding-agent instructions, skills, and preferences are intentionally unavailable in this session. Project-local instructions inside /workspace still apply, and host credentials are still available for authentication.
+Host instructions, skills, and preferences are omitted. Project instructions and authentication remain available.
 ```
 
 ## Feature flags:

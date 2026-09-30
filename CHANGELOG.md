@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1 — 2026-09-30
+
+### Changed
+- Shorten container prompts; keep mode boundaries and essential tool hints.
+- Remove conflicting workspace and host-isolation claims.
+
 ## 1.7.0 — 2026-09-30
 
 ### Added

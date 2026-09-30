@@ -102,3 +102,5 @@
 - 2026-09-29: Reproduced Claude model-control failures with the real CLI: clipped picker escaped no cleanup, wrapped confirmations timed out, and versioned IDs failed against family-only rows. Added inference-free native regression coverage across terminal sizes, plus verified actual subagent-issued model/effort controls through Docker.
 
 - 2026-09-30: Benchmark CLI uses coding by default, requires complete metrics unless `--all`, and compares intelligence benchmark cost/task plus cost/intelligence. Token pricing is intentionally excluded. Cache scope is containers on the same Docker daemon; provider access remains local to each caller.
+
+- 2026-09-30: Keep injected container prompts terse: mode boundaries and essential browser/control hints; omit tool inventories and redundant environment declarations.
