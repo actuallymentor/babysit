@@ -5,7 +5,7 @@ import { agent_status } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
-const AGENT_STATUSES = new Set( [ `idle`, `running`, `unknown` ] )
+const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
 
 /**
  * Observe current panes instead of trusting options left by an old or stopped

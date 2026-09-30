@@ -7,7 +7,7 @@ const SUPPORTED_AGENTS = new Set( [ `codex`, `claude`, `antigravity`, `opencode`
  * Unknown screens deliberately fall back to output stability in agent_status.
  * @param {string} output - Current visible tmux pane
  * @param {string} agent_name - Native agent name
- * @returns {'idle'|'running'|null} Activity when a known control is visible
+ * @returns {'idle'|'running'|'waiting'|null} Activity when a known control is visible
  */
 export const agent_activity = ( output, agent_name ) => {
 
@@ -35,9 +35,15 @@ export const agent_activity = ( output, agent_name ) => {
             || /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
 
-    case `claude`:
+    case `claude`: {
+        // A completed foreground reply can leave background shells alive. Only
+        // read the native footer below the composer, never old transcript text.
+        const composer = lines.findLastIndex( line => /^\s*❯/.test( line ) )
+        const controls = lines.slice( composer + 1 ).join( `\n` )
+        if( /(?:^\s*|[·•]\s*)[1-9]\d* shells?\s*[·•]\s*← for agents\s*$/m.test( controls ) ) return `waiting`
         if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
+    }
 
     case `antigravity`:
         if( /^\s*>\s*$/m.test( footer ) && /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
@@ -57,7 +63,7 @@ export const agent_activity = ( output, agent_name ) => {
  * @param {string} output - Current visible tmux pane
  * @param {string} agent_name - Native agent name
  * @param {number} idle_seconds - Seconds since visible output last changed
- * @returns {'idle'|'running'} Current activity
+ * @returns {'idle'|'running'|'waiting'} Current activity
  */
 export const agent_status = ( output, agent_name, idle_seconds ) =>
     agent_activity( output, agent_name ) || ( idle_seconds >= 1 ? `idle` : `running` )

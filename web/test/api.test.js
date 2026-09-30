@@ -121,6 +121,14 @@ test( `authenticated bridge API`, async () => {
         assert.equal( detail.body.session.last_message, `## Finished\n\n- one\n- two` )
         assert.equal( detail.body.session.raw_screen, `raw pane` )
 
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { activity: `waiting` } ) ) )
+        const waiting_detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
+        const waiting_list = await api_request( origin, `/api/sessions`, { cookie: login.cookie } )
+        assert.equal( waiting_detail.body.session.activity, `waiting` )
+        assert.equal( waiting_list.body.sessions[ 0 ].activity, `waiting` )
+        assert.equal( waiting_detail.body.session.last_message, detail.body.session.last_message )
+        assert.equal( waiting_detail.body.session.busy, false )
+
         writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { activity: `unknown` } ) ) )
         const unknown_detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
         const unknown_list = await api_request( origin, `/api/sessions`, { cookie: login.cookie } )

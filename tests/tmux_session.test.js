@@ -122,6 +122,7 @@ describe( `list_sessions format compatibility`, () => {
         const rows = [
             { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle` },
             { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running` },
+            { session_name: `babysit_waiting`, session_created: `125`, babysit_agent_status: `waiting` },
         ]
         const result = await list_sessions( {
             run_command: async ( command, args ) => {
@@ -141,6 +142,7 @@ describe( `list_sessions format compatibility`, () => {
         expect( result ).toEqual( [
             { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle` },
             { name: `babysit_running`, attached: false, created: `124`, agent_status: `running` },
+            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting` },
         ] )
     } )
 

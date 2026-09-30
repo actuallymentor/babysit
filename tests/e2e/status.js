@@ -32,6 +32,7 @@ const run_inside = async () => {
     const { start_monitor } = await import( '../../src/babysit/monitor.js' )
     const { save_session } = await import( '../../src/sessions/store.js' )
     const { codex } = await import( '../../src/agents/codex.js' )
+    const { claude } = await import( '../../src/agents/claude.js' )
     const socket = process.env.BABYSIT_TMUX_SOCKET
     const session = `babysit_status_regression`
     const state_file = `/tmp/status-mode`
@@ -42,9 +43,9 @@ const run_inside = async () => {
         await wait_until( `${ mode } pane`, async () => ( await capture() ).includes( `fixture:${ mode }` ) )
     }
     const status = () => tmux( [ `show-option`, `-v`, `-t`, session, `@babysit_agent_status` ] ).then( value => value.trim() )
-    const assert_list = async ( expected, label ) => {
+    const assert_list = async ( expected, label, agent_name = `codex` ) => {
         const output = await run( `node`, [ `src/index.js`, `list` ] )
-        assert.match( output, new RegExp( `status-fixture\\s+${ expected }\\s+detached\\s+codex` ), `${ label }\n${ output }` )
+        assert.match( output, new RegExp( `status-fixture\\s+${ expected }\\s+detached\\s+${ agent_name }` ), `${ label }\n${ output }` )
         console.log( `PASS ${ label }: ${ expected }` )
     }
 
@@ -58,7 +59,11 @@ const run_inside = async () => {
             const mode = readFileSync( '${ state_file }', 'utf8' )
             const footer = mode === 'idle-changing' ? 'usage refreshed ' + tick++ : '? for shortcuts'
             const busy = mode === 'running' ? '• Working (5s • esc to interrupt)\\n\\n' : ''
-            const screen = 'OpenAI Codex\\nfixture:' + mode + '\\n\\n' + busy + '› Ask Codex to do anything\\n\\n' + footer
+            const codex_screen = 'OpenAI Codex\\nfixture:' + mode + '\\n\\n' + busy + '› Ask Codex to do anything\\n\\n' + footer
+            const shell_footer = mode === 'claude-idle' ? '' : ' · 1 shell · ← for agents'
+            const claude_busy = mode === 'claude-running' ? '✻ Working… (esc to interrupt)\\n' : ''
+            const claude_screen = 'Claude Code\\nfixture:' + mode + '\\n\\n' + claude_busy + '❯ \\n────────────────────────────\\n⏵⏵ bypass permissions on' + shell_footer
+            const screen = mode.startsWith( 'claude-' ) ? claude_screen : codex_screen
             if( screen !== previous ) process.stdout.write( '\\x1b[2J\\x1b[H' + screen )
             previous = screen
         }, 100 )
@@ -137,6 +142,43 @@ const run_inside = async () => {
     } finally {
         await tmux( [ `kill-session`, `-t`, session ] ).catch( () => {} )
         await monitor
+    }
+
+    // Claude's composer remains available while background shells are alive.
+    // Reuse the isolated PTY with Claude metadata so both list and the monitor
+    // exercise the provider-specific footer rather than terminal stability.
+    writeFileSync( state_file, `claude-waiting` )
+    await tmux( [ `new-session`, `-d`, `-s`, session, `-x`, `120`, `-y`, `30`, `node /tmp/status-pane.mjs` ] )
+    save_session( {
+        babysit_id: `status-fixture`, name: `status-fixture`, agent: `claude`,
+        tmux_session: session, pwd: `/tmp/status-workspace`,
+        started_at: new Date().toISOString(), modifiers: [],
+    } )
+    await set_mode( `claude-waiting` )
+    await tmux( [ `set-option`, `-t`, session, `@babysit_agent_status`, `idle` ] )
+    await assert_list( `waiting`, `Claude shell footer overrides cached idle`, `claude` )
+
+    const claude_monitor = start_monitor( {
+        session_name: session,
+        config: { idle_timeout_s: 10 },
+        rules: [], agent_patterns: {}, agent: claude,
+    } )
+    try {
+        await wait_until( `monitor waiting`, async () => await status() === `waiting` )
+        await delay( 3_500 )
+        assert.equal( await status(), `waiting`, `a static background shell footer must stay waiting` )
+        await assert_list( `waiting`, `static Claude shell footer stays waiting`, `claude` )
+
+        await set_mode( `claude-idle` )
+        await wait_until( `monitor idle after shells finish`, async () => await status() === `idle` )
+        await assert_list( `idle`, `Claude returns idle when shells disappear`, `claude` )
+
+        await set_mode( `claude-running` )
+        await wait_until( `monitor foreground running`, async () => await status() === `running` )
+        await assert_list( `running`, `Claude foreground interrupt overrides background shells`, `claude` )
+    } finally {
+        await tmux( [ `kill-session`, `-t`, session ] ).catch( () => {} )
+        await claude_monitor
     }
 }
 

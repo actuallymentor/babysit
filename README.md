@@ -65,12 +65,15 @@ the socket controls the host daemon, including in Sandbox/Mudbox.
 
 `--clone` preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
 Worktree metadata must stay within the copied source; cloning a linked worktree as the root remains unsupported.
-Copied worktrees are locked against Git pruning across mount paths; use `git worktree unlock` before removing one.
+Absolute-linked worktrees are locked against Git pruning across mount paths; manage/unlock them from the host clone path.
 
 `--clone` checks the whole source before copying. Paths you own but can't read (e.g. a `drw-------`
 `__pycache__`) are listed with the exact `chmod`; answer `y` (or pass `--yes`) to apply it and retry.
 
 ## Sessions
+
+Status: `running` for foreground work, `waiting` for Claude background shells, `idle` when ready.
+Idle-loop actions pause while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|

@@ -239,6 +239,50 @@ describe( `publish_agent_status`, () => {
 
 } )
 
+describe( `background shell waiting`, () => {
+
+    it( `publishes waiting and restarts the idle loop only after shells finish`, async () => {
+        const original_now = Date.now
+        let now = 1_000_000
+        let tick = 0
+        const statuses = []
+        const fired = []
+        const deadlines = []
+        Date.now = () => now
+        try {
+            await start_monitor( {
+                session_name: `babysit_waiting`,
+                config: { idle_timeout_s: 2 },
+                rules: [ make_rule( { on: { type: `idle` }, timeout_s: 2 } ) ],
+                agent: { name: `claude` },
+                agent_patterns: null,
+                has_session_fn: async () => tick < 4,
+                capture_pane_fn: async () => tick < 2
+                    ? `❯\n⏵⏵ bypass permissions on · 1 shell · ← for agents`
+                    : `❯\n? for shortcuts`,
+                publish_agent_status_fn: async ( { agent_status } ) => {
+                    statuses.push( agent_status )
+                    return agent_status
+                },
+                execute_action_fn: async () => fired.push( tick ),
+                write_loop_deadline_fn: value => deadlines.push( value ),
+                wait_fn: async () => {
+                    await Promise.resolve()
+                    tick++
+                    now += 5_000
+                },
+            } )
+        } finally {
+            Date.now = original_now
+        }
+        expect( statuses ).toEqual( [ `waiting`, `waiting`, `idle`, `idle` ] )
+        expect( deadlines[0] ).toBe( `idle` )
+        expect( deadlines[1] ).toBe( 1_012 )
+        expect( fired ).toEqual( [ 3 ] )
+    } )
+
+} )
+
 describe( `supervised agent exit`, () => {
 
     const sentinel = `9d057b50-c4be-430b-b41d-a2c574487afa`

@@ -210,6 +210,7 @@ export function SessionPage( { role } ) {
         <Panel aria-label="Latest message">
             <h2>Latest completed reply</h2>
             { session.last_message && !error && session.activity === `running` && <Freshness>Previous completed reply; agent is working.</Freshness> }
+            { session.last_message && !error && session.activity === `waiting` && <Freshness>Previous completed reply; agent is waiting for background tasks.</Freshness> }
             { session.last_message
                 ? <MarkdownMessage>{ session.last_message }</MarkdownMessage>
                 : <Notice>No completed reply captured yet.</Notice> }

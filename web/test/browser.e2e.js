@@ -248,6 +248,12 @@ try {
     await page.click( `summary` )
 
     const completed_state = JSON.parse( readFileSync( state_file, `utf8` ) )
+    writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `waiting` } ) )
+    await page.waitForFunction( () => document.body.textContent.includes( `Previous completed reply; agent is waiting for background tasks.` ) )
+    assert.match( await page.$eval( `body`, element => element.textContent ), /Waiting/ )
+    assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )
+    assert.equal( await page.$eval( `textarea`, element => element.disabled ), false )
+
     writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `active`, busy: true, raw_screen: `Working on the next turn` } ) )
     await page.waitForFunction( () => document.body.textContent.includes( `You can draft while sending is paused` ) )
     assert.equal( await page.$eval( `textarea`, element => element.disabled ), false )

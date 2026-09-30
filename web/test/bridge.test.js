@@ -70,3 +70,25 @@ test( `orphan sweep leaves a tracked request whose file mtime predates its track
         fs.rmSync( directory, { recursive: true, force: true } )
     }
 } )
+
+test( `waiting sessions stay visible ahead of idle sessions`, () => {
+    const directory = fs.mkdtempSync( join( tmpdir(), `babysit-waiting-state-` ) )
+    const store = new BridgeStore( {
+        request_dir: directory, state_dir: directory,
+        request_ttl_ms: 20_000, heartbeat_ttl_ms: 15_000,
+    } )
+
+    try {
+        // Names deliberately disagree with activity ordering.
+        for( const [ name, activity ] of [ [ `a`, `idle` ], [ `b`, `waiting` ], [ `c`, `running` ] ] ) {
+            fs.writeFileSync( join( directory, `${ name }.json` ), JSON.stringify( {
+                protocol: 1, session_id: name, epoch: `epoch`, name, activity,
+            } ) )
+        }
+
+        assert.deepEqual( store.summaries().map( session => session.activity ), [ `running`, `waiting`, `idle` ] )
+    } finally {
+        clearInterval( store.cleanup_timer )
+        fs.rmSync( directory, { recursive: true, force: true } )
+    }
+} )

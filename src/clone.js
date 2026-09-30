@@ -459,13 +459,46 @@ const contained_git_path = ( source, path ) => {
 
 }
 
-const nested_git_pointer = ( path, source ) => {
+// Agents inside Babysit's container write /workspace paths into linked Git
+// metadata. Translate only that known mount, never arbitrary foreign prefixes.
+const source_git_path = ( source, base, pointer ) => {
+
+    const path = resolve( base, pointer )
+    if( is_same_or_descendant( source, path ) ) return path
+    if( isAbsolute( pointer ) && is_same_or_descendant( `/workspace`, path ) ) {
+        return join( source, relative( `/workspace`, path ) )
+    }
+    return path
+
+}
+
+const nested_git_pointer = ( path, source, require_relative = false ) => {
 
     const raw = readFileSync( path, `utf8` ).trim()
     const match = raw.match( /^gitdir:\s*(.+)$/i )
     if( !match ) throw new Error( `Invalid nested .git pointer: ${ path }` )
 
-    return contained_git_path( source, resolve( dirname( path ), match[1].trim() ) )
+    const pointer = match[1].trim()
+    if( require_relative && isAbsolute( pointer ) ) {
+        throw new Error( `Clone source changed while copying; nested Git pointer is still absolute: ${ path }` )
+    }
+    return contained_git_path( source, source_git_path( source, dirname( path ), pointer ) )
+
+}
+
+const validate_git_worktree_config = ( source, git_dir ) => {
+
+    // Submodule core.worktree is normally relative to its metadata. Keep
+    // that supported layout, but reject overrides pointing elsewhere.
+    for( const filename of [ `config`, `config.worktree` ] ) {
+        const config = join( git_dir, filename )
+        if( !path_exists( config ) ) continue
+        contained_git_path( source, config )
+        const worktree = run_git( [ `config`, `--file`, config, `--get`, `core.worktree` ], { allow_failure: true } )
+        if( !worktree ) continue
+        contained_git_path( source, resolve( git_dir, worktree ) )
+        if( isAbsolute( worktree ) ) throw new Error( `Nested Git core.worktree must be relative: ${ config }` )
+    }
 
 }
 
@@ -488,22 +521,12 @@ const git_relocation_plan = ( source, git_entries ) => {
         const commondir = join( git_dir, `commondir` )
         if( path_exists( commondir ) ) {
             contained_git_path( source, commondir )
-            const common = contained_git_path( source, resolve( git_dir, readFileSync( commondir, `utf8` ).trim() ) )
+            const common = contained_git_path( source, source_git_path( source, git_dir, readFileSync( commondir, `utf8` ).trim() ) )
             git_dirs.add( common )
             relative_link( commondir, common )
         }
 
-        // Submodule core.worktree is normally relative to its metadata. Keep
-        // that supported layout, but reject overrides pointing elsewhere.
-        for( const filename of [ `config`, `config.worktree` ] ) {
-            const config = join( git_dir, filename )
-            if( !path_exists( config ) ) continue
-            contained_git_path( source, config )
-            const worktree = run_git( [ `config`, `--file`, config, `--get`, `core.worktree` ], { allow_failure: true } )
-            if( !worktree ) continue
-            contained_git_path( source, resolve( git_dir, worktree ) )
-            if( isAbsolute( worktree ) ) throw new Error( `Nested Git core.worktree must be relative: ${ config }` )
-        }
+        validate_git_worktree_config( source, git_dir )
     }
 
     for( const git_dir of git_dirs ) {
@@ -512,8 +535,14 @@ const git_relocation_plan = ( source, git_entries ) => {
         contained_git_path( source, worktrees )
         for( const name of readdirSync( worktrees ) ) {
             const registration = contained_git_path( source, join( worktrees, name ) )
-            const backlink = contained_git_path( source, join( registration, `gitdir` ) )
-            const target = resolve( registration, readFileSync( backlink, `utf8` ).trim() )
+            const backlink = join( registration, `gitdir` )
+            if( !path_exists( backlink ) && !git_dirs.has( registration ) ) {
+                removals.push( registration )
+                continue
+            }
+            contained_git_path( source, backlink )
+            const pointer = readFileSync( backlink, `utf8` ).trim()
+            const target = source_git_path( source, registration, pointer )
 
             // Registrations for checkouts outside the copied tree belong only
             // to the original repository, including stale registrations.
@@ -527,6 +556,12 @@ const git_relocation_plan = ( source, git_entries ) => {
             contained_git_path( source, target )
             if( nested_git_pointer( target, source ) !== registration ) {
                 throw new Error( `Nested Git worktree backlink does not match its pointer: ${ backlink }` )
+            }
+            // Modern Git's already-relative backlinks survive both the
+            // atomic rename and container mounts without a protective lock.
+            if( !isAbsolute( pointer ) ) {
+                relative_link( backlink, target )
+                continue
             }
             writes.set( backlink, { target } )
             const locked = join( registration, `locked` )
@@ -635,6 +670,56 @@ const audit_source_tree = source => {
         entries: blocked,
         fixable: blocked.every( item => item.bits ),
     } )
+
+}
+
+// The source may be live while cpSync runs. Recheck the finished snapshot so
+// a newly created worktree cannot retain an unplanned link to source metadata.
+const verify_copied_git_metadata = ( workspace, destination ) => {
+
+    const git_entries = []
+    const blocked = []
+    walk_source_tree( workspace, workspace, blocked, git_entries )
+    if( blocked.length ) throw new Error( `Clone source changed while copying; copied metadata cannot be fully checked` )
+    const git_dirs = new Set()
+    for( const path of git_entries ) {
+        const git_dir = lstatSync( path ).isDirectory()
+            ? path
+            : nested_git_pointer( path, workspace, true )
+        git_dirs.add( git_dir )
+        validate_git_worktree_config( workspace, git_dir )
+        const commondir = join( git_dir, `commondir` )
+        if( !path_exists( commondir ) ) continue
+        contained_git_path( workspace, commondir )
+        const pointer = readFileSync( commondir, `utf8` ).trim()
+        if( isAbsolute( pointer ) ) {
+            throw new Error( `Clone source changed while copying; Git commondir is still absolute: ${ commondir }` )
+        }
+        const common = contained_git_path( workspace, resolve( git_dir, pointer ) )
+        validate_git_worktree_config( workspace, common )
+        git_dirs.add( common )
+    }
+
+    for( const git_dir of git_dirs ) {
+        const worktrees = join( git_dir, `worktrees` )
+        if( !path_exists( worktrees ) ) continue
+        contained_git_path( workspace, worktrees )
+        for( const name of readdirSync( worktrees ) ) {
+            const registration = contained_git_path( workspace, join( worktrees, name ) )
+            const backlink = contained_git_path( workspace, join( registration, `gitdir` ) )
+            const pointer = readFileSync( backlink, `utf8` ).trim()
+            if( isAbsolute( pointer ) && !is_same_or_descendant( destination, pointer ) ) {
+                throw new Error( `Clone source changed while copying; Git backlink was not relocated: ${ backlink }` )
+            }
+            const target = isAbsolute( pointer )
+                ? join( workspace, relative( destination, pointer ) )
+                : resolve( registration, pointer )
+            contained_git_path( workspace, target )
+            if( nested_git_pointer( target, workspace, true ) !== registration ) {
+                throw new Error( `Copied Git worktree backlink does not match its pointer: ${ backlink }` )
+            }
+        }
+    }
 
 }
 
@@ -831,6 +916,7 @@ export const prepare_clone_workspace = ( {
         try {
             copy_directory_contents( original_workspace, partial_path )
             relocate_git_metadata( original_workspace, partial_path, clone_path, git_relocations )
+            verify_copied_git_metadata( partial_path, clone_path )
             if( clone_branch ) create_clone_branch( partial_path, clone_branch, paths.hooks )
 
             if( path_exists( clone_path ) ) {
