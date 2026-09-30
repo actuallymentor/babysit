@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.1 — 2026-09-30
+
+### Fixed
+- Explicitly install latest agent CLIs and refresh image layers on reruns.
+- Log bundled agent versions; test Codex 0.159.2 and Claude Code 2.1.285.
+- Dismiss initially clipped Claude pickers; follow the current native catalog.
+- Install OpenCode through npm to avoid GitHub release lookup failures.
+
 ## 1.8.0 — 2026-09-30
 
 ### Added

@@ -72,7 +72,9 @@ const e2e_env = () => {
         BABYSIT_DOCKER_IMAGE: fake_image,
         BABYSIT_E2E_RUN_ID: run_id,
         BABYSIT_E2E_SIBLING_IMAGE: fake_image,
-        LOG_LEVEL: process.env.LOG_LEVEL || `info`,
+        // Launch failures include captured output; preserve probe diagnostics
+        // there so CI reports the failing protocol instead of just "failed".
+        LOG_LEVEL: process.env.LOG_LEVEL || `debug`,
     }
 
     if( use_sudo_docker ) env.BABYSIT_DOCKER_USE_SUDO = `1`

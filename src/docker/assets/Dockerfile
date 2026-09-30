@@ -191,7 +191,7 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 # them. The root-level symlink makes the global Puppeteer package resolvable by
 # both CommonJS and ESM scripts anywhere below /workspace.
 RUN corepack enable \
-    && npm install -g @openai/codex puppeteer \
+    && npm install -g @openai/codex@latest puppeteer \
     && mkdir -p /node_modules \
     && ln -s "$(npm root -g)/puppeteer" /node_modules/puppeteer
 
@@ -199,9 +199,7 @@ RUN corepack enable \
 USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV NVM_DIR=/home/node/.nvm
-# Claude's `install.sh` symlinks to ~/.local/bin/claude and OpenCode's `install`
-# script likewise drops a binary in ~/.local/bin (or ~/.opencode/bin). All three
-# need to be on PATH or the agent commands resolve to "command not found" at runtime.
+# Claude and Antigravity use ~/.local/bin; npm-installed OpenCode uses the prefix.
 ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:/home/node/.opencode/bin:$PATH"
 
 # nvm — user-scoped Node version switching for repos that pin versions in .nvmrc.
@@ -218,11 +216,11 @@ RUN set -eux; \
 RUN bash /usr/local/bin/install-antigravity.sh
 
 # Claude Code — installs into /home/node
-RUN curl -fsSL https://claude.ai/install.sh | bash
+RUN curl -fsSL https://claude.ai/install.sh | bash -s -- latest
 ENV DISABLE_AUTOUPDATER=1
 
-# OpenCode — installs into /home/node
-RUN curl -fsSL https://opencode.ai/install | bash
+# OpenCode — npm avoids the installer's unauthenticated GitHub release lookup.
+RUN npm install -g opencode-ai@latest
 
 # Git identity defaults (overridden by env passthrough from host)
 ENV GIT_AUTHOR_NAME="Babysitter"
@@ -251,6 +249,10 @@ RUN set -eux; \
     done; \
     docker compose version; \
     docker buildx version; \
+    gosu node codex --version; \
+    gosu node claude --version; \
+    gosu node agy --version; \
+    gosu node opencode --version; \
     gosu node pkgconf --version; \
     gosu node pkg-config --version; \
     gosu node git filter-repo --version; \

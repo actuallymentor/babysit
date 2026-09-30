@@ -97,9 +97,11 @@ try {
         const ids = models.models.map( model => model.id ).filter( id => id !== `opus` ).sort()
         expected_models ||= ids
         assert.deepEqual( ids, expected_models, `Model catalog changed at ${ width }x${ height }` )
-        assert.ok( ids.includes( `sonnet` ) && ids.includes( `opus[1m]` ) )
+        // New CLI catalogs fold the separate 1M Opus row into the family row.
+        const opus_id = ids.includes( `opus[1m]` ) ? `opus[1m]` : `opus`
+        assert.ok( ids.includes( `sonnet` ) && models.models.some( model => model.id === opus_id ) )
         await closed()
-        for( const id of [ `sonnet`, `opus[1m]`, versioned_alias, api_id ] ) {
+        for( const id of [ `sonnet`, opus_id, versioned_alias, api_id ] ) {
             const switched = await control( `model`, id )
             assert.ok( switched.applied, `Failed to select emitted model ${ id }` )
             await closed()

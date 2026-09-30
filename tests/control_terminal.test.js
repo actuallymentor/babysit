@@ -186,10 +186,11 @@ describe( `native terminal controls`, () => {
         expect( io.sent ).not.toContainEqual( [ `keys`, `s` ] )
     } )
 
-    test( `clipped Claude model rows are dismissed even without a visible Escape hint`, async () => {
+    test.each( [ true, false ] )( `dismisses clipped Claude model rows (initial cursor visible: %s)`, async initially_selected => {
         const picker = `Select model\nSwitch between Claude models. Your pick becomes the default for new sessions.\n❯ 1. Opus  Opus 5.5`
         const clipped = `Select model\nSwitch between Claude models. Your pick becomes the default for new sessions.\n↑ 1. Opus  Opus 5.5`
-        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? picker : key === `Escape` ? claude_ready : clipped )
+        const initial = initially_selected ? picker : clipped
+        const io = callbacks( claude_ready, ( _, action, key ) => action === `text` ? initial : key === `Escape` ? claude_ready : clipped )
         await expect( terminal_control( { agent: `claude`, operation: `model`, value: `opus-5.5`, ...io } ) ).rejects.toThrow( `clipped` )
         expect( io.sent.at( -1 ) ).toEqual( [ `keys`, `Escape` ] )
     } )
