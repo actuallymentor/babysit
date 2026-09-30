@@ -338,6 +338,8 @@ const run_fresh_shared_caches = async () => {
     const paths = [ `/home/node/.npm`, `/home/node/.npm-global`, `/home/node/.cache` ]
     const volumes = paths.map( ( _, index ) => `${ run_id }-cache-${ index }` )
     const containers = [ 0, 1, 2, 3 ].map( index => `${ run_id }-cache-probe-${ index }` )
+    const owner_container = `${ run_id }-cache-owner`
+    const persisted_container = `${ run_id }-cache-persisted`
     const mounts = paths.flatMap( ( path, index ) => [ `-v`, `${ volumes[index] }:${ path }:nocopy` ] )
 
     try {
@@ -353,9 +355,25 @@ const run_fresh_shared_caches = async () => {
             if( result.status === `rejected` ) throw result.reason
         }
         console.log( `PASS four concurrent first-launch probes share writable cache volumes at UID 1000` )
+
+        // An unmounted auth probe uses UID 1000 even while a host-UID session
+        // owns these same populated volumes. It must preserve that ownership.
+        await docker( [
+            `run`, `--rm`, `--name`, owner_container, ...mounts,
+            `--entrypoint`, `chown`, base_image, `1001:1001`, ...paths,
+        ] )
+        await docker( [
+            `run`, `--rm`, `--name`, persisted_container, ...mounts, base_image, `sh`, `-ec`,
+            `test "$(id -u)" = 1000; ${ paths.map( path =>
+                `test "$(stat -c %u ${ path })" = 1001; test -f ${ path }/probe-0`
+            ).join( `; ` ) }`,
+        ] )
+        console.log( `PASS auth probes preserve populated cache ownership from a host-UID session` )
     } finally {
-        await docker( [ `rm`, `-f`, ...containers ] ).catch( () => null )
-        await docker( [ `volume`, `rm`, ...volumes ] )
+        await docker( [ `rm`, `-f`, ...containers, owner_container, persisted_container ] ).catch( () => null )
+        await docker( [ `volume`, `rm`, ...volumes ] ).catch( error => {
+            console.warn( `Could not remove E2E cache volumes: ${ error.message }` )
+        } )
     }
 }
 
