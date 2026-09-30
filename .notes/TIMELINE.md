@@ -100,3 +100,5 @@
 - 2026-09-29: Pushed 1ec2ea9..36222dd to main; Build & Release for v1.6.0 failed in test-web (api.test.js expected `pending`, got `claimed`). Cause: web bridge orphan sweep judged tracked requests by file mtime (written before fsync) while tracking used created_at (after rename); a slow CI fsync plus the test's 500 ms TTL deleted a still-pending request. Sweep now skips tracked requests. Filed #3/#4 for the remaining /model controller findings.
 
 - 2026-09-29: Reproduced Claude model-control failures with the real CLI: clipped picker escaped no cleanup, wrapped confirmations timed out, and versioned IDs failed against family-only rows. Added inference-free native regression coverage across terminal sizes, plus verified actual subagent-issued model/effort controls through Docker.
+
+- 2026-09-30: Benchmark CLI uses coding by default, requires complete metrics unless `--all`, and compares intelligence benchmark cost/task plus cost/intelligence. Token pricing is intentionally excluded. Cache scope is containers on the same Docker daemon; provider access remains local to each caller.

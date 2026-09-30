@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.0 — 2026-09-30
+
+### Added
+- Add model benchmarks, coding-first sorting, cost/task and cost/point.
+- Filter authenticated CLI providers; use `--all` for incomplete metrics.
+- Add benchmark limits, JSON output and a shared 15-minute container cache.
+
 ## 1.6.1 — 2026-09-29
 
 ### Fixed
