@@ -148,7 +148,10 @@ try {
     await open_menu()
     await page.mouse.click( 5, 400 )
     await page.waitForFunction( () => !document.querySelector( `#app-menu` ).open )
+    // Switching mobile emulation reloads the page; wait for async authentication
+    // to restore the app before interacting or reading its theme.
     await page.setViewport( { height: 900, width: 1440 } )
+    await page.waitForSelector( `[aria-label="App menu"]`, { visible: true } )
     await open_menu()
     await assert_drawer_fits()
     await page.click( `[aria-label="Close menu"]` )
@@ -157,6 +160,7 @@ try {
     assert.equal( await page.$eval( `#app-menu`, element => getComputedStyle( element ).animationName ), `none` )
     await page.click( `[aria-label="Close menu"]` )
     await page.setViewport( { deviceScaleFactor: 2, height: 844, isMobile: true, width: 390 } )
+    await page.waitForSelector( `[aria-label="App menu"]`, { visible: true } )
 
     // Reading preferences follow the OS until explicitly overridden, then survive reloads.
     await page.emulateMediaFeatures( [ { name: `prefers-color-scheme`, value: `dark` } ] )
