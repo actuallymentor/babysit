@@ -110,3 +110,5 @@
 - 2026-09-30: Refresh published agent CLIs on each workflow attempt and expose their installed versions in build logs. CI pins track verified Codex/Claude releases.
 
 - 2026-09-30: Post-commit review caught OpenCode installation overlapping the persistent user npm volume; moved bundled OpenCode beside Codex in the system prefix.
+
+- 2026-09-30: User reported clone rejecting Claude nested worktrees. Support contained worktree metadata, rewrite copied pointers, and preserve source isolation; regressions use real Git and container mount paths.

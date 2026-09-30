@@ -63,6 +63,10 @@ Use explicit commands in scripts.
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
 
+`--clone` preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
+Worktree metadata must stay within the copied source; cloning a linked worktree as the root remains unsupported.
+Copied worktrees are locked against Git pruning across mount paths; use `git worktree unlock` before removing one.
+
 `--clone` checks the whole source before copying. Paths you own but can't read (e.g. a `drw-------`
 `__pycache__`) are listed with the exact `chmod`; answer `y` (or pass `--yes`) to apply it and retry.
 

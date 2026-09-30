@@ -673,6 +673,10 @@ babysit: []
         `git`, [ `-C`, workspace, `branch`, `--show-current` ]
     )
     const original_branch = original_branch_output.trim()
+    const worktree_path = `.claude/worktrees/agent-clone-regression`
+    await run( `git`, [ `-C`, workspace, `worktree`, `add`, `-b`, `agent-clone-regression`, worktree_path ] )
+    const { stdout: worktree_head } = await run( `git`, [ `-C`, join( workspace, worktree_path ), `rev-parse`, `HEAD` ] )
+    writeFileSync( join( workspace, worktree_path, `dirty.txt` ), `uncommitted agent work\n` )
     const session = await launch_babysit( workspace, [
         `--clone`, `--yes`, `--name`, `feature 1`, `--yolo`,
     ] )
@@ -704,6 +708,11 @@ babysit: []
     )
 
     ensure( boundaries.clone_visible, `source files are missing from /workspace` )
+    ensure( boundaries.worktree_committed, `nested Claude worktree cannot commit inside the clone container` )
+    const { stdout: source_worktree_head } = await run( `git`, [ `-C`, join( workspace, worktree_path ), `rev-parse`, `HEAD` ] )
+    ensure( source_worktree_head === worktree_head, `nested clone commit changed the source worktree branch` )
+    const { stdout: source_worktree_status } = await run( `git`, [ `-C`, join( workspace, worktree_path ), `status`, `--porcelain` ] )
+    ensure( source_worktree_status.includes( `?? dirty.txt` ), `nested clone commit changed the source worktree index` )
     ensure( boundaries.original_visible, `source workspace is missing from /original` )
     ensure( existsSync( join( workspace, `e2e-explicit-original-write.txt` ) ), `/original is not writable` )
     // Readline records pasted newlines separately; the initial marker contains
