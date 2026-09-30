@@ -114,18 +114,19 @@ describe( `Docker image update`, () => {
             console.log = original_log
         }
 
+        expect( messages.join( `\n` ) ).not.toContain( `sha256:` )
         return { output: messages.join( `\n` ), calls }
     }
 
     it( `uses the full pull deadline and reports the downloaded image version`, async () => {
         const { output, calls } = await update( metadata( `sha256:old`, `1.0.0` ), metadata( `sha256:new`, `2.0.0` ) )
         expect( calls[1].timeout ).toBe( 120_000 )
-        expect( output ).toContain( `downloaded image: v2.0.0 (sha256:new)` )
+        expect( output ).toContain( `downloaded image: v2.0.0` )
     } )
 
     it( `reports a first download when no local image exists`, async () => {
         const { output } = await update( new Error( `No such image` ), metadata( `sha256:new`, `v2.0.0` ) )
-        expect( output ).toContain( `downloaded image: v2.0.0 (sha256:new)` )
+        expect( output ).toContain( `downloaded image: v2.0.0` )
     } )
 
     it( `distinguishes an unchanged image from a new download`, async () => {
@@ -138,7 +139,7 @@ describe( `Docker image update`, () => {
     it( `identifies unlabelled images without claiming a release version`, async () => {
         for( const version of [ undefined, `unknown` ] ) {
             const { output } = await update( `[]`, metadata( `sha256:new`, version ) )
-            expect( output ).toContain( `version unavailable (sha256:new)` )
+            expect( output ).toContain( `version unavailable` )
         }
     } )
 
