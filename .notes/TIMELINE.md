@@ -108,3 +108,5 @@
 - 2026-09-30: Bare model listings now include 30 coding-ranked benchmarks; optional benchmark failures must preserve the available-model list.
 
 - 2026-09-30: Refresh published agent CLIs on each workflow attempt and expose their installed versions in build logs. CI pins track verified Codex/Claude releases.
+
+- 2026-09-30: Post-commit review caught OpenCode installation overlapping the persistent user npm volume; moved bundled OpenCode beside Codex in the system prefix.
