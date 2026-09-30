@@ -73,7 +73,7 @@ Absolute-linked worktrees are locked against Git pruning across mount paths; man
 ## Sessions
 
 Status: `running` for foreground work, `waiting` for Claude background shells, `idle` when ready.
-Idle-loop actions pause while waiting; manual input remains available.
+Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
@@ -90,7 +90,7 @@ Idle-loop actions pause while waiting; manual input remains available.
 | `babysit update` | Update Babysit, agent tools, image |
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
-input/interrupt controls → idle/running; otherwise output stability; unreadable → unknown.
+input/interrupt controls → idle/running; Claude background shells → waiting; otherwise output stability; unreadable → unknown.
 Attachment is separate. Pruning needs free space for locks/journals.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
