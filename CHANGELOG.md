@@ -4,7 +4,7 @@
 
 ### Added
 - Show `waiting` while Claude background shells outlive its foreground reply.
-- Preserve waiting status in CLI and web; pause idle-loop actions until completion.
+- Preserve waiting status in CLI and web; defer idle-rule triggers while waiting.
 
 ### Fixed
 - Relocate Claude worktrees created at Docker’s `/workspace` mount.
