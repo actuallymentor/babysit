@@ -190,8 +190,10 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 # Corepack gives agents pnpm/yarn when project package-manager metadata expects
 # them. The root-level symlink makes the global Puppeteer package resolvable by
 # both CommonJS and ESM scripts anywhere below /workspace.
+# Keep bundled CLIs outside the persistent user npm volume. OpenCode uses npm
+# to avoid the shell installer's unauthenticated GitHub release lookup.
 RUN corepack enable \
-    && npm install -g @openai/codex@latest puppeteer \
+    && npm install -g @openai/codex@latest opencode-ai@latest puppeteer \
     && mkdir -p /node_modules \
     && ln -s "$(npm root -g)/puppeteer" /node_modules/puppeteer
 
@@ -199,8 +201,8 @@ RUN corepack enable \
 USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV NVM_DIR=/home/node/.nvm
-# Claude and Antigravity use ~/.local/bin; npm-installed OpenCode uses the prefix.
-ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:/home/node/.opencode/bin:$PATH"
+# Claude and Antigravity use ~/.local/bin; user npm packages use the prefix.
+ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:$PATH"
 
 # nvm — user-scoped Node version switching for repos that pin versions in .nvmrc.
 RUN set -eux; \
@@ -218,9 +220,6 @@ RUN bash /usr/local/bin/install-antigravity.sh
 # Claude Code — installs into /home/node
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- latest
 ENV DISABLE_AUTOUPDATER=1
-
-# OpenCode — npm avoids the installer's unauthenticated GitHub release lookup.
-RUN npm install -g opencode-ai@latest
 
 # Git identity defaults (overridden by env passthrough from host)
 ENV GIT_AUTHOR_NAME="Babysitter"

@@ -181,7 +181,7 @@ describe( `docker image`, () => {
         expect( dockerfile ).toContain( `google-chrome-stable` )
         expect( dockerfile ).toContain( `ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable` )
         expect( dockerfile ).toContain( `ENV PUPPETEER_SKIP_DOWNLOAD=true` )
-        expect( dockerfile ).toContain( `npm install -g @openai/codex@latest puppeteer` )
+        expect( dockerfile ).toContain( `npm install -g @openai/codex@latest opencode-ai@latest puppeteer` )
         expect( dockerfile ).toContain( `/node_modules/puppeteer` )
         expect( dockerfile ).not.toContain( `--no-sandbox` )
         expect( workflow ).toContain( `RUNTIME_REFRESH=\${{ github.run_id }}-\${{ github.run_attempt }}` )

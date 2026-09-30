@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.8.2 — 2026-09-30
+
+### Fixed
+- Keep bundled OpenCode outside the persistent npm volume so image updates take effect.
+
 ## 1.8.1 — 2026-09-30
 
 ### Fixed
