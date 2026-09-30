@@ -92,7 +92,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit prune` | Interactively prune unused Docker data and managed clones |
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check; bypass 12h cache with `--refresh` |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
-| `babysit update` | Update Babysit, agent tools, image |
+| `babysit update` | Update Babysit, agent tools, image; show image version/ID |
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; Claude background shells → waiting; otherwise output stability; unreadable → unknown.
@@ -340,6 +340,8 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
 - Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf.
 - Image builds refresh agent CLIs on every run/attempt and log installed versions.
+- `babysit update` allows 120 seconds for image pulls and reports the image version
+  and ID. Older/unlabelled images show `version unavailable` with their ID.
 - Launch prompts contain brief mode boundaries and browser/session-control hints.
 - `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.
 

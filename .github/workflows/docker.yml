@@ -57,6 +57,7 @@ jobs:
           push: true
           tags: ${{ inputs.publish-version-tag && format('actuallymentor/babysit:{0}', steps.version.outputs.version) || 'actuallymentor/babysit:latest' }}
           build-args: |
+            BABYSIT_VERSION=${{ steps.version.outputs.version }}
             RUNTIME_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
