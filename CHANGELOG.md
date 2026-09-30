@@ -7,6 +7,9 @@
 - Filter authenticated CLI providers; use `--all` for incomplete metrics.
 - Add benchmark limits, JSON output and a shared 15-minute container cache.
 
+### Fixed
+- Keep host benchmark caching active when `flock` is unavailable.
+
 ## 1.6.1 — 2026-09-29
 
 ### Fixed

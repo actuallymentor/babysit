@@ -206,7 +206,8 @@ Uses the Artificial Analysis free API, fetching all pages. Cache lives at
 `~/.cache/babysit/benchmarks.json` in the existing Docker cache volume, shared
 across Babysit containers on the same Docker daemon. TTL `0` bypasses caching;
 invalid/negative TTLs fail. Failed refreshes use stale data with a stderr warning.
-Cache/lock failures fall back to a live fetch; JSON stays valid. Host invocations
+Cache failures fall back to a live fetch; hosts without `flock` use atomic writes
+without refresh locking. JSON stays valid. Host invocations
 use the host cache/environment; `.babysitrc` is sourced on container launch only.
 
 Provider filtering happens on every invocation using installed CLIs and local
