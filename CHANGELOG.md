@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.4 — 2026-09-30
+
+### Fixed
+- Preserve populated cache ownership during authentication probes.
+
 ## 1.9.3 — 2026-09-30
 
 ### Fixed

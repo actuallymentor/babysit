@@ -34,9 +34,11 @@ if [ "$HOST_UID" != "$CURRENT_UID" ] || [ "$HOST_GID" != "$CURRENT_GID" ]; then
 fi
 
 # Fresh nocopy volumes are root-owned even when no UID remap was needed.
-# Only their roots need initialization; preserve existing cache contents.
+# Initialize only root-owned roots: a UID-1000 auth probe must not take
+# ownership back from an existing session remapped to the host's UID.
 mkdir -p /home/node/.npm /home/node/.npm-global /home/node/.cache
-chown "$HOST_UID:$HOST_GID" /home/node/.npm /home/node/.npm-global /home/node/.cache
+find /home/node/.npm /home/node/.npm-global /home/node/.cache -maxdepth 0 -uid 0 \
+    -exec chown "$HOST_UID:$HOST_GID" {} +
 
 # Mark /workspace as safe for git — write to node's ~/.gitconfig, not root's.
 gosu node git config --global --add safe.directory /workspace 2>/dev/null || true
