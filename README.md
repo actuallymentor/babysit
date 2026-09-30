@@ -10,7 +10,7 @@ Supports [Claude](https://docs.anthropic.com/en/docs/claude-code),
 
 ## Quick start
 
-Requires **macOS/Linux, Docker, tmux, Git**. Installs to `~/.local/bin`; no sudo.
+Requires **macOS/Linux, Docker, tmux, Git**. New Linux clones also require **rsync** (`sudo apt install rsync`, or your package manager). Installs to `~/.local/bin`; no sudo.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts/install.sh | bash
@@ -62,6 +62,10 @@ Use explicit commands in scripts.
 
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
+
+Linux copies preserve hard links within the clone, sparse files, timestamps, and supported ACLs/xattrs.
+Copies run as your user; privileged ownership/metadata remain limited by your permissions and filesystem.
+Completed clone reuse/resume does not require rsync.
 
 `--clone` preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
 Worktree metadata must stay within the copied source; cloning a linked worktree as the root remains unsupported.

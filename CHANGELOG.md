@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.9.1 — 2026-09-30
+
+### Fixed
+- Preserve Linux clone metadata with rsync, including hard links and xattrs (#2).
+- Reject stale Claude model/effort confirmations (#3).
+- Recognize combined and persistent dim styling in Claude suggestions (#4).
+
 ## 1.9.0 — 2026-09-30
 
 ### Added

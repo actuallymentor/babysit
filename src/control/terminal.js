@@ -44,14 +44,41 @@ const wait_for = async ( capture, predicate, timeout_ms ) => {
 // Plain captures cannot tell that from typing, so drop dim runs from a styled one.
 const without_ghost_text = styled => {
     const lines = styled.split( `\n` )
-    const start = lines.findLastIndex( line => strip_ansi( line ).startsWith( `❯` ) )
-    const end = lines.findIndex( ( line, index ) => index > start && strip_ansi( line ).startsWith( `──` ) )
+    const plain = line => strip_ansi( line.replace( /\x1b\[[0-9:;]*m/g, `` ) )
+    const start = lines.findLastIndex( line => plain( line ).startsWith( `❯` ) )
+    const end = lines.findIndex( ( line, index ) => index > start && plain( line ).startsWith( `──` ) )
     if( start < 0 || end < 0 ) return strip_ansi( styled )
-    // Borders are dim too. Remove suggestions only inside the composer, and
-    // keep newlines when the dim style carries across wrapped suggestion rows.
-    const composer = lines.slice( start, end ).join( `\n` )
-        .replace( /\x1b\[2m[^\x1b]*/g, run => run.replace( /[^\n]/g, `` ) )
-    return strip_ansi( [ ...lines.slice( 0, start ), composer, ...lines.slice( end ) ].join( `\n` ) )
+    // Track intensity across colour changes and wrapped rows, but remove text
+    // only inside the composer. A dim border/cursor still defines its bounds.
+    let dim = false
+    return strip_ansi( lines.map( ( line, index ) => {
+        let past_cursor = index > start
+        return line.split( /(\x1b\[[0-9:;]*m)/ ).map( part => {
+            if( /^\x1b\[/.test( part ) && part.endsWith( `m` ) ) {
+                const parameters = part.slice( 2, -1 ).split( `;` )
+                for( let offset = 0; offset < parameters.length; offset++ ) {
+                    const parameter = parameters[ offset ]
+                    // RGB/indexed colour payloads can contain 0, 2 or 22. They
+                    // are colours, not intensity changes (colon forms too).
+                    if( parameter.includes( `:` ) ) continue
+                    const code = Number( parameter )
+                    if( [ 38, 48, 58 ].includes( code ) ) {
+                        offset += parameters[ offset + 1 ] === `2` ? 4 : parameters[ offset + 1 ] === `5` ? 2 : 0
+                    } else if( code === 2 ) dim = true
+                    else if( code === 0 || code === 22 ) dim = false
+                }
+                return ``
+            }
+            if( index < start || index >= end ) return part
+            if( !past_cursor ) {
+                const cursor = part.indexOf( `❯` )
+                if( cursor < 0 ) return part
+                past_cursor = true
+                return dim ? part.slice( 0, cursor + 1 ) : part
+            }
+            return dim ? `` : part
+        } ).join( `` )
+    } ).join( `\n` ) )
 }
 
 // An existing panel or a person's draft belongs to them. Never close it or
@@ -228,22 +255,59 @@ const claude_cache_warning = screen => /(?:Change effort level\?|Switch model\?|
 // it applies the change without an echo and shows only a transient
 // right-aligned notice, so accept either. The full name keeps a lingering
 // "Opus 5.5" notice from confirming a later "Opus 5".
-const claude_confirmation = ( screen, operation, selected ) => {
-    if( /(?:^|\n)\s*(?:Select model|Effort)\s*(?:\n|$)/i.test( screen ) || claude_cache_warning( screen ) ) return false
+const claude_confirmations = ( screen, operation, selected ) => {
+    if( /(?:^|\n)\s*(?:Select model|Effort)\s*(?:\n|$)/i.test( screen ) || claude_cache_warning( screen ) ) return []
     const from = screen.lastIndexOf( `❯ /${ operation }` )
     const echoed = from < 0 ? `` : screen.slice( from )
     // Toasts sit directly above the composer. Long ones start at column two;
     // their indentation is not a reliable signal on a narrow terminal.
-    const notices = screen.match( /(?:^|\n)[ \t]+((?:Set model to|Kept model as|Set effort level to)[^\n]*)\n─[^\n]*\n❯/ )?.[ 1 ] || ``
+    const notices = screen.match( /(?:^|\n)[ \t]+((?:Set model to|Kept model as|Set effort level to)[^\n]*(?:\n[ \t]+(?![❯─⎿])\S[^\n]*)*)\n─[^\n]*\n❯/ )?.[ 1 ] || ``
     const actions = operation === `model` ? [ `Set model to`, `Kept model as` ] : [ `Set effort level to` ]
     const chosen = operation === `model` ? selected.replace( /\s*\(.*$/, `` ) : selected
     const named = new RegExp( `(?:^|[^\\w.])${ chosen.replace( /[.*+?^${}()|[\]\\]/g, `\\$&` ) }(?![\\w.])`, `i` )
-    return [ echoed, notices ].map( text => text.replace( /\s+/g, ` ` ) ).some( latest => actions.some( action => latest.includes( action ) )
-        && ( latest.includes( `Kept model as` ) || latest.includes( `this session only` ) )
-        && ( chosen === `Default` || named.test( latest ) ) )
+    return [ echoed, notices ].flatMap( text => [ ...text.matchAll( /(?:Set model to|Kept model as|Set effort level to)[^\n]*(?:\n[ \t]+(?![❯─⎿])\S[^\n]*)*/g ) ] )
+        .map( match => match[ 0 ].replace( /\s+/g, ` ` ).trim() )
+        // Stop at the scope marker: later footer/progress text is not evidence
+        // of a new selection, even if it redraws while an old notice remains.
+        .map( notice => notice.match( /^.*?\bthis session only\b/ )?.[ 0 ] || notice )
+        .filter( latest => actions.some( action => latest.startsWith( action ) )
+            && ( latest.includes( `Kept model as` ) || latest.includes( `this session only` ) )
+            && ( chosen === `Default` || named.test( latest ) ) )
+        // A kept-model notice has no scope terminator. Compare its action,
+        // not incidental footer/progress text collected by a wrapped capture.
+        .map( notice => actions.find( action => notice.startsWith( action ) ) )
 }
 
-const claude_control = async ( { operation, value, target, capture, send_text, send_keys, timeout_ms, screen_before } ) => {
+// Identical toasts can replace the same screen slot. Screen differences alone
+// cannot distinguish that from a cancelled switch restoring an old notice.
+// In that ambiguous case, reopen the native picker and read its initial value;
+// never move it, and Escape restores the composer without changing settings.
+const claude_readback = async ( { operation, selected, capture, capture_styled, send_text, send_keys, timeout_ms } ) => {
+    // The first picker has closed. A person may have started a draft or opened
+    // a dialog meanwhile; reacquire permission to use the composer now.
+    ensure_safe( `claude`, capture_styled ? without_ghost_text( await capture_styled() ) : await capture(), false )
+    await send_text( `/${ operation }` )
+    const picker = await wait_for( capture, screen => operation === `model`
+        ? selected_row( claude_rows( screen ) ) !== undefined
+        : /(?:^|\n)\s*Effort\s*(?:\n|$)/i.test( screen ) && effort_labels( screen ).length > 0, timeout_ms )
+    let matches = false
+    if( operation === `model` ) {
+        const row = claude_rows( picker ).find( row => row.selected )
+        matches = Boolean( row && clean( claude_alias( row ) ) === clean( selected ) )
+    } else {
+        const lines = picker.split( `\n` )
+        const slider = lines.findIndex( line => line.includes( `▲` ) )
+        const cursor = lines[ slider ]?.indexOf( `▲` )
+        const levels = [ ...( lines[ slider + 1 ] || `` ).matchAll( /\b(low|medium|high|xhigh|max)\b/g ) ]
+        const current = levels.sort( ( first, second ) => Math.abs( first.index - cursor ) - Math.abs( second.index - cursor ) )[ 0 ]?.[ 0 ]
+        matches = slider >= 0 && cursor >= 0 && current === selected
+    }
+    await send_keys( `Escape` )
+    await wait_for( capture, screen => !/(?:^|\n)\s*(?:Select model|Effort)\s*(?:\n|$)/i.test( screen ), timeout_ms )
+    return matches
+}
+
+const claude_control = async ( { operation, value, target, capture, capture_styled, send_text, send_keys, timeout_ms, screen_before } ) => {
     await send_text( `/${ operation }` )
     const ready = operation === `model`
         ? screen => selected_row( claude_rows( screen ) ) !== undefined
@@ -269,13 +333,16 @@ const claude_control = async ( { operation, value, target, capture, send_text, s
         selected = value
     }
 
-    let result = await wait_for( capture, screen => claude_cache_warning( screen ) || claude_confirmation( screen, operation, selected ), timeout_ms )
+    let result = await wait_for( capture, screen => claude_cache_warning( screen ) || claude_confirmations( screen, operation, selected ).length, timeout_ms )
     if( claude_cache_warning( result ) ) {
         if( !/Yes, switch to/i.test( result ) ) throw new Error( `Claude opened an unexpected confirmation dialog.` )
         await send_keys( `Enter` )
-        result = await wait_for( capture, screen => claude_confirmation( screen, operation, selected ), timeout_ms )
+        result = await wait_for( capture, screen => claude_confirmations( screen, operation, selected ).length, timeout_ms )
     }
-    if( !claude_confirmation( result, operation, selected ) ) {
+    const before = claude_confirmations( screen_before, operation, selected )
+    const after = claude_confirmations( result, operation, selected )
+    const fresh = after.some( notice => !before.includes( notice ) )
+    if( !fresh && !await claude_readback( { operation, selected, capture, capture_styled, send_text, send_keys, timeout_ms } ) ) {
         throw new Error( `Claude did not confirm its new ${ operation }.` )
     }
     const old_effort = screen_before.match( /\b(low|medium|high|xhigh|max) · \/effort/i )?.[ 1 ]
@@ -285,7 +352,7 @@ const claude_control = async ( { operation, value, target, capture, send_text, s
         // internally. Reset that latent value to its native high default so
         // returning to a reasoning model does not resurrect an incompatible
         // max/xhigh choice. /effort still accepts session-only changes here.
-        await claude_control( { operation: `effort`, value: `high`, capture, send_text, send_keys, timeout_ms, screen_before: result } )
+        await claude_control( { operation: `effort`, value: `high`, capture, capture_styled, send_text, send_keys, timeout_ms, screen_before: result } )
         return { message: `Model set to ${ selected } for this Claude session. This model does not use effort; saved effort reset to high (default).`, applied: selected }
     }
     const effort_notice = operation === `model` && old_effort && new_effort && old_effort !== new_effort
@@ -429,7 +496,7 @@ export const terminal_control = async ( {
         await send_keys( ...keys )
         if( keys.includes( `Escape` ) ) escaped = true
     }
-    const context = { operation, value, target, capture, send_text: tracked_send_text, send_keys: tracked_send_keys, timeout_ms, screen_before: screen }
+    const context = { operation, value, target, capture, capture_styled, send_text: tracked_send_text, send_keys: tracked_send_keys, timeout_ms, screen_before: screen }
     try {
         switch ( agent ) {
         case `claude`: return await claude_control( context )
@@ -438,7 +505,9 @@ export const terminal_control = async ( {
         default: throw unsupported( `${ agent } does not have a native terminal controller.` )
         }
     } catch ( error ) {
-        if( opened && !escaped ) {
+        // CONTROL_PENDING means the composer/dialog now belongs to someone
+        // else. Do not dismiss it while cleaning up our earlier operation.
+        if( opened && !escaped && error.code !== `CONTROL_PENDING` ) {
             try {
                 if( dismiss ) await dismiss( current => owned_dialog( agent, current ) )
                 else if( owned_dialog( agent, await capture() ) ) await send_keys( `Escape` )

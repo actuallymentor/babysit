@@ -785,8 +785,32 @@ const create_clone_branch = ( workspace, branch, hooks_path ) => {
 const copy_directory_contents = ( source, destination ) => {
 
     mkdirSync( destination, { mode: 0o700 } )
+    const entries = readdirSync( source )
 
-    for( const entry of readdirSync( source ) ) {
+    if( process.platform === `linux` ) {
+        // One transfer keeps hard links across top-level entries. Listing
+        // contents with no implied dirs leaves the private root's attributes alone.
+        const result = spawnSync( `rsync`, [
+            `-aHAXS`, `--recursive`, `--no-implied-dirs`, `--from0`, `--files-from=-`, `--`,
+            `${ source }/`, `${ destination }/`,
+        ], {
+            // Even --from0 treats leading # and ; as comments in files-from.
+            input: entries.map( entry => `./${ entry }\0` ).join( `` ),
+            encoding: `utf8`,
+            stdio: [ `pipe`, `pipe`, `pipe` ],
+        } )
+        if( result.error?.code === `ENOENT` ) {
+            throw new Error( `Linux clone creation requires rsync. Install it with your package manager (for example: sudo apt install rsync) and retry.` )
+        }
+        if( result.error || result.signal || result.status !== 0 ) {
+            const reason = result.error?.message || result.signal || `exit ${ result.status }`
+            const detail = String( result.stderr || `` ).trim()
+            throw new Error( `Clone copy failed: rsync ${ reason }${ detail ? ` (${ detail })` : `` }` )
+        }
+        return
+    }
+
+    for( const entry of entries ) {
         cpSync( join( source, entry ), join( destination, entry ), {
             recursive: true,
             dereference: false,

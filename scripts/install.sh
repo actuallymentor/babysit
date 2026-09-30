@@ -137,6 +137,11 @@ if [ "$DEPS_OK" = false ]; then
     echo ""
 fi
 
+# Clone metadata copying is optional; ordinary sessions do not need rsync.
+if [ "$OS" = "linux" ] && ! command -v rsync > /dev/null 2>&1; then
+    echo "Optional for new --clone workspaces: install rsync with your package manager (e.g. sudo apt install rsync)."
+fi
+
 # Fetch latest release
 echo ""
 echo "Fetching latest release..."

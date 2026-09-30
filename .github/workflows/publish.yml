@@ -66,6 +66,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install clone test dependencies
+        run: sudo apt-get update && sudo apt-get install -y rsync acl python3
+
       - name: Run tests
         run: bun test
 
