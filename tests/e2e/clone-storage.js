@@ -102,7 +102,10 @@ const run_docker = async () => {
     }
     const docker = args => run( command, [ ...prefix, ...args ], { timeout: 60_000, maxBuffer: 2 * 1024 * 1024 } )
     const image = process.env.BABYSIT_E2E_BASE_IMAGE || `actuallymentor/babysit:latest`
-    const { stdout: image_id } = await docker( [ `image`, `inspect`, image, `--format`, `{{.Id}}` ] )
+    const { stdout: image_info } = await docker( [ `image`, `inspect`, image, `--format`, `{{.Id}} {{.Architecture}}` ] )
+    const [ image_id, architecture ] = image_info.trim().split( ` ` )
+    const target = { amd64: `bun-linux-x64`, arm64: `bun-linux-arm64` }[ architecture ]
+    assert.ok( target, `Unsupported storage fixture image architecture: ${ architecture }` )
     const temporary = mkdtempSync( join( tmpdir(), `babysit-storage-bundle-` ) )
     const bundle = join( temporary, `clone-storage` )
     let container_id
@@ -110,7 +113,7 @@ const run_docker = async () => {
     try {
         // Ship the production code and fixture together, without copying the
         // entire development dependency tree through a loaded Docker daemon.
-        await run( `bun`, [ `build`, fileURLToPath( import.meta.url ), `--compile`, `--outfile`, bundle ], { timeout: 30_000 } )
+        await run( `bun`, [ `build`, fileURLToPath( import.meta.url ), `--compile`, `--target=${ target }`, `--outfile`, bundle ], { timeout: 30_000 } )
         // Copy into an owned container; no host mounts, daemon socket, or user
         // credentials enter the fixture. Pin the existing image, avoiding pulls.
         const { stdout } = await docker( [

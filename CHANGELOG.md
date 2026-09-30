@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.2 — 2026-09-30
+
+### Fixed
+- Scope Claude effort readback to its live picker.
+- Compile storage tests for the Docker image architecture.
+
 ## 1.9.1 — 2026-09-30
 
 ### Fixed
