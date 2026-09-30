@@ -44,7 +44,7 @@ export const fetch_benchmarks = async ( api_key, { fetch_fn = fetch } = {} ) => 
             if( !model?.id || !model.name || !model.model_creator?.name ) throw new Error( `Invalid Artificial Analysis model` )
             models.set( model.id, normalise_benchmark( model ) )
         }
-        if( !body.pagination.has_more ) return { schema: 1, fetched_at: Date.now(), index_version, models: [ ...models.values() ] }
+        if( !body.pagination.has_more ) return { schema: 1, fetched_at: Date.now(), index_version: metric( index_version ), models: [ ...models.values() ] }
     }
     throw new Error( `Artificial Analysis pagination exceeded 100 pages` )
 }
@@ -116,8 +116,8 @@ export const load_benchmarks = async ( {
             await mkdir( dirname( cache_path ), { recursive: true } )
             release = await acquire_lock( `${ cache_path }.lock` )
         } catch {
-            warn( `Warning: benchmark cache lock unavailable; fetching without shared caching` )
-            return await refresh()
+            // Hosts without flock still cache atomically. Concurrent refreshes
+            // may overlap; a missing lock must not disable the caller's TTL.
         }
         cached = await read_cache( cache_path ) || cached
         if( fresh( cached ) ) return cached

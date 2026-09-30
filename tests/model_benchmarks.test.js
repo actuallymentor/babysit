@@ -2,7 +2,7 @@ import { afterEach, expect, it } from 'bun:test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { load_benchmarks, normalise_benchmark } from '../src/docker/assets/effort/benchmark-cache.mjs'
 import { benchmark_providers } from '../src/docker/assets/effort/benchmark-providers.mjs'
@@ -137,7 +137,7 @@ it( `invalid caches refetch; cached extra fields never enter JSON output`, async
     expect( output ).not.toContain( `must-not-appear` )
 } )
 
-it( `concurrent processes share one refresh using the kernel lock`, async () => {
+it.skipIf( spawnSync( `flock`, [ `--version` ] ).status !== 0 )( `concurrent processes share one refresh using the kernel lock`, async () => {
     const options = await fixture()
     let requests = 0
     const server = createServer( ( request, response ) => {
@@ -150,7 +150,7 @@ it( `concurrent processes share one refresh using the kernel lock`, async () => 
     const module_url = new URL( `../src/docker/assets/effort/benchmark-cache.mjs`, import.meta.url ).href
     const script = `import { load_benchmarks } from ${ JSON.stringify( module_url ) }; const result = await load_benchmarks({cache_path:process.argv[1],fetch_fn:()=>fetch(process.argv[2])}); console.log(result.models[0].name)`
     const run = () => new Promise( ( resolve, reject ) => {
-        const child = spawn( `node`, [ `--input-type=module`, `-e`, script, options.cache_path, `http://127.0.0.1:${ server.address().port }` ], { env: { ...process.env, ...options.env }, stdio: [ `ignore`, `pipe`, `pipe` ] } )
+        const child = spawn( `node`, [ `--input-type=module`, `-e`, script, options.cache_path, `http://127.0.0.1:${ server.address().port }` ], { env: { ...process.env, ...options.env, ARTIFICIAL_ANALYSIS_TTL_MINUTES: `15` }, stdio: [ `ignore`, `pipe`, `pipe` ] } )
         let output = ``
         child.stdout.on( `data`, chunk => {
             output += chunk 
@@ -166,5 +166,25 @@ it( `concurrent processes share one refresh using the kernel lock`, async () => 
         expect( requests ).toBe( 1 )
     } finally {
         await new Promise( resolve => server.close( resolve ) )
+    }
+} )
+
+it( `hosts without flock still write and reuse an atomic cache`, async () => {
+    const options = await fixture()
+    const original_path = process.env.PATH
+    let requests = 0
+    const fetch_fn = async () => {
+        requests++
+        return Response.json( page( [ model( `portable` ) ] ) )
+    }
+    try {
+        process.env.PATH = `/nonexistent-babysit-test-path`
+        await load_benchmarks( { ...options, fetch_fn } )
+        const second = await load_benchmarks( { ...options, fetch_fn } )
+        expect( second.models[0].name ).toBe( `portable` )
+        expect( requests ).toBe( 1 )
+    } finally {
+        if( original_path === undefined ) delete process.env.PATH
+        else process.env.PATH = original_path
     }
 } )
