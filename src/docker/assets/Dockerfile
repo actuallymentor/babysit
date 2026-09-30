@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip pipx \
     # CLI essentials. `gosu` is used by the entrypoint to drop privileges
     # back to `node` after a uid remap (see entrypoint.sh).
-    sudo gosu curl wget jq tmux openssh-client \
+    sudo gosu curl wget jq tmux openssh-client util-linux \
     openssl gnupg ca-certificates file findutils \
     rsync tar zip unzip gzip xz-utils zstd patch \
     # Codex sandboxing — codex prefers a system bubblewrap on PATH and falls

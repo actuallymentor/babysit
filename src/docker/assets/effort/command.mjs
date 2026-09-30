@@ -4,6 +4,7 @@ import { model as codex_model } from './codex-model.mjs'
 import { opencode_catalog, resolve_opencode_model } from './catalog.mjs'
 import { terminal_request } from './terminal-client.mjs'
 import { agy_catalog, resolve_agy_model } from './agy-catalog.mjs'
+import { run_benchmarks, benchmarks_help } from './benchmarks.mjs'
 
 export const effort_help = `Usage: babysit effort [level]
 Run inside a managed agent session. Omit level to list supported values.
@@ -14,7 +15,9 @@ OpenCode: 'default' restores the TUI's variant; overrides do not update its foot
 export const model_help = `Usage: babysit model [model-name]
 List models or switch within the current managed agent session.
 Preserves compatible effort, otherwise uses the new model's default.
-Terminal controls queue for up to 60s; --status <request-id> reads the result.`
+Terminal controls queue for up to 60s; --status <request-id> reads the result.
+
+${ benchmarks_help }`
 
 const parse_control = ( args, help ) => {
     if( args.length === 1 && [ `--help`, `-h` ].includes( args[0] ) ) return { help }
@@ -41,6 +44,7 @@ export const run_effort = async args => {
 
 /** List or switch models in the caller's agent; never migrate conversations. */
 export const run_model = async args => {
+    if( args.includes( `--benchmarks` ) ) return run_benchmarks( args )
     const parsed = parse_control( args, model_help )
     if( parsed.help ) return parsed.help
     if( parsed.status_id ) return terminal_request( `model`, parsed )

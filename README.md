@@ -176,6 +176,45 @@ Remote/headless sessions, Codex `--profile`, OpenCode `--pure`: normal launch
 without API controls. Codex resume/fork with permission flags uses the native CLI;
 its live controls remain unavailable.
 
+## Model benchmarks
+
+```bash
+babysit model --benchmarks                         # Complete rows, coding descending
+babysit model --benchmarks --sort cost --limit 20   # Cheapest intelligence task
+babysit model --benchmarks --sort cost-per-point    # Cost/task ÷ intelligence
+babysit model --benchmarks --all --json             # Include missing metrics
+```
+
+Sorts: `coding` (default), `intelligence`, `agentic`, `cost`, `cost-per-point`,
+`name`. Scores descend; costs and names ascend. Missing values sort last.
+`--limit N` takes a positive integer; omit for all matching rows.
+Rows missing any metric are excluded unless `--all` is passed.
+
+Columns: model/effort variant, provider, intelligence, coding, agentic,
+intelligence benchmark USD/task, USD/intelligence point. Token pricing is omitted.
+A zero intelligence score has no cost/point. The ratio measures benchmark cost,
+not whether a model can solve your particular task.
+
+Requires `ARTIFICIAL_ANALYSIS_API_KEY`. Configure container defaults in `~/.babysitrc`:
+
+```bash
+export ARTIFICIAL_ANALYSIS_API_KEY="your-key"
+ARTIFICIAL_ANALYSIS_TTL_MINUTES=15
+```
+
+Uses the Artificial Analysis free API, fetching all pages. Cache lives at
+`~/.cache/babysit/benchmarks.json` in the existing Docker cache volume, shared
+across Babysit containers on the same Docker daemon. TTL `0` bypasses caching;
+invalid/negative TTLs fail. Failed refreshes use stale data with a stderr warning.
+Cache/lock failures fall back to a live fetch; JSON stays valid. Host invocations
+use the host cache/environment; `.babysitrc` is sourced on container launch only.
+
+Provider filtering happens on every invocation using installed CLIs and local
+native credentials (Codex, Claude, Antigravity, and recognized direct OpenCode
+providers). Credentials are read without refreshing tokens or sending inference.
+This does not verify expired credentials or imply every listed variant is
+selectable in your CLI. Router credentials alone do not enable every creator.
+
 ## Account usage
 
 ```bash

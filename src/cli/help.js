@@ -24,6 +24,7 @@ Usage:
   babysit config                       Show settings and setup status
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session
+  babysit model --benchmarks           Compare benchmarks; --sort coding is default
   babysit usage [--json]               Account usage and limits, on host or in container
   babysit web init                     Initialize or rotate babysit-web access
   babysit doctor --auth [agent|all]    Verify real agent authentication
