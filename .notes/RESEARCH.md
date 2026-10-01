@@ -96,7 +96,7 @@ Agent model defaults and container tool pins last verified against primary sourc
 - **System prompt**: Claude supports `--append-system-prompt "text"` and `--system-prompt "text"`, but Babysit deliberately uses neither for its launch brief. It types `config.initial_prompt` into the ready TUI and mounts shared user globals at Claude's native instruction path.
 - **Resume**: `claude --resume <id>` or `claude -r <id>`
 - **Model**: `--model best` tracks Claude Code's highest-capability generally available model and currently resolves equivalently to Opus.
-- **Effort**: `--effort xhigh` is Babysit's quality-first default. Claude Code recommends it for most coding work; `max` remains opt-in because it can overthink and use substantially more tokens.
+- **Effort**: `--effort medium` is Babysit's balanced default, explicitly requested by the user on 2026-10-01. Deeper effort remains opt-in.
 - **Creds**: `~/.claude/.credentials.json` (linux), Keychain service "Claude Code-credentials" (macOS)
 - **Install location**: `~/.local/bin/claude` (binary lives under `~/.local/share/claude/versions/` with a symlink in `~/.local/bin`). Container Dockerfile must add `~/.local/bin` to PATH.
 - **Home env**: `CLAUDE_CONFIG_DIR` — default `~/.claude`. Documented behavior is partial: claude still creates local `.claude/` directories in workspaces and `/ide` integration may misbehave when set. Babysit pins it to `/home/node/.claude` inside the container so it matches the credential, settings, and projects mounts.

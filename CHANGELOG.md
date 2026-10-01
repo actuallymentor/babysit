@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.2 — 2026-10-01
+
+### Changed
+- Default Claude to medium effort; preserve explicit effort overrides.
+
 ## 1.10.1 — 2026-09-30
 
 ### Fixed

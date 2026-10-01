@@ -129,10 +129,9 @@ export const claude = {
 
     defaults: {
         // `best` tracks Claude Code's strongest generally available model.
-        // `xhigh` is the documented quality-first default; `max` remains an
-        // explicit opt-in for unusually difficult work because it can overthink.
+        // Start with balanced reasoning; deeper effort remains an explicit opt-in.
         model: `best`,
-        effort: `xhigh`,
+        effort: `medium`,
     },
 
     // Pattern to capture the session ID from claude's output. The TUI can show
