@@ -885,8 +885,8 @@ describe( `build_docker_command`, () => {
         const cmd = build_docker_command( make_options( { agent: claude } ) )
 
         // `best` follows Claude Code's strongest generally available model;
-        // `xhigh` is the quality-first recommendation without max overthinking.
-        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model best --effort xhigh` )
+        // Claude starts with balanced reasoning.
+        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model best --effort medium` )
 
     } )
 
@@ -988,7 +988,7 @@ describe( `build_docker_command`, () => {
         expect( build_docker_command( make_options( {
             agent: claude,
             agent_args: claude.flags.resume( uuid ),
-        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model best --effort xhigh --resume ${ uuid }` )
+        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model best --effort medium --resume ${ uuid }` )
 
         expect( build_docker_command( make_options( {
             agent: codex,
