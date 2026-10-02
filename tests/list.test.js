@@ -238,6 +238,30 @@ describe( `print_active_sessions_table`, () => {
 
     } )
 
+    it( `keeps distinct workspaces apart when their compact directories collide`, async () => {
+
+        const output = await capture_console( () => print_active_sessions_table( [
+            { name: `babysit_prod`, attached: false, agent_status: `idle` },
+            { name: `babysit_stage`, attached: false, agent_status: `idle` },
+            { name: `babysit_prod2`, attached: false, agent_status: `idle` },
+        ], [
+            { tmux_session: `babysit_prod`, name: `p1`, agent: `codex`, pwd: `/production/team/app` },
+            { tmux_session: `babysit_stage`, name: `s1`, agent: `codex`, pwd: `/staging/team/app` },
+            { tmux_session: `babysit_prod2`, name: `p2`, agent: `codex`, pwd: `/production/team/app` },
+        ], { numbered: true } ) )
+
+        const lines = output.split( `\n` ).filter( line => line.startsWith( `  ` ) ).slice( 2 )
+
+        expect( lines.map( line => line.trim().split( /\s+/ ).slice( 0, 3 ).join( ` ` ) ) ).toEqual( [
+            `/production/team/app`,
+            `├─ 1 p1`,
+            `└─ 3 p2`,
+            `/staging/team/app`,
+            `└─ 2 s1`,
+        ] )
+
+    } )
+
     it( `renders ASCII branches on dumb terminals`, () => {
 
         const tree = format_session_tree( [ `#`, `NAME` ], [ [ 1, `one` ], [ 2, `two` ] ], [ `repo`, `repo` ], {

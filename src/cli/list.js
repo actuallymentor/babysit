@@ -191,6 +191,23 @@ export const format_session_tree = ( headers, rows, trunks, { env = process.env 
 }
 
 /**
+ * Label each workspace with its compact directory, falling back to the full
+ * path when two different workspaces would otherwise share a trunk.
+ * @param {Array<string|null>} pwds - Full working directory per session
+ * @returns {string[]} Trunk label per session
+ */
+export const trunk_labels = pwds => {
+
+    const compact = pwds.map( format_session_directory )
+    const collides = pwd => pwds.some( ( other, index ) =>
+        other !== pwd && compact[index] === format_session_directory( pwd )
+    )
+
+    return pwds.map( ( pwd, index ) => pwd && collides( pwd ) ? pwd : compact[index] )
+
+}
+
+/**
  * Print active sessions as a tree: one trunk per workspace directory, one
  * numbered leaf per session with the remaining columns. Shared by `list`,
  * `open`, and `close` so selector numbers read the same everywhere.
@@ -233,7 +250,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const flags = format_session_flags( stored?.modifiers )
 
         return {
-            trunk: format_session_directory( stored?.pwd ),
+            pwd: stored?.pwd || null,
             leaf: [
                 ... numbered ? [ numbers[index] ] : [] ,
                 name,
@@ -250,7 +267,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     const tree = format_session_tree(
         headers,
         sessions.map( session => session.leaf ),
-        sessions.map( session => session.trunk )
+        trunk_labels( sessions.map( session => session.pwd ) )
     )
 
     console.log( `\n${ title }\n` )
