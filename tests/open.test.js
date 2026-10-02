@@ -146,7 +146,7 @@ describe( `cmd_open without a session id`, () => {
 
         expect( attached_session ).toBeNull()
         expect( output ).toContain( `Active babysit sessions for /workspace/app:` )
-        expect( output ).toContain( `DIRECTORY` )
+        expect( output ).toContain( `\n  workspace/app\n` )
         expect( output ).toContain( `#` )
         expect( output ).toContain( `NAME` )
         expect( output ).toContain( `AGENT` )
@@ -176,8 +176,8 @@ describe( `cmd_open without a session id`, () => {
             },
         } ) )
 
-        expect( output ).toMatch( /\n  2\s+feature 1/ )
-        expect( output ).toMatch( /\n  3\s+feature 2/ )
+        expect( output ).toMatch( /\n  ├─ 2\s+feature 1/ )
+        expect( output ).toMatch( /\n  └─ 3\s+feature 2/ )
 
     } )
 

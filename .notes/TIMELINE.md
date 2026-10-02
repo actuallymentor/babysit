@@ -126,4 +126,4 @@
 
 - 2026-10-02: Profiled `babysit claude` boot with BABYSIT_DEBUG=1 on the host daemon: ~85s warm (60s TUI-readiness timeout on Claude 2.1.287, 70s antigravity re-probe, 3s watchtower timeout, 10s container prep), 100s+ cold. Fixed readiness footer, active-only startup auth, single tar upload, cheap `docker ps`, conditional grace sleep. Warm boot now ~17s; remaining cost is `docker create` (~10s, daemon-side) plus the first rootfs mount (~5s). Three external reviews rejected the planned monitor-side background auth warmer; deferred with reasons in HUMAN.md.
 - 2026-10-02: Post-commit Codex reviews caught the tar uploader following symlinks (docker cp never did) and then a FIFO/directory-swap gap; hardened with lstat gating, O_NOFOLLOW|O_NONBLOCK opens, and realpath checks (c932c78, 780c8dc). Residual openat-less directory race documented as equivalent to the prior docker cp walk.
-
+- 2026-10-02: `babysit list`/`open`/`close` listings became a tree: workspace directory trunks, numbered session leaves with the remaining columns. Selector numbers stay global so `open N` is unchanged.

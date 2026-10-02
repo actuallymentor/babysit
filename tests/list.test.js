@@ -4,6 +4,7 @@ import {
     observe_session_activity,
     format_session_directory,
     format_session_status_label,
+    format_session_tree,
     print_active_sessions_table,
 } from '../src/cli/list.js'
 
@@ -76,11 +77,12 @@ describe( `print_active_sessions_table`, () => {
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS`, `DIRECTORY` ]
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS` ]
         )
-        expect( output ).toMatch( /1\s+feature 1\s+running\s+detached\s+codex\s+yolo,docker\s+ping\/pong/ )
-        expect( output ).toMatch( /2\s+native-2\s+idle\s+attached\s+claude\s+-\s+ding\/dong/ )
-        expect( output ).toMatch( /3\s+baby-3\s+running\s+detached\s+antigravity\s+-\s+workspace\/solo/ )
+        // Directories are trunks; numbered leaves hang below them
+        expect( output ).toMatch( /\n {2}ping\/pong\n {2}└─ 1\s+feature 1\s+running\s+detached\s+codex\s+yolo,docker\n/ )
+        expect( output ).toMatch( /\n {2}ding\/dong\n {2}└─ 2\s+native-2\s+idle\s+attached\s+claude\s+-\n/ )
+        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+detached\s+antigravity\s+-\n/ )
         expect( output ).not.toContain( `babysit_named` )
         expect( output ).not.toContain( `babysit_legacy` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
@@ -102,16 +104,18 @@ describe( `print_active_sessions_table`, () => {
         const first_row = lines.find( line => line.includes( `fix` ) )
         const second_row = lines.find( line => line.includes( `feature with a longer name` ) )
 
-        const column_starts = [ `NAME`, `STATUS`, `TMUX`, `AGENT`, `DIRECTORY` ]
+        const column_starts = [ `NAME`, `STATUS`, `TMUX`, `AGENT` ]
             .map( column => header.indexOf( column ) )
 
         expect( header ).not.toContain( `FLAGS` )
+        expect( header ).not.toContain( `DIRECTORY` )
         expect( column_starts ).toEqual( [ ...column_starts ].sort( ( left, right ) => left - right ) )
         expect( first_row.indexOf( `fix` ) ).toBe( header.indexOf( `NAME` ) )
         expect( first_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
         expect( first_row.indexOf( `detached` ) ).toBe( header.indexOf( `TMUX` ) )
         expect( first_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
-        expect( first_row.indexOf( `work/short` ) ).toBe( header.indexOf( `DIRECTORY` ) )
+        expect( lines ).toContain( `  work/short` )
+        expect( lines ).toContain( `  work/long` )
         expect( second_row.indexOf( `idle` ) ).toBe( header.indexOf( `STATUS` ) )
 
     } )
@@ -146,7 +150,7 @@ describe( `print_active_sessions_table`, () => {
         expect( tenth_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
         expect( tenth_row.indexOf( `detached` ) ).toBe( header.indexOf( `TMUX` ) )
         expect( tenth_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
-        expect( tenth_row.indexOf( `workspace/task-10` ) ).toBe( header.indexOf( `DIRECTORY` ) )
+        expect( lines.indexOf( `  workspace/task-10` ) ).toBe( lines.indexOf( tenth_row ) - 1 )
 
     } )
 
@@ -173,7 +177,7 @@ describe( `print_active_sessions_table`, () => {
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS`, `DIRECTORY`, `ID`, `SESSION` ]
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS`, `ID`, `SESSION` ]
         )
         expect( output ).toContain( `sandbox,docker` )
         expect( output ).toContain( `native-1` )
@@ -194,8 +198,8 @@ describe( `print_active_sessions_table`, () => {
             numbers: [ 2, 4 ],
         } ) )
 
-        expect( output ).toMatch( /\n {2}2\s+second/ )
-        expect( output ).toMatch( /\n {2}4\s+fourth/ )
+        expect( output ).toMatch( /\n {2}├─ 2\s+second/ )
+        expect( output ).toMatch( /\n {2}└─ 4\s+fourth/ )
 
     } )
 
@@ -206,7 +210,43 @@ describe( `print_active_sessions_table`, () => {
             attached: false,
         } ], [] ) )
 
-        expect( output ).toMatch( /babysit_\/workspace\/legacy_codex_123\s+unknown\s+detached\s+unknown\s+-/ )
+        expect( output ).toMatch( /\n {2}-\n {2}└─ babysit_\/workspace\/legacy_codex_123\s+unknown\s+detached\s+unknown\n/ )
+
+    } )
+
+    it( `groups sessions under their workspace trunk in first-seen order`, async () => {
+
+        const output = await capture_console( () => print_active_sessions_table( [
+            { name: `babysit_a`, attached: false, agent_status: `running` },
+            { name: `babysit_b`, attached: false, agent_status: `idle` },
+            { name: `babysit_c`, attached: false, agent_status: `waiting` },
+        ], [
+            { tmux_session: `babysit_a`, name: `one`, agent: `codex`, pwd: `/w/ping/pong` },
+            { tmux_session: `babysit_b`, name: `two`, agent: `claude`, pwd: `/w/ding/dong` },
+            { tmux_session: `babysit_c`, name: `three`, agent: `claude`, pwd: `/w/ping/pong` },
+        ], { numbered: true } ) )
+
+        const lines = output.split( `\n` ).filter( line => line.startsWith( `  ` ) ).slice( 2 )
+
+        expect( lines.map( line => line.trim().split( /\s+/ ).slice( 0, 3 ).join( ` ` ) ) ).toEqual( [
+            `ping/pong`,
+            `├─ 1 one`,
+            `└─ 3 three`,
+            `ding/dong`,
+            `└─ 2 two`,
+        ] )
+
+    } )
+
+    it( `renders ASCII branches on dumb terminals`, () => {
+
+        const tree = format_session_tree( [ `#`, `NAME` ], [ [ 1, `one` ], [ 2, `two` ] ], [ `repo`, `repo` ], {
+            env: { TERM: `dumb` },
+        } )
+
+        expect( tree.lines ).toEqual( [ `repo`, `|- 1  one`, `\\- 2  two` ] )
+        expect( tree.header ).toBe( `   #  NAME` )
+        expect( tree.divider.length ).toBe( Math.max( tree.header.length, ...tree.lines.map( line => line.length ) ) )
 
     } )
 
