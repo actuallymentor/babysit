@@ -148,13 +148,58 @@ export const format_table = ( headers, rows ) => {
 }
 
 /**
- * Print active sessions in the same table shape used by `babysit list`.
+ * Tree glyphs for the session list. Plain ASCII on dumb terminals.
+ * @param {Object} [env=process.env] - Environment to inspect
+ * @returns {{ branch: string, last: string }} Leaf prefixes
+ */
+const tree_glyphs = ( env = process.env ) => env.TERM === `dumb`
+    ? { branch: `|- `, last: `\\- ` }
+    : { branch: `├─ `, last: `└─ ` }
+
+/**
+ * Group aligned table rows under their trunk label, keeping first-seen order.
+ * Each leaf row is prefixed with a branch glyph; the header receives the same
+ * indent so columns line up across trunks.
+ * @param {string[]} headers - Leaf column labels
+ * @param {Array<Array<string|number>>} rows - Leaf values, one per session
+ * @param {string[]} trunks - Trunk label per row (same index as rows)
+ * @param {Object} [options]
+ * @param {Object} [options.env] - Environment for glyph selection
+ * @returns {{ header: string, divider: string, lines: string[] }} Rendered tree
+ */
+export const format_session_tree = ( headers, rows, trunks, { env = process.env } = {} ) => {
+
+    const table = format_table( headers, rows )
+    const glyphs = tree_glyphs( env )
+    const indent = ` `.repeat( glyphs.branch.length )
+
+    // Trunks in order of first appearance; leaves keep their original row order
+    const trunk_order = [ ...new Set( trunks ) ]
+    const lines = trunk_order.flatMap( trunk => {
+        const leaves = table.rows.filter( ( _, index ) => trunks[index] === trunk )
+        return [
+            trunk,
+            ...leaves.map( ( leaf, index ) => `${ index === leaves.length - 1 ? glyphs.last : glyphs.branch }${ leaf }` ),
+        ]
+    } )
+
+    const header = `${ indent }${ table.header }`
+    const width = Math.max( header.length, ...lines.map( line => line.length ) )
+
+    return { header, divider: `-`.repeat( width ), lines }
+
+}
+
+/**
+ * Print active sessions as a tree: one trunk per workspace directory, one
+ * numbered leaf per session with the remaining columns. Shared by `list`,
+ * `open`, and `close` so selector numbers read the same everywhere.
  * @param {Array<{ name: string, attached: boolean }>} tmux_sessions - Active tmux sessions
  * @param {Object[]} stored_sessions - Stored Babysit metadata
  * @param {Object} [options]
- * @param {string} [options.title] - Table title
+ * @param {string} [options.title] - Tree title
  * @param {boolean} [options.numbered=false] - Show active-list selectors
- * @param {number[]} [options.numbers] - Global selectors for a filtered table
+ * @param {number[]} [options.numbers] - Global selectors for a filtered tree
  * @param {boolean} [options.show_flags=false] - Show stored launch modifiers
  * @param {boolean} [options.all=false] - Include diagnostic IDs and raw tmux names
  */
@@ -173,11 +218,10 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         `TMUX`,
         `AGENT`,
         ... show_flags ? [ `FLAGS` ] : [],
-        `DIRECTORY`,
         ... all ? [ `ID`, `SESSION` ] : [],
     ]
 
-    const rows = tmux_sessions.map( ( tmux, index ) => {
+    const sessions = tmux_sessions.map( ( tmux, index ) => {
 
         // Cross-reference with stored session metadata
         const stored = stored_sessions.find( session => session.tmux_session === tmux.name )
@@ -187,27 +231,32 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
-        const directory = format_session_directory( stored?.pwd )
 
-        return [
-            ... numbered ? [ numbers[index] ] : [] ,
-            name,
-            status,
-            tmux_status,
-            agent,
-            ... show_flags ? [ flags ] : [],
-            directory,
-            ... all ? [ session_id, tmux.name ] : [],
-        ]
+        return {
+            trunk: format_session_directory( stored?.pwd ),
+            leaf: [
+                ... numbered ? [ numbers[index] ] : [] ,
+                name,
+                status,
+                tmux_status,
+                agent,
+                ... show_flags ? [ flags ] : [],
+                ... all ? [ session_id, tmux.name ] : [],
+            ],
+        }
 
     } )
 
-    const table = format_table( headers, rows )
+    const tree = format_session_tree(
+        headers,
+        sessions.map( session => session.leaf ),
+        sessions.map( session => session.trunk )
+    )
 
     console.log( `\n${ title }\n` )
-    console.log( `  ${ table.header }` )
-    console.log( `  ${ table.divider }` )
-    table.rows.forEach( row => console.log( `  ${ row }` ) )
+    console.log( `  ${ tree.header }` )
+    console.log( `  ${ tree.divider }` )
+    tree.lines.forEach( line => console.log( `  ${ line }` ) )
 
     console.log( `` )
     if( numbered ) console.log( `Open one with: babysit open <number>\n` )

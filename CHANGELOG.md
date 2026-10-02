@@ -3,6 +3,7 @@
 ## 1.11.0 — 2026-10-02
 
 ### Changed
+- Render `list`, `open`, and `close` session listings as a tree: one trunk per workspace directory, numbered session leaves beneath it.
 - Verify only the launched agent's authentication at startup; `doctor --auth` still covers every installed agent.
 - Upload staged credentials as one tar stream instead of one `docker cp` per file; symlinks in staging are refused.
 - Recognise Claude Code 2.1.287's permission-mode footer when waiting for the initial prompt.

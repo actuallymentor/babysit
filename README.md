@@ -83,7 +83,7 @@ Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
-| `babysit list [--all]` | Active sessions; `--all` adds IDs/tmux names |
+| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered session leaves; `--all` adds IDs/tmux names |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
