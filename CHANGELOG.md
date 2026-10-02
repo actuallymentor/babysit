@@ -4,7 +4,7 @@
 
 ### Changed
 - Verify only the launched agent's authentication at startup; `doctor --auth` still covers every installed agent.
-- Upload staged credentials as one tar stream instead of one `docker cp` per file.
+- Upload staged credentials as one tar stream instead of one `docker cp` per file; symlinks in staging are refused.
 - Recognise Claude Code 2.1.287's permission-mode footer when waiting for the initial prompt.
 - Skip the fixed startup grace delay once the agent's TUI is on screen.
 

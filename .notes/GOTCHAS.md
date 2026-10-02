@@ -181,7 +181,7 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 
 - Claude Code 2.1.287 dropped `? for shortcuts` from the idle composer; the footer is now `⏵⏵ <mode> on (shift+tab to cycle)`, and the running state shows a spinner line without an interrupt hint. Readiness accepts either footer; idle detection for Claude falls back to output stability (keep it that way unless a stable idle-only control appears).
 
-- `docker cp` into a *stopped* container costs ~5s per call on busy daemons (rootfs mount); into a running one ~0.1s. Stage every copy mount in one ustar archive (`src/docker/tar.js`) and upload once via `docker cp - ID:/`. Pay the mount once, never per file. `run()` must swallow stdin EPIPE when docker exits early.
+- `docker cp` into a *stopped* container costs ~5s per call on busy daemons (rootfs mount); into a running one ~0.1s. Stage every copy mount in one ustar archive (`src/docker/tar.js`) and upload once via `docker cp - ID:/`. Pay the mount once, never per file. `run()` must swallow stdin EPIPE when docker exits early. The archiver must `lstat` and open with `O_NOFOLLOW`: Codex staging dirs are world-writable, and `docker cp` never dereferenced symlinks.
 
 - Startup authentication verifies the launched agent only (`scope: 'active'`). Unauthenticated results are not cached, so a bystander CLI probe would otherwise cost a full probe container every boot. Do not re-add non-active agents to the foreground check; background probing from the monitor was reviewed and rejected (see HUMAN.md 2026-10-02).
 

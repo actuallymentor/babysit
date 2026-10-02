@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'fs'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync } from 'fs'
 import { join } from 'path'
 
 // Minimal ustar writer. `docker cp <file> CONTAINER:<path>` into a stopped
@@ -56,22 +56,39 @@ const pad_to_block = size => ( BLOCK - size % BLOCK ) % BLOCK
 
 const strip_slashes = path => path.replace( /^\/+|\/+$/g, `` )
 
+/**
+ * Read a regular file without following symlinks. Staging directories can be
+ * shared-writable, so a planted link must never pull foreign host files into
+ * the container; O_NOFOLLOW also closes the window between lstat and read.
+ */
+const read_regular_file = source => {
+
+    const fd = openSync( source, constants.O_RDONLY | constants.O_NOFOLLOW )
+    try {
+        const stats = fstatSync( fd )
+        if( !stats.isFile() ) throw new Error( `Unsupported tar source: ${ source }` )
+        return { stats, content: readFileSync( fd ) }
+    } finally {
+        closeSync( fd )
+    }
+
+}
+
 /** Walk one host path into tar entries rooted at `target` (absolute container path). */
 const entries_for = ( source, target ) => {
 
-    const stats = statSync( source )
-    const path = strip_slashes( target )
-    const mtime = Math.floor( stats.mtimeMs / 1_000 )
+    const link = lstatSync( source )
+    if( link.isSymbolicLink() ) throw new Error( `Refusing to upload symlink ${ source }` )
 
-    if( stats.isDirectory() ) return [
-        { path: `${ path }/`, mode: stats.mode, size: 0, type: `5`, mtime, content: Buffer.alloc( 0 ) },
+    const path = strip_slashes( target )
+
+    if( link.isDirectory() ) return [
+        { path: `${ path }/`, mode: link.mode, size: 0, type: `5`, mtime: Math.floor( link.mtimeMs / 1_000 ), content: Buffer.alloc( 0 ) },
         ...children_for( source, path ),
     ]
 
-    if( !stats.isFile() ) throw new Error( `Unsupported tar source: ${ source }` )
-
-    const content = readFileSync( source )
-    return [ { path, mode: stats.mode, size: content.length, type: `0`, mtime, content } ]
+    const { stats, content } = read_regular_file( source )
+    return [ { path, mode: stats.mode, size: content.length, type: `0`, mtime: Math.floor( stats.mtimeMs / 1_000 ), content } ]
 
 }
 
