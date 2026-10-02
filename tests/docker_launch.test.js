@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { EventEmitter } from 'events'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { fileURLToPath } from 'url'
@@ -124,13 +124,13 @@ describe( `prepared Docker launch`, () => {
 
         const launch = await prepare_docker_launch( make_options( mount ), {
             signal_target: signals,
-            run_command: async ( command, args ) => {
+            run_command: async ( command, args, options ) => {
                 calls.push( { command, args: [ ...args ] } )
 
                 if( args.includes( `create` ) ) return CONTAINER_ID
                 if( args.includes( `cp` ) ) {
                     expect( existsSync( transport.file ) ).toBe( true )
-                    uploaded_profile = readFileSync( transport.file, `utf-8` )
+                    uploaded_profile = options.input.toString( `utf-8` )
                     return ``
                 }
 
@@ -148,8 +148,9 @@ describe( `prepared Docker launch`, () => {
         expect( create_call.args ).not.toContain( `--rm` )
         expect( create_call.args.join( ` ` ) ).not.toContain( `fake-token` )
         expect( create_call.args.join( ` ` ) ).not.toContain( transport.file )
-        expect( copy_call.args ).toContain( transport.file )
-        expect( copy_call.args ).toContain( `${ CONTAINER_ID }:/tmp/.babysit-gh-hosts.yml` )
+        // Secrets travel inside one tar on stdin, never as a CLI argument.
+        expect( copy_call.args ).toEqual( [ `cp`, `-`, `${ CONTAINER_ID }:/` ] )
+        expect( uploaded_profile ).toContain( `tmp/.babysit-gh-hosts.yml` )
         expect( uploaded_profile ).toContain( `fake-token` )
         expect( existsSync( transport.directory ) ).toBe( false )
         expect( seccomp_profile_path ).toStartWith(
@@ -745,11 +746,12 @@ describe( `prepared Docker launch`, () => {
         const calls = []
         const launch = await prepare_docker_launch( options, {
             signal_target: fake_signals(),
-            run_command: async ( command, args ) => {
+            run_command: async ( command, args, options ) => {
                 calls.push( { command, args: [ ...args ] } )
                 if( args.includes( `create` ) ) return CONTAINER_ID
                 if( args.includes( `cp` ) ) {
-                    staged_environment = readFileSync( args.at( -2 ), `utf-8` )
+                    // Entry content follows its 512-byte ustar header.
+                    staged_environment = options.input.toString( `utf-8`, 512, 512 + 23 )
                     return ``
                 }
                 return ``

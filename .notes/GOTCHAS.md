@@ -176,3 +176,12 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - Claude control tests must exercise genuine model switches at narrow sizes with production key timing. Claude 2.1.284 family rows carry versioned names in descriptions; compact pickers can clip both selection and Esc footer. Recognize owned dialogs by the native intro for failure cleanup, and normalize wrapped confirmations. Mid-turn notices sit immediately above the composer and may start at column two. Remove dim ghost text only inside the composer: native borders are dim too, and dim styling carries across wrapped lines without repeating its escape. Strip dated API ID suffixes before matching the advertised version. Subagent helper calls inherit the root launch and control its main pane; they do not change a subagent's private model.
 
 - Update subprocess deadlines must be passed to `run` itself; an outer promise timeout cannot extend its 30-second default. Image release versions must come from image metadata, never the updating host binary.
+
+- `docker ps --format '{{json .}}'` forces a per-container size computation (seconds, exceeds the 3s watchtower timeout). Use explicit `{{.Names}}\t{{.Image}}` columns; keep the Go template in `DOCKER_PS_FORMAT`.
+
+- Claude Code 2.1.287 dropped `? for shortcuts` from the idle composer; the footer is now `⏵⏵ <mode> on (shift+tab to cycle)`, and the running state shows a spinner line without an interrupt hint. Readiness accepts either footer; idle detection for Claude falls back to output stability (keep it that way unless a stable idle-only control appears).
+
+- `docker cp` into a *stopped* container costs ~5s per call on busy daemons (rootfs mount); into a running one ~0.1s. Stage every copy mount in one ustar archive (`src/docker/tar.js`) and upload once via `docker cp - ID:/`. Pay the mount once, never per file. `run()` must swallow stdin EPIPE when docker exits early.
+
+- Startup authentication verifies the launched agent only (`scope: 'active'`). Unauthenticated results are not cached, so a bystander CLI probe would otherwise cost a full probe container every boot. Do not re-add non-active agents to the foreground check; background probing from the monitor was reviewed and rejected (see HUMAN.md 2026-10-02).
+

@@ -1,5 +1,12 @@
 # Operational Research
 
+## Docker daemon latency on the dev host — 2026-10-02
+
+- `docker create` 8-10s for any image, with or without volumes, even after idle; occasionally 0.2-0.3s. Daemon-side (overlay2 on ZFS, 991 volumes). Not addressable from Babysit.
+- `docker cp <file> STOPPED:/path` 5-10s each; `tar | docker cp - STOPPED:/` ~0.1s after the first call (first call pays the ~5s rootfs mount once). Into a running container every form is ~0.1s. `docker rm -f` of a running container 4-5s, of a never-started one <0.2s.
+- `docker ps --format '{{json .}}'` 3-8s (includes Size); explicit columns 80ms.
+- Claude Code 2.1.287 pane: idle footer `⏵⏵ auto mode on (shift+tab to cycle) · ← for agents`; running shows `✽ Wrangling… (3s · ↓ 21 tokens)` with no `esc to interrupt`.
+
 ## Codex host re-login propagation — 2026-09-26
 
 - Diagnosis only; no runtime change. In an isolated Docker container using dummy credentials, atomic host credential replacement remained invisible after 1.5 seconds; explicitly flushing the existing sync updated the still-running container. The current periodic sync waits up to five minutes. Relevant sync/setup/transport tests: 40 passed.

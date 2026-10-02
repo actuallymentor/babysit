@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.11.0 — 2026-10-02
+
+### Changed
+- Verify only the launched agent's authentication at startup; `doctor --auth` still covers every installed agent.
+- Upload staged credentials as one tar stream instead of one `docker cp` per file.
+- Recognise Claude Code 2.1.287's permission-mode footer when waiting for the initial prompt.
+- Skip the fixed startup grace delay once the agent's TUI is on screen.
+
+### Fixed
+- Watchtower inspection no longer times out: `docker ps` runs without per-container size computation.
+- Startup no longer stalls 60 seconds and drops the initial prompt on current Claude Code versions.
+- Startup no longer re-probes an unauthenticated bystander CLI on every boot.
+
 ## 1.10.2 — 2026-10-01
 
 ### Changed

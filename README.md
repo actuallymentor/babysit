@@ -91,13 +91,15 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Interactively prune unused Docker data and managed clones |
-| `babysit doctor --auth [agent] [--refresh]` | Real auth check; bypass 12h cache with `--refresh` |
+| `babysit doctor --auth [agent] [--refresh]` | Real auth check for every installed agent; bypass 12h cache with `--refresh` |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image; show image version |
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; Claude background shells → waiting; otherwise output stability; unreadable → unknown.
 Attachment is separate. Pruning needs free space for locks/journals.
+Launch verifies only the launched agent's authentication (12h hash-bound cache); other
+installed agents still receive credentials but are checked by `doctor --auth`.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 

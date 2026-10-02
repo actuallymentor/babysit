@@ -5,7 +5,7 @@ import { log } from './log.js'
  * Run a command and return its stdout as a string
  * @param {string} cmd - The command to run
  * @param {string[]} args - Command arguments
- * @param {Object} [options] - spawn options
+ * @param {Object} [options] - spawn options; `input` (string/Buffer) is written to stdin
  * @param {number} [timeout_ms=30000] - Timeout in milliseconds
  * @returns {Promise<string>} stdout output
  */
@@ -13,7 +13,15 @@ export const run = ( cmd, args = [], options = {}, timeout_ms = 30_000 ) => {
 
     return new Promise( ( resolve, reject ) => {
 
-        const child = spawn( cmd, args, { stdio: [ `ignore`, `pipe`, `pipe` ], ...options } )
+        // `input` feeds the child's stdin once and closes it (docker cp -).
+        const { input = null, ...spawn_options } = options
+        const child = spawn( cmd, args, { stdio: [ input === null ? `ignore` : `pipe`, `pipe`, `pipe` ], ...spawn_options } )
+        if( input !== null ) {
+            // A child that exits before reading (docker cp rejecting the target)
+            // raises EPIPE on stdin; the exit code already carries the failure.
+            child.stdin.on( `error`, () => {} )
+            child.stdin.end( input )
+        }
         let stdout = ``
         let stderr = ``
         let settled = false

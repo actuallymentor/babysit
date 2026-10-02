@@ -333,6 +333,22 @@ Welcome back Mentor!
         expect( is_initial_prompt_ready( claude, output ) ).toBe( true )
     } )
 
+    it( `recognises Claude Code 2.1.287's permission-mode footer without "? for shortcuts"`, () => {
+        const output = `
+ ▐▛███▛█   Claude Code v2.1.287
+▝▜██████▀  Fable 5.1 with medium effort · Claude Max
+ ▝▝   ▝▝   /workspace
+▎ Auto mode is now Claude Code's default permission mode.
+  1 more notice hidden
+────────────────────────────────────────
+❯ 
+────────────────────────────────────────
+  sandbox
+  ⏵⏵ auto mode on (shift+tab to cycle)
+`
+        expect( is_initial_prompt_ready( claude, output ) ).toBe( true )
+    } )
+
     it( `does not require Claude's banner to use three-part semver`, () => {
         expect( is_initial_prompt_ready( claude, `Claude Code v3\n? for shortcuts` ) ).toBe( true )
     } )
@@ -696,6 +712,43 @@ describe( `startup authentication policy`, () => {
             } ] )
             expect( result.cache_context.credential_fingerprint )
                 .toBe( credential_identity.fingerprint )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
+    it( `verifies only the launched agent in active scope`, async () => {
+
+        const fixture = startup_auth_fixture()
+        const checked = []
+        const detected = []
+
+        try {
+            const result = await check_startup_agent_authentication( codex, {
+                workspace: `/tmp/project`,
+                mode: {},
+                creds_mounts: fixture.creds_mounts,
+                input: fixture.input,
+                output: fixture.output,
+                cache_path: fixture.cache_path,
+                resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
+                run_auth_check: async agent => {
+                    checked.push( agent.name )
+                    return { name: agent.name, status: `authenticated`, authenticated: true }
+                },
+                is_host_cli_installed: agent => {
+                    detected.push( agent.name )
+                    return true
+                },
+                agents: [ codex, claude, opencode ],
+                scope: `active`,
+            } )
+
+            expect( checked ).toEqual( [ `codex` ] )
+            expect( detected ).toEqual( [] )
+            expect( result.results.map( entry => entry.name ) ).toEqual( [ `codex` ] )
         } finally {
             fixture.cleanup()
         }

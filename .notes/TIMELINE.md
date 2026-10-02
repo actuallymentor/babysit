@@ -123,3 +123,6 @@
 
 - 2026-09-30: Final CI exposed Docker copy-up racing between parallel authentication containers on a fresh shared npm cache. Disable image seeding for shared cache volumes and ensure writable roots on startup.
 - 2026-09-30: A long-running container still had the pre-benchmark model helper despite workspace v1.9.4. Updated its installed helper from the existing repository implementation; real `babysit model` now returns available models followed by 30 live/cache-backed benchmark rows. Repository feature was already committed in 9abb9e7; running containers retain baked helper files until explicitly refreshed or replaced.
+
+- 2026-10-02: Profiled `babysit claude` boot with BABYSIT_DEBUG=1 on the host daemon: ~85s warm (60s TUI-readiness timeout on Claude 2.1.287, 70s antigravity re-probe, 3s watchtower timeout, 10s container prep), 100s+ cold. Fixed readiness footer, active-only startup auth, single tar upload, cheap `docker ps`, conditional grace sleep. Warm boot now ~17s; remaining cost is `docker create` (~10s, daemon-side) plus the first rootfs mount (~5s). Three external reviews rejected the planned monitor-side background auth warmer; deferred with reasons in HUMAN.md.
+

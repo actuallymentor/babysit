@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 
 import {
     COMPATIBLE_WATCHTOWER_IMAGE_REPOSITORIES,
+    DOCKER_PS_FORMAT,
     find_unrecognized_watchtower_containers,
     inspect_running_watchtower_containers,
     is_compatible_watchtower_image,
@@ -10,7 +11,7 @@ import {
     warn_if_unrecognized_watchtower_is_running,
 } from '../src/docker/watchtower.js'
 
-const docker_row = ( name, image ) => JSON.stringify( { Names: name, Image: image } )
+const docker_row = ( name, image ) => `${ name }\t${ image }`
 
 describe( `Watchtower compatibility`, () => {
 
@@ -69,11 +70,11 @@ describe( `Watchtower compatibility`, () => {
 
 describe( `Watchtower Docker inspection`, () => {
 
-    it( `parses valid Docker rows and skips malformed output`, () => {
+    it( `parses tab-separated Docker rows and skips malformed output`, () => {
 
         const output = [
             docker_row( `watchtower`, `nickfedor/watchtower:latest` ),
-            `not-json`,
+            `malformed-row-without-image`,
             docker_row( `app`, `example/app:latest` ),
         ].join( `\n` )
 
@@ -93,7 +94,7 @@ describe( `Watchtower Docker inspection`, () => {
             env: {},
             spawn_sync: ( cmd, args, options ) => {
                 expect( cmd ).toBe( `docker` )
-                expect( args ).toEqual( [ `ps`, `--format`, `{{json .}}` ] )
+                expect( args ).toEqual( [ `ps`, `--format`, DOCKER_PS_FORMAT ] )
                 expect( options.stdio ).toEqual( [ `ignore`, `pipe`, `pipe` ] )
 
                 return {
@@ -120,7 +121,7 @@ describe( `Watchtower Docker inspection`, () => {
             env: { BABYSIT_DOCKER_USE_SUDO: `1` },
             spawn_sync: ( cmd, args ) => {
                 expect( cmd ).toBe( `sudo` )
-                expect( args ).toEqual( [ `docker`, `ps`, `--format`, `{{json .}}` ] )
+                expect( args ).toEqual( [ `docker`, `ps`, `--format`, DOCKER_PS_FORMAT ] )
                 return { status: 0, stdout: `` }
             },
         } )
