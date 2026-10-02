@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync } from 'fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync, symlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { execFileSync } from 'child_process'
@@ -78,6 +78,23 @@ describe( `tar archive builder`, () => {
 
             expect( header.prefix ).toBe( `a`.repeat( 90 ) )
             expect( header.name ).toBe( `${ `b`.repeat( 85 ) }/creds.json` )
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `refuses symlinks instead of archiving their targets`, () => {
+
+        const dir = fixture()
+        try {
+            symlinkSync( `/etc/hostname`, join( dir, `planted` ) )
+            symlinkSync( `/etc`, join( dir, `gh`, `planted-dir` ) )
+
+            expect( () => build_tar_archive( [ { source: join( dir, `planted` ), target: `/x/creds.json` } ] ) )
+                .toThrow( /Refusing to upload symlink/ )
+            expect( () => build_tar_archive( [ { source: `${ join( dir, `gh` ) }/.`, target: `/x` } ] ) )
+                .toThrow( /Refusing to upload symlink/ )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
         }
