@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync } from 'fs'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync } from 'fs'
 import { join } from 'path'
 
 // Minimal ustar writer. `docker cp <file> CONTAINER:<path>` into a stopped
@@ -59,11 +59,12 @@ const strip_slashes = path => path.replace( /^\/+|\/+$/g, `` )
 /**
  * Read a regular file without following symlinks. Staging directories can be
  * shared-writable, so a planted link must never pull foreign host files into
- * the container; O_NOFOLLOW also closes the window between lstat and read.
+ * the container. O_NOFOLLOW closes the lstat→open window on the final
+ * component; O_NONBLOCK keeps a planted FIFO from parking the launch.
  */
 const read_regular_file = source => {
 
-    const fd = openSync( source, constants.O_RDONLY | constants.O_NOFOLLOW )
+    const fd = openSync( source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK )
     try {
         const stats = fstatSync( fd )
         if( !stats.isFile() ) throw new Error( `Unsupported tar source: ${ source }` )
@@ -74,17 +75,26 @@ const read_regular_file = source => {
 
 }
 
+/** lstat that refuses symlinks and anything that is not a file or directory. */
+const inspect_source = source => {
+
+    const stats = lstatSync( source )
+    if( stats.isSymbolicLink() ) throw new Error( `Refusing to upload symlink ${ source }` )
+    if( !stats.isFile() && !stats.isDirectory() ) throw new Error( `Unsupported tar source: ${ source }` )
+
+    return stats
+
+}
+
 /** Walk one host path into tar entries rooted at `target` (absolute container path). */
 const entries_for = ( source, target ) => {
 
-    const link = lstatSync( source )
-    if( link.isSymbolicLink() ) throw new Error( `Refusing to upload symlink ${ source }` )
-
+    const link = inspect_source( source )
     const path = strip_slashes( target )
 
     if( link.isDirectory() ) return [
         { path: `${ path }/`, mode: link.mode, size: 0, type: `5`, mtime: Math.floor( link.mtimeMs / 1_000 ), content: Buffer.alloc( 0 ) },
-        ...children_for( source, path ),
+        ...children_for( realpathSync( source ), path ),
     ]
 
     const { stats, content } = read_regular_file( source )
@@ -92,10 +102,22 @@ const entries_for = ( source, target ) => {
 
 }
 
-/** Entries for a directory's contents, placed directly under `target`. */
-const children_for = ( directory, target ) => readdirSync( directory )
-    .sort()
-    .flatMap( child => entries_for( join( directory, child ), `${ target }/${ child }` ) )
+/**
+ * Entries for a directory's contents, placed directly under `target`.
+ * Node has no openat, so a directory component swapped for a symlink between
+ * inspection and descent is a residual race (the same one `docker cp`'s path
+ * walk had); the realpath check narrows it to that window.
+ */
+const children_for = ( directory, target ) => {
+
+    inspect_source( directory )
+    if( realpathSync( directory ) !== directory ) throw new Error( `Refusing to traverse redirected directory ${ directory }` )
+
+    return readdirSync( directory )
+        .sort()
+        .flatMap( child => entries_for( join( directory, child ), `${ target }/${ child }` ) )
+
+}
 
 /**
  * Build one ustar archive from host paths, each placed at its container path.
@@ -109,7 +131,7 @@ export const build_tar_archive = ( mounts = [] ) => {
 
     // `dir/.` copies the directory's contents (docker cp semantics)
     const entries = mounts.flatMap( ( { source, target } ) => source.endsWith( `/.` )
-        ? children_for( source.slice( 0, -2 ), strip_slashes( target ) )
+        ? children_for( realpathSync( source.slice( 0, -2 ) ), strip_slashes( target ) )
         : entries_for( source, target )
     )
 

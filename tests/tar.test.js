@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, chmodSync, symlinkSync } from 'fs'
+import { execFileSync as exec_file } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { execFileSync } from 'child_process'
@@ -95,6 +96,20 @@ describe( `tar archive builder`, () => {
                 .toThrow( /Refusing to upload symlink/ )
             expect( () => build_tar_archive( [ { source: `${ join( dir, `gh` ) }/.`, target: `/x` } ] ) )
                 .toThrow( /Refusing to upload symlink/ )
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `rejects a FIFO without blocking on it`, () => {
+
+        const dir = fixture()
+        try {
+            exec_file( `mkfifo`, [ join( dir, `pipe` ) ] )
+
+            expect( () => build_tar_archive( [ { source: join( dir, `pipe` ), target: `/x/creds.json` } ] ) )
+                .toThrow( /Unsupported tar source/ )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
         }
