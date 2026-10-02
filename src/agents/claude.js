@@ -11,10 +11,14 @@ const INITIAL_PROMPT_BLOCKERS = [
     /Do you trust the files in this folder/i,
 ]
 
+// Claude Code <=2.1.28x shows "? for shortcuts" under an idle composer; 2.1.287+
+// replaced it with the permission-mode footer "⏵⏵ auto mode on (shift+tab to cycle)".
+const COMPOSER_FOOTERS = [ /\?\s+for shortcuts/i, /shift\+tab to cycle/i ]
+
 const is_initial_prompt_ready = output => {
 
     const has_composer = /Claude Code v\d/i.test( output )
-        && /\?\s+for shortcuts/i.test( output )
+        && COMPOSER_FOOTERS.some( pattern => pattern.test( output ) )
     const has_startup_blocker = INITIAL_PROMPT_BLOCKERS.some( pattern => pattern.test( output ) )
 
     return has_composer && !has_startup_blocker

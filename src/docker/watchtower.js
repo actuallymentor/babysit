@@ -60,8 +60,13 @@ export const normalise_docker_image_repository = ( image = `` ) => {
 export const is_compatible_watchtower_image = ( image = `` ) =>
     COMPATIBLE_WATCHTOWER_IMAGES.has( normalise_docker_image_repository( image ) )
 
+// `{{json .}}` makes Docker compute every container's writable-layer size,
+// which takes seconds on busy daemons and blew past the 3s timeout. Names and
+// images are all this check needs.
+export const DOCKER_PS_FORMAT = `{{.Names}}\t{{.Image}}`
+
 /**
- * Parse newline-delimited JSON emitted by `docker ps --format '{{json .}}'`.
+ * Parse tab-separated rows emitted by `docker ps --format DOCKER_PS_FORMAT`.
  * @param {string} output - Docker ps stdout
  * @returns {{ containers: Array<{ name: string, image: string }>, invalid_rows: number }} Parsed containers and skipped rows
  */
@@ -74,15 +79,9 @@ export const parse_docker_ps_output = ( output = `` ) => {
 
     return rows.reduce( ( parsed, row ) => {
 
-        try {
-            const container = JSON.parse( row )
-            parsed.containers.push( {
-                name: String( container.Names || container.Name || `` ),
-                image: String( container.Image || `` ),
-            } )
-        } catch {
-            parsed.invalid_rows++
-        }
+        const [ name, image, ...rest ] = row.split( `\t` )
+        if( image === undefined || rest.length ) parsed.invalid_rows++
+        else parsed.containers.push( { name, image } )
 
         return parsed
 
@@ -125,7 +124,7 @@ export const inspect_running_watchtower_containers = ( {
             ...prefix_args,
             `ps`,
             `--format`,
-            `{{json .}}`,
+            DOCKER_PS_FORMAT,
         ], {
             encoding: `utf8`,
             stdio: [ `ignore`, `pipe`, `pipe` ],

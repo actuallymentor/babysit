@@ -18,6 +18,8 @@ import {
     shell_quote,
 } from './run.js'
 import { create_chrome_seccomp_profile } from './chrome-seccomp.js'
+import { build_tar_archive } from './tar.js'
+import { time_phase } from '../utils/timing.js'
 
 const DOCKER_CREATE_TIMEOUT_MS = 5 * 60 * 1_000
 const DOCKER_COPY_TIMEOUT_MS = 60_000
@@ -268,13 +270,14 @@ export const prepare_docker_launch = async ( options, {
         mount => private_credential_tmpdir( mount.source ) || mount.source
     )
 
-    const run_docker = async ( args, timeout_ms ) => {
+    const run_docker = async ( args, timeout_ms, options = {} ) => {
         const task = Promise.resolve( run_command(
             docker_command,
             args,
             {
                 signal: abort_controller.signal,
                 detached: process.platform !== `win32`,
+                ...options,
             },
             timeout_ms
         ) )
@@ -398,7 +401,7 @@ export const prepare_docker_launch = async ( options, {
         container_name = container_name_from( create_args )
         create_started = true
 
-        const output = await run_docker( create_args.slice( 1 ), DOCKER_CREATE_TIMEOUT_MS )
+        const output = await time_phase( `docker create`, () => run_docker( create_args.slice( 1 ), DOCKER_CREATE_TIMEOUT_MS ) )
         container_owned = true
         if( !cleanup_seccomp_profile() ) {
             throw new Error( `Could not remove Chrome's private seccomp profile after Docker create` )
@@ -410,11 +413,14 @@ export const prepare_docker_launch = async ( options, {
         }
         container_id = created_container_id
 
-        for( const mount of copy_mounts ) {
-            await run_docker(
-                [ ...docker_prefix_args, `cp`, mount.source, `${ container_id }:${ mount.target }` ],
-                DOCKER_COPY_TIMEOUT_MS
-            )
+        // One archive, one upload: every `docker cp` into a stopped container
+        // mounts its rootfs, which costs seconds apiece on busy daemons.
+        if( copy_mounts.length ) {
+            await time_phase( `credential upload`, () => run_docker(
+                [ ...docker_prefix_args, `cp`, `-`, `${ container_id }:/` ],
+                DOCKER_COPY_TIMEOUT_MS,
+                { input: build_tar_archive( copy_mounts ) }
+            ) )
         }
 
         if( !cleanup_credentials( copy_mounts ) ) {

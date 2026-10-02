@@ -825,13 +825,18 @@ export const should_confirm_startup_authentication = ( results = [], skipped = f
     )
 
 /**
- * Check the active agent plus host-installed supported agents, reusing fresh
- * hash-bound successes and running every miss concurrently. The main session
- * still receives all captured credentials so nested agent calls work; each
- * throwaway probe receives only its own credential descriptors.
+ * Check the active agent (scope `active`) or the active agent plus every
+ * host-installed supported agent (scope `installed`), reusing fresh hash-bound
+ * successes and running every miss concurrently. The main session still
+ * receives all captured credentials so nested agent calls work; each throwaway
+ * probe receives only its own credential descriptors.
+ *
+ * Startup uses `active`: an unauthenticated bystander CLI has no cache entry,
+ * so checking it meant a full probe container on every single boot.
  *
  * @param {Object} agent - Active agent adapter
  * @param {Object} options - Launch authentication context
+ * @param {'active'|'installed'} [options.scope='installed'] - Which agents to verify
  * @returns {Promise<{ results: Object[], skipped: boolean, cache_context: Object|null, cache_contexts: Object }>} Results and safe trust metadata
  */
 export const check_startup_agent_authentication = async ( agent, {
@@ -850,12 +855,15 @@ export const check_startup_agent_authentication = async ( agent, {
     agent_args = [],
     reconcile_credentials = async () => {},
     credential_source_changed = () => false,
+    scope = `installed`,
 } ) => {
 
-    const selected_agents = select_startup_auth_agents( agent, {
-        candidates: agents,
-        is_installed: is_host_cli_installed,
-    } )
+    const selected_agents = scope === `active`
+        ? [ agent ]
+        : select_startup_auth_agents( agent, {
+            candidates: agents,
+            is_installed: is_host_cli_installed,
+        } )
     const cache_options = cache_path ? { cache_path } : {}
     const context_files = new Map( selected_agents.map( candidate => [
         candidate.name,
@@ -1417,6 +1425,7 @@ async function start_session( cmd ) {
             reconcile_credentials: name => credential_setup.sync?.flush?.( name ),
             credential_source_changed: name => credential_setup.sync?.source_changed?.( name ) === true,
             agent_args: passthrough,
+            scope: `active`,
             ... cmd.recovering ? { input: { isTTY: false } } : {} ,
         } ) )
     } catch ( error ) {
@@ -1606,10 +1615,11 @@ async function start_session( cmd ) {
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
 
+        let prompt_ready = false
         if( initial_prompt ) {
             const readiness_timeout_ms = resolve_initial_prompt_ready_timeout( agent )
             log.info( `Waiting up to ${ readiness_timeout_ms / 1_000 }s for ${ agent.name } to accept the initial prompt` )
-            const prompt_ready = await time_phase(
+            prompt_ready = await time_phase(
                 `tui readiness`,
                 () => wait_for_initial_prompt_ready( session_name, agent, {
                     timeout_ms: readiness_timeout_ms,
@@ -1625,8 +1635,9 @@ async function start_session( cmd ) {
 
         // Give very fast Docker/container failures a chance to close the tmux
         // session before we save resumable metadata. Without this, tmux attach
-        // can print only "no sessions" while the Docker error disappears.
-        await wait( STARTUP_EXIT_GRACE_MS )
+        // can print only "no sessions" while the Docker error disappears. A TUI
+        // observed on screen already proves the container survived its boot.
+        if( !prompt_ready ) await wait( STARTUP_EXIT_GRACE_MS )
     } catch ( e ) {
         await cleanup_failed_launch_credentials( {
             creds_sync,
