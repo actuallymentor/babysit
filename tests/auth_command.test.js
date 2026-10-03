@@ -112,7 +112,6 @@ describe( `auth check`, () => {
             resolve_context_files: () => ( {} ),
             acquire_lease: async () => lease,
             is_wanted: () => false,
-            on_signal: () => () => {},
             select_agents: () => [ get_agent( `codex` ), get_agent( `claude` ) ],
             run_auth_check: async agent => {
                 probes.push( agent.name )
@@ -195,13 +194,37 @@ describe( `auth check`, () => {
 
     } )
 
-    it( `keeps warm only agents that authenticated before`, () => {
+    it( `keeps warm only previously authenticated agents without workspace-specific routes`, () => {
 
         const names = agents => agents.map( agent => agent.name )
-        const cache = { version: 1, agents: { opencode: { authenticated_at: new Date().toISOString() }, claude: { authenticated_at: `2020-01-01T00:00:00.000Z` } } }
+        const cache = { version: 1, agents: {
+            opencode: { authenticated_at: new Date().toISOString() },
+            claude: { authenticated_at: `2020-01-01T00:00:00.000Z` },
+            codex: { authenticated_at: `2020-01-01T00:00:00.000Z` },
+        } }
 
-        expect( names( select_auth_check_agents( { cache } ) ) ).toEqual( [ `claude`, `opencode` ] )
+        // OpenCode's identity includes the launching project's route; a
+        // scheduler-side probe would replace that entry with its own.
+        expect( names( select_auth_check_agents( { cache } ) ) ).toEqual( [ `claude`, `codex` ] )
         expect( names( select_auth_check_agents( { cache: { version: 1, agents: {} } } ) ) ).toEqual( [] )
+
+    } )
+
+    it( `keeps a still-valid entry when a probe fails for a non-auth reason`, async () => {
+
+        const identity = fingerprint_agent_credentials( get_agent( `codex` ), mounts )
+        record_host_auth_success( `codex`, {
+            credential_fingerprint: identity.fingerprint,
+            image_identity: IMAGE_IDENTITY,
+        }, { cache_path, now: Date.now() - AUTH_CHECK_REFRESH_AFTER_MS - 1_000 } )
+
+        const { exit_code, rendered } = check( {
+            run_auth_check: async agent => ( { name: agent.name, status: `failed`, authenticated: false, reason: `timed out` } ),
+        } )
+
+        expect( await exit_code ).toBe( 1 )
+        expect( rendered() ).toContain( `codex: failed (timed out)` )
+        expect( read_host_auth_cache( { cache_path } ).agents.codex ).toBeDefined()
 
     } )
 
@@ -223,6 +246,7 @@ describe( `auth check`, () => {
 
         expect( await exit_code ).toBe( 1 )
         expect( rendered() ).toContain( `codex: unauthenticated (401)` )
+        expect( read_host_auth_cache( { cache_path } ).agents.codex ).toBeUndefined()
 
     } )
 
@@ -260,8 +284,8 @@ describe( `scheduled checker installation`, () => {
 
     it( `carries only the launch-relevant environment`, () => {
 
-        expect( checker_environment( { PATH: `/bin`, DOCKER_HOST: `unix:///run/user/1000/docker.sock`, SECRET: `x`, HOME: `/home/a` } ) )
-            .toEqual( { PATH: `/bin`, DOCKER_HOST: `unix:///run/user/1000/docker.sock` } )
+        expect( checker_environment( { PATH: `/bin`, DOCKER_HOST: `unix:///run/user/1000/docker.sock`, BABYSIT_DOCKER_USE_SUDO: `1`, SECRET: `x`, HOME: `/home/a` } ) )
+            .toEqual( { PATH: `/bin`, BABYSIT_DOCKER_USE_SUDO: `1`, DOCKER_HOST: `unix:///run/user/1000/docker.sock` } )
 
     } )
 

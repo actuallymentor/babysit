@@ -72,6 +72,22 @@ describe( `startup status line`, () => {
 
     } )
 
+    it( `clips the line to the terminal width so it never wraps`, async () => {
+
+        const { output, rendered } = terminal()
+        output.columns = 24
+        const status = start_startup_status( `Starting claude`, { output, env: { TERM: `xterm-256color` }, now: () => 0 } )
+
+        status.set( `waiting for another authentication check to finish` )
+        status.stop()
+        await new Promise( resolve => setTimeout( resolve, 0 ) )
+
+        const [ line ] = rendered().split( `\r\x1b[2K` ).filter( Boolean )
+        expect( Array.from( line ).length ).toBe( 23 )
+        expect( line ).toStartWith( `⠋ Starting claude: wai` )
+
+    } )
+
     it( `stays silent off a TTY`, async () => {
 
         const { output, rendered } = terminal( false )

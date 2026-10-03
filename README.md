@@ -104,7 +104,9 @@ Attachment is separate. Pruning needs free space for locks/journals.
 Launch verifies only the launched agent's authentication (12h hash-bound cache); other
 installed agents still receive credentials but are checked by `doctor --auth`.
 Run `babysit auth init` once so an hourly host-level checker keeps verified logins warm;
-launches then skip the "Checking authentication" probe. Running sessions re-stamp the cache
+launches then skip the "Checking authentication" probe. The checker only refreshes agents a
+launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
+project's provider route) to launch-time verification. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones.
