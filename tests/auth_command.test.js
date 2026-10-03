@@ -13,6 +13,7 @@ import {
 import { get_agent } from '../src/agents/index.js'
 import {
     AUTH_CHECK_REFRESH_AFTER_MS,
+    auth_checker_hint,
     checker_environment,
     cmd_auth_check,
     cmd_auth_init,
@@ -247,6 +248,22 @@ describe( `auth check`, () => {
         expect( await exit_code ).toBe( 1 )
         expect( rendered() ).toContain( `codex: unauthenticated (401)` )
         expect( read_host_auth_cache( { cache_path } ).agents.codex ).toBeUndefined()
+
+    } )
+
+} )
+
+describe( `auth checker hint`, () => {
+
+    const probed = [ { name: `claude`, status: `authenticated`, authenticated: true } ]
+    const cached = [ { name: `claude`, status: `cached`, authenticated: true } ]
+
+    it( `nudges only after a real probe on a host without the checker`, () => {
+
+        expect( auth_checker_hint( probed, { scheduler: { installed: false } } ) ).toContain( `babysit auth init` )
+        expect( auth_checker_hint( cached, { scheduler: { installed: false } } ) ).toBeNull()
+        expect( auth_checker_hint( probed, { scheduler: { installed: true } } ) ).toBeNull()
+        expect( auth_checker_hint( probed, { scheduler: null } ) ).toBeNull()
 
     } )
 

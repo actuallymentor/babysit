@@ -226,6 +226,21 @@ export const resolve_checker_scheduler = ( {
 
 }
 
+/**
+ * One-line nudge for a launch that just paid a real probe while no scheduled
+ * checker exists; null when the checker is installed or unsupported here.
+ * @param {Object[]} results - Startup authentication results
+ * @param {Object} [options] - Scheduler seam
+ * @returns {string|null} Hint text
+ */
+export const auth_checker_hint = ( results = [], { scheduler = resolve_checker_scheduler() } = {} ) => {
+
+    const probed = results.some( result => result.status === `authenticated` )
+    if( !probed || !scheduler || scheduler.installed ) return null
+    return `This launch verified authentication with a real probe. Run babysit auth init once to keep logins verified hourly in the background.`
+
+}
+
 /* ---------- commands ---------- */
 
 /**
