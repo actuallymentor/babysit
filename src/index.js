@@ -18,6 +18,7 @@ import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
 import { cmd_config } from './cli/config.js'
 import { cmd_doctor } from './cli/doctor.js'
+import { cmd_auth } from './cli/auth.js'
 import { cmd_prune } from './cli/prune.js'
 import { cmd_web } from './cli/web.js'
 import { check_dependencies } from './deps/check.js'
@@ -29,7 +30,7 @@ import { run_usage } from './cli/usage.js'
 // are pure metadata reads, `__monitor` is a background daemon that inherits
 // the foreground's already-checked environment, and `update` runs its own
 // dep check inside `cmd_update`.
-const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open`, `doctor` ] )
+const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open`, `doctor`, `auth` ] )
 
 /**
  * Main entry point
@@ -138,6 +139,10 @@ const main = async () => {
 
     case `doctor`:
         await cmd_doctor( cmd )
+        break
+
+    case `auth`:
+        process.exitCode = await cmd_auth( cmd )
         break
 
     case `__monitor`:

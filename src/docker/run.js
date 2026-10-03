@@ -185,7 +185,7 @@ export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
             ...prefix_args,
             `info`,
             `--format`,
-            `{{.ServerVersion}}`,
+            `{{.ID}} {{.ServerVersion}}`,
         ], {
             encoding: `utf8`,
             stdio: [ `ignore`, `pipe`, `pipe` ],
@@ -214,9 +214,13 @@ export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
         }
     }
 
+    // One daemon round trip answers both reachability and identity; launch
+    // reuses the ID instead of asking `docker info` a second time.
+    const [ id = ``, ...version ] = String( result.stdout || `` ).trim().split( /\s+/ )
     return {
         available: true,
-        version: String( result.stdout || `` ).trim(),
+        id: id || null,
+        version: version.join( ` ` ),
     }
 
 }

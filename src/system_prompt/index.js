@@ -1,6 +1,6 @@
 // Fragments below are reproduced verbatim from SPECIFICATION.md — keep in sync.
 
-export const base = `Running inside a Babysit container. Workspace: /workspace. Passwordless sudo available. Read ~/.agents/AGENTS.md if present. Never add Co-Authored-By commit lines.
+export const base = `Running inside a Babysit container. Workspace: /workspace. Passwordless sudo available. First, before anything else, read ~/.agents/AGENTS.md if it exists. Never add Co-Authored-By commit lines.
 
 Browser automation: Puppeteer is installed. Use \`xvfb-run -a\` for headful Chrome; never \`--no-sandbox\`.
 

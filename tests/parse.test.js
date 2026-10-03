@@ -87,6 +87,15 @@ describe( `parse_args`, () => {
 
     } )
 
+    it( `parses auth status, check and init with --remove`, () => {
+
+        expect( parse_args( [ `auth` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `status`, agent: null, passthrough: [] } )
+        expect( parse_args( [ `auth`, `check` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `check` } )
+        expect( parse_args( [ `auth`, `init`, `--remove` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `init`, flags: { remove: true } } )
+        expect( () => parse_args( [ `auth`, `warm` ] ) ).toThrow( `Unknown auth command: warm` )
+
+    } )
+
     it( `recognises babysit open <id>`, () => {
         const cmd = parse_args( [ `open`, `abc-123` ] )
         expect( cmd.verb ).toBe( `open` )

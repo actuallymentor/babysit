@@ -135,6 +135,11 @@ export const aggregate_syncs = ( syncs, {
         source_changed: name => active_syncs
             .filter( sync => !name || sync.name === name )
             .some( ( { controller } ) => controller.source_changed?.() === true ),
+        // Receive the agent name whenever one controller writes a rotated
+        // credential back to its host file.
+        on_pull: handler => {
+            active_syncs.forEach( ( { controller, name } ) => controller.on_pull?.( () => handler( name ) ) )
+        },
         connect: container_id => {
             active_syncs.forEach( ( { controller, target } ) => {
                 controller.set_transport( create_transport( container_id, target ) )

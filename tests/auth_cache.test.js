@@ -439,4 +439,40 @@ describe( `host authentication cache`, () => {
 
     } )
 
+    it( `re-stamps one rotated agent mid-session and advances its expected generation`, () => {
+
+        const refreshed = []
+        const session = {
+            auth_cache_contexts: {
+                codex: {
+                    credential_fingerprint: `codex-before`,
+                    credential_parts: [ { kind: `env`, key: `CODEX_KEY`, hash: `codex-hash` } ],
+                    image_identity: IMAGE_IDENTITY,
+                },
+                claude: {
+                    credential_fingerprint: `claude-before`,
+                    credential_parts: [ { kind: `env`, key: `CLAUDE_KEY`, hash: `claude-hash` } ],
+                    image_identity: IMAGE_IDENTITY,
+                },
+            },
+        }
+
+        const result = refresh_session_auth_cache( session, get_agent( `codex` ), {
+            source_changed: () => false,
+        }, {}, {
+            names: [ `codex` ],
+            refresh_parts: parts => ( { fingerprint: `codex-after`, parts } ),
+            refresh_cache: ( name, identity ) => {
+                refreshed.push( [ name, identity.expected_credential_fingerprint, identity.next_credential_fingerprint ] )
+                return true
+            },
+        } )
+
+        expect( result ).toBe( true )
+        expect( refreshed ).toEqual( [ [ `codex`, `codex-before`, `codex-after` ] ] )
+        expect( session.auth_cache_contexts.codex.credential_fingerprint ).toBe( `codex-after` )
+        expect( session.auth_cache_contexts.claude.credential_fingerprint ).toBe( `claude-before` )
+
+    } )
+
 } )

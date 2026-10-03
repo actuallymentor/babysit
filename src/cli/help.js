@@ -28,6 +28,9 @@ Usage:
   babysit usage [--json]               Account usage and limits, on host or in container
   babysit web init                     Initialize or rotate babysit-web access
   babysit doctor --auth [agent|all]    Verify real agent authentication
+  babysit auth [status]                Show cached authentication ages and the checker state
+  babysit auth check                   Re-verify stale cached logins quietly (what the checker runs)
+  babysit auth init [--remove]         Install (or remove) the hourly host-level auth checker
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
 Agents: ${ agents }
@@ -46,6 +49,7 @@ Flags:
   --port H:C      Publish host port H to container port C
   --auth          With "babysit doctor", make real model-backed auth checks
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
+  --remove        With "babysit auth init", uninstall the scheduled checker
   --all           With "list", show full details; with "resume [number]", use every workspace
   --dry-run       With "recover", inspect without restarting
   --json          With "recover", print machine-readable results
@@ -75,6 +79,8 @@ Examples:
   babysit opencode resume abc-123 --yolo
   babysit doctor --auth
   babysit doctor --auth opencode --refresh
+  babysit auth init
+  babysit auth status
   babysit list
   babysit list --all
   babysit resume

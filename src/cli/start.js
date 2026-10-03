@@ -53,6 +53,7 @@ import {
 } from '../agents/auth_cache.js'
 import { acquire_host_auth_lease } from '../agents/auth_lease.js'
 import { run_auth_checks_with_progress } from './auth_progress.js'
+import { start_startup_status } from './startup_status.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
@@ -856,6 +857,7 @@ export const check_startup_agent_authentication = async ( agent, {
     reconcile_credentials = async () => {},
     credential_source_changed = () => false,
     scope = `installed`,
+    before_probes = () => {},
 } ) => {
 
     const selected_agents = scope === `active`
@@ -918,6 +920,7 @@ export const check_startup_agent_authentication = async ( agent, {
         }
     } )
 
+    if( agents_to_check.length ) before_probes()
     const checked_batch = agents_to_check.length
         ? await run_auth_checks_with_progress( agents_to_check, ( { signal, on_state } ) =>
             check_host_agent_authentication( {
@@ -1323,7 +1326,7 @@ async function start_session( cmd ) {
     }
 
     // Lifecycle identity is stable even when a tmux name is reused after reboot.
-    const owner = await docker_identity()
+    const owner = await docker_identity( { id: docker_status.id } )
     const replay = recovery_arguments( agent, passthrough, mode )
     const release_clone_lock = mode.clone ? acquire_clone_lock( workspace ) : null
     cmd.release_clone_lock = release_clone_lock
@@ -1401,7 +1404,11 @@ async function start_session( cmd ) {
     // Serialize before capture. A waiting launch then observes any refresh
     // token reconciled by the leader and reuses its warm verification instead
     // of racing the same one-use credential through another model request.
-    const auth_lease = await time_phase( `authentication lease`, acquire_host_auth_lease )
+    // One live line names the blocking step so a slow host never looks hung.
+    const startup_status = start_startup_status( `Starting ${ agent.name }` )
+    const auth_lease = await time_phase( `authentication lease`, () => acquire_host_auth_lease( {
+        on_wait: () => startup_status.set( `waiting for another authentication check to finish` ),
+    } ) )
     let credential_setup = null
     let foreground_recovery_id = null
     let startup_auth = null
@@ -1409,6 +1416,7 @@ async function start_session( cmd ) {
     try {
         // The real session still receives credentials for every supported
         // agent so nested coding-agent calls remain authenticated.
+        startup_status.set( `loading credentials` )
         credential_setup = await time_phase(
             `credential discovery and preflight`,
             () => setup_credentials( agent )
@@ -1418,6 +1426,7 @@ async function start_session( cmd ) {
                 file => private_credential_tmpdir( file ) || file
             ),
         } )
+        startup_status.set( `checking cached authentication` )
         startup_auth = await time_phase( `authentication`, () => check_startup_agent_authentication( agent, {
             workspace,
             mode,
@@ -1426,9 +1435,12 @@ async function start_session( cmd ) {
             credential_source_changed: name => credential_setup.sync?.source_changed?.( name ) === true,
             agent_args: passthrough,
             scope: `active`,
+            before_probes: startup_status.pause,
             ... cmd.recovering ? { input: { isTTY: false } } : {} ,
         } ) )
+        startup_status.pause()
     } catch ( error ) {
+        startup_status.stop()
         if( credential_setup ) {
             await cleanup_failed_launch_credentials( {
                 creds_sync: credential_setup.sync,
@@ -1568,6 +1580,7 @@ async function start_session( cmd ) {
     let prepared_launch = null
 
     try {
+        startup_status.set( `preparing container` )
         prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
             agent, workspace, original_workspace: original_mount, mode,
             agent_args,
@@ -1597,6 +1610,7 @@ async function start_session( cmd ) {
         base_session_data.image_id = await container_image( prepared_launch.container_id )
         record_launch_progress( babysit_id, base_session_data )
 
+        startup_status.set( `creating tmux session` )
         const { pipe_started: started_pipe } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
             log_path,
             startup_log_path: log_path ? null : diagnostic_log_path,
@@ -1608,6 +1622,7 @@ async function start_session( cmd ) {
         } ) )
         pipe_started = started_pipe
 
+        startup_status.set( `waiting for the container to start` )
         if( !await time_phase( `main container start`, () => prepared_launch.await_started() ) ) {
             throw new Error( `Docker container did not reach a running state after launch` )
         }
@@ -1615,6 +1630,7 @@ async function start_session( cmd ) {
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
         else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
 
+        startup_status.stop()
         let prompt_ready = false
         if( initial_prompt ) {
             const readiness_timeout_ms = resolve_initial_prompt_ready_timeout( agent )
@@ -1639,6 +1655,7 @@ async function start_session( cmd ) {
         // observed on screen already proves the container survived its boot.
         if( !prompt_ready ) await wait( STARTUP_EXIT_GRACE_MS )
     } catch ( e ) {
+        startup_status.stop()
         await cleanup_failed_launch_credentials( {
             creds_sync,
             prepared_launch,
@@ -1783,7 +1800,7 @@ async function start_session( cmd ) {
         time_phase_sync( `foreground tmux attach`, () => execSync(
             `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`,
             { stdio: `inherit` }
-        ) )
+        ), { slow_ms: Infinity } )
     } catch ( e ) {
         // tmux exits non-zero on certain detach scenarios — that's normal
         log.debug( `tmux attach exited: ${ e.message }` )

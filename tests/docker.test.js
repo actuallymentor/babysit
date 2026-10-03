@@ -1218,14 +1218,14 @@ describe( `build_docker_command`, () => {
         const status = docker_daemon_status( {
             spawn_sync: ( cmd, args, options ) => {
                 expect( cmd ).toBe( `docker` )
-                expect( args ).toEqual( [ `info`, `--format`, `{{.ServerVersion}}` ] )
+                expect( args ).toEqual( [ `info`, `--format`, `{{.ID}} {{.ServerVersion}}` ] )
                 expect( options.stdio ).toEqual( [ `ignore`, `pipe`, `pipe` ] )
 
-                return { status: 0, stdout: `26.1.0\n` }
+                return { status: 0, stdout: `ABCD:1234 26.1.0\n` }
             },
         } )
 
-        expect( status ).toEqual( { available: true, version: `26.1.0` } )
+        expect( status ).toEqual( { available: true, id: `ABCD:1234`, version: `26.1.0` } )
 
     } )
 

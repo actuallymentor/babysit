@@ -140,6 +140,7 @@ describe( `doctor authentication diagnostics`, () => {
             name: `codex`,
             status: `cached`,
             authenticated: true,
+            authenticated_at: expect.any( String ),
         } ] )
         expect( rendered() ).toContain( `codex: cached` )
 

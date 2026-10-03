@@ -46,6 +46,27 @@ describe( `start_credential_sync`, () => {
 
     } )
 
+    it( `notifies pull listeners only after a rotated credential reached the host`, async () => {
+
+        writeFileSync( host_path, `{"refresh_token":"X"}` )
+        writeFileSync( tmpfile_path, `{"refresh_token":"X"}` )
+        const pulls = []
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path,
+            async content => writeFileSync( host_path, content )
+        )
+        sync.on_pull( () => pulls.push( readFileSync( host_path, `utf-8` ) ) )
+
+        await sync.flush()
+        expect( pulls ).toEqual( [] )
+
+        writeFileSync( tmpfile_path, `{"refresh_token":"Y"}` )
+        await sync.stop()
+        expect( pulls ).toEqual( [ `{"refresh_token":"Y"}` ] )
+
+    } )
+
     it( `does not write back when no write_destination is provided (one-way mode)`, async () => {
 
         writeFileSync( host_path, `{"token":"X"}` )
