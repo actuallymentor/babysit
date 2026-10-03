@@ -1,12 +1,17 @@
 # Changelog
 
+## 1.12.1 — 2026-10-03
+
+### Added
+- Session listings separate workspace trunks with a blank line.
+- A launch that had to run a real authentication probe suggests `babysit auth init`; `babysit config` shows whether the checker is installed.
+- `babysit auth init` enables user lingering on Linux so the checker runs while logged out; `--no-linger` opts out.
+
 ## 1.12.0 — 2026-10-03
 
 ### Added
-- `babysit auth init` installs an hourly host-level authentication checker (systemd user timer on Linux with user lingering enabled unless `--no-linger`, launchd agent on macOS); `babysit auth check` re-verifies cached logins older than 6h and yields to a starting session; `babysit auth status` shows cache ages.
+- `babysit auth init` installs an hourly host-level authentication checker (systemd user timer on Linux, launchd agent on macOS); `babysit auth check` re-verifies cached logins older than 6h and yields to a starting session; `babysit auth status` shows cache ages.
 - Launch shows a live `Starting <agent>: <step>` line and names any startup step slower than 5 seconds.
-- Session listings separate workspace trunks with a blank line.
-- A launch that had to run a real authentication probe suggests `babysit auth init`; `babysit config` shows whether the checker is installed.
 
 ### Changed
 - The base system prompt tells agents to read `~/.agents/AGENTS.md` first, before anything else.
