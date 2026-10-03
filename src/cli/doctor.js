@@ -53,6 +53,7 @@ export const select_doctor_auth_agents = ( selection = `all` ) => {
  * @param {number} [options.ttl_ms] - Maximum cache age that still counts as a hit
  * @param {boolean} [options.only_with_credentials=false] - Skip agents with nothing staged
  * @param {AbortSignal|null} [options.signal] - External cancellation; cancelled probes are reported as skipped
+ * @param {boolean} [options.clear_on_failure=true] - Also drop cache entries on non-auth probe failures
  * @param {Function} [options.acquire_lease] - Lease acquisition seam; may return an already-owned lease
  * @returns {Promise<Object[]>} Per-agent results
  */
@@ -73,6 +74,7 @@ export const run_auth_diagnostics = async ( agents, {
     only_with_credentials = false,
     signal = null,
     allow_skip = false,
+    clear_on_failure = true,
 } = {} ) => {
 
     const cache_options = cache_path ? { cache_path } : {}
@@ -141,7 +143,9 @@ export const run_auth_diagnostics = async ( agents, {
             }
         }
 
-        const checked_batch = agents_to_check.length
+        // A yield that arrived during setup or image inspection skips the
+        // probes outright instead of starting containers just to cancel them.
+        const checked_batch = agents_to_check.length && !signal?.aborted
             ? await run_auth_checks_with_progress( agents_to_check, ( { signal: batch_signal, on_state } ) =>
                 check_host_agent_authentication( {
                     agents: agents_to_check,
@@ -185,12 +189,16 @@ export const run_auth_diagnostics = async ( agents, {
                 allow_skip,
                 signal,
             } )
-            : { results: [], skipped: false }
+            : {
+                results: agents_to_check.map( agent => ( { name: agent.name, status: `skipped`, authenticated: false } ) ),
+                skipped: Boolean( agents_to_check.length ),
+            }
         const checked_results = checked_batch.results
 
         for( const result of checked_results ) {
             if( result.status !== `authenticated` ) {
-                if( [ `unauthenticated`, `failed` ].includes( result.status ) ) {
+                const invalidates = result.status === `unauthenticated` || clear_on_failure && result.status === `failed`
+                if( invalidates ) {
                     clear_host_auth_cache( result.name, {
                         ...cache_options,
                         expected_credential_fingerprint: identities.get( result.name )?.fingerprint,

@@ -26,6 +26,26 @@ const hours = milliseconds => `${ ( milliseconds / 3_600_000 ).toFixed( 1 ) }h`
 const timestamp = iso => iso.replace( `T`, ` ` ).replace( /\.\d{3}Z$/, ` UTC` )
 
 /**
+ * Agents worth keeping warm: those with a past success on record whose cache
+ * identity does not depend on the launching workspace. The checker refreshes
+ * verified logins; launches and `doctor --auth` discover new ones. A CLI that
+ * never authenticated would otherwise fail a full probe every hour, and an
+ * agent with per-project routes (OpenCode) would have its project entry
+ * replaced by the scheduler's default route.
+ *
+ * @param {Object} [options] - Cache seam
+ * @returns {Object[]} Agent adapters
+ */
+export const select_auth_check_agents = ( { cache = read_host_auth_cache() } = {} ) => SUPPORTED_AGENTS
+    .map( get_agent )
+    .filter( agent => agent && cache.agents?.[ agent.name ] && typeof agent.auth_check?.cache_context !== `function` )
+
+const workspace_route_agents = () => SUPPORTED_AGENTS
+    .map( get_agent )
+    .filter( agent => typeof agent?.auth_check?.cache_context === `function` )
+    .map( agent => agent.name )
+
+/**
  * Summarise the authentication cache for one agent.
  * @param {string} name - Agent name
  * @param {Object} cache - Parsed host auth cache
@@ -92,7 +112,7 @@ export const resolve_checker_command = ( { exec_path = process.execPath, script 
  * @returns {Object<string,string>} Environment entries
  */
 export const checker_environment = ( env = process.env ) => Object.fromEntries(
-    [ `PATH`, `BABYSIT_HOME`, `BABYSIT_DOCKER_IMAGE`, `DOCKER_HOST`, `DOCKER_CONTEXT`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
+    [ `PATH`, `BABYSIT_HOME`, `BABYSIT_DOCKER_IMAGE`, `BABYSIT_DOCKER_USE_SUDO`, `DOCKER_HOST`, `DOCKER_CONTEXT`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
         .filter( key => env[ key ] )
         .map( key => [ key, env[ key ] ] )
 )
@@ -227,6 +247,7 @@ export const cmd_auth_status = async ( {
 
     output.write( format_auth_status_table( rows ) )
     output.write( `Cache TTL ${ hours( HOST_AUTH_CACHE_TTL_MS ) }; the checker re-verifies entries older than ${ hours( AUTH_CHECK_REFRESH_AFTER_MS ) }.\n` )
+    output.write( `Workspace-route agents verified at launch only: ${ workspace_route_agents().join( `, ` ) || `none` }.\n` )
     if( !scheduler ) output.write( `Scheduled checker: unsupported on this platform (run babysit auth check from your own scheduler).\n` )
     else if( scheduler.installed ) output.write( `Scheduled checker: installed (${ scheduler.label }, hourly).\n` )
     else output.write( `Scheduled checker: not installed. Run babysit auth init.\n` )
@@ -235,21 +256,11 @@ export const cmd_auth_status = async ( {
 }
 
 /**
- * Agents worth keeping warm: those with a past success on record. The checker
- * refreshes verified logins; launches and `doctor --auth` discover new ones.
- * A CLI that never authenticated would otherwise fail a full probe every hour.
- *
- * @param {Object} [options] - Cache seam
- * @returns {Object[]} Agent adapters
- */
-export const select_auth_check_agents = ( { cache = read_host_auth_cache() } = {} ) => SUPPORTED_AGENTS
-    .map( get_agent )
-    .filter( agent => agent && cache.agents?.[ agent.name ] )
-
-/**
  * Quietly re-verify logins the next launch would otherwise probe. Yields to a
  * foreground launch that starts waiting for the lease, and skips entirely
- * when another check or launch already holds it.
+ * when another check or launch already holds it. Signals are left to the
+ * probe launcher, which retains an interrupted container for credential
+ * recovery exactly like an interrupted session start.
  *
  * @param {Object} [options] - Output and injectable seams
  * @returns {Promise<number>} Exit code; 0 unless a probe failed outright
@@ -259,10 +270,6 @@ export const cmd_auth_check = async ( {
     acquire_lease = acquire_host_auth_lease,
     is_wanted = is_host_auth_lease_wanted,
     poll_ms = AUTH_CHECK_YIELD_POLL_MS,
-    on_signal = ( handler ) => {
-        [ `SIGTERM`, `SIGINT`, `SIGHUP` ].forEach( signal => process.once( signal, handler ) )
-        return () => [ `SIGTERM`, `SIGINT`, `SIGHUP` ].forEach( signal => process.removeListener( signal, handler ) )
-    },
     select_agents = null,
     ...diagnostics
 } = {} ) => {
@@ -283,12 +290,10 @@ export const cmd_auth_check = async ( {
     }
 
     const controller = new AbortController()
-    const yield_to_foreground = () => controller.abort( { code: `skip`, yielded: true } )
     const watcher = setInterval( () => {
-        if( is_wanted() ) yield_to_foreground()
+        if( is_wanted() ) controller.abort( { code: `skip`, yielded: true } )
     }, poll_ms )
     watcher.unref?.()
-    const remove_signal_handlers = on_signal( yield_to_foreground )
 
     try {
         const results = await run_auth_diagnostics( agents, {
@@ -298,6 +303,9 @@ export const cmd_auth_check = async ( {
             acquire_lease: async () => lease,
             ttl_ms: AUTH_CHECK_REFRESH_AFTER_MS,
             only_with_credentials: true,
+            // A network blip must not un-enrol the agent; the entry stays
+            // valid until its TTL and the next hourly run retries.
+            clear_on_failure: false,
             signal: controller.signal,
         } )
 
@@ -311,7 +319,6 @@ export const cmd_auth_check = async ( {
     } finally {
         // run_auth_diagnostics releases the lease it was handed.
         clearInterval( watcher )
-        remove_signal_handlers()
     }
 
 }

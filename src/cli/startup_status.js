@@ -45,7 +45,11 @@ export const start_startup_status = ( label, {
         if( !phase ) return
         const frame = SPINNER_FRAMES[ frame_index % SPINNER_FRAMES.length ]
         frame_index += 1
-        output.write( `\r\x1b[2K${ format_startup_status_line( label, phase, { started_at, now: now(), frame } ) }` )
+        // Clip to one physical row: a wrapped line would leave a stale row
+        // behind every redraw in a narrow pane.
+        const width = Math.max( 1, ( output.columns || 80 ) - 1 )
+        const line = Array.from( format_startup_status_line( label, phase, { started_at, now: now(), frame } ) ).slice( 0, width ).join( `` )
+        output.write( `\r\x1b[2K${ line }` )
     }
 
     // Remove the live line so prompts and other spinners own the terminal.
