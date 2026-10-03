@@ -238,6 +238,14 @@ describe( `print_active_sessions_table`, () => {
 
     } )
 
+    it( `separates workspace trunks with a blank line`, () => {
+
+        const tree = format_session_tree( [ `#`, `NAME` ], [ [ `1`, `one` ], [ `2`, `two` ], [ `3`, `three` ] ], [ `repo`, `other`, `repo` ], { env: { TERM: `dumb` } } )
+
+        expect( tree.lines ).toEqual( [ `repo`, `|- 1  one`, `\\- 3  three`, ``, `other`, `\\- 2  two` ] )
+
+    } )
+
     it( `keeps distinct workspaces apart when their compact directories collide`, async () => {
 
         const output = await capture_console( () => print_active_sessions_table( [

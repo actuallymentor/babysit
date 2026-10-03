@@ -5,6 +5,7 @@
 ### Added
 - `babysit auth init` installs an hourly host-level authentication checker (systemd user timer on Linux, launchd agent on macOS); `babysit auth check` re-verifies cached logins older than 6h and yields to a starting session; `babysit auth status` shows cache ages.
 - Launch shows a live `Starting <agent>: <step>` line and names any startup step slower than 5 seconds.
+- Session listings separate workspace trunks with a blank line.
 
 ### Changed
 - The base system prompt tells agents to read `~/.agents/AGENTS.md` first, before anything else.

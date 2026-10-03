@@ -173,11 +173,13 @@ export const format_session_tree = ( headers, rows, trunks, { env = process.env 
     const glyphs = tree_glyphs( env )
     const indent = ` `.repeat( glyphs.branch.length )
 
-    // Trunks in order of first appearance; leaves keep their original row order
+    // Trunks in order of first appearance; leaves keep their original row order.
+    // A blank line separates trunks so each workspace reads as its own block.
     const trunk_order = [ ...new Set( trunks ) ]
-    const lines = trunk_order.flatMap( trunk => {
+    const lines = trunk_order.flatMap( ( trunk, position ) => {
         const leaves = table.rows.filter( ( _, index ) => trunks[index] === trunk )
         return [
+            ...position ? [ `` ] : [],
             trunk,
             ...leaves.map( ( leaf, index ) => `${ index === leaves.length - 1 ? glyphs.last : glyphs.branch }${ leaf }` ),
         ]
@@ -273,7 +275,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     console.log( `\n${ title }\n` )
     console.log( `  ${ tree.header }` )
     console.log( `  ${ tree.divider }` )
-    tree.lines.forEach( line => console.log( `  ${ line }` ) )
+    tree.lines.forEach( line => console.log( line ? `  ${ line }` : `` ) )
 
     console.log( `` )
     if( numbered ) console.log( `Open one with: babysit open <number>\n` )
