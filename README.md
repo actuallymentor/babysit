@@ -103,7 +103,7 @@ input/interrupt controls → idle/running; Claude background shells → waiting;
 Attachment is separate. Pruning needs free space for locks/journals.
 Launch verifies only the launched agent's authentication (12h hash-bound cache); other
 installed agents still receive credentials but are checked by `doctor --auth`.
-Run `babysit auth init` once so an hourly host-level checker keeps verified logins warm;
+Run `babysit auth init` once so an hourly host-level checker keeps verified logins warm (a launch that had to probe reminds you, and `babysit config` shows the checker state);
 launches then skip the "Checking authentication" probe. The checker only refreshes agents a
 launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
 project's provider route) to launch-time verification. Running sessions re-stamp the cache

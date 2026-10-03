@@ -54,6 +54,7 @@ import {
 import { acquire_host_auth_lease } from '../agents/auth_lease.js'
 import { run_auth_checks_with_progress } from './auth_progress.js'
 import { start_startup_status } from './startup_status.js'
+import { auth_checker_hint } from './auth.js'
 import { apply_loop } from '../modes/loop.js'
 import { create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
@@ -1470,6 +1471,10 @@ async function start_session( cmd ) {
     } = startup_auth
     let auth_cache_context = startup_auth_cache_context
     let auth_cache_contexts = startup_auth_cache_contexts
+
+    // Nudge towards the scheduled checker only when this launch paid a probe.
+    const checker_hint = auth_checker_hint( auth_results )
+    if( checker_hint ) log.info( checker_hint )
 
     const unauthenticated_agents = unauthenticated_agent_names( auth_results )
     const failed_agents = failed_agent_names( auth_results )
