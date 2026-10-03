@@ -77,21 +77,24 @@ export const load_monitor_config = ( session = {} ) => load_config( session_work
  * @param {Object} creds_sync - Completed credential sync controller
  * @param {Object} tmpfiles - Per-agent staged credential files
  * @param {Object} [dependencies] - Cache test seams
+ * @param {string[]|null} [dependencies.names] - Limit the refresh to these agents
  * @returns {boolean} Whether cache trust was refreshed
  */
 export const refresh_session_auth_cache = ( session, agent, creds_sync, tmpfiles, {
     clear_cache = clear_host_auth_cache,
     refresh_parts = refresh_file_credential_parts,
     refresh_cache = refresh_host_auth_cache,
+    names = null,
 } = {} ) => {
 
     const contexts = session.auth_cache_contexts || (
         session.auth_cache_context ? { [ agent.name ]: session.auth_cache_context } : {}
     )
-    if( !Object.keys( contexts ).length ) return false
+    const selected = Object.entries( contexts ).filter( ( [ name ] ) => !names || names.includes( name ) )
+    if( !selected.length ) return false
 
     try {
-        const refreshed = Object.entries( contexts ).map( ( [ name, context ] ) => {
+        const refreshed = selected.map( ( [ name, context ] ) => {
             if( creds_sync.source_changed?.( name ) ) {
                 clear_cache( name, {
                     expected_credential_fingerprint: context.credential_fingerprint,
@@ -106,11 +109,20 @@ export const refresh_session_auth_cache = ( session, agent, creds_sync, tmpfiles
             )
             if( !refreshed_identity ) return false
 
-            return refresh_cache( name, {
+            const refreshed = refresh_cache( name, {
                 expected_credential_fingerprint: context.credential_fingerprint,
                 next_credential_fingerprint: refreshed_identity.fingerprint,
                 image_identity: context.image_identity,
             } )
+
+            // Track the stamped generation so the next rotation's
+            // compare-and-swap starts from the fingerprint now on disk.
+            if( refreshed ) Object.assign( context, {
+                credential_fingerprint: refreshed_identity.fingerprint,
+                credential_parts: refreshed_identity.parts,
+            } )
+
+            return refreshed
         } )
 
         return refreshed.every( Boolean )
@@ -301,6 +313,13 @@ export const cmd_monitor = async ( cmd ) => {
         creds_sync = credential_setup.sync
         credential_setup_complete = true
         if( creds_sync && session.container_id ) creds_sync.connect( session.container_id )
+
+        // Long sessions rotate OAuth tokens while they run. Re-stamp the host
+        // auth cache on each trusted writeback so a parallel launch still hits
+        // instead of paying a full probe for a token this session refreshed.
+        creds_sync?.on_pull?.( name => {
+            refresh_session_auth_cache( session, agent, creds_sync, existing_tmpfiles, { names: [ name ] } )
+        } )
 
         const { config, rules } = load_monitor_config( session )
 

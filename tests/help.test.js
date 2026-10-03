@@ -29,6 +29,18 @@ describe( `CLI help`, () => {
 
     } )
 
+    it( `documents the auth cache commands and the scheduled checker`, () => {
+
+        show_help()
+
+        const help = lines.join( `\n` )
+        expect( help ).toContain( `babysit auth [status]` )
+        expect( help ).toContain( `babysit auth check` )
+        expect( help ).toContain( `babysit auth init [--remove]` )
+        expect( help ).toContain( `uninstall the scheduled checker` )
+
+    } )
+
     it( `documents workspace-aware resume history and its --all escape hatch`, () => {
 
         show_help()

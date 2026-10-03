@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 import { EventEmitter } from 'events'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { PassThrough } from 'stream'
@@ -450,6 +450,35 @@ describe( `host agent auth checks`, () => {
                     transform: expect.any( Function ),
                 },
             } )
+        } finally {
+            rmSync( home_dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `hashes only Claude's login identity from the churning account file`, () => {
+
+        const home_dir = mkdtempSync( join( tmpdir(), `babysit-claude-account-` ) )
+
+        try {
+            writeFileSync( join( home_dir, `.claude.json` ), JSON.stringify( {
+                numStartups: 41,
+                tipsHistory: { a: 1 },
+                oauthAccount: { accountUuid: `acc-1`, emailAddress: `a@example.com` },
+            } ) )
+            const { claude_account } = resolve_host_auth_context_files( {}, {
+                agent: get_agent( `claude` ),
+                env: {},
+                home_dir,
+                path_exists: path => path === join( home_dir, `.claude.json` ),
+            } )
+
+            expect( claude_account.path ).toBe( join( home_dir, `.claude.json` ) )
+            const identity = claude_account.transform( readFileSync( claude_account.path, `utf-8` ) )
+            expect( identity ).toBe( JSON.stringify( { oauthAccount: { accountUuid: `acc-1`, emailAddress: `a@example.com` } } ) )
+            expect( claude_account.transform( `{"numStartups":42,"oauthAccount":{"accountUuid":"acc-1","emailAddress":"a@example.com"}}` ) ).toBe( identity )
+            expect( claude_account.transform( `{"oauthAccount":{"accountUuid":"acc-2"}}` ) ).not.toBe( identity )
+            expect( claude_account.transform( `not json` ) ).toBe( `not json` )
         } finally {
             rmSync( home_dir, { recursive: true, force: true } )
         }

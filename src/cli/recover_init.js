@@ -7,7 +7,7 @@ import { resolve_babysit_home } from '../utils/paths.js'
 
 // systemd applies specifier expansion even inside quotes. Exec arguments also
 // expand dollars; Environment= values do not.
-const unit_quote = ( value, argument = false ) => {
+export const unit_quote = ( value, argument = false ) => {
     if( /[\x00-\x1f\x7f]/.test( value ) ) throw new Error( `Service configuration cannot contain control characters` )
     const escaped = String( value ).replaceAll( `\\`, `\\\\` ).replaceAll( `"`, `\\"` ).replaceAll( `%`, `%%` )
     return `"${ argument ? escaped.replaceAll( `$`, () => `$$` ) : escaped }"`

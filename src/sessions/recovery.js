@@ -26,10 +26,10 @@ export const workspace_config_hash = workspace => {
 }
 
 /** Identify the Docker daemon, including remote contexts, without persisting credentials. */
-export const docker_identity = async () => {
+export const docker_identity = async ( { id: known_id = null } = {} ) => {
 
     const [ command, ...prefix ] = docker_command_prefix()
-    const id = await run( command, [ ...prefix, `info`, `--format`, `{{.ID}}` ], {}, 15_000 )
+    const id = known_id || await run( command, [ ...prefix, `info`, `--format`, `{{.ID}}` ], {}, 15_000 )
     if( !id ) throw new Error( `Docker did not provide its identity` )
     return { host: hostname(), docker_id: id }
 

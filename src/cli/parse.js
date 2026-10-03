@@ -20,7 +20,8 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ]
+const AUTH_VERBS = [ `status`, `check`, `init` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
@@ -92,6 +93,7 @@ export const parse_args = ( argv ) => {
         auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
         auth: verb === `doctor` && ( args.auth || false ),
         refresh: verb === `doctor` && ( args.refresh || false ),
+        remove: verb === `auth` && ( args.remove || false ),
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),
@@ -157,6 +159,15 @@ export const parse_args = ( argv ) => {
         }
 
         return { verb: `prune`, agent: null, flags, passthrough: [] }
+    }
+
+    // babysit auth [status|check|init [--remove]] — cache inspection and the
+    // scheduled host-level checker that keeps launches on the warm path.
+    if( verb === `auth` ) {
+        const auth_verb = positionals[1] || `status`
+        if( !AUTH_VERBS.includes( auth_verb ) ) throw new Error( `Unknown auth command: ${ auth_verb }. Use ${ AUTH_VERBS.join( `, ` ) }.` )
+        if( positionals.length > 2 ) throw new Error( `Unknown auth argument: ${ positionals[2] }` )
+        return { verb: `auth`, auth_verb, agent: null, flags, passthrough: [] }
     }
 
     // babysit doctor --auth [agent|all] [--refresh]

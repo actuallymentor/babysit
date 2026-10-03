@@ -91,6 +91,7 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
     let last_source_hash = baseline_source_hash
     let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
     let source_changed = false
+    const pull_handlers = []
     let transport = null
     let tick_queue = Promise.resolve()
     let watcher = null
@@ -203,6 +204,15 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
                 last_source_hash = tmpfile_hash
                 last_tmpfile_hash = tmpfile_hash
                 log.debug( `Credential sync: tmpfile → host source` )
+                // A trusted in-session rotation just reached the host file.
+                // Listeners re-stamp caches keyed on the previous content.
+                pull_handlers.forEach( handler => {
+                    try {
+                        handler()
+                    } catch ( error ) {
+                        log.debug( `Credential pull listener failed: ${ error.message }` )
+                    }
+                } )
 
             }
 
@@ -265,6 +275,10 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             baseline_tmpfile_hash: last_tmpfile_hash,
         } ),
         source_changed: () => source_changed,
+        // Observe each container → host writeback of a rotated credential.
+        on_pull: handler => {
+            pull_handlers.push( handler )
+        },
         set_transport: next_transport => {
             transport = next_transport
             if( source_path && transport && !stopped ) {

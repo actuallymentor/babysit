@@ -17,6 +17,10 @@ import { log } from '../utils/log.js'
 export const HOST_AUTH_LEASE_PATH = join( BABYSIT_DIR, `host-auth-check.lease` )
 export const HOST_AUTH_LEASE_TIMEOUT_MS = 8 * 60 * 1_000
 export const HOST_AUTH_LEASE_STALE_MS = 90_000
+// A waiting foreground launch keeps this marker fresh; background checks
+// watch it and cancel their probe so the launch never waits a whole probe.
+export const HOST_AUTH_LEASE_WANTED_STALE_MS = 5_000
+export const host_auth_lease_wanted_path = ( lease_path = HOST_AUTH_LEASE_PATH ) => `${ lease_path }.wanted`
 
 const wait = milliseconds => new Promise( resolve => setTimeout( resolve, milliseconds ) )
 
@@ -124,6 +128,35 @@ const remove_stale_lease = ( lease_path, lease_options ) => {
 
 }
 
+const touch_wanted_marker = lease_path => {
+    try {
+        writeFileSync( host_auth_lease_wanted_path( lease_path ), String( process.pid ), { mode: 0o600 } )
+    } catch { /* The marker is advisory; waiting still works without it. */ }
+}
+
+const clear_wanted_marker = lease_path => rmSync( host_auth_lease_wanted_path( lease_path ), { force: true } )
+
+/**
+ * Whether a foreground launch is currently waiting for the lease.
+ * @param {Object} [options]
+ * @param {string} [options.lease_path] - Atomic lease directory
+ * @param {Function} [options.now] - Clock seam
+ * @returns {boolean} True while a fresh wanted marker exists
+ */
+export const is_host_auth_lease_wanted = ( {
+    lease_path = HOST_AUTH_LEASE_PATH,
+    now = Date.now,
+    stale_ms = HOST_AUTH_LEASE_WANTED_STALE_MS,
+} = {} ) => {
+
+    try {
+        return now() - statSync( host_auth_lease_wanted_path( lease_path ) ).mtimeMs < stale_ms
+    } catch {
+        return false
+    }
+
+}
+
 /**
  * Serialize all-agent authentication across Babysit processes.
  * The lease begins before credential capture, so a waiting launch observes a
@@ -138,6 +171,8 @@ const remove_stale_lease = ( lease_path, lease_options ) => {
  * @param {Function} [options.now] - Clock seam
  * @param {Function} [options.wait_fn] - Async wait seam
  * @param {Function} [options.kill] - Process liveness seam
+ * @param {Function} [options.on_wait] - Called once when another process holds the lease
+ * @param {boolean} [options.foreground=true] - Keep the wanted marker fresh while waiting so background checks yield
  * @returns {Promise<{ release: Function }>} Owned lease
  */
 export const acquire_host_auth_lease = async ( {
@@ -148,22 +183,32 @@ export const acquire_host_auth_lease = async ( {
     now = Date.now,
     wait_fn = wait,
     kill = process.kill.bind( process ),
+    on_wait = () => {},
+    foreground = true,
 } = {} ) => {
 
     const token = randomUUID()
     const deadline = now() + timeout_ms
+    let waited = false
 
     mkdirSync( dirname( lease_path ), { recursive: true } )
 
-    while( true ) {
-        if( try_create_lease( lease_path, token ) ) break
+    try {
+        while( true ) {
+            if( try_create_lease( lease_path, token ) ) break
 
-        const lease_options = { now, stale_ms, kill }
-        if( lease_is_stale( lease_path, lease_options )
-            && remove_stale_lease( lease_path, lease_options ) ) continue
+            const lease_options = { now, stale_ms, kill }
+            if( lease_is_stale( lease_path, lease_options )
+                && remove_stale_lease( lease_path, lease_options ) ) continue
 
-        if( now() >= deadline ) throw new Error( `Timed out waiting for another authentication check` )
-        await wait_fn( Math.min( poll_ms, Math.max( 0, deadline - now() ) ) )
+            if( now() >= deadline ) throw new Error( `Timed out waiting for another authentication check` )
+            if( !waited ) on_wait()
+            waited = true
+            if( foreground ) touch_wanted_marker( lease_path )
+            await wait_fn( Math.min( poll_ms, Math.max( 0, deadline - now() ) ) )
+        }
+    } finally {
+        if( waited && foreground ) clear_wanted_marker( lease_path )
     }
 
     let released = false

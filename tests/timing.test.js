@@ -45,6 +45,24 @@ describe( `phase timing`, () => {
 
     } )
 
+    it( `names a slow phase even without debug timing`, async () => {
+
+        const warnings = []
+        const times = [ 0, 6_500 ]
+
+        await time_phase( `credential discovery`, async () => `ok`, {
+            env: {},
+            now: () => times.shift(),
+            debug: () => {
+                throw new Error( `debug timing must stay silent` )
+            },
+            warn: message => warnings.push( message ),
+        } )
+
+        expect( warnings ).toEqual( [ `Slow startup phase: credential discovery took 6.5s` ] )
+
+    } )
+
     it( `reports async duration even when the phase throws`, async () => {
 
         const messages = []

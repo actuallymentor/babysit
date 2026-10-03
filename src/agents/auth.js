@@ -38,6 +38,24 @@ const isolated_antigravity_auth_settings = raw => {
 
 }
 
+// Claude rewrites ~/.claude.json on nearly every run (startup counters, tips,
+// project lists). Only the login-identity fields can change who a probe
+// authenticates as, so hash those alone and keep cache hits across churn.
+const CLAUDE_ACCOUNT_AUTH_KEYS = [ `oauthAccount`, `primaryApiKey`, `customApiKeyResponses` ]
+const claude_account_auth_fields = raw => {
+
+    let account = {}
+    try {
+        account = JSON.parse( raw )
+    } catch { /* Unparseable account state is hashed verbatim below. */
+        return String( raw )
+    }
+    return JSON.stringify( Object.fromEntries(
+        CLAUDE_ACCOUNT_AUTH_KEYS.filter( key => account?.[ key ] !== undefined ).map( key => [ key, account[ key ] ] )
+    ) )
+
+}
+
 const auth_result = ( name, status, options = {} ) => ( {
     name,
     status,
@@ -144,6 +162,13 @@ export const resolve_host_auth_context_files = ( mode = {}, {
         .forEach( ( [ key, path ] ) => {
             context_files[ key ] = path
         } )
+
+    if( context_files.claude_account ) {
+        context_files.claude_account = {
+            path: context_files.claude_account,
+            transform: claude_account_auth_fields,
+        }
+    }
 
     if( mode.ignore_host_agents_md && context_files.antigravity_settings ) {
         context_files.antigravity_settings = {

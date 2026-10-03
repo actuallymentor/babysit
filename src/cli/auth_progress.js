@@ -53,12 +53,14 @@ const final_state_for = result => {
  * @param {Object} [options]
  * @param {number} [options.completion_grace_ms=150] - Final-failure Enter handoff window
  * @param {Function} [options.wait_fn] - Completion grace timer seam
+ * @param {AbortSignal|null} [options.signal] - External cancellation forwarded to the probes
  * @returns {Promise<{ results: Array, skipped: boolean }>} Results and batch skip decision
  */
 export const run_auth_checks_with_progress = async ( agents, run_checks, {
     input = process.stdin,
     output = process.stdout,
     allow_skip = true,
+    signal = null,
     env = process.env,
     now = Date.now,
     set_interval = setInterval,
@@ -69,6 +71,11 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
 } = {} ) => {
 
     const controller = new AbortController()
+    // A scheduled check yields to a foreground launch through this signal;
+    // the probes then recover credentials and clean up before resolving.
+    const forward_abort = () => controller.abort( signal.reason )
+    signal?.addEventListener?.( `abort`, forward_abort, { once: true } )
+    if( signal?.aborted ) forward_abort()
     const states = new Map( agents.map( agent => [ agent.name, `preparing` ] ) )
     const started_at = now()
     const unicode = env.TERM !== `dumb`
@@ -162,6 +169,7 @@ export const run_auth_checks_with_progress = async ( agents, run_checks, {
     } catch ( error ) {
         run_error = error
     } finally {
+        signal?.removeEventListener?.( `abort`, forward_abort )
         if( interval ) clear_interval( interval )
         unregister_live_log_line?.()
         if( can_read_keys ) {

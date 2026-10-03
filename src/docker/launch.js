@@ -401,7 +401,8 @@ export const prepare_docker_launch = async ( options, {
         container_name = container_name_from( create_args )
         create_started = true
 
-        const output = await time_phase( `docker create`, () => run_docker( create_args.slice( 1 ), DOCKER_CREATE_TIMEOUT_MS ) )
+        // Nested phases stay debug-only; the launch-level phase reports slowness.
+        const output = await time_phase( `docker create`, () => run_docker( create_args.slice( 1 ), DOCKER_CREATE_TIMEOUT_MS ), { slow_ms: Infinity } )
         container_owned = true
         if( !cleanup_seccomp_profile() ) {
             throw new Error( `Could not remove Chrome's private seccomp profile after Docker create` )
@@ -420,7 +421,7 @@ export const prepare_docker_launch = async ( options, {
                 [ ...docker_prefix_args, `cp`, `-`, `${ container_id }:/` ],
                 DOCKER_COPY_TIMEOUT_MS,
                 { input: build_tar_archive( copy_mounts ) }
-            ) )
+            ), { slow_ms: Infinity } )
         }
 
         if( !cleanup_credentials( copy_mounts ) ) {
