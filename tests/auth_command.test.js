@@ -355,10 +355,42 @@ describe( `scheduled checker installation`, () => {
             expect( calls ).toEqual( [
                 [ `systemctl`, `--user`, `daemon-reload` ],
                 [ `systemctl`, `--user`, `enable`, `--now`, `babysit-auth.timer` ],
-                [ `loginctl`, `show-user`, `1000`, `--property=Linger`, `--value` ],
+                [ `loginctl`, `enable-linger`, `1000` ],
             ] )
             expect( rendered() ).toContain( `Enabled babysit-auth.timer` )
-            expect( rendered() ).not.toContain( `enable-linger` )
+            expect( rendered() ).toContain( `Enabled lingering` )
+
+            calls.length = 0
+            await cmd_auth_init( { flags: { linger: false } }, {
+                output,
+                scheduler,
+                command,
+                environment: { PATH: `/bin` },
+                uid: 1000,
+                execute: async ( binary, args ) => {
+                    calls.push( [ binary, ...args ] )
+                    return ``
+                },
+                write: () => {},
+            } )
+            expect( calls.some( call => call.includes( `enable-linger` ) ) ).toBe( false )
+            expect( rendered() ).toContain( `Lingering left unchanged (--no-linger)` )
+
+            calls.length = 0
+            await cmd_auth_init( { flags: {} }, {
+                output,
+                scheduler,
+                command,
+                environment: { PATH: `/bin` },
+                uid: 1000,
+                execute: async ( binary, args ) => {
+                    if( binary === `loginctl` ) throw new Error( `Access denied\nmore` )
+                    calls.push( [ binary, ...args ] )
+                    return ``
+                },
+                write: () => {},
+            } )
+            expect( rendered() ).toContain( `Could not enable lingering (Access denied)` )
 
             calls.length = 0
             const removed = []
