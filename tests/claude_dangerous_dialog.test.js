@@ -58,7 +58,8 @@ describe.skipIf( !binary )( `installed Claude dialog contract`, () => {
             `Run npm run test:claude-dialog, then update src/agents/claude.js and tests/fixtures/claude/.`,
         ].join( `\n` ) )
         expect( required ).toEqual( [] )
-    } )
+    // The installed binary is ~250 MB; a cold read alone can take seconds.
+    }, 60_000 )
 
 } )
 
