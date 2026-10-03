@@ -31,6 +31,7 @@ Usage:
   babysit auth [status]                Show cached authentication ages and the checker state
   babysit auth check                   Re-verify stale cached logins quietly (what the checker runs)
   babysit auth init [--remove]         Install (or remove) the hourly host-level auth checker
+                                       Linux: also enables user lingering; --no-linger opts out
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
 Agents: ${ agents }
@@ -50,6 +51,7 @@ Flags:
   --auth          With "babysit doctor", make real model-backed auth checks
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
   --remove        With "babysit auth init", uninstall the scheduled checker
+  --no-linger     With "babysit auth init", do not enable loginctl lingering (checks then stop at logout)
   --all           With "list", show full details; with "resume [number]", use every workspace
   --dry-run       With "recover", inspect without restarting
   --json          With "recover", print machine-readable results

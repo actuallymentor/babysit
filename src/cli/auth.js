@@ -377,12 +377,21 @@ export const cmd_auth_init = async ( cmd, {
         write( scheduler.files[1], timer, { mode: 0o600 } )
         await execute( `systemctl`, [ `--user`, `daemon-reload` ] )
         await execute( `systemctl`, [ `--user`, `enable`, `--now`, scheduler.label ] )
-        output.write( `Enabled ${ scheduler.label }: babysit auth check runs hourly while you are logged in.\n` )
+        output.write( `Enabled ${ scheduler.label }: babysit auth check runs hourly.\n` )
         output.write( `Logs: journalctl --user -u ${ SYSTEMD_UNIT }.service\n` )
 
-        // Without lingering the user manager stops at logout, and with it the timer.
-        const linger = await execute( `loginctl`, [ `show-user`, String( uid ), `--property=Linger`, `--value` ] ).catch( () => `unknown` )
-        if( linger.trim() === `no` ) output.write( `To keep checking after logout: loginctl enable-linger ${ process.env.USER || uid }\n` )
+        // Without lingering the user manager stops at logout, and with it the
+        // timer. Enable it by default; --no-linger keeps the login-only scope.
+        if( cmd.flags.linger === false ) {
+            output.write( `Lingering left unchanged (--no-linger): checks run only while you are logged in.\n` )
+        } else {
+            try {
+                await execute( `loginctl`, [ `enable-linger`, String( uid ) ] )
+                output.write( `Enabled lingering for your user so checks continue after logout (undo: loginctl disable-linger ${ uid }).\n` )
+            } catch ( error ) {
+                output.write( `Could not enable lingering (${ error.message.split( `\n` )[0] }); checks run only while you are logged in. Try: sudo loginctl enable-linger ${ uid }\n` )
+            }
+        }
     } else {
         const log_path = join( home, `Library`, `Logs`, `babysit-auth.log` )
         mkdirSync( dirname( log_path ), { recursive: true } )

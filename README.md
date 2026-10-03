@@ -94,7 +94,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check for every installed agent; bypass 12h cache with `--refresh` |
 | `babysit auth [status]` | Cached authentication ages and whether the scheduled checker is installed |
 | `babysit auth check` | Quietly re-verify cached logins older than 6h; yields to a starting session |
-| `babysit auth init [--remove]` | Install (or remove) the hourly checker: systemd user timer on Linux, launchd agent on macOS |
+| `babysit auth init [--remove] [--no-linger]` | Install (or remove) the hourly checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image; show image version |
 

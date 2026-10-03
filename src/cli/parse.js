@@ -20,7 +20,7 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ]
 const AUTH_VERBS = [ `status`, `check`, `init` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
@@ -94,6 +94,8 @@ export const parse_args = ( argv ) => {
         auth: verb === `doctor` && ( args.auth || false ),
         refresh: verb === `doctor` && ( args.refresh || false ),
         remove: verb === `auth` && ( args.remove || false ),
+        // Lingering is on by default; --no-linger opts out.
+        linger: verb === `auth` && args.linger !== false,
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),
