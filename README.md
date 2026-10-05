@@ -83,7 +83,7 @@ Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
-| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered session leaves; `--all` adds IDs/tmux names |
+| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered session leaves with status and container CPU/MEM; `--all` adds IDs/tmux names |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
@@ -100,6 +100,7 @@ Idle rules do not start while waiting; manual input remains available.
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; Claude background shells → waiting; otherwise output stability; unreadable → unknown.
+`list` also samples `docker stats` in the same second: CPU is the container's share of host CPU, MEM its used memory; `-` when the container is gone or Docker is unreachable.
 Attachment is separate. Pruning needs free space for locks/journals.
 Launch verifies only the launched agent's authentication (12h hash-bound cache); other
 installed agents still receive credentials but are checked by `doctor --auth`.

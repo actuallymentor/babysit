@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.0 — 2026-10-05
+
+### Added
+- `babysit list` shows each session container's CPU and memory usage, sampled with `docker stats` alongside the pane check.
+
 ## 1.12.1 — 2026-10-03
 
 ### Added
