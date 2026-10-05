@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.1 — 2026-10-05
+
+### Changed
+- `babysit list` gives the container usage sample a 4-second deadline so a sluggish Docker daemon cannot stall the listing; usage shows `-` instead.
+
 ## 1.13.0 — 2026-10-05
 
 ### Added
