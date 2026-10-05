@@ -49,6 +49,7 @@ describe( `print_active_sessions_table`, () => {
                 name: `feature 1`,
                 agent: `codex`,
                 babysit_id: `baby-1`,
+                container_id: `a`.repeat( 12 ),
                 modifiers: [ `yolo`, `docker` ],
                 pwd: `/workspace/ping/pong`,
             },
@@ -72,17 +73,22 @@ describe( `print_active_sessions_table`, () => {
             list_sessions_fn: async () => tmux_sessions,
             list_stored_sessions_fn: () => stored_sessions,
             observe_activity_fn: async sessions => sessions,
+            // One full-id match, one matched by the babysit-<id> container name, one absent
+            container_stats_fn: async () => [
+                { id: `${ `a`.repeat( 64 ) }`, name: `babysit-baby-1`, cpu: `12.50%`, memory: `240.1MiB` },
+                { id: `${ `b`.repeat( 64 ) }`, name: `babysit-baby-2`, cpu: `0.00%`, memory: `1.5GiB` },
+            ],
         } ) )
 
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS` ]
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `CPU`, `MEM`, `FLAGS` ]
         )
         // Directories are trunks; numbered leaves hang below them
-        expect( output ).toMatch( /\n {2}ping\/pong\n {2}└─ 1\s+feature 1\s+running\s+detached\s+codex\s+yolo,docker\n/ )
-        expect( output ).toMatch( /\n {2}ding\/dong\n {2}└─ 2\s+native-2\s+idle\s+attached\s+claude\s+-\n/ )
-        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+detached\s+antigravity\s+-\n/ )
+        expect( output ).toMatch( /\n {2}ping\/pong\n {2}└─ 1\s+feature 1\s+running\s+detached\s+codex\s+12\.50%\s+240\.1MiB\s+yolo,docker\n/ )
+        expect( output ).toMatch( /\n {2}ding\/dong\n {2}└─ 2\s+native-2\s+idle\s+attached\s+claude\s+0\.00%\s+1\.5GiB\s+-\n/ )
+        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+detached\s+antigravity\s+-\s+-\s+-\n/ )
         expect( output ).not.toContain( `babysit_named` )
         expect( output ).not.toContain( `babysit_legacy` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
@@ -159,6 +165,7 @@ describe( `print_active_sessions_table`, () => {
         const output = await capture_console( () => cmd_list( {
             flags: { all: true },
             observe_activity_fn: async sessions => sessions,
+            container_stats_fn: async () => [],
             list_sessions_fn: async () => [ {
                 name: `babysit_/ping/pong/ding/dong_codex_123`,
                 attached: false,
@@ -177,7 +184,7 @@ describe( `print_active_sessions_table`, () => {
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `FLAGS`, `ID`, `SESSION` ]
+            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `CPU`, `MEM`, `FLAGS`, `ID`, `SESSION` ]
         )
         expect( output ).toContain( `sandbox,docker` )
         expect( output ).toContain( `native-1` )

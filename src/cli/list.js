@@ -3,6 +3,7 @@ import { list_stored_sessions } from '../sessions/store.js'
 import { capture_pane } from '../tmux/capture.js'
 import { agent_status } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
+import { container_stats, stats_for_session } from '../docker/stats.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
@@ -220,6 +221,7 @@ export const trunk_labels = pwds => {
  * @param {boolean} [options.numbered=false] - Show active-list selectors
  * @param {number[]} [options.numbers] - Global selectors for a filtered tree
  * @param {boolean} [options.show_flags=false] - Show stored launch modifiers
+ * @param {Object[]|null} [options.stats=null] - Sampled container usage; adds CPU/MEM columns
  * @param {boolean} [options.all=false] - Include diagnostic IDs and raw tmux names
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
@@ -227,6 +229,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     numbered = false,
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
     show_flags = false,
+    stats = null,
     all = false,
 } = {} ) => {
 
@@ -236,6 +239,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         `STATUS`,
         `TMUX`,
         `AGENT`,
+        ... stats ? [ `CPU`, `MEM` ] : [],
         ... show_flags ? [ `FLAGS` ] : [],
         ... all ? [ `ID`, `SESSION` ] : [],
     ]
@@ -250,6 +254,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
+        const usage = stats ? stats_for_session( stats, stored ) : null
 
         return {
             pwd: stored?.pwd || null,
@@ -259,6 +264,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
                 status,
                 tmux_status,
                 agent,
+                ... stats ? [ usage?.cpu || `-`, usage?.memory || `-` ] : [],
                 ... show_flags ? [ flags ] : [],
                 ... all ? [ session_id, tmux.name ] : [],
             ],
@@ -289,12 +295,14 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.observe_activity_fn] - Fresh pane activity observer
+ * @param {Function} [deps.container_stats_fn] - Container CPU/memory sampler
  */
 export const cmd_list = async ( {
     flags = {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     observe_activity_fn = observe_session_activity,
+    container_stats_fn = container_stats,
 } = {} ) => {
 
     const tmux_sessions = await list_sessions_fn()
@@ -305,11 +313,16 @@ export const cmd_list = async ( {
         return
     }
 
-    const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
+    // Both samplers wait about a second; overlap them so listing stays one interval.
+    const [ observed_sessions, stats ] = await Promise.all( [
+        observe_activity_fn( tmux_sessions, stored_sessions ),
+        container_stats_fn(),
+    ] )
 
     print_active_sessions_table( observed_sessions, stored_sessions, {
         numbered: true,
         show_flags: true,
+        stats,
         all: flags.all,
     } )
 
