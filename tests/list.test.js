@@ -383,6 +383,7 @@ describe( `observe_session_activity`, () => {
         const output = await capture_console( () => cmd_list( {
             list_sessions_fn: async () => [ { name: `babysit_stale`, attached: false, agent_status: `running` } ],
             list_stored_sessions_fn: () => [],
+            container_stats_fn: async () => [],
             observe_activity_fn: ( sessions, stored ) => observe_session_activity( sessions, stored, {
                 capture: async () => `waiting for input`,
                 wait: async () => {},
