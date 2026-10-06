@@ -101,7 +101,7 @@ Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
-| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU/MEM, totals row; `--all` adds tmux attachment, IDs, tmux names |
+| `babysit list [--all] [--watch]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU/MEM, totals row; `--all` adds tmux attachment, IDs, tmux names; `--watch` redraws every 2s with full colors (external `watch` drops 256-color codes) |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
 | `babysit resume <id\|number> [flags]` | Restore saved session |

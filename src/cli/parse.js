@@ -20,7 +20,7 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch` ]
 const AUTH_VERBS = [ `status`, `check`, `init` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
@@ -84,6 +84,7 @@ export const parse_args = ( argv ) => {
         // Command-scoped: list and resume history/number selectors consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
         all: ( verb === `list` || uses_resume_history ) && ( args.all || false ),
+        watch: verb === `list` && ( args.watch || false ),
         list: verb === `prune` && ( args.list || false ),
         name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.

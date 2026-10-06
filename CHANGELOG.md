@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.17.0 — 2026-10-06
+
+### Added
+- `babysit list --watch` redraws the listing in place every 2 seconds with full colors. External `watch` pipes the output and older versions drop the 256-color orange and greys.
+
 ## 1.16.2 — 2026-10-06
 
 ### Fixed
