@@ -46,10 +46,10 @@ describe( `archived sessions`, () => {
             const ordered = order_active_sessions( tmux, all_alpha_archived )
             const output = await capture( () => print_active_sessions_table( ordered, all_alpha_archived, { numbered: true } ) )
             const lines = output.split( `\n` )
-            expect( lines.find( line => line.includes( `w/alpha` ) ) ).toContain( `\x1b[2m` )
-            expect( lines.find( line => line.includes( `w/beta` ) ) ).not.toContain( `\x1b[2m` )
-            expect( lines.find( line => line.includes( `alpha one` ) ) ).toMatch( /^\s*\x1b\[2m.*alpha one/ )
-            expect( lines.find( line => line.includes( `beta one` ) ) ).toContain( `\x1b[90midle` )
+            expect( lines.find( line => line.includes( `w/alpha` ) ) ).toContain( `\x1b[2;38;5;242m` )
+            expect( lines.find( line => line.includes( `w/beta` ) ) ).not.toContain( `\x1b[2;38;5;242m` )
+            expect( lines.find( line => line.includes( `alpha one` ) ) ).toMatch( /^\s*\x1b\[2;38;5;242m.*alpha one/ )
+            expect( lines.find( line => line.includes( `beta one` ) ) ).toContain( `\x1b[38;5;245midle` )
             // Numbers follow the displayed order: beta first
             expect( lines.find( line => line.includes( `beta one` ) ) ).toMatch( /└─ 1\s+beta one/ )
         } finally {
