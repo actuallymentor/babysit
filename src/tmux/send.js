@@ -103,18 +103,6 @@ export const send_text = async ( session_name, text, {
 }
 
 /**
- * Send Shift+Tab (\x1b[Z escape sequence) for TUI feedback and mode controls.
- * tmux send-keys recognises BTab as the canonical name for back-tab.
- * @param {string} session_name - The session name
- * @returns {Promise<void>}
- */
-export const send_shift_tab = async ( session_name ) => {
-
-    await send_keys( session_name, `BTab` )
-
-}
-
-/**
  * Send Ctrl+C
  * @param {string} session_name - The session name
  * @returns {Promise<void>}
