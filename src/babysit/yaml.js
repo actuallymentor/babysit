@@ -116,14 +116,23 @@ export const load_clone_config = ( dir = process.cwd() ) => {
         // Missing or unreadable yaml means defaults; load_config reports syntax later.
     }
 
+    if( raw.mode !== undefined && ![ `git`, `copy` ].includes( raw.mode ) ) log.warn( `config.clone.mode "${ raw.mode }" is not git or copy; using git` )
+    if( raw.depth !== undefined && raw.depth !== null && !( Number.isInteger( raw.depth ) && raw.depth > 0 ) ) log.warn( `config.clone.depth must be a positive integer; keeping full history` )
     const depth = Number.isInteger( raw.depth ) && raw.depth > 0 ? raw.depth : null
+
+    // Excludes feed rsync and the matcher alike, so only plain names are allowed.
+    const exclude = string_list( raw.exclude, DEFAULT_CLONE_CONFIG.exclude ).filter( name => {
+        const plain = !/[/*?[\]\\]/.test( name )
+        if( !plain ) log.warn( `config.clone.exclude entry "${ name }" ignored: use plain directory or file names` )
+        return plain
+    } )
 
     return {
         mode: raw.mode === `copy` ? `copy` : `git`,
         carry: string_list( raw.carry, DEFAULT_CLONE_CONFIG.carry ),
         changes: raw.changes === true,
         depth,
-        exclude: string_list( raw.exclude, DEFAULT_CLONE_CONFIG.exclude ),
+        exclude,
     }
 
 }

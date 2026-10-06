@@ -132,21 +132,28 @@ export const start_usage_sampler = ( { babysit_id, container_id }, {
 } = {} ) => {
 
     let host = null
+    let host_checked_at = -Infinity
     let in_flight = null
+    let stopped = false
 
     const tick = async () => {
         if( in_flight ) return in_flight
         in_flight = ( async () => {
             try {
-                host = host || await capacity()
+                // Capacity rarely changes; retry a failed read no more than every ten minutes.
+                if( !host && now() - host_checked_at >= 10 * 60_000 ) {
+                    host_checked_at = now()
+                    host = await capacity()
+                }
                 const usage = await sample( container_id )
-                if( !usage ) return
+                if( !usage || stopped ) return
+                // Skip a tick rather than block the monitor loop behind the record lock.
                 update( babysit_id, { usage: {
                     ...usage,
                     sampled_at: new Date( now() ).toISOString(),
                     host_cpus: host?.cpus ?? null,
                     host_memory_bytes: host?.memory_bytes ?? null,
-                } } )
+                } }, { wait_ms: 0 } )
             } catch {
                 // Usage is decoration; never let a sampling error touch the monitor.
             } finally {
@@ -160,7 +167,14 @@ export const start_usage_sampler = ( { babysit_id, container_id }, {
     timer.unref?.()
     tick()
 
-    return { tick, stop: () => clearInterval( timer ) }
+    // Stop waits for a sample in progress so nothing writes during teardown.
+    const stop = async () => {
+        stopped = true
+        clearInterval( timer )
+        await in_flight
+    }
+
+    return { tick, stop }
 
 }
 

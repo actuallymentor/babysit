@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { spawnSync } from 'child_process'
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -46,8 +46,10 @@ describe( `clone path matcher`, () => {
         expect( match( `build/out.js` ) ).toBe( true )
         expect( match( `src/build/out.js` ) ).toBe( false )
         expect( match( `docs/a/b/readme.md` ) ).toBe( true )
+        expect( match( `docs/readme.md` ) ).toBe( true )
         expect( match( `docs/readme.txt` ) ).toBe( false )
         expect( match( `.env` ) ).toBe( false )
+        expect( clone_path_matcher( [ `**/.env` ] )( `.env` ) ).toBe( true )
     } )
 
 } )
@@ -63,8 +65,8 @@ describe( `clone config`, () => {
 
     it( `reads partial overrides and ignores invalid values`, () => {
         const dir = mkdtempSync( join( tmpdir(), `babysit-clone-config-` ) )
-        writeFileSync( join( dir, `babysit.yaml` ), `config:\n    clone:\n        mode: copy\n        depth: 3\n        changes: true\n        carry: ['.env', 7]\n` )
-        expect( load_clone_config( dir ) ).toEqual( { mode: `copy`, carry: [ `.env` ], changes: true, depth: 3, exclude: [ `node_modules` ] } )
+        writeFileSync( join( dir, `babysit.yaml` ), `config:\n    clone:\n        mode: copy\n        depth: 3\n        changes: true\n        carry: ['.env', 7]\n        exclude: ['node_modules', 'dist/*', '.cache']\n` )
+        expect( load_clone_config( dir ) ).toEqual( { mode: `copy`, carry: [ `.env` ], changes: true, depth: 3, exclude: [ `node_modules`, `.cache` ] } )
         rmSync( dir, { recursive: true, force: true } )
     } )
 
@@ -95,6 +97,7 @@ describe( `git clone mode`, () => {
 
     it( `clones committed state, carries secrets and notes, skips dependencies and local edits`, () => {
 
+        const objects_before = git( source, [ `count-objects` ] )
         const result = prepare()
         const clone = result.clone_path
 
@@ -115,11 +118,53 @@ describe( `git clone mode`, () => {
         expect( git( clone, [ `status`, `--porcelain` ] ) ).toBe( `?? .notes/` )
         expect( warnings.join( `\n` ) ).toContain( `config.clone.changes: true` )
 
-        // The source is untouched: still dirty, still on main, no stash entries.
+        // The source is untouched: still dirty, still on main, no stash entries, no new objects.
         expect( git( source, [ `status`, `--porcelain` ] ) ).toContain( `tracked.txt` )
         expect( git( source, [ `branch`, `--show-current` ] ) ).toBe( `main` )
         expect( git( source, [ `stash`, `list` ] ) ).toBe( `` )
+        expect( git( source, [ `count-objects` ] ) ).toBe( objects_before )
 
+    } )
+
+    it( `keeps every local branch, the source's remote-tracking refs, and tags`, () => {
+
+        git( source, [ `branch`, `feature-x` ] )
+        git( source, [ `tag`, `v1` ] )
+        git( source, [ `update-ref`, `refs/remotes/origin/main`, `HEAD` ] )
+
+        const clone = prepare().clone_path
+
+        expect( git( clone, [ `branch`, `--list`, `feature-x` ] ) ).toContain( `feature-x` )
+        expect( git( clone, [ `tag`, `--list` ] ) ).toBe( `v1` )
+        expect( git( clone, [ `rev-parse`, `--verify`, `refs/remotes/origin/main` ] ) ).toBe( git( source, [ `rev-parse`, `HEAD` ] ) )
+
+    } )
+
+    it( `carries whole untracked or ignored folders without walking dependencies`, () => {
+
+        mkdirSync( join( source, `.cache`, `node_modules`, `dep` ), { recursive: true } )
+        writeFileSync( join( source, `.cache`, `keep.txt` ), `k\n` )
+        writeFileSync( join( source, `.cache`, `node_modules`, `dep`, `index.js` ), `d\n` )
+        mkdirSync( join( source, `.notes`, `inner` ) )
+        git( join( source, `.notes`, `inner` ), [ `init`, `-q` ] )
+        writeFileSync( join( source, `.notes`, `inner`, `file.md` ), `i\n` )
+
+        const clone = prepare( { carry: [ `.notes`, `.cache` ] } ).clone_path
+
+        expect( readFileSync( join( clone, `.notes`, `MEMORY.md` ), `utf8` ) ).toBe( `notes\n` )
+        expect( readFileSync( join( clone, `.cache`, `keep.txt` ), `utf8` ) ).toBe( `k\n` )
+        expect( existsSync( join( clone, `.cache`, `node_modules` ) ) ).toBe( false )
+        // A repository nested in a carried folder becomes a plain folder
+        expect( existsSync( join( clone, `.notes`, `inner`, `file.md` ) ) ).toBe( true )
+        expect( existsSync( join( clone, `.notes`, `inner`, `.git` ) ) ).toBe( false )
+
+    } )
+
+    it( `falls back to copying when attribute filters such as LFS are declared`, () => {
+        writeFileSync( join( source, `.gitattributes` ), `*.bin filter=lfs diff=lfs merge=lfs -text\n` )
+        const result = prepare()
+        expect( result.clone_mode ).toBe( `copy` )
+        expect( warnings.join( `\n` ) ).toContain( `attribute filters` )
     } )
 
     it( `carries staged and unstaged edits plus untracked files when changes is on`, () => {
@@ -154,7 +199,7 @@ describe( `git clone mode`, () => {
 
     } )
 
-    it( `refuses to write a carried file through a symlink the checkout restored`, () => {
+    it( `replaces a symlink the checkout restored instead of writing through it`, () => {
 
         // Committed: .notes is a symlink elsewhere. Locally: a real directory with a note.
         const elsewhere = join( directory, `elsewhere` )
@@ -169,9 +214,9 @@ describe( `git clone mode`, () => {
 
         const clone = prepare().clone_path
 
-        expect( readlinkSync( join( clone, `.notes` ) ) ).toBe( elsewhere )
+        expect( lstatSync( join( clone, `.notes` ) ).isSymbolicLink() ).toBe( false )
+        expect( readFileSync( join( clone, `.notes`, `MEMORY.md` ), `utf8` ) ).toBe( `local\n` )
         expect( existsSync( join( elsewhere, `MEMORY.md` ) ) ).toBe( false )
-        expect( warnings.join( `\n` ) ).toContain( `behind a symlink` )
 
     } )
 

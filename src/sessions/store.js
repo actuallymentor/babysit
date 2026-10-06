@@ -115,11 +115,12 @@ export const save_session = ( session, { directory = SESSIONS_DIR } = {} ) => {
  * @param {Object} updates - Fields to merge
  * @param {Object} [options]
  * @param {string} [options.directory] - Session directory override for isolated callers
+ * @param {number} [options.wait_ms=5000] - Record lock wait; 0 fails fast instead of blocking
  */
-export const update_session = ( babysit_id, updates, { directory = SESSIONS_DIR } = {} ) => {
+export const update_session = ( babysit_id, updates, { directory = SESSIONS_DIR, wait_ms = 5000 } = {} ) => {
 
     const path = join( directory, `${ babysit_id }.json` )
-    const release = acquire_session_lock( babysit_id, { directory, namespace: `record`, wait_ms: 5000 } )
+    const release = acquire_session_lock( babysit_id, { directory, namespace: `record`, wait_ms } )
     try {
         if( !existsSync( path ) ) return
 

@@ -6,8 +6,9 @@
 - `babysit list` colors the status column (grey idle, green running, orange waiting) and ends with a totals row colored against the Docker host's cores and memory (green under 50%, yellow under 70%, red above).
 
 ### Changed
-- Container CPU/MEM are cached on the session record by each session's monitor every 30 seconds; `list` reads the cache instead of calling Docker. Memory shows whole MiB with a space before the unit.
+- Container CPU/MEM are cached on the session record by each session's monitor every 30 seconds; `list` reads the cache instead of calling Docker. Memory shows whole MiB with a space before the unit. Sessions started before this version show `-` until relaunched.
 - The TMUX attachment column moved to `list --all`.
+- Git-mode clones keep every branch, tag and remote-tracking ref, read dirtiness without touching the source, carry wholly ignored folders as a unit instead of walking dependency trees, and fall back to copying when the repository declares attribute filters such as LFS.
 
 ## 1.14.0 — 2026-10-06
 
