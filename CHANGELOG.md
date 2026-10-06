@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.13.2 — 2026-10-06
+
+### Fixed
+- `babysit list` samples only running Babysit containers, so CPU/MEM no longer show `-` on daemons with many containers where a full sample exceeded the deadline.
+
 ## 1.13.1 — 2026-10-05
 
 ### Changed

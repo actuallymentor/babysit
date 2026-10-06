@@ -20,19 +20,36 @@ describe( `container stats`, () => {
 
     } )
 
-    it( `samples every running container once, untruncated, through the docker prefix`, async () => {
+    it( `lists running babysit containers, then samples only those through the docker prefix`, async () => {
 
         const calls = []
         const rows = await container_stats( {
             command_prefix: [ `sudo`, `docker` ],
             run_command: async ( command, args ) => {
                 calls.push( [ command, ...args ] )
+                if( args.includes( `ps` ) ) return `${ FULL_ID }\n${ `b`.repeat( 64 ) }\n`
                 return `${ FULL_ID }\tbabysit-one\t1.00%\t10MiB / 1GiB\n`
             },
         } )
 
-        expect( calls ).toEqual( [ [ `sudo`, `docker`, `stats`, `--no-stream`, `--no-trunc`, `--format`, `{{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}` ] ] )
+        expect( calls ).toEqual( [
+            [ `sudo`, `docker`, `ps`, `--quiet`, `--no-trunc`, `--filter`, `name=^babysit-` ],
+            [ `sudo`, `docker`, `stats`, `--no-stream`, `--no-trunc`, `--format`, `{{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}`, FULL_ID, `b`.repeat( 64 ) ],
+        ] )
         expect( rows ).toHaveLength( 1 )
+
+    } )
+
+    it( `skips the stats call when no babysit container is running`, async () => {
+
+        const calls = []
+        const rows = await container_stats( { run_command: async ( _, args ) => {
+            calls.push( args )
+            return `\n`
+        } } )
+
+        expect( calls ).toHaveLength( 1 )
+        expect( rows ).toEqual( [] )
 
     } )
 

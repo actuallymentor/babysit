@@ -20,33 +20,34 @@ export const parse_container_stats = ( output = `` ) => String( output )
     .filter( ( { id } ) => id )
 
 /**
- * Sample CPU and memory usage of every running container in one Docker call.
- * Naming targets would fail the whole call when a stored id no longer exists,
- * so sample everything and let callers pick their rows. Failures (no daemon,
- * no Docker) resolve to an empty list so listings degrade to "-". The sample
- * itself takes ~1s; the short deadline keeps a sluggish daemon from holding
- * the listing hostage, since usage is optional decoration.
+ * Sample CPU and memory usage of the running Babysit containers.
+ * Naming stale ids would fail the whole `docker stats` call, and a target-less
+ * sample grows with every container on the daemon (5s+ at 60 containers), so
+ * list the running `babysit-*` containers first and sample only those.
+ * Failures (no daemon, no Docker) resolve to an empty list so listings
+ * degrade to "-"; usage is optional decoration.
  * @param {Object} [options]
  * @param {Function} [options.run_command] - Command runner seam
  * @param {string[]} [options.command_prefix] - Docker executable and optional sudo prefix
- * @param {number} [options.timeout_ms=4000] - Docker call timeout
+ * @param {number} [options.timeout_ms=8000] - Deadline per Docker call
  * @returns {Promise<Array<{ id: string, name: string, cpu: string, memory: string }>>}
  */
 export const container_stats = async ( {
     run_command = run,
     command_prefix = docker_command_prefix(),
-    timeout_ms = 4_000,
+    timeout_ms = 8_000,
 } = {} ) => {
 
     const [ command, ...prefix_args ] = command_prefix
+    const docker = args => run_command( command, [ ...prefix_args, ...args ], {}, timeout_ms )
 
     try {
-        const output = await run_command(
-            command,
-            [ ...prefix_args, `stats`, `--no-stream`, `--no-trunc`, `--format`, STATS_FORMAT ],
-            {},
-            timeout_ms
-        )
+        const running = ( await docker( [ `ps`, `--quiet`, `--no-trunc`, `--filter`, `name=^babysit-` ] ) )
+            .split( `\n` )
+            .filter( Boolean )
+        if( !running.length ) return []
+
+        const output = await docker( [ `stats`, `--no-stream`, `--no-trunc`, `--format`, STATS_FORMAT, ...running ] )
         return parse_container_stats( output )
     } catch {
         return []
