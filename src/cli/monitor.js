@@ -17,6 +17,8 @@ import { remove_docker_container, wait_for_docker_container_stopped } from '../d
 import { start_usage_sampler } from '../docker/stats.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
+import { create_exit_controller } from '../control/exit.js'
+import { send_text } from '../tmux/send.js'
 import {
     clear_host_auth_cache,
     refresh_file_credential_parts,
@@ -204,6 +206,7 @@ export const cmd_monitor = async ( cmd ) => {
 
     let creds_sync = null
     let usage_sampler = null
+    let exit_controller = null
     let credential_setup_complete = false
     let caffeinate = null
     let container_cleaned = false
@@ -346,13 +349,25 @@ export const cmd_monitor = async ( cmd ) => {
         log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
         caffeinate = start_caffeinate()
 
+        // `babysit exit` inside the container: mark the close intentional, let
+        // the turn finish, then ask the agent to quit; force it after a grace period.
+        exit_controller = create_exit_controller( session, {
+            send_text,
+            update: update_session,
+            force_close: async () => {
+                const { close_session } = await import( './recover.js' )
+                await close_session( session )
+            },
+        } )
+
         await start_monitor( {
             session_name: session.tmux_session,
             config,
             rules,
             agent,
             open_web_bridge_fn: () => open_web_bridge( { session } ),
-            control_bridge: create_control_bridge( session ),
+            control_bridge: create_control_bridge( session, { on_exit_request: () => exit_controller.request() } ),
+            on_status: status => exit_controller.on_status( status ),
             approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target: session.pane_id || session.tmux_session,
             agent_exit_sentinel: session.agent_exit_sentinel,
@@ -384,6 +399,7 @@ export const cmd_monitor = async ( cmd ) => {
         } )
 
     } finally {
+        exit_controller?.stop()
         await usage_sampler?.stop()
         identity_reader.close()
         const credentials_recovered = await cleanup_credentials()

@@ -195,7 +195,11 @@ babysit effort                # Supported effort levels
 babysit effort high
 babysit model --status <id>    # Result of a queued terminal request
 babysit effort --status <id>
+babysit exit                  # End this session gracefully after the current turn
 ```
+
+`babysit exit` marks the session intentionally closed (recovery will not relaunch it), waits for the
+agent's composer to be idle, sends `/exit`, and forces a close if the agent has not quit after 30 seconds.
 
 Changes affect this session, not future launch defaults. Claude subagent calls
 control the main session; they do not change the subagent's private model.

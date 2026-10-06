@@ -85,3 +85,12 @@ test( `late confirmation cannot replace an expired result`, () => {
     expect( request( { action: `status`, id } ).status ).toBe( `failed` )
     expect( request( { action: `result`, id, status: `applied`, message: `late` } ).status ).toBe( `failed` )
 } )
+
+test( `exit requests queue like other controls`, () => {
+    const { request } = fixture()
+    const id = randomUUID()
+    expect( request( { action: `enqueue`, id, operation: `exit` } ).status ).toBe( `pending` )
+    expect( request( { action: `take` } ).operation ).toBe( `exit` )
+    request( { action: `result`, id, status: `applied`, message: `bye` } )
+    expect( request( { action: `status`, id } ).status ).toBe( `applied` )
+} )

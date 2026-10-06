@@ -50,7 +50,7 @@ export function control_store( input, env = process.env ) {
         return record
     }
     if( input.action === `enqueue` ) {
-        if( ![ `model`, `effort` ].includes( input.operation ) ) throw new Error( `Invalid control operation` )
+        if( ![ `model`, `effort`, `exit` ].includes( input.operation ) ) throw new Error( `Invalid control operation` )
         if( input.value !== undefined && ( typeof input.value !== `string` || !/^[^\x00-\x1f\x7f-\x9f]{1,160}$/.test( input.value ) ) ) throw new Error( `Invalid control value` )
         const record = {
             id: input.id, launch_id, operation: input.operation, value: input.value,
@@ -97,7 +97,7 @@ export function control_store( input, env = process.env ) {
         finished.slice( 0, Math.max( 0, finished.length - 100 ) ).forEach( record => rmSync( file( record.id ), { force: true } ) )
         for( const record of records ) {
             if( record.launch_id !== launch_id || record.status !== `pending` ) continue
-            if( ![ `model`, `effort` ].includes( record.operation ) || !Number.isFinite( record.created_at ) ) continue
+            if( ![ `model`, `effort`, `exit` ].includes( record.operation ) || !Number.isFinite( record.created_at ) ) continue
             const expires_at = Math.min( record.expires_at, record.created_at + CONTROL_TIMEOUT_MS )
             if( !Number.isFinite( expires_at ) || expires_at <= Date.now() ) {
                 write( { ...record, status: `failed`, message: `Timed out waiting for a safe terminal state; no change applied.` } )

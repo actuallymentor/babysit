@@ -2,6 +2,9 @@
 
 ## 1.16.0 — 2026-10-06
 
+### Added
+- `babysit exit` inside a session ends it gracefully: the session is marked intentionally closed, the agent receives `/exit` once its composer is idle, and a forced close follows after 30 seconds if it never quits. The system prompt tells agents it exists.
+
 ### Removed
 - `on: plan` and `on: choice` rules and the per-agent pattern tables behind them. Every supported agent has a native bypass mode and plan UI; the patterns had been frozen since May and misfired on current Claude footers.
 - `do: shift_tab` and `do: accept`; `enter` is the only key action.
