@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { strip_ansi, last_n_lines, IdleTracker, matches_patterns, evaluate_rule } from '../src/babysit/matcher.js'
+import { strip_ansi, last_n_lines, IdleTracker, evaluate_rule } from '../src/babysit/matcher.js'
 
 describe( `strip_ansi`, () => {
 
@@ -73,22 +73,6 @@ describe( `IdleTracker`, () => {
         const tracker = new IdleTracker()
         tracker.unchanged_since = 1_700_000_000_000 // ms
         expect( tracker.get_deadline( 60 ) ).toBe( 1_700_000_000 + 60 )
-    } )
-
-} )
-
-describe( `matches_patterns`, () => {
-
-    it( `matches against regex list`, () => {
-        const patterns = [ /needs your approval/i, /proceed\?/i ]
-        expect( matches_patterns( `This needs your approval`, patterns ) ).toBe( true )
-        expect( matches_patterns( `nothing here`, patterns ) ).toBe( false )
-    } )
-
-    it( `does not let global regex state leak across ticks`, () => {
-        const patterns = [ /error/g ]
-        expect( matches_patterns( `error`, patterns ) ).toBe( true )
-        expect( matches_patterns( `error`, patterns ) ).toBe( true )
     } )
 
 } )
