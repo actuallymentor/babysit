@@ -70,7 +70,7 @@ describe( `YOLO monitor approval`, () => {
         let alive = 0
         const sent = []
         await start_monitor( {
-            session_name: `babysit_yolo`, config: { idle_timeout_s: 300 }, rules: [], agent_patterns: null,
+            session_name: `babysit_yolo`, config: { idle_timeout_s: 300 }, rules: [],
             agent: claude, tmux_target: `%7`, approve_dangerous_commands: approve, input_allowed,
             has_session_fn: async () => ++alive <= ticks,
             capture_pane_fn: async () => screen,

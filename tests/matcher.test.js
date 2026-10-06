@@ -121,16 +121,4 @@ describe( `evaluate_rule`, () => {
         expect( evaluate_rule( rule, { output: `error`, idle_seconds: 0, config } ) ).toBe( true )
     } )
 
-    it( `matches plan patterns`, () => {
-        const agent_patterns = { plan: [ /needs your approval/i ] }
-        const rule = { on: { type: `plan` } }
-        expect( evaluate_rule( rule, { output: `This needs your approval`, idle_seconds: 0, agent_patterns, config } ) ).toBe( true )
-    } )
-
-    it( `matches choice patterns`, () => {
-        const agent_patterns = { choice: [ /\(y\/n\)/i ] }
-        const rule = { on: { type: `choice` } }
-        expect( evaluate_rule( rule, { output: `Continue? (y/n)`, idle_seconds: 0, agent_patterns, config } ) ).toBe( true )
-    } )
-
 } )

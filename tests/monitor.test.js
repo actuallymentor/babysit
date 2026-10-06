@@ -20,7 +20,6 @@ const make_rule = ( overrides = {} ) => ( {
 const make_context = ( overrides = {} ) => ( {
     output: `everything fine`,
     idle_seconds: 0,
-    agent_patterns: null,
     config: { idle_timeout_s: 300, lines_for_literal_match: 10, lines_for_regex_match: 10 },
     ...overrides,
 } )
@@ -255,7 +254,6 @@ describe( `background shell waiting`, () => {
                 config: { idle_timeout_s: 2 },
                 rules: [ make_rule( { on: { type: `idle` }, timeout_s: 2 } ) ],
                 agent: { name: `claude` },
-                agent_patterns: null,
                 has_session_fn: async () => tick < 4,
                 capture_pane_fn: async () => tick < 2
                     ? `❯\n⏵⏵ bypass permissions on · 1 shell · ← for agents`
@@ -304,7 +302,6 @@ describe( `supervised agent exit`, () => {
             session_name: `babysit_test`,
             config: { idle_timeout_s: 300 },
             rules: [],
-            agent_patterns: null,
             agent: { session_id_pattern: /session: ([0-9a-f-]+)/i },
             agent_exit_sentinel: sentinel,
             on_session_id: id => events.push( [ `session`, id ] ),
@@ -344,7 +341,7 @@ describe( `web bridge coordination`, () => {
         }
 
         await start_monitor( {
-            session_name: `babysit_late`, config: {}, rules: [], agent_patterns: {},
+            session_name: `babysit_late`, config: {}, rules: [],
             open_web_bridge_fn: async () => ++attempts === 3 ? bridge : null,
             has_session_fn: async () => ++ticks <= 4,
             capture_pane_fn: async target => {
@@ -387,7 +384,6 @@ describe( `web bridge coordination`, () => {
             session_name: `babysit_test`,
             config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
             rules: [ make_rule() ],
-            agent_patterns: null,
             agent: null,
             web_bridge,
             has_session_fn: async () => ++alive_checks <= 2,
@@ -419,7 +415,7 @@ describe( `web bridge coordination`, () => {
         const published = []
         const control_bridge = { revision: 0, busy: true, applying: false, tick() {}, async close() {} }
         await start_monitor( {
-            session_name: `babysit_test`, config: {}, rules: [], agent_patterns: {},
+            session_name: `babysit_test`, config: {}, rules: [],
             control_bridge,
             web_bridge: {
                 publish: async ( { busy } ) => published.push( busy ),
@@ -444,7 +440,6 @@ describe( `web bridge coordination`, () => {
             session_name: `babysit_test`,
             config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
             rules: [ make_rule() ],
-            agent_patterns: null,
             agent: null,
             control_bridge,
             web_bridge: {
@@ -489,7 +484,6 @@ describe( `web bridge coordination`, () => {
             session_name: `babysit_test`,
             config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
             rules: [ make_rule(), make_rule() ],
-            agent_patterns: null,
             agent: null,
             web_bridge,
             has_session_fn: async () => ++alive_checks <= 2,

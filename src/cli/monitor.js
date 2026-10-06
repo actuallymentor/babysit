@@ -8,7 +8,6 @@ import { log } from '../utils/log.js'
 import { load_session, session_workspace, update_session } from '../sessions/store.js'
 import { load_config } from '../babysit/yaml.js'
 import { get_agent } from '../agents/index.js'
-import { get_patterns } from '../patterns/index.js'
 import { apply_loop } from '../modes/loop.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
@@ -344,8 +343,6 @@ export const cmd_monitor = async ( cmd ) => {
             } )
         }
 
-        const agent_patterns = get_patterns( session.agent )
-
         log.info( `Monitor watching session ${ session.babysit_id } (${ session.tmux_session })` )
         caffeinate = start_caffeinate()
 
@@ -353,7 +350,6 @@ export const cmd_monitor = async ( cmd ) => {
             session_name: session.tmux_session,
             config,
             rules,
-            agent_patterns,
             agent,
             open_web_bridge_fn: () => open_web_bridge( { session } ),
             control_bridge: create_control_bridge( session ),

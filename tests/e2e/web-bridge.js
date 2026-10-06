@@ -73,7 +73,7 @@ process.stdin.on('data', data => {
     await until( `terminal ready`, async () => ( await tmux( [ `capture-pane`, `-p`, `-t`, session.tmux_session ] ) ).stdout.includes( `Ready` ) )
 
     monitor = start_monitor( {
-        session_name: session.tmux_session, tmux_target: session.pane_id, config: {}, rules: [], agent_patterns: {},
+        session_name: session.tmux_session, tmux_target: session.pane_id, config: {}, rules: [],
         agent: { name: `codex` }, input_allowed: () => !busy,
         open_web_bridge_fn: () => open_web_bridge( { session } ),
         write_loop_deadline_fn: () => null,
