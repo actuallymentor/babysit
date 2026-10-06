@@ -4,6 +4,7 @@
 
 ### Added
 - `babysit exit` inside a session ends it gracefully: the session is marked intentionally closed, the agent receives `/exit` once its composer is idle, and a forced close follows after 30 seconds if it never quits. The system prompt tells agents it exists.
+- `babysit stuck` inside a session shows the session as red "stuck" in `babysit list` until the user types into its tmux session or sends input from the web companion.
 
 ### Removed
 - `on: plan` and `on: choice` rules and the per-agent pattern tables behind them. Every supported agent has a native bypass mode and plan UI; the patterns had been frozen since May and misfired on current Claude footers.

@@ -427,6 +427,15 @@ describe( `list colors`, () => {
 
     } )
 
+    it( `shows a stuck flag in red over the observed status`, async () => {
+        const output = await colored( () => print_active_sessions_table(
+            [ { name: `babysit_a`, attached: false, agent_status: `running` } ],
+            [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w`, stuck_at: `2026-10-06T12:00:00.000Z` } ]
+        ) )
+        expect( output ).toContain( `\x1b[31mstuck` )
+        expect( output ).not.toContain( `running` )
+    } )
+
     it( `stays plain without a color-capable terminal`, async () => {
         const output = await capture_console( () => print_active_sessions_table(
             [ { name: `babysit_a`, attached: false, agent_status: `running` } ],

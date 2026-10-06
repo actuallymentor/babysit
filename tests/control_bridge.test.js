@@ -113,10 +113,10 @@ test( `exit requests go to the exit handler for every agent, including codex`, a
     const results = []
     let exits = 0
     const bridge = create_control_bridge( { ...session, agent: `codex` }, {
-        on_exit_request: async () => {
+        handlers: { exit: async () => {
             exits++
             return `Exiting after the current turn finishes.`
-        },
+        } },
         runner: async ( command, args ) => {
             const input = JSON.parse( Buffer.from( args.at( -1 ), `base64` ) )
             if( input.action === `result` ) results.push( input )
@@ -139,7 +139,7 @@ test( `codex sessions without an exit handler get no bridge, and terminal contro
     expect( create_control_bridge( { ...session, agent: `codex` } ) ).toBeNull()
     const results = []
     const bridge = create_control_bridge( { ...session, agent: `codex` }, {
-        on_exit_request: async () => `bye`,
+        handlers: { exit: async () => `bye` },
         runner: async ( command, args ) => {
             const input = JSON.parse( Buffer.from( args.at( -1 ), `base64` ) )
             if( input.action === `result` ) results.push( input )

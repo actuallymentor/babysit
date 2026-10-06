@@ -28,15 +28,25 @@ const parse_control = ( args, help ) => {
 }
 
 /** Run the same command from the host CLI and the small container executable. */
-export const exit_help = `Usage: babysit exit
+export const exit_help = `Usage: babysit exit [--status <request-id>]
 Ends this session gracefully: the agent quits after its current turn and Babysit cleans up.`
 
-/** Ask the host monitor to end this session once the agent is idle. */
-export const run_exit = async ( args = [] ) => {
-    if( args.includes( `--help` ) || args.includes( `-h` ) ) return exit_help
-    if( !process.env.BABYSIT_CONTROL_ID ) throw new Error( `babysit exit runs inside a managed session; on the host use: babysit close <number>` )
-    return terminal_request( `exit` )
+export const stuck_help = `Usage: babysit stuck [--status <request-id>]
+Marks this session "stuck" in babysit list until the user types into it.`
+
+// Session-level requests the host monitor applies itself; no agent dialog involved.
+const session_request = ( operation, help, args = [] ) => {
+    if( args.includes( `--help` ) || args.includes( `-h` ) ) return help
+    const status_index = args.indexOf( `--status` )
+    if( !process.env.BABYSIT_CONTROL_ID ) throw new Error( `babysit ${ operation } runs inside a managed session` )
+    return terminal_request( operation, status_index >= 0 ? { status_id: args[ status_index + 1 ] } : {} )
 }
+
+/** Ask the host monitor to end this session once the agent is idle. */
+export const run_exit = args => session_request( `exit`, exit_help, args )
+
+/** Flag this session as blocked on the user. */
+export const run_stuck = args => session_request( `stuck`, stuck_help, args )
 
 export const run_effort = async args => {
     const parsed = parse_control( args, effort_help )

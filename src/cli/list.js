@@ -8,7 +8,7 @@ import { paint } from '../utils/color.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
-const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange` }
+const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red` }
 
 /**
  * Color for a share of host capacity: calm below half, warning below 70%, red above.
@@ -287,7 +287,10 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const agent = stored?.agent || `unknown`
         const session_id = stored?.agent_session_id || stored?.babysit_id || tmux.name
         const name = stored?.name || session_id
-        const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
+        // A `babysit stuck` flag outranks observed activity until the user types.
+        const status = stored?.stuck_at
+            ? `stuck`
+            : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
         const usage = show_usage ? cached_usage( stored, now ) : null

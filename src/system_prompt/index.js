@@ -4,7 +4,7 @@ export const base = `Running inside a Babysit container. Workspace: /workspace. 
 
 Browser automation: Puppeteer is installed. Use \`xvfb-run -a\` for headful Chrome; never \`--no-sandbox\`.
 
-Use \`babysit model\` and \`babysit effort\` to inspect or change session settings. Run \`babysit exit\` to end this session gracefully when your work is complete or you are told to stop.`
+Use \`babysit model\` and \`babysit effort\` to inspect or change session settings. Run \`babysit exit\` to end this session gracefully when your work is complete or you are told to stop, and \`babysit stuck\` when you are blocked and need the user.`
 
 export const yolo = `YOLO mode: act autonomously, resolve ambiguity reasonably, skip confirmations, and commit completed work.`
 

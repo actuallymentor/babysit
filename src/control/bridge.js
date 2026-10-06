@@ -15,14 +15,15 @@ export const create_control_bridge = ( session, {
     text = send_text,
     keys = send_keys,
     execute = terminal_control,
-    on_exit_request = null,
+    handlers = {},
     now = Date.now,
 } = {} ) => {
     const launch_id = session.control_id
     const pane = session.pane_id
-    // Codex changes model/effort over its own RPC; its bridge only serves `exit`.
+    // Codex changes model/effort over its own RPC; its bridge serves only the
+    // session-level handlers (exit, stuck) the monitor registers.
     const terminal_agent = [ `claude`, `opencode`, `antigravity` ].includes( session.agent )
-    if( !terminal_agent && !on_exit_request ) return null
+    if( !terminal_agent && !Object.keys( handlers ).length ) return null
     if( !/^[a-f0-9-]{36}$/.test( launch_id || `` ) || !/^%\d+$/.test( pane || `` ) || !/^[a-f0-9]{12,64}$/.test( session.container_id || `` ) ) return null
     const [ command, ...prefix ] = docker_command_prefix()
     let task = null
@@ -51,16 +52,15 @@ export const create_control_bridge = ( session, {
             request = await store( { action: `take` } )
             failures = 0
             if( !request ) return
-            if( ![ `model`, `effort`, `exit` ].includes( request.operation ) || request.value !== undefined && ( typeof request.value !== `string` || !/^[^\x00-\x1f\x7f-\x9f]{1,160}$/.test( request.value ) ) ) throw new Error( `Invalid control request` )
+            if( ![ `model`, `effort`, ...Object.keys( handlers ) ].includes( request.operation ) || request.value !== undefined && ( typeof request.value !== `string` || !/^[^\x00-\x1f\x7f-\x9f]{1,160}$/.test( request.value ) ) ) throw new Error( `Invalid control request` )
             if( request.target && ( request.target.id !== request.value || typeof request.target.name !== `string` || request.target.name.length > 200 || /[\x00-\x1f\x7f-\x9f]/.test( request.target.name ) ) ) throw new Error( `Invalid model picker target` )
             const remaining = Math.min( 60_000, request.remaining_ms ) - ( now() - started )
             if( !Number.isFinite( remaining ) ) throw new Error( `Invalid control deadline` )
             deadline = now() + remaining
             active()
             if( remaining <= 1_000 ) throw new Error( `Control request timed out before applying.` )
-            if( request.operation === `exit` ) {
-                if( !on_exit_request ) throw new Error( `This session cannot be exited from inside the container.` )
-                await store( { action: `result`, id: request.id, status: `applied`, message: await on_exit_request() } )
+            if( handlers[ request.operation ] ) {
+                await store( { action: `result`, id: request.id, status: `applied`, message: await handlers[ request.operation ]() } )
                 return
             }
             if( !terminal_agent ) throw new Error( `${ request.operation } is not a terminal control for ${ session.agent }.` )
