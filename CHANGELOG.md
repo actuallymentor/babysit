@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.15.1 — 2026-10-06
+
+### Fixed
+- Git-mode clones keep every branch, tag and remote-tracking ref, read dirtiness without touching the source, carry wholly ignored folders as a unit instead of walking dependency trees, and fall back to copying when the repository declares attribute filters such as LFS.
+- The monitor's usage sampler finishes an in-flight sample before shutdown, never blocks on the session record lock, and retries a failed host capacity read only every ten minutes.
+
 ## 1.15.0 — 2026-10-06
 
 ### Added
@@ -8,7 +14,6 @@
 ### Changed
 - Container CPU/MEM are cached on the session record by each session's monitor every 30 seconds; `list` reads the cache instead of calling Docker. Memory shows whole MiB with a space before the unit. Sessions started before this version show `-` until relaunched.
 - The TMUX attachment column moved to `list --all`.
-- Git-mode clones keep every branch, tag and remote-tracking ref, read dirtiness without touching the source, carry wholly ignored folders as a unit instead of walking dependency trees, and fall back to copying when the repository declares attribute filters such as LFS.
 
 ## 1.14.0 — 2026-10-06
 
