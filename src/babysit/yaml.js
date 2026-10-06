@@ -67,8 +67,6 @@ const DEFAULT_CONFIG = {
     idle_timeout_s: 300,
     yolo_approve_dangerous_commands: true,
     commands: {},
-    lines_for_literal_match: 10,
-    lines_for_regex_match: 10,
     isolate_dependencies: true,
 }
 

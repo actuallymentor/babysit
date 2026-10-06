@@ -18,6 +18,10 @@ const quick_hash = ( str ) => createHash( `sha256` ).update( str ).digest( `hex`
  * @param {string} text - Raw terminal output
  * @returns {string} Clean text
  */
+// Literal and regex rules look at the bottom of the pane: the agent's latest
+// output, not scrollback it already moved past.
+export const MATCH_WINDOW_LINES = 10
+
 export const strip_ansi = ( text ) => {
 
     // Replace cursor-forward \e[nC with N spaces (default 1)
@@ -124,12 +128,10 @@ export const evaluate_rule = ( rule, context ) => {
         return idle_seconds >= ( rule.timeout_s || config.idle_timeout_s )
 
     case `regex`:
-        return test_pattern( on.value, last_n_lines( output, config.lines_for_regex_match ) )
+        return test_pattern( on.value, last_n_lines( output, MATCH_WINDOW_LINES ) )
 
-    case `literal`: {
-        const search_area = last_n_lines( output, config.lines_for_literal_match )
-        return search_area.includes( on.value )
-    }
+    case `literal`:
+        return last_n_lines( output, MATCH_WINDOW_LINES ).includes( on.value )
 
     default:
         log.warn( `Unknown rule type: ${ on.type }` )
