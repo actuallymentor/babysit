@@ -1,6 +1,8 @@
+// Greys use the fixed 256-color ramp: schemes such as Solarized remap the 16
+// ANSI colors (bright black becomes the background) and ignore the faint attribute.
 const CODES = {
-    dim: `2`,
-    grey: `90`,
+    dim: `2;38;5;242`,
+    grey: `38;5;245`,
     green: `32`,
     yellow: `33`,
     orange: `38;5;208`,

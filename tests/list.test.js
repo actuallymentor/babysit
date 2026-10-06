@@ -418,7 +418,7 @@ describe( `list colors`, () => {
             { tmux_session: `babysit_c`, name: `c`, agent: `codex`, babysit_id: `c`, pwd: `/w` },
         ], { show_usage: true } ) )
 
-        expect( output ).toContain( `\x1b[90midle` )
+        expect( output ).toContain( `\x1b[38;5;245midle` )
         expect( output ).toContain( `\x1b[32mrunning` )
         expect( output ).toContain( `\x1b[38;5;208mwaiting` )
         // 300% of 400% is red; 9 GiB of 16 GiB is yellow

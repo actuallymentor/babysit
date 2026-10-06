@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.16.2 — 2026-10-06
+
+### Fixed
+- Archived rows and the idle status use fixed 256-color greys, so they stay visible and subdued under remapped palettes such as Solarized.
+
 ## 1.16.1 — 2026-10-06
 
 ### Added
