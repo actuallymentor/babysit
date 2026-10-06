@@ -388,7 +388,7 @@ export const cmd_monitor = async ( cmd ) => {
         } )
 
     } finally {
-        usage_sampler?.stop()
+        await usage_sampler?.stop()
         identity_reader.close()
         const credentials_recovered = await cleanup_credentials()
         const container_removed = credentials_recovered

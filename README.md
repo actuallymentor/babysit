@@ -64,12 +64,14 @@ Use explicit commands in scripts.
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
 
-`--clone` on a repository root clones its committed state (`git clone`, no hardlinks, all remotes kept) and
-carries untracked/ignored files matching `config.clone.carry` (default `.env`, `.env.*`, `.notes`, `babysit.yaml`).
+`--clone` on a repository root clones its committed state (`git clone`, no hardlinks; every branch, tag,
+remote-tracking ref and remote kept) and carries untracked/ignored paths matching `config.clone.carry`
+(default `.env`, `.env.*`, `.notes`, `babysit.yaml`; wholly ignored folders are carried as a unit, never walked).
 Dependencies and build output are not copied; uncommitted edits are not either unless `config.clone.changes: true`
 (staged and unstaged state survive; untracked files come along). `config.clone.depth: N` clones shallow history.
-Plain folders, repository subdirectories, and `config.clone.mode: copy` copy the working tree instead, skipping
-`config.clone.exclude` names (default `node_modules`) at any depth. Submodules are only present in copy mode.
+Plain folders, repository subdirectories, repositories declaring attribute filters (LFS, git-crypt), and
+`config.clone.mode: copy` copy the working tree instead, skipping `config.clone.exclude` names (default
+`node_modules`) at any depth. Submodules and nested worktrees are only present in copy mode.
 
 ```yaml
 config:
@@ -85,7 +87,7 @@ Linux copies preserve hard links within the clone, sparse files, timestamps, and
 macOS copies clone files through APFS reflinks when available. Copies run as your user; privileged
 ownership/metadata remain limited by your permissions and filesystem. Completed clone reuse/resume does not require rsync.
 
-`--clone` preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
+Copy mode preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
 Worktree metadata must stay within the copied source; cloning a linked worktree as the root remains unsupported.
 Absolute-linked worktrees are locked against Git pruning across mount paths; manage/unlock them from the host clone path.
 

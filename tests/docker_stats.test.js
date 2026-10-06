@@ -53,14 +53,53 @@ describe( `container usage`, () => {
             interval_ms: 60_000,
             sample: async () => ( { cpu_percent: 5, memory_bytes: 100 } ),
             capacity: async () => ( { cpus: 2, memory_bytes: 1000 } ),
-            update: ( id, changes ) => updates.push( [ id, changes ] ),
+            update: ( ...args ) => updates.push( args ),
             now: () => Date.UTC( 2026, 9, 6 ),
         } )
         await sampler.tick()
-        sampler.stop()
+        await sampler.stop()
         expect( updates ).toEqual( [ [ `baby`, { usage: {
             cpu_percent: 5, memory_bytes: 100, sampled_at: `2026-10-06T00:00:00.000Z`, host_cpus: 2, host_memory_bytes: 1000,
-        } } ] ] )
+        } }, { wait_ms: 0 } ] ] )
+    } )
+
+    it( `waits for a sample in flight on stop and drops its write`, async () => {
+        const updates = []
+        let release
+        const sampler = start_usage_sampler( { babysit_id: `baby`, container_id: `abc` }, {
+            interval_ms: 60_000,
+            sample: () => new Promise( resolve => {
+                release = () => resolve( { cpu_percent: 1, memory_bytes: 1 } )
+            } ),
+            capacity: async () => null,
+            update: ( ...args ) => updates.push( args ),
+        } )
+        await Promise.resolve()
+        const stopping = sampler.stop()
+        release()
+        await stopping
+        expect( updates ).toEqual( [] )
+    } )
+
+    it( `retries a failed capacity read only after ten minutes`, async () => {
+        let clock = 0
+        let capacity_calls = 0
+        const sampler = start_usage_sampler( { babysit_id: `baby`, container_id: `abc` }, {
+            interval_ms: 60_000,
+            sample: async () => ( { cpu_percent: 1, memory_bytes: 1 } ),
+            capacity: async () => {
+                capacity_calls++
+                return null
+            },
+            update: () => {},
+            now: () => clock,
+        } )
+        await sampler.tick()
+        await sampler.tick()
+        clock = 11 * 60_000
+        await sampler.tick()
+        await sampler.stop()
+        expect( capacity_calls ).toBe( 2 )
     } )
 
     it( `leaves the record untouched when the container is gone`, async () => {
@@ -69,7 +108,7 @@ describe( `container usage`, () => {
             interval_ms: 60_000, sample: async () => null, capacity: async () => null, update: ( ...args ) => updates.push( args ),
         } )
         await sampler.tick()
-        sampler.stop()
+        await sampler.stop()
         expect( updates ).toEqual( [] )
     } )
 

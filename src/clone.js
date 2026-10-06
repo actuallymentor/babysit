@@ -32,13 +32,16 @@ export const CLONE_STATE_VERSION = 1
 const DEFAULT_STALE_PARTIAL_MS = 24 * 60 * 60 * 1_000
 const CLONE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 
+// ENOTDIR means a path component is a file: the path does not exist either.
+const MISSING_PATH_CODES = new Set( [ `ENOENT`, `ENOTDIR` ] )
+
 const path_exists = path => {
 
     try {
         lstatSync( path )
         return true
     } catch ( error ) {
-        if( error.code === `ENOENT` ) return false
+        if( MISSING_PATH_CODES.has( error.code ) ) return false
         throw error
     }
 
@@ -49,7 +52,7 @@ const path_entry = path => {
     try {
         return lstatSync( path )
     } catch ( error ) {
-        if( error.code === `ENOENT` ) return null
+        if( MISSING_PATH_CODES.has( error.code ) ) return null
         throw error
     }
 
@@ -598,10 +601,15 @@ const relocate_git_metadata = ( source, partial, destination, { writes, removals
 
 }
 
+// `**/` spans zero or more directories; a bare `**` spans anything.
 const glob_to_regex_source = glob => glob
-    .split( `**` )
-    .map( part => part.replace( /[.+^${}()|[\]\\]/g, `\\$&` ).replace( /\*/g, `[^/]*` ).replace( /\?/g, `[^/]` ) )
-    .join( `.*` )
+    .split( /(\*\*\/|\*\*)/ )
+    .map( part => part === `**/`
+        ? `(?:.*/)?`
+        : part === `**`
+            ? `.*`
+            : part.replace( /[.+^${}()|[\]\\]/g, `\\$&` ).replace( /\*/g, `[^/]*` ).replace( /\?/g, `[^/]` ) )
+    .join( `` )
 
 /**
  * Build a gitignore-style matcher for clone path lists.
@@ -876,11 +884,17 @@ const copy_directory_contents = ( source, destination, { exclude = [], excluded 
 
 const has_commits = repository => run_git( [ `-C`, repository, `rev-parse`, `--verify`, `--quiet`, `HEAD` ], { allow_failure: true } ) !== null
 
-// Paths git reports relative to the source root, NUL separated. Directory
-// entries (trailing slash) are nested repositories git does not descend into.
+// Paths git reports relative to the source root, NUL separated. `--directory`
+// collapses wholly untracked or ignored directories (and nested repositories)
+// into one `dir/` entry, so dependency trees are never walked.
 const list_git_others = ( source, { ignored = false } = {} ) => run_git( [
-    `-C`, source, `ls-files`, `-z`, `--others`, `--exclude-standard`, ... ignored ? [ `--ignored` ] : [],
+    `-C`, source, `ls-files`, `-z`, `--others`, `--exclude-standard`, `--directory`, ... ignored ? [ `--ignored` ] : [],
 ], { raw: true } ).split( `\0` ).filter( Boolean )
+
+// Dirtiness without touching the source: no index refresh, no lock.
+const has_uncommitted_changes = source => Boolean( run_git( [
+    `-C`, source, `--no-optional-locks`, `status`, `--porcelain`, `--untracked-files=no`,
+], { raw: true } ).trim() )
 
 // Every ancestor inside the clone must be a real directory before a carried
 // file lands: a checked-out symlink in its place would redirect the write.
@@ -904,13 +918,13 @@ const ensure_real_ancestors = ( source, destination, relative_path ) => {
 
 }
 
-const copy_carried_path = ( source, destination, relative_path, warn ) => {
+const copy_carried_path = ( source, destination, relative_path, { warn, excluded } ) => {
 
     const from = join( source, relative_path )
     const to = join( destination, relative_path )
     const entry = lstatSync( from )
 
-    if( !entry.isFile() && !entry.isSymbolicLink() ) {
+    if( !entry.isFile() && !entry.isSymbolicLink() && !entry.isDirectory() ) {
         warn( `Clone skips unsupported carried entry: ${ relative_path }` )
         return false
     }
@@ -918,12 +932,33 @@ const copy_carried_path = ( source, destination, relative_path, warn ) => {
         warn( `Clone skips carried path behind a symlink or file: ${ relative_path }` )
         return false
     }
-    if( path_exists( to ) ) rmSync( to, { force: true } )
+    if( path_exists( to ) ) rmSync( to, { force: true, recursive: entry.isDirectory() } )
 
     if( entry.isSymbolicLink() ) symlinkSync( readlinkSync( from ), to )
-    else copyFileSync( from, to, constants.COPYFILE_FICLONE )
+    else if( entry.isFile() ) copyFileSync( from, to, constants.COPYFILE_FICLONE )
+    else cpSync( from, to, {
+        recursive: true,
+        dereference: false,
+        verbatimSymlinks: true,
+        preserveTimestamps: true,
+        mode: constants.COPYFILE_FICLONE,
+        // Nested repositories inside a carried folder become plain folders.
+        filter: path => basename( path ) !== `.git` && !excluded( relative( source, path ) ),
+    } )
 
     return true
+
+}
+
+// LFS and git-crypt checkouts depend on filters and local object stores a
+// fresh clone does not have; the working tree copy still carries them.
+const uses_attribute_filters = ( source, warn ) => {
+
+    const declared = [ join( source, `.gitattributes` ), join( source, `.git`, `info`, `attributes` ) ]
+        .filter( path => path_exists( path ) && lstatSync( path ).isFile() )
+        .some( path => /(^|\s)filter=/m.test( readFileSync( path, `utf8` ) ) )
+    if( declared ) warn( `Repository declares Git attribute filters (LFS or git-crypt); copying the working tree instead of cloning.` )
+    return declared
 
 }
 
@@ -960,6 +995,8 @@ const clone_repository_contents = ( source, destination, {
     ], { timeout: 10 * 60_000 } )
 
     // The clone's origin is the source path, useless inside the container.
+    // Dropping it also drops the source's branches it mirrored, so fetch every
+    // local branch, remote-tracking ref, and tag from the source afterwards.
     run_git( [ `-C`, destination, `remote`, `remove`, `origin` ], { allow_failure: true } )
     for( const name of run_git( [ `-C`, source, `remote` ] ).split( `\n` ).filter( Boolean ) ) {
         const fetch_url = run_git( [ `-C`, source, `remote`, `get-url`, name ] )
@@ -967,6 +1004,11 @@ const clone_repository_contents = ( source, destination, {
         run_git( [ `-C`, destination, `remote`, `add`, name, fetch_url ] )
         if( push_url !== fetch_url ) run_git( [ `-C`, destination, `remote`, `set-url`, `--push`, name, push_url ] )
     }
+    run_git( [
+        ...git_prefix, `-C`, destination, `fetch`, `--quiet`, `--update-head-ok`, `--no-tags`,
+        ... depth ? [ `--depth`, String( depth ) ] : [],
+        source, `+refs/heads/*:refs/heads/*`, `+refs/remotes/*:refs/remotes/*`, `+refs/tags/*:refs/tags/*`,
+    ], { timeout: 10 * 60_000 } )
 
     const local_exclude = join( source, `.git`, `info`, `exclude` )
     if( path_exists( local_exclude ) && lstatSync( local_exclude ).isFile() ) {
@@ -975,34 +1017,38 @@ const clone_repository_contents = ( source, destination, {
     }
 
     // Uncommitted edits travel as a stash commit: binary safe, and staged
-    // versus unstaged state survives. The source gains no ref or file.
-    const dirty = has_commits( source ) ? run_git( [ `-C`, source, `stash`, `create` ] ) : ``
-    if( dirty && changes ) {
-        run_git( [ ...git_prefix, `-c`, `uploadpack.allowAnySHA1InWant=true`, `-C`, destination, `fetch`, `--quiet`, `--no-tags`, source, dirty ] )
-        run_git( [ ...git_prefix, `-C`, destination, `stash`, `apply`, `--index`, `--quiet`, dirty ] )
-    }
+    // versus unstaged state survives. `stash create` adds only unreferenced
+    // objects to the source (no ref, no file change), and only runs when asked.
+    const dirty = has_commits( source ) && has_uncommitted_changes( source )
     if( dirty && !changes ) warn( `Uncommitted changes in ${ source } are not carried into the clone; set config.clone.changes: true to include them.` )
+    if( dirty && changes ) {
+        const stash = run_git( [ `-C`, source, `stash`, `create` ], { allow_failure: true } )
+        if( !stash ) throw new Error( `Clone could not capture uncommitted changes in ${ source }; finish any merge or rebase, or set config.clone.changes: false` )
+        run_git( [ ...git_prefix, `-c`, `uploadpack.allowAnySHA1InWant=true`, `-C`, destination, `fetch`, `--quiet`, `--no-tags`, source, stash ] )
+        run_git( [ ...git_prefix, `-C`, destination, `stash`, `apply`, `--index`, `--quiet`, stash ] )
+    }
 
     // Carry after applying edits so a tracked file turned directory is removed first.
     const excluded = clone_path_matcher( exclude )
     const carried = clone_path_matcher( carry )
+    const strip = entry => entry.replace( /\/$/, `` )
     const candidates = new Set( [
-        ...list_git_others( source ).filter( path => changes || carried( path ) ),
-        ...list_git_others( source, { ignored: true } ).filter( carried ),
-    ] )
+        ...list_git_others( source ).filter( entry => changes || carried( strip( entry ) ) ),
+        ...list_git_others( source, { ignored: true } ).filter( entry => carried( strip( entry ) ) ),
+    ].map( strip ) )
     let carried_count = 0
 
     for( const path of candidates ) {
         if( excluded( path ) ) continue
-        if( path.endsWith( `/` ) ) {
-            warn( `Clone skips nested repository ${ path }` )
+        if( path_exists( join( source, path, `.git` ) ) ) {
+            warn( `Clone skips nested repository ${ path }/` )
             continue
         }
         try {
-            if( copy_carried_path( source, destination, path, warn ) ) carried_count++
+            if( copy_carried_path( source, destination, path, { warn, excluded } ) ) carried_count++
         } catch ( error ) {
             if( error.code !== `EACCES` ) throw error
-            throw new Error( `Clone cannot read carried file ${ path }; fix its permissions or remove it from config.clone.carry` )
+            throw new Error( `Clone cannot read carried path ${ path }; fix its permissions or remove it from config.clone.carry` )
         }
     }
 
@@ -1111,7 +1157,7 @@ export const prepare_clone_workspace = ( {
         const repository = inspect_git_source( original_workspace, warn )
         // Git mode copies only listed files, so the tree audit and metadata
         // relocation belong to copy mode; the copied result is verified in both.
-        const clone_mode = mode === `git` && repository.kind === `root` ? `git` : `copy`
+        const clone_mode = mode === `git` && repository.kind === `root` && !uses_attribute_filters( original_workspace, warn ) ? `git` : `copy`
         const excluded = clone_path_matcher( exclude )
         const git_relocations = clone_mode === `copy` ? audit_source_tree( original_workspace, excluded ) : null
         const clone_branch = repository.kind === `root`
