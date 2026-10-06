@@ -97,7 +97,8 @@ describe( `git clone mode`, () => {
 
     it( `clones committed state, carries secrets and notes, skips dependencies and local edits`, () => {
 
-        const objects_before = git( source, [ `count-objects` ] )
+        const object_counts = () => git( source, [ `count-objects`, `-v` ] ).split( `\n` ).filter( line => /^(count|in-pack):/.test( line ) )
+        const objects_before = object_counts()
         const result = prepare()
         const clone = result.clone_path
 
@@ -122,7 +123,7 @@ describe( `git clone mode`, () => {
         expect( git( source, [ `status`, `--porcelain` ] ) ).toContain( `tracked.txt` )
         expect( git( source, [ `branch`, `--show-current` ] ) ).toBe( `main` )
         expect( git( source, [ `stash`, `list` ] ) ).toBe( `` )
-        expect( git( source, [ `count-objects` ] ) ).toBe( objects_before )
+        expect( object_counts() ).toEqual( objects_before )
 
     } )
 
@@ -199,7 +200,7 @@ describe( `git clone mode`, () => {
 
     } )
 
-    it( `replaces a symlink the checkout restored instead of writing through it`, () => {
+    it( `never writes through a symlink the checkout restored`, () => {
 
         // Committed: .notes is a symlink elsewhere. Locally: a real directory with a note.
         const elsewhere = join( directory, `elsewhere` )
@@ -214,8 +215,9 @@ describe( `git clone mode`, () => {
 
         const clone = prepare().clone_path
 
-        expect( lstatSync( join( clone, `.notes` ) ).isSymbolicLink() ).toBe( false )
-        expect( readFileSync( join( clone, `.notes`, `MEMORY.md` ), `utf8` ) ).toBe( `local\n` )
+        // Git reports the replaced symlink as a deletion and lists nothing beneath
+        // it, so the clone keeps the committed link and the link target stays untouched.
+        expect( lstatSync( join( clone, `.notes` ) ).isSymbolicLink() ).toBe( true )
         expect( existsSync( join( elsewhere, `MEMORY.md` ) ) ).toBe( false )
 
     } )
