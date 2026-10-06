@@ -95,7 +95,7 @@ describe( `matches_patterns`, () => {
 
 describe( `evaluate_rule`, () => {
 
-    const config = { idle_timeout_s: 300, lines_for_literal_match: 10, lines_for_regex_match: 10 }
+    const config = { idle_timeout_s: 300 }
 
     it( `matches idle when timeout exceeded`, () => {
         const rule = { on: { type: `idle` }, timeout_s: 10 }

@@ -20,7 +20,7 @@ const make_rule = ( overrides = {} ) => ( {
 const make_context = ( overrides = {} ) => ( {
     output: `everything fine`,
     idle_seconds: 0,
-    config: { idle_timeout_s: 300, lines_for_literal_match: 10, lines_for_regex_match: 10 },
+    config: { idle_timeout_s: 300 },
     ...overrides,
 } )
 
@@ -382,7 +382,7 @@ describe( `web bridge coordination`, () => {
 
         await start_monitor( {
             session_name: `babysit_test`,
-            config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
+            config: { idle_timeout_s: 300 },
             rules: [ make_rule() ],
             agent: null,
             web_bridge,
@@ -438,7 +438,7 @@ describe( `web bridge coordination`, () => {
         const control_bridge = { revision: 0, busy: true, tick() {}, async close() {} }
         await start_monitor( {
             session_name: `babysit_test`,
-            config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
+            config: { idle_timeout_s: 300 },
             rules: [ make_rule() ],
             agent: null,
             control_bridge,
@@ -482,7 +482,7 @@ describe( `web bridge coordination`, () => {
 
         await start_monitor( {
             session_name: `babysit_test`,
-            config: { idle_timeout_s: 300, lines_for_regex_match: 10 },
+            config: { idle_timeout_s: 300 },
             rules: [ make_rule(), make_rule() ],
             agent: null,
             web_bridge,

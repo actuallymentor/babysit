@@ -28,7 +28,6 @@ describe( `babysit.yaml`, () => {
         expect( config.idle_timeout_s ).toBe( 300 )
         expect( config.initial_prompt ).toBe( base )
         expect( config.isolate_dependencies ).toBe( true )
-        expect( config.lines_for_literal_match ).toBe( 10 )
     } )
 
     it( `writes the supplied default prompt into a newly-created yaml`, () => {
