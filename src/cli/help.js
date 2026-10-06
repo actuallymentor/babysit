@@ -14,7 +14,7 @@ Usage:
   babysit ["session name"]           Open the interactive launch menu
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id|number>  Resume a previous session
-  babysit list [--all]                 List active sessions and launch flags
+  babysit list [--all] [--watch]       List active sessions and launch flags; --watch redraws every 2s
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
   babysit prune [--list]               Prune unused Docker data and clone workspaces

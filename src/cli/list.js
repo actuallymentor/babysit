@@ -392,30 +392,54 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.observe_activity_fn] - Fresh pane activity observer
+ * @param {Function} [deps.wait_fn] - Delay between --watch redraws
+ * @param {Function} [deps.write_fn] - Raw terminal writer for --watch
+ * @param {number} [deps.watch_rounds] - Redraw count for --watch; endless by default
  */
 export const cmd_list = async ( {
     flags = {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     observe_activity_fn = observe_session_activity,
+    wait_fn = delay,
+    write_fn = text => process.stdout.write( text ),
+    watch_rounds = Infinity,
 } = {} ) => {
 
-    const stored_sessions = list_stored_sessions_fn()
-    const tmux_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
-
-    if( tmux_sessions.length === 0 ) {
-        console.log( `No active babysit sessions.` )
-        return
-    }
-
-    const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
-
     // CPU/MEM come from the cache each session's monitor keeps; no Docker call here.
-    print_active_sessions_table( observed_sessions, stored_sessions, {
+    const print_sessions = ( observed_sessions, stored_sessions ) => print_active_sessions_table( observed_sessions, stored_sessions, {
         numbered: true,
         show_flags: true,
         show_usage: true,
         all: flags.all,
     } )
+
+    const render = async ( { before_print = () => {} } = {} ) => {
+
+        const stored_sessions = list_stored_sessions_fn()
+        const tmux_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
+
+        if( tmux_sessions.length === 0 ) {
+            before_print()
+            console.log( `No active babysit sessions.` )
+            return
+        }
+
+        const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
+        before_print()
+        print_sessions( observed_sessions, stored_sessions )
+
+    }
+
+    if( !flags.watch ) return render()
+
+    // --watch redraws in place on the real terminal, so every color survives;
+    // external `watch` pipes the output and older versions drop 256-color codes.
+    // Clearing only right before printing keeps the old frame up while sampling.
+    for( let round = 0; round < watch_rounds; round++ ) {
+        await render( { before_print: () => write_fn( `\x1b[H\x1b[J` ) } )
+        console.log( `Refreshing every 2s; Ctrl+C to stop.` )
+        await wait_fn( 2_000 )
+    }
 
 }

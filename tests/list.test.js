@@ -445,3 +445,27 @@ describe( `list colors`, () => {
     } )
 
 } )
+
+describe( `list --watch`, () => {
+
+    it( `redraws in place, clearing only right before each frame`, async () => {
+        const events = []
+        const output = await capture_console( () => cmd_list( {
+            flags: { watch: true },
+            watch_rounds: 2,
+            list_sessions_fn: async () => [ { name: `babysit_a`, attached: false, agent_status: `idle` } ],
+            list_stored_sessions_fn: () => [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` } ],
+            observe_activity_fn: async sessions => {
+                events.push( `observe` )
+                return sessions
+            },
+            write_fn: text => events.push( text ),
+            wait_fn: async ms => events.push( `wait ${ ms }` ),
+        } ) )
+
+        expect( events ).toEqual( [ `observe`, `\x1b[H\x1b[J`, `wait 2000`, `observe`, `\x1b[H\x1b[J`, `wait 2000` ] )
+        expect( output.match( /Active babysit sessions/g ) ).toHaveLength( 2 )
+        expect( output ).toContain( `Ctrl+C to stop` )
+    } )
+
+} )
