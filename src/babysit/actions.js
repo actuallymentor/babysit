@@ -2,7 +2,7 @@ import { spawn } from 'child_process'
 import { wait } from 'mentie'
 
 import { log } from '../utils/log.js'
-import { send_text, send_enter, send_shift_tab } from '../tmux/send.js'
+import { send_text, send_enter } from '../tmux/send.js'
 import { expand_segments, load_markdown_segments, split_segments } from './segments.js'
 import { IdleTracker, strip_ansi } from './matcher.js'
 import { capture_pane } from '../tmux/capture.js'
@@ -21,21 +21,14 @@ const SEGMENT_POLL_INTERVAL_MS = 2_000
  */
 export const execute_action = async ( session_name, action, config, {
     send_enter_fn = send_enter,
-    send_shift_tab_fn = send_shift_tab,
 } = {} ) => {
 
     const action_str = String( action ).trim()
 
-    // Special keywords
-    if( action_str === `enter` || action_str === `accept` ) {
+    // The only key action: confirm whatever the agent is showing.
+    if( action_str === `enter` ) {
         log.info( `Action: pressing Enter` )
         await send_enter_fn( session_name )
-        return
-    }
-
-    if( action_str === `shift_tab` ) {
-        log.info( `Action: pressing Shift+Tab` )
-        await send_shift_tab_fn( session_name )
         return
     }
 
