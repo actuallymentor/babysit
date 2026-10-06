@@ -126,6 +126,48 @@ export const format_session_status_label = ( { name = null, pwd, modifiers = [] 
 }
 
 /**
+ * Display order shared by `list`, `open`, and `close` so numbers agree:
+ * archived sessions sink to the bottom of their workspace, and workspaces
+ * whose sessions are all archived sink to the bottom of the list. Everything
+ * else keeps tmux's order.
+ * @param {Array<{ name: string }>} tmux_sessions - Active tmux sessions
+ * @param {Object[]} stored_sessions - Stored Babysit metadata
+ * @returns {Array<{ name: string }>} Reordered copy
+ */
+export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
+
+    const stored_for = tmux => stored_sessions.find( session => session.tmux_session === tmux.name )
+    const trunk_of = tmux => stored_for( tmux )?.pwd || null
+    const archived = tmux => Boolean( stored_for( tmux )?.archived_at )
+
+    const trunk_first_index = new Map()
+    const trunk_all_archived = new Map()
+    tmux_sessions.forEach( ( tmux, index ) => {
+        const trunk = trunk_of( tmux )
+        if( !trunk_first_index.has( trunk ) ) trunk_first_index.set( trunk, index )
+        trunk_all_archived.set( trunk, ( trunk_all_archived.get( trunk ) ?? true ) && archived( tmux ) )
+    } )
+
+    const rank = ( tmux, index ) => [
+        trunk_all_archived.get( trunk_of( tmux ) ) ? 1 : 0,
+        trunk_first_index.get( trunk_of( tmux ) ),
+        archived( tmux ) ? 1 : 0,
+        index,
+    ]
+
+    const compare = ( left, right ) => {
+        const position = left.findIndex( ( value, index ) => value !== right[ index ] )
+        return position === -1 ? 0 : left[ position ] - right[ position ]
+    }
+
+    return tmux_sessions
+        .map( ( tmux, index ) => ( { tmux, rank: rank( tmux, index ) } ) )
+        .sort( ( left, right ) => compare( left.rank, right.rank ) )
+        .map( ( { tmux } ) => tmux )
+
+}
+
+/**
  * Format rows with widths derived from the visible table values.
  * @param {string[]} headers - Column labels
  * @param {Array<Array<string|number|{ text: string, color?: string }>>} rows - Values to display
@@ -173,9 +215,10 @@ const tree_glyphs = ( env = process.env ) => env.TERM === `dumb`
  * @param {Object} [options]
  * @param {Object} [options.env] - Environment for glyph selection
  * @param {Array|null} [options.footer] - Summary row aligned under the columns
+ * @param {boolean[]} [options.dim] - Per-row archived flag; a trunk dims when all its rows are
  * @returns {{ header: string, divider: string, lines: string[], footer: string|null }} Rendered tree
  */
-export const format_session_tree = ( headers, rows, trunks, { env = process.env, footer = null } = {} ) => {
+export const format_session_tree = ( headers, rows, trunks, { env = process.env, footer = null, dim = [] } = {} ) => {
 
     const table = format_table( headers, footer ? [ ...rows, footer ] : rows )
     const footer_line = footer ? `${ ` `.repeat( tree_glyphs( env ).branch.length ) }${ table.rows.pop() }` : null
@@ -186,11 +229,15 @@ export const format_session_tree = ( headers, rows, trunks, { env = process.env,
     // A blank line separates trunks so each workspace reads as its own block.
     const trunk_order = [ ...new Set( trunks ) ]
     const lines = trunk_order.flatMap( ( trunk, position ) => {
-        const leaves = table.rows.filter( ( _, index ) => trunks[index] === trunk )
+        const indices = trunks.map( ( value, index ) => value === trunk ? index : -1 ).filter( index => index >= 0 )
+        const trunk_dim = indices.every( index => dim[index] )
         return [
             ...position ? [ `` ] : [],
-            trunk,
-            ...leaves.map( ( leaf, index ) => `${ index === leaves.length - 1 ? glyphs.last : glyphs.branch }${ leaf }` ),
+            paint( trunk, trunk_dim ? `dim` : null ),
+            ...indices.map( ( row, leaf_position ) => paint(
+                `${ leaf_position === indices.length - 1 ? glyphs.last : glyphs.branch }${ table.rows[row] }`,
+                dim[row] ? `dim` : null
+            ) ),
         ]
     } )
 
@@ -294,14 +341,17 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const tmux_status = tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
         const usage = show_usage ? cached_usage( stored, now ) : null
+        const archived = Boolean( stored?.archived_at )
 
         return {
             pwd: stored?.pwd || null,
             usage,
+            archived,
             leaf: [
                 ... numbered ? [ numbers[index] ] : [] ,
                 name,
-                { text: status, color: STATUS_COLORS[ status ] },
+                // Archived rows are dimmed as a whole, so the status keeps no color of its own.
+                { text: status, color: archived ? null : STATUS_COLORS[ status ] },
                 agent,
                 ... show_usage ? [ usage ? format_cpu( usage.cpu_percent ) : `-`, usage ? format_memory( usage.memory_bytes ) : `-` ] : [],
                 ... show_flags ? [ flags ] : [],
@@ -315,7 +365,10 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         headers,
         sessions.map( session => session.leaf ),
         trunk_labels( sessions.map( session => session.pwd ) ),
-        { footer: show_usage ? usage_totals_row( headers, sessions.map( session => session.usage ) ) : null }
+        {
+            footer: show_usage ? usage_totals_row( headers, sessions.map( session => session.usage ) ) : null,
+            dim: sessions.map( session => session.archived ),
+        }
     )
 
     console.log( `\n${ title }\n` )
@@ -347,8 +400,8 @@ export const cmd_list = async ( {
     observe_activity_fn = observe_session_activity,
 } = {} ) => {
 
-    const tmux_sessions = await list_sessions_fn()
     const stored_sessions = list_stored_sessions_fn()
+    const tmux_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
 
     if( tmux_sessions.length === 0 ) {
         console.log( `No active babysit sessions.` )

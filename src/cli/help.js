@@ -21,6 +21,7 @@ Usage:
   babysit recover [id|number]         Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
   babysit close <number|session_id>    Close intentionally; disable recovery for this launch
+  babysit archive <number|session_id>  Dim a session and sink it to the bottom of babysit list; open un-archives
   babysit config                       Show settings and setup status
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session
@@ -65,7 +66,7 @@ Flags:
   -v, --version   Show version
 
 Session numbers:
-  open/close:     Rows from babysit list
+  open/close/archive: Rows from babysit list
   resume:         Rows from babysit resume (use --all for global history)
   <agent> resume: Same resume rows; the selected session must match the agent
   recover:        Rows from babysit recover --dry-run (all workspaces)

@@ -11,6 +11,7 @@ import { wait_for_continuation } from '../sessions/continuation.js'
 import { list_sessions, get_session_pane, kill_session } from '../tmux/session.js'
 import { inspect_docker_container_state, stop_docker_container } from '../docker/file_transport.js'
 import { cmd_start, recover_clone_container, spawn_monitor_daemon } from './start.js'
+import { order_active_sessions } from './list.js'
 import { merge_resume_flags } from './resume.js'
 import { is_monitor_alive } from './monitor_process.js'
 
@@ -306,7 +307,7 @@ export const cmd_close = async ( cmd, { inspect_records = inspect_stored_session
     if( /^\d+$/.test( cmd.session_id ) ) {
         // Match list/open ordinals before metadata lookup. Stored history has
         // a different order and may contain inactive or superseded launches.
-        const active = await sessions( { strict: true } )
+        const active = order_active_sessions( await sessions( { strict: true } ), records.map( record => record.session ) )
         const selected = active[ Number( cmd.session_id ) - 1 ]
         if( !selected ) throw new Error( `No active session numbered ${ cmd.session_id }. Run babysit list to see active sessions.` )
         session = records.find( record => record.session.tmux_session === selected.name )?.session

@@ -107,6 +107,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
+| `babysit archive <number, id or name>` | Dim the session and sink it to the bottom of its workspace; a workspace whose sessions are all archived sinks to the bottom of the list. `babysit open` un-archives |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Interactively prune unused Docker data and managed clones |
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check for every installed agent; bypass 12h cache with `--refresh` |
@@ -137,7 +138,7 @@ Old resume IDs follow their latest launch; history shows current launches and sa
 
 Numbers use each command's current listing:
 
-- `open N` / `close N`: `babysit list`.
+- `open N` / `close N` / `archive N`: `babysit list` (archived rows sit at the bottom and are numbered there).
 - `resume N` / `<agent> resume N`: `babysit resume`; use `resume N --all`
   for rows from `babysit resume --all` (also supported with an explicit agent).
 - `recover N`: `babysit recover --dry-run`, across workspaces.

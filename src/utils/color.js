@@ -1,4 +1,5 @@
 const CODES = {
+    dim: `2`,
     grey: `90`,
     green: `32`,
     yellow: `33`,
@@ -25,7 +26,7 @@ export const color_enabled = ( { env = process.env, stream = process.stdout } = 
 /**
  * Wrap text in an ANSI color when colors are enabled.
  * @param {string} text - Text to paint
- * @param {string|null} color - One of grey, green, yellow, orange, red
+ * @param {string|null} color - One of dim, grey, green, yellow, orange, red
  * @param {Object} [options] - color_enabled options
  * @returns {string}
  */
