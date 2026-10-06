@@ -13,6 +13,7 @@ const run_inside = async () => {
     assert.equal( process.env.BABYSIT_STORAGE_E2E, `isolated-tmpfs` )
     const { acquire_clone_lock, clone_lock_status, clone_state_paths, prepare_clone_workspace } = await import( `../../src/clone.js` )
     const { list_managed_clones, prune_managed_clone } = await import( `../../src/prune.js` )
+    const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
     const clones_dir = `/scratch/clones`
     const source = `/scratch/source`
     mkdirSync( source )
@@ -20,7 +21,7 @@ const run_inside = async () => {
     mkdirSync( join( source, `nested` ) )
     linkSync( join( source, `payload.txt` ), join( source, `nested`, `linked.txt` ) )
     execFileSync( `python3`, [ `-c`, `import os,sys; p=sys.argv[1]; os.setxattr(p, 'user.babysit', b'kept'); os.utime(p, ns=(1700000000123456789,1700000000123456789))`, join( source, `payload.txt` ) ] )
-    const clone = prepare_clone_workspace( { source, clones_dir, clone_id: `disk-full` } )
+    const clone = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clones_dir, clone_id: `disk-full` } )
     const paths = clone_state_paths( clones_dir )
     assert.equal( statSync( join( clone.workspace, `payload.txt` ) ).ino, statSync( join( clone.workspace, `nested`, `linked.txt` ) ).ino )
     assert.notEqual( statSync( join( source, `payload.txt` ) ).ino, statSync( join( clone.workspace, `payload.txt` ) ).ino )
@@ -33,12 +34,12 @@ const run_inside = async () => {
     const hidden_rsync = `/usr/bin/rsync.babysit-storage-test`
     renameSync( rsync_binary, hidden_rsync )
     try {
-        assert.throws( () => prepare_clone_workspace( { source, clones_dir, clone_id: `missing-rsync` } ), /Linux clone creation requires rsync/ )
+        assert.throws( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clones_dir, clone_id: `missing-rsync` } ), /Linux clone creation requires rsync/ )
         assert.equal( existsSync( join( clones_dir, `missing-rsync` ) ), false )
         assert.equal( existsSync( join( paths.manifests, `missing-rsync.json` ) ), false )
         assert.deepEqual( readdirSync( paths.partials ), [] )
         assert.deepEqual( readdirSync( paths.locks ), [] )
-        assert.equal( prepare_clone_workspace( { source, clones_dir, clone_id: `disk-full` } ).reused, true )
+        assert.equal( prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clones_dir, clone_id: `disk-full` } ).reused, true )
         console.log( `PASS compiled Bun missing-rsync failure cleans state; completed clone reuse needs no rsync` )
     } finally {
         renameSync( hidden_rsync, rsync_binary )
@@ -76,7 +77,7 @@ const run_inside = async () => {
     const oversized = mkdtempSync( `/tmp/clone-oversized-` )
     try {
         writeFileSync( join( oversized, `large` ), Buffer.alloc( 2 * 1024 * 1024, 1 ) )
-        assert.throws( () => prepare_clone_workspace( { source: oversized, clones_dir, clone_id: `copy-disk-full` } ), /rsync/i )
+        assert.throws( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source: oversized, clones_dir, clone_id: `copy-disk-full` } ), /rsync/i )
         assert.equal( existsSync( join( clones_dir, `copy-disk-full` ) ), false )
         assert.equal( existsSync( join( paths.manifests, `copy-disk-full.json` ) ), false )
         assert.deepEqual( readdirSync( paths.partials ), [] )

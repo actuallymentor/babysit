@@ -8,7 +8,7 @@ import { wait } from 'mentie'
 import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
-import { load_config } from '../babysit/yaml.js'
+import { load_config, load_clone_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import {
     clear_credential_recovery,
@@ -1303,21 +1303,25 @@ async function start_session( cmd ) {
                 workspace = canonical_workspace( stored_clone_path )
             }
         } else {
-            log.info( `Copying ${ original_workspace } into clone ${ clone_id }` )
+            // Clone options come from the source's babysit.yaml, read once at creation.
+            const clone_config = load_clone_config( original_workspace )
+            log.info( `${ clone_config.mode === `git` ? `Cloning` : `Copying` } ${ original_workspace } into clone ${ clone_id }` )
             const prepared_clone = await prepare_clone_with_access_fix( {
                 source: original_workspace,
                 clone_id,
                 name: session_display_name,
+                clone_config,
             }, { assume_yes: flags.yes } )
             const {
                 workspace: prepared_workspace,
                 clone_branch: prepared_branch,
                 git_repository: prepared_git_repository,
+                clone_mode,
             } = prepared_clone
             workspace = prepared_workspace
             clone_branch = prepared_branch
             clone_git_repository = prepared_git_repository
-            log.info( `Clone ready: ${ workspace }` )
+            log.info( `Clone ready (${ clone_mode }): ${ workspace }` )
             if( clone_branch ) log.info( `Clone branch: ${ clone_branch }` )
         }
 

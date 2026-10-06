@@ -23,6 +23,9 @@ import {
     sweep_stale_clone_partials,
 } from '../src/clone.js'
 
+// These suites exercise working-tree copies; the product default is git mode.
+const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
+
 const run_git = ( cwd, args, { allow_failure = false } = {} ) => {
 
     const result = spawnSync( `git`, [ `-C`, cwd, ...args ], {
@@ -74,7 +77,7 @@ describe( `clone workspace preparation`, () => {
         writeFileSync( join( source, `.hidden` ), `hidden\n` )
         symlinkSync( `node_modules/package`, join( source, `package-link` ) )
 
-        const result = prepare_clone_workspace( {
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `clone-one`,
             clones_dir,
@@ -101,14 +104,14 @@ describe( `clone workspace preparation`, () => {
 
         writeFileSync( join( source, `original.txt` ), `original\n` )
 
-        const first = prepare_clone_workspace( {
+        const first = prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `reusable`,
             clones_dir,
         } )
         writeFileSync( join( first.workspace, `agent-change.txt` ), `keep me\n` )
 
-        const second = prepare_clone_workspace( {
+        const second = prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `reusable`,
             clones_dir,
@@ -123,7 +126,7 @@ describe( `clone workspace preparation`, () => {
 
         mkdirSync( join( clones_dir, `occupied` ), { recursive: true } )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `occupied`,
             clones_dir,
@@ -135,7 +138,7 @@ describe( `clone workspace preparation`, () => {
 
         const nested_clone_root = join( source, `.babysit`, `clones` )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `recursive`,
             clones_dir: nested_clone_root,
@@ -148,7 +151,7 @@ describe( `clone workspace preparation`, () => {
 
         const nested_clone_root = join( source, `..clones` )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `recursive-dot-prefix`,
             clones_dir: nested_clone_root,
@@ -158,7 +161,7 @@ describe( `clone workspace preparation`, () => {
 
     it( `rejects invalid clone ids before resolving a destination`, () => {
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `../escape`,
             clones_dir,
@@ -172,7 +175,7 @@ describe( `clone workspace preparation`, () => {
         const result = spawnSync( `mkfifo`, [ fifo ] )
         expect( result.status ).toBe( 0 )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `special-file`,
             clones_dir,
@@ -287,7 +290,7 @@ describe( `clone Git handling`, () => {
         writeFileSync( hook, `#!/bin/sh\ntouch .hook-ran\n` )
         chmodSync( hook, 0o755 )
 
-        const result = prepare_clone_workspace( {
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `20260903-a1b2`,
             name: `Feature name!?`,
@@ -311,7 +314,7 @@ describe( `clone Git handling`, () => {
 
         run_git( source, [ `init`, `-b`, `main` ] )
 
-        const result = prepare_clone_workspace( {
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `empty-repository`,
             name: `First branch`,
@@ -335,7 +338,7 @@ describe( `clone Git handling`, () => {
 
         writeFileSync( join( source, `.git` ), `gitdir: /tmp/original/.git/worktrees/source\n` )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `linked-worktree`,
             clones_dir,
@@ -350,7 +353,7 @@ describe( `clone Git handling`, () => {
         mkdirSync( external_worktree )
         run_git( source, [ `config`, `core.worktree`, external_worktree ] )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `external-worktree`,
             clones_dir,
@@ -364,7 +367,7 @@ describe( `clone Git handling`, () => {
         mkdirSync( nested )
         writeFileSync( join( nested, `.git` ), `gitdir: ${ join( directory, `outside.git` ) }\n` )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `nested-pointer`,
             clones_dir,
@@ -380,7 +383,7 @@ describe( `clone Git handling`, () => {
         mkdirSync( external_git_dir )
         writeFileSync( join( nested, `.git` ), `gitdir: ../../outside.git\n` )
 
-        expect( () => prepare_clone_workspace( {
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source,
             clone_id: `escaping-pointer`,
             clones_dir,
@@ -407,7 +410,7 @@ describe( `clone Git handling`, () => {
         const original_metadata = [ `index`, `HEAD`, `gitdir`, `commondir` ].map( file => readFileSync( join( metadata, file ) ) )
         const original_refs = run_git( source, [ `show-ref` ] )
 
-        const result = prepare_clone_workspace( { source, clone_id: `nested-worktree`, clones_dir } )
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `nested-worktree`, clones_dir } )
         const clone_worktree = join( result.workspace, worktree_path )
         expect( run_git( clone_worktree, [ `rev-parse`, `--absolute-git-dir` ] ) )
             .toBe( join( result.workspace, `.git`, `worktrees`, `agent-test` ) )
@@ -465,7 +468,7 @@ describe( `clone Git handling`, () => {
             syncBuiltinESMExports()
             const { prepare_clone_workspace } = await import(${ JSON.stringify( import.meta.resolve( `../src/clone.js` ) ) })
             try {
-                prepare_clone_workspace(${ JSON.stringify( { source, clone_id: `copy-race`, clones_dir } ) })
+                prepare_clone_workspace(${ JSON.stringify( { source, clone_id: `copy-race`, clones_dir, clone_config: COPY_EVERYTHING } ) })
                 process.exitCode = 1
             } catch (error) {
                 process.stdout.write(error.message)
@@ -489,7 +492,7 @@ describe( `clone Git handling`, () => {
         const backlink = `${ relative( metadata, join( nested, `.git` ) ) }\n`
         writeFileSync( join( metadata, `gitdir` ), backlink )
 
-        const result = prepare_clone_workspace( { source, clone_id: `relative-backlink`, clones_dir } )
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `relative-backlink`, clones_dir } )
         const copied_metadata = join( result.workspace, `.git`, `worktrees`, `agent-test` )
         expect( readFileSync( join( copied_metadata, `gitdir` ), `utf8` ) ).toBe( backlink )
         expect( existsSync( join( copied_metadata, `locked` ) ) ).toBe( false )
@@ -503,7 +506,7 @@ describe( `clone Git handling`, () => {
         const nested = join( source, `.claude`, `worktrees`, `agent-test` )
         run_git( source, [ `worktree`, `add`, `-b`, `agent-test`, nested ] )
         writeFileSync( join( nested, `.git` ), `gitdir: ${ prefix }/.git/worktrees/agent-test\n` )
-        expect( () => prepare_clone_workspace( { source, clone_id: `foreign-prefix`, clones_dir } ) )
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `foreign-prefix`, clones_dir } ) )
             .toThrow( `outside the clone source` )
 
     } )
@@ -516,7 +519,7 @@ describe( `clone Git handling`, () => {
         if( kind !== `external` ) rmSync( outside, { recursive: true } )
         if( kind === `missing-backlink` ) rmSync( join( source, `.git`, `worktrees`, `abandoned-worktree`, `gitdir` ) )
         const before = run_git( source, [ `worktree`, `list`, `--porcelain` ] )
-        const result = prepare_clone_workspace( { source, clone_id: `external-registration`, clones_dir } )
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `external-registration`, clones_dir } )
         expect( run_git( result.workspace, [ `worktree`, `list`, `--porcelain` ] ) ).not.toContain( outside )
         expect( run_git( source, [ `worktree`, `list`, `--porcelain` ] ) ).toBe( before )
         if( kind === `external` ) expect( run_git( outside, [ `status`, `--porcelain` ] ) ).toBe( `` )
@@ -542,7 +545,7 @@ describe( `clone Git handling`, () => {
             renameSync( metadata, external )
             symlinkSync( external, metadata )
         }
-        expect( () => prepare_clone_workspace( { source, clone_id: `escaping-metadata`, clones_dir } ) )
+        expect( () => prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `escaping-metadata`, clones_dir } ) )
             .toThrow( /outside the clone source|unsafe symlink/ )
         expect( existsSync( join( clones_dir, `escaping-metadata` ) ) ).toBe( false )
         expect( readdirSync( join( clones_dir, `.babysit-state`, `partials` ) ) ).toEqual( [] )
@@ -557,7 +560,7 @@ describe( `clone Git handling`, () => {
         initialize_repository( upstream )
         run_git( source, [ `-c`, `protocol.file.allow=always`, `submodule`, `add`, upstream, `vendor/module` ] )
         const original_index = readFileSync( join( source, `.git`, `modules`, `vendor`, `module`, `index` ) )
-        const result = prepare_clone_workspace( { source, clone_id: `submodule`, clones_dir } )
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `submodule`, clones_dir } )
         const cloned_module = join( result.workspace, `vendor`, `module` )
         expect( run_git( cloned_module, [ `rev-parse`, `--show-toplevel` ] ) ).toBe( cloned_module )
         expect( run_git( cloned_module, [ `rev-parse`, `--absolute-git-dir` ] ) )
@@ -578,7 +581,7 @@ describe( `clone Git handling`, () => {
         writeFileSync( join( subdirectory, `app.js` ), `console.log('app')\n` )
         const warnings = []
 
-        const result = prepare_clone_workspace( {
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING,
             source: subdirectory,
             clone_id: `subdirectory`,
             clones_dir,

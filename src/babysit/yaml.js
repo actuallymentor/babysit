@@ -26,6 +26,14 @@ config:
     idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as \`on: idle\`
     yolo_approve_dangerous_commands: true # YOLO only: answer Claude's bypass-immune "Dangerous rm operation" prompt with Yes; false lets Claude auto-deny it
 
+    # --clone workspace creation. Defaults shown; uncomment to change.
+    # clone:
+    #     mode: git                   # git: clone the repository's committed state (fast); copy: copy the working tree
+    #     carry: ['.env', '.env.*', '.notes', 'babysit.yaml'] # git mode: untracked/ignored paths copied in (gitignore-style patterns)
+    #     changes: false              # git mode: also carry uncommitted edits and untracked files
+    #     depth: null                 # git mode: shallow history depth; null keeps full history
+    #     exclude: ['node_modules']   # directory or file names skipped everywhere
+
     # Named shell commands are opt-in. Uncomment and configure before use.
     # commands:
     #     notify_command: >
@@ -72,6 +80,52 @@ const DEFAULT_CONFIG = {
     lines_for_literal_match: 10,
     lines_for_regex_match: 10,
     isolate_dependencies: true,
+}
+
+/**
+ * Clone creation defaults. Secrets and notes are the usual untracked files a
+ * clone still needs; dependencies are never worth copying.
+ */
+export const DEFAULT_CLONE_CONFIG = {
+    mode: `git`,
+    carry: [ `.env`, `.env.*`, `.notes`, `babysit.yaml` ],
+    changes: false,
+    depth: null,
+    exclude: [ `node_modules` ],
+}
+
+const string_list = ( value, fallback ) => Array.isArray( value )
+    ? value.filter( item => typeof item === `string` && item.trim() ).map( item => item.trim() )
+    : fallback
+
+/**
+ * Read `config.clone` from a workspace's babysit.yaml without creating the file.
+ * Clone creation runs before the workspace config is loaded and must read the
+ * source, which may have no babysit.yaml yet.
+ * @param {string} [dir=process.cwd()] - Source workspace
+ * @returns {{ mode: string, carry: string[], changes: boolean, depth: number|null, exclude: string[] }}
+ */
+export const load_clone_config = ( dir = process.cwd() ) => {
+
+    const config_path = resolve( dir, `babysit.yaml` )
+    let raw = {}
+
+    try {
+        raw = parse( readFileSync( config_path, `utf-8` ) )?.config?.clone || {}
+    } catch {
+        // Missing or unreadable yaml means defaults; load_config reports syntax later.
+    }
+
+    const depth = Number.isInteger( raw.depth ) && raw.depth > 0 ? raw.depth : null
+
+    return {
+        mode: raw.mode === `copy` ? `copy` : `git`,
+        carry: string_list( raw.carry, DEFAULT_CLONE_CONFIG.carry ),
+        changes: raw.changes === true,
+        depth,
+        exclude: string_list( raw.exclude, DEFAULT_CLONE_CONFIG.exclude ),
+    }
+
 }
 
 /**

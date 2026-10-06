@@ -6,6 +6,9 @@ import { join } from 'path'
 import { grant_clone_source_access, prepare_clone_workspace } from '../src/clone.js'
 import { format_clone_access_report, prepare_clone_with_access_fix } from '../src/cli/start.js'
 
+// These suites exercise working-tree copies; the product default is git mode.
+const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
+
 // Root bypasses these permission checks, so the scenario only exists for normal users.
 const as_root = process.getuid?.() === 0
 
@@ -42,7 +45,7 @@ describe.skipIf( as_root )( `clone of a source the user cannot fully read`, () =
 
         let error
         try {
-            prepare_clone_workspace( { source, clone_id: `blocked`, clones_dir } )
+            prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `blocked`, clones_dir } )
         } catch ( caught ) {
             error = caught
         }
@@ -60,7 +63,7 @@ describe.skipIf( as_root )( `clone of a source the user cannot fully read`, () =
     it( `shows the exact chmod for the owner`, () => {
         let error
         try {
-            prepare_clone_workspace( { source, clone_id: `report`, clones_dir } )
+            prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `report`, clones_dir } )
         } catch ( caught ) {
             error = caught
         }
@@ -105,7 +108,7 @@ describe.skipIf( as_root )( `clone of a source the user cannot fully read`, () =
     it( `refuses to chmod a path swapped after the audit`, () => {
         let error
         try {
-            prepare_clone_workspace( { source, clone_id: `swap`, clones_dir } )
+            prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id: `swap`, clones_dir } )
         } catch ( caught ) {
             error = caught
         }

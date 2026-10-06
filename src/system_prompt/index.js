@@ -12,7 +12,7 @@ export const sandbox = `Sandbox: /workspace is empty and container-local; no pro
 
 export const mudbox = `Mudbox: /workspace is read-only. Write temporary files elsewhere.`
 
-export const clone = `Clone: /workspace is a copy of /original. Work in /workspace. Modify /original only when explicitly instructed.`
+export const clone = `Clone: /workspace is a copy of /original. Work in /workspace. Modify /original only when explicitly instructed. Dependencies and ignored build output are not copied; install them before use.`
 
 export const docker_mode = `Host Docker access enabled: containers run as siblings. Use BABYSIT_HOST_WORKSPACE for host workspace mounts. Docker access bypasses filesystem isolation.`
 
