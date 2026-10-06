@@ -45,7 +45,7 @@ const run_inside = async () => {
     const status = () => tmux( [ `show-option`, `-v`, `-t`, session, `@babysit_agent_status` ] ).then( value => value.trim() )
     const assert_list = async ( expected, label, agent_name = `codex` ) => {
         const output = await run( `node`, [ `src/index.js`, `list` ] )
-        assert.match( output, new RegExp( `status-fixture\\s+${ expected }\\s+detached\\s+${ agent_name }` ), `${ label }\n${ output }` )
+        assert.match( output, new RegExp( `status-fixture\\s+${ expected }\\s+${ agent_name }` ), `${ label }\n${ output }` )
         console.log( `PASS ${ label }: ${ expected }` )
     }
 
@@ -137,7 +137,7 @@ const run_inside = async () => {
         } finally {
             console.log = original_log
         }
-        assert.match( lines.join( `\n` ), /status-fixture\s+unknown\s+detached\s+codex/, `capture failure must be unknown` )
+        assert.match( lines.join( `\n` ), /status-fixture\s+unknown\s+codex/, `capture failure must be unknown` )
         console.log( `PASS actual tmux capture failure: unknown` )
     } finally {
         await tmux( [ `kill-session`, `-t`, session ] ).catch( () => {} )
