@@ -10,6 +10,7 @@ import { launch_menu } from './cli/launcher.js'
 import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
+import { cmd_archive } from './cli/archive.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume, is_resume_listing } from './cli/resume.js'
 import { cmd_recover, cmd_close, cmd_recovery_shutdown } from './cli/recover.js'
@@ -108,6 +109,10 @@ const main = async () => {
         if( cmd.recover_verb === `init` ) await cmd_recover_init( cmd )
         else if( cmd.flags.shutdown ) await cmd_recovery_shutdown()
         else await cmd_recover( cmd )
+        break
+
+    case `archive`:
+        await cmd_archive( cmd )
         break
 
     case `close`:
