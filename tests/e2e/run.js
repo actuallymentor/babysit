@@ -698,9 +698,13 @@ babysit: []
 }
 
 const run_clone_session = async () => {
+    // Copy mode: this scenario guards worktree relocation and dependency copies.
     const workspace = make_workspace( `clone`, `config:
     initial_prompt: "BABYSIT_E2E_CLONE_CHECK. Explicitly write the original marker requested by this test."
     isolate_dependencies: false
+    clone:
+        mode: copy
+        exclude: []
 babysit: []
 `, {
         'e2e-original-sentinel.txt': `source`,

@@ -15,6 +15,7 @@ import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
 import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import { start_usage_sampler } from '../docker/stats.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
 import {
@@ -203,6 +204,7 @@ export const cmd_monitor = async ( cmd ) => {
     let { continuation } = session
 
     let creds_sync = null
+    let usage_sampler = null
     let credential_setup_complete = false
     let caffeinate = null
     let container_cleaned = false
@@ -313,6 +315,8 @@ export const cmd_monitor = async ( cmd ) => {
         creds_sync = credential_setup.sync
         credential_setup_complete = true
         if( creds_sync && session.container_id ) creds_sync.connect( session.container_id )
+        // Cache CPU/memory on the session record so `babysit list` never waits on Docker.
+        if( session.container_id ) usage_sampler = start_usage_sampler( session )
 
         // Long sessions rotate OAuth tokens while they run. Re-stamp the host
         // auth cache on each trusted writeback so a parallel launch still hits
@@ -384,6 +388,7 @@ export const cmd_monitor = async ( cmd ) => {
         } )
 
     } finally {
+        usage_sampler?.stop()
         identity_reader.close()
         const credentials_recovered = await cleanup_credentials()
         const container_removed = credentials_recovered

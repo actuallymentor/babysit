@@ -9,6 +9,9 @@ import { promisify } from 'node:util'
 import { acquire_clone_lock, prepare_clone_workspace } from '../../src/clone.js'
 import { save_session } from '../../src/sessions/store.js'
 
+// Prune tests exercise working-tree copies; the product default is git mode.
+const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
+
 const run = promisify( execFile )
 const repository = fileURLToPath( new URL( `../../`, import.meta.url ) )
 const root = mkdtempSync( join( tmpdir(), `babysit-prune-e2e-` ) )
@@ -23,9 +26,6 @@ const env = { ...process.env, HOME: root, BABYSIT_HOME: ``, BABYSIT_TMUX_SOCKET:
 // can lose input between questions and does not reproduce interactive usage.
 const terminal_driver = String.raw`
 import errno, json, os, pty, select, subprocess, sys, time
-
-// Prune tests exercise working-tree copies; the product default is git mode.
-const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
 
 steps = json.loads(sys.argv[1])
 master, slave = pty.openpty()
