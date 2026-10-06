@@ -23,6 +23,8 @@ describe( `apply_loop`, () => {
             const rules = make_rules()
             apply_loop( rules, workspace, { include_global_loop: false } )
             expect( rules[0].do ).toBe( local_loop )
+            // The user's idle timeout survives the action override
+            expect( rules[0].timeout_s ).toBe( 30 )
         } finally {
             rmSync( workspace, { recursive: true, force: true } )
         }

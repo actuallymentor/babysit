@@ -170,16 +170,15 @@ export const load_config = ( dir = process.cwd(), { default_initial_prompt = bui
 const parse_rule = ( raw_rule ) => {
 
     const { on: on_value, do: do_value, timeout } = raw_rule
+    const on = parse_on( on_value )
+
+    // Only idle has a duration to override; other rules fire as soon as they match.
+    if( timeout && on.type !== `idle` ) log.warn( `babysit.yaml: timeout on an "${ on_value }" rule is ignored; only idle rules take one` )
 
     return {
-        on: parse_on( on_value ),
+        on,
         do: do_value,
-        timeout_s: timeout ? parse_timeout( timeout ) : null,
-
-        // Set when the monitor sees a rule's match condition flip from false to true.
-        // Cleared whenever the match goes false again, so the per-rule "has been
-        // visible for X seconds" check re-arms cleanly across flap cycles.
-        first_matched_at: null,
+        timeout_s: timeout && on.type === `idle` ? parse_timeout( timeout ) : null,
 
         // Last-fire timestamp for the per-rule debounce that suppresses
         // double-fires from TUI redraw flicker.

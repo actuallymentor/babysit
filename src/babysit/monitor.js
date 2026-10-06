@@ -69,14 +69,11 @@ export const publish_agent_status = async ( {
 
 
 /**
- * Decide whether a rule should fire on this tick. Mutates `rule.first_matched_at`
- * to track when the match condition first became true; the monitor calls this
- * once per rule per tick, in order, and fires the first one to return true.
+ * Decide whether a rule should fire on this tick: the rule must match and
+ * must not have fired within the debounce window. Idle rules carry their own
+ * timing inside evaluate_rule; literal and regex rules fire on sight.
  *
- * Splitting this out of the monitor loop lets us unit-test the gate logic
- * (debounce + first-match timing) without standing up a tmux session.
- *
- * @param {Object} rule - Parsed rule with on/timeout_s/last_fired_at/first_matched_at
+ * @param {Object} rule - Parsed rule with on/timeout_s/last_fired_at
  * @param {Object} context - { output, idle_seconds, config }
  * @param {number} now - `Date.now()` for this tick
  * @returns {boolean} True if the action should fire this tick
@@ -86,32 +83,7 @@ export const should_fire_rule = ( rule, context, now ) => {
     // Per-rule debounce — suppresses TUI redraw flicker from re-firing the same rule
     if( now - rule.last_fired_at < DEBOUNCE_MS ) return false
 
-    const matches = evaluate_rule( rule, context )
-
-    // Match went false → re-arm the visibility timer so a flapping pattern
-    // doesn't get credit for past matches it isn't currently in.
-    if( !matches ) {
-        rule.first_matched_at = null
-        return false
-    }
-
-    // For idle rules, evaluate_rule already gates on idle_seconds — no extra
-    // visibility check needed. For all other rule types, the spec says the
-    // match must be the latest seen output FOR LONGER THAN THE TIMEOUT, which
-    // means timing the persistence of the match itself, not whole-pane idle.
-    if( rule.on.type !== `idle` && rule.timeout_s ) {
-
-        if( !rule.first_matched_at ) {
-            rule.first_matched_at = now
-            return false
-        }
-
-        const elapsed_s = ( now - rule.first_matched_at ) / 1_000
-        if( elapsed_s < rule.timeout_s ) return false
-
-    }
-
-    return true
+    return evaluate_rule( rule, context )
 
 }
 
@@ -171,7 +143,6 @@ export const start_monitor = async ( {
 
         log.info( `Rule matched: on=${ rule.on.type }${ rule.on.value ? ` (${ rule.on.value })` : `` }` )
         rule.last_fired_at = now
-        rule.first_matched_at = null
         action_busy = true
 
         // Long segmented actions wait for the agent between messages. Keep the

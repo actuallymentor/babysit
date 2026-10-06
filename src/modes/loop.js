@@ -35,14 +35,13 @@ export const apply_loop = ( rules, workspace = process.cwd(), {
         log.info( `Loop mode: no LOOP.md found, using "${ DEFAULT_LOOP_TEXT }"` )
     }
 
-    // Find and override the idle rule, or insert one at position 0
+    // Override the idle rule's action but keep its timeout, or insert one at position 0
     const idle_index = rules.findIndex( r => r.on.type === `idle` )
 
     const loop_rule = {
         on: { type: `idle` },
         do: loop_action,
-        timeout_s: null,
-        first_matched_at: null,
+        timeout_s: rules[ idle_index ]?.timeout_s ?? null,
         last_fired_at: 0,
     }
 
