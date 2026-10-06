@@ -3,10 +3,19 @@ import { list_stored_sessions } from '../sessions/store.js'
 import { capture_pane } from '../tmux/capture.js'
 import { agent_status } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
-import { container_stats, stats_for_session } from '../docker/stats.js'
+import { cached_usage, format_cpu, format_memory } from '../docker/stats.js'
+import { paint } from '../utils/color.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
+const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange` }
+
+/**
+ * Color for a share of host capacity: calm below half, warning below 70%, red above.
+ * @param {number} ratio - Used divided by capacity
+ * @returns {string}
+ */
+export const load_color = ratio => ratio < 0.5 ? `green` : ratio < 0.7 ? `yellow` : `red`
 
 /**
  * Observe current panes instead of trusting options left by an old or stopped
@@ -44,13 +53,10 @@ export const observe_session_activity = async ( sessions, stored_sessions, {
 
 }
 
-/**
- * Pad a string to a fixed width
- * @param {string} str - Input string
- * @param {number} width - Target width
- * @returns {string}
- */
-const pad = ( str, width ) => String( str ).padEnd( width )
+// A cell is plain text or { text, color }; padding uses the visible text only.
+const cell_text = cell => String( cell?.text ?? cell )
+const visible_length = line => line.replace( /\x1b\[[\d;]*m/g, `` ).length
+const pad = ( cell, width ) => paint( cell_text( cell ).padEnd( width ), cell?.color )
 
 /**
  * Keep only the deepest two levels of a session working directory.
@@ -122,14 +128,14 @@ export const format_session_status_label = ( { name = null, pwd, modifiers = [] 
 /**
  * Format rows with widths derived from the visible table values.
  * @param {string[]} headers - Column labels
- * @param {Array<Array<string|number>>} rows - Values to display
+ * @param {Array<Array<string|number|{ text: string, color?: string }>>} rows - Values to display
  * @returns {{ header: string, divider: string, rows: string[] }}
  */
 export const format_table = ( headers, rows ) => {
 
     const column_widths = headers.map( ( header, index ) => Math.max(
         String( header ).length,
-        ...rows.map( row => String( row[index] ).length )
+        ...rows.map( row => cell_text( row[index] ).length )
     ) )
 
     const format_row = row => row
@@ -166,11 +172,13 @@ const tree_glyphs = ( env = process.env ) => env.TERM === `dumb`
  * @param {string[]} trunks - Trunk label per row (same index as rows)
  * @param {Object} [options]
  * @param {Object} [options.env] - Environment for glyph selection
- * @returns {{ header: string, divider: string, lines: string[] }} Rendered tree
+ * @param {Array|null} [options.footer] - Summary row aligned under the columns
+ * @returns {{ header: string, divider: string, lines: string[], footer: string|null }} Rendered tree
  */
-export const format_session_tree = ( headers, rows, trunks, { env = process.env } = {} ) => {
+export const format_session_tree = ( headers, rows, trunks, { env = process.env, footer = null } = {} ) => {
 
-    const table = format_table( headers, rows )
+    const table = format_table( headers, footer ? [ ...rows, footer ] : rows )
+    const footer_line = footer ? `${ ` `.repeat( tree_glyphs( env ).branch.length ) }${ table.rows.pop() }` : null
     const glyphs = tree_glyphs( env )
     const indent = ` `.repeat( glyphs.branch.length )
 
@@ -187,9 +195,9 @@ export const format_session_tree = ( headers, rows, trunks, { env = process.env 
     } )
 
     const header = `${ indent }${ table.header }`
-    const width = Math.max( header.length, ...lines.map( line => line.length ) )
+    const width = Math.max( header.length, ...lines.map( visible_length ) )
 
-    return { header, divider: `-`.repeat( width ), lines }
+    return { header, divider: `-`.repeat( width ), lines, footer: footer_line }
 
 }
 
@@ -211,6 +219,33 @@ export const trunk_labels = pwds => {
 }
 
 /**
+ * Sum cached usage into a table row, colored against the Docker host's
+ * capacity when a sample recorded it (CPU capacity is cores × 100%).
+ * @param {string[]} headers - Column labels, to place the cells
+ * @param {Array<Object|null>} usages - Cached usage per session
+ * @returns {Array} Row with empty cells outside NAME/CPU/MEM
+ */
+export const usage_totals_row = ( headers, usages ) => {
+
+    const samples = usages.filter( Boolean )
+    const cpu = samples.reduce( ( total, usage ) => total + usage.cpu_percent, 0 )
+    const memory = samples.reduce( ( total, usage ) => total + usage.memory_bytes, 0 )
+    const host_cpus = Math.max( 0, ...samples.map( usage => usage.host_cpus || 0 ) )
+    const host_memory = Math.max( 0, ...samples.map( usage => usage.host_memory_bytes || 0 ) )
+
+    const row = headers.map( () => `` )
+    row[ headers.indexOf( `NAME` ) ] = `Total`
+    row[ headers.indexOf( `CPU` ) ] = samples.length
+        ? { text: format_cpu( cpu ), color: host_cpus ? load_color( cpu / ( host_cpus * 100 ) ) : null }
+        : `-`
+    row[ headers.indexOf( `MEM` ) ] = samples.length
+        ? { text: format_memory( memory ), color: host_memory ? load_color( memory / host_memory ) : null }
+        : `-`
+    return row
+
+}
+
+/**
  * Print active sessions as a tree: one trunk per workspace directory, one
  * numbered leaf per session with the remaining columns. Shared by `list`,
  * `open`, and `close` so selector numbers read the same everywhere.
@@ -221,27 +256,28 @@ export const trunk_labels = pwds => {
  * @param {boolean} [options.numbered=false] - Show active-list selectors
  * @param {number[]} [options.numbers] - Global selectors for a filtered tree
  * @param {boolean} [options.show_flags=false] - Show stored launch modifiers
- * @param {Object[]|null} [options.stats=null] - Sampled container usage; adds CPU/MEM columns
- * @param {boolean} [options.all=false] - Include diagnostic IDs and raw tmux names
+ * @param {boolean} [options.show_usage=false] - Show cached container CPU/MEM and a totals row
+ * @param {boolean} [options.all=false] - Include tmux attachment, diagnostic IDs and raw tmux names
+ * @param {number} [options.now] - Epoch milliseconds for usage staleness
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     title = `Active babysit sessions:`,
     numbered = false,
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
     show_flags = false,
-    stats = null,
+    show_usage = false,
     all = false,
+    now = Date.now(),
 } = {} ) => {
 
     const headers = [
         ... numbered ? [ `#` ] : [] ,
         `NAME`,
         `STATUS`,
-        `TMUX`,
         `AGENT`,
-        ... stats ? [ `CPU`, `MEM` ] : [],
+        ... show_usage ? [ `CPU`, `MEM` ] : [],
         ... show_flags ? [ `FLAGS` ] : [],
-        ... all ? [ `ID`, `SESSION` ] : [],
+        ... all ? [ `TMUX`, `ID`, `SESSION` ] : [],
     ]
 
     const sessions = tmux_sessions.map( ( tmux, index ) => {
@@ -254,19 +290,19 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const status = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
-        const usage = stats ? stats_for_session( stats, stored ) : null
+        const usage = show_usage ? cached_usage( stored, now ) : null
 
         return {
             pwd: stored?.pwd || null,
+            usage,
             leaf: [
                 ... numbered ? [ numbers[index] ] : [] ,
                 name,
-                status,
-                tmux_status,
+                { text: status, color: STATUS_COLORS[ status ] },
                 agent,
-                ... stats ? [ usage?.cpu || `-`, usage?.memory || `-` ] : [],
+                ... show_usage ? [ usage ? format_cpu( usage.cpu_percent ) : `-`, usage ? format_memory( usage.memory_bytes ) : `-` ] : [],
                 ... show_flags ? [ flags ] : [],
-                ... all ? [ session_id, tmux.name ] : [],
+                ... all ? [ tmux_status, session_id, tmux.name ] : [],
             ],
         }
 
@@ -275,13 +311,18 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     const tree = format_session_tree(
         headers,
         sessions.map( session => session.leaf ),
-        trunk_labels( sessions.map( session => session.pwd ) )
+        trunk_labels( sessions.map( session => session.pwd ) ),
+        { footer: show_usage ? usage_totals_row( headers, sessions.map( session => session.usage ) ) : null }
     )
 
     console.log( `\n${ title }\n` )
     console.log( `  ${ tree.header }` )
     console.log( `  ${ tree.divider }` )
     tree.lines.forEach( line => console.log( line ? `  ${ line }` : `` ) )
+    if( tree.footer ) {
+        console.log( `` )
+        console.log( `  ${ tree.footer }` )
+    }
 
     console.log( `` )
     if( numbered ) console.log( `Open one with: babysit open <number>\n` )
@@ -295,14 +336,12 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.observe_activity_fn] - Fresh pane activity observer
- * @param {Function} [deps.container_stats_fn] - Container CPU/memory sampler
  */
 export const cmd_list = async ( {
     flags = {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     observe_activity_fn = observe_session_activity,
-    container_stats_fn = container_stats,
 } = {} ) => {
 
     const tmux_sessions = await list_sessions_fn()
@@ -313,16 +352,13 @@ export const cmd_list = async ( {
         return
     }
 
-    // Both samplers wait about a second; overlap them so listing stays one interval.
-    const [ observed_sessions, stats ] = await Promise.all( [
-        observe_activity_fn( tmux_sessions, stored_sessions ),
-        container_stats_fn(),
-    ] )
+    const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
 
+    // CPU/MEM come from the cache each session's monitor keeps; no Docker call here.
     print_active_sessions_table( observed_sessions, stored_sessions, {
         numbered: true,
         show_flags: true,
-        stats,
+        show_usage: true,
         all: flags.all,
     } )
 

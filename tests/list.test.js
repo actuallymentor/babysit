@@ -33,7 +33,7 @@ describe( `print_active_sessions_table`, () => {
             [ { tmux_session: `babysit_background`, agent: `claude`, name: `background tasks` } ]
         ) )
 
-        expect( output ).toMatch( /background tasks\s+waiting\s+detached\s+claude/ )
+        expect( output ).toMatch( /background tasks\s+waiting\s+claude/ )
     } )
 
     it( `shows compact rows and collapses unnamed session IDs into NAME`, async () => {
@@ -49,7 +49,7 @@ describe( `print_active_sessions_table`, () => {
                 name: `feature 1`,
                 agent: `codex`,
                 babysit_id: `baby-1`,
-                container_id: `a`.repeat( 12 ),
+                usage: { cpu_percent: 12.5, memory_bytes: 240 * 1024 ** 2, sampled_at: new Date().toISOString() },
                 modifiers: [ `yolo`, `docker` ],
                 pwd: `/workspace/ping/pong`,
             },
@@ -58,6 +58,7 @@ describe( `print_active_sessions_table`, () => {
                 agent: `claude`,
                 agent_session_id: `native-2`,
                 babysit_id: `baby-2`,
+                usage: { cpu_percent: 50, memory_bytes: 1024 ** 3, sampled_at: new Date( Date.now() - 60 * 60_000 ).toISOString() },
                 pwd: `/workspace/ding/dong`,
             },
             {
@@ -73,22 +74,21 @@ describe( `print_active_sessions_table`, () => {
             list_sessions_fn: async () => tmux_sessions,
             list_stored_sessions_fn: () => stored_sessions,
             observe_activity_fn: async sessions => sessions,
-            // One full-id match, one matched by the babysit-<id> container name, one absent
-            container_stats_fn: async () => [
-                { id: `${ `a`.repeat( 64 ) }`, name: `babysit-baby-1`, cpu: `12.50%`, memory: `240.1MiB` },
-                { id: `${ `b`.repeat( 64 ) }`, name: `babysit-baby-2`, cpu: `0.00%`, memory: `1.5GiB` },
-            ],
         } ) )
 
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `CPU`, `MEM`, `FLAGS` ]
+            [ `#`, `NAME`, `STATUS`, `AGENT`, `CPU`, `MEM`, `FLAGS` ]
         )
-        // Directories are trunks; numbered leaves hang below them
-        expect( output ).toMatch( /\n {2}ping\/pong\n {2}└─ 1\s+feature 1\s+running\s+detached\s+codex\s+12\.50%\s+240\.1MiB\s+yolo,docker\n/ )
-        expect( output ).toMatch( /\n {2}ding\/dong\n {2}└─ 2\s+native-2\s+idle\s+attached\s+claude\s+0\.00%\s+1\.5GiB\s+-\n/ )
-        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+detached\s+antigravity\s+-\s+-\s+-\n/ )
+        // Directories are trunks; numbered leaves hang below them. Usage comes
+        // from the monitor's cache: fresh, stale (ignored), and absent.
+        expect( output ).toMatch( /\n {2}ping\/pong\n {2}└─ 1\s+feature 1\s+running\s+codex\s+12\.5%\s+240 MiB\s+yolo,docker\n/ )
+        expect( output ).toMatch( /\n {2}ding\/dong\n {2}└─ 2\s+native-2\s+idle\s+claude\s+-\s+-\s+-\n/ )
+        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+antigravity\s+-\s+-\s+-\n/ )
+        // Totals sit under the CPU/MEM columns and ignore stale samples
+        expect( output ).toMatch( /\n\s+Total\s+12\.5%\s+240 MiB\n/ )
+        expect( output ).not.toContain( `detached` )
         expect( output ).not.toContain( `babysit_named` )
         expect( output ).not.toContain( `babysit_legacy` )
         expect( output ).toContain( `Open one with: babysit open <number>` )
@@ -110,7 +110,7 @@ describe( `print_active_sessions_table`, () => {
         const first_row = lines.find( line => line.includes( `fix` ) )
         const second_row = lines.find( line => line.includes( `feature with a longer name` ) )
 
-        const column_starts = [ `NAME`, `STATUS`, `TMUX`, `AGENT` ]
+        const column_starts = [ `NAME`, `STATUS`, `AGENT` ]
             .map( column => header.indexOf( column ) )
 
         expect( header ).not.toContain( `FLAGS` )
@@ -118,7 +118,7 @@ describe( `print_active_sessions_table`, () => {
         expect( column_starts ).toEqual( [ ...column_starts ].sort( ( left, right ) => left - right ) )
         expect( first_row.indexOf( `fix` ) ).toBe( header.indexOf( `NAME` ) )
         expect( first_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
-        expect( first_row.indexOf( `detached` ) ).toBe( header.indexOf( `TMUX` ) )
+        expect( header ).not.toContain( `TMUX` )
         expect( first_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
         expect( lines ).toContain( `  work/short` )
         expect( lines ).toContain( `  work/long` )
@@ -154,7 +154,6 @@ describe( `print_active_sessions_table`, () => {
         expect( tenth_row.indexOf( `10` ) ).toBe( header.indexOf( `#` ) )
         expect( tenth_row.indexOf( `task 10` ) ).toBe( header.indexOf( `NAME` ) )
         expect( tenth_row.indexOf( `running` ) ).toBe( header.indexOf( `STATUS` ) )
-        expect( tenth_row.indexOf( `detached` ) ).toBe( header.indexOf( `TMUX` ) )
         expect( tenth_row.indexOf( `codex` ) ).toBe( header.indexOf( `AGENT` ) )
         expect( lines.indexOf( `  workspace/task-10` ) ).toBe( lines.indexOf( tenth_row ) - 1 )
 
@@ -165,7 +164,6 @@ describe( `print_active_sessions_table`, () => {
         const output = await capture_console( () => cmd_list( {
             flags: { all: true },
             observe_activity_fn: async sessions => sessions,
-            container_stats_fn: async () => [],
             list_sessions_fn: async () => [ {
                 name: `babysit_/ping/pong/ding/dong_codex_123`,
                 attached: false,
@@ -184,7 +182,7 @@ describe( `print_active_sessions_table`, () => {
         const header = output.split( `\n` ).find( line => line.includes( `NAME` ) )
 
         expect( header.trim().split( /\s+/ ) ).toEqual(
-            [ `#`, `NAME`, `STATUS`, `TMUX`, `AGENT`, `CPU`, `MEM`, `FLAGS`, `ID`, `SESSION` ]
+            [ `#`, `NAME`, `STATUS`, `AGENT`, `CPU`, `MEM`, `FLAGS`, `TMUX`, `ID`, `SESSION` ]
         )
         expect( output ).toContain( `sandbox,docker` )
         expect( output ).toContain( `native-1` )
@@ -217,7 +215,7 @@ describe( `print_active_sessions_table`, () => {
             attached: false,
         } ], [] ) )
 
-        expect( output ).toMatch( /\n {2}-\n {2}└─ babysit_\/workspace\/legacy_codex_123\s+unknown\s+detached\s+unknown\n/ )
+        expect( output ).toMatch( /\n {2}-\n {2}└─ babysit_\/workspace\/legacy_codex_123\s+unknown\s+unknown\n/ )
 
     } )
 
@@ -383,14 +381,58 @@ describe( `observe_session_activity`, () => {
         const output = await capture_console( () => cmd_list( {
             list_sessions_fn: async () => [ { name: `babysit_stale`, attached: false, agent_status: `running` } ],
             list_stored_sessions_fn: () => [],
-            container_stats_fn: async () => [],
             observe_activity_fn: ( sessions, stored ) => observe_session_activity( sessions, stored, {
                 capture: async () => `waiting for input`,
                 wait: async () => {},
             } ),
         } ) )
 
-        expect( output ).toMatch( /babysit_stale\s+idle\s+detached/ )
+        expect( output ).toMatch( /babysit_stale\s+idle\s+unknown/ )
+    } )
+
+} )
+
+describe( `list colors`, () => {
+
+    const colored = async render => {
+        const previous = process.env.FORCE_COLOR
+        process.env.FORCE_COLOR = `1`
+        try {
+            return await capture_console( render )
+        } finally {
+            if( previous === undefined ) delete process.env.FORCE_COLOR
+            else process.env.FORCE_COLOR = previous
+        }
+    }
+
+    it( `paints status by activity and totals by share of host capacity`, async () => {
+
+        const sampled_at = new Date().toISOString()
+        const output = await colored( () => print_active_sessions_table( [
+            { name: `babysit_a`, attached: false, agent_status: `idle` },
+            { name: `babysit_b`, attached: false, agent_status: `running` },
+            { name: `babysit_c`, attached: false, agent_status: `waiting` },
+        ], [
+            { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w`, usage: { cpu_percent: 150, memory_bytes: 8 * 1024 ** 3, sampled_at, host_cpus: 4, host_memory_bytes: 16 * 1024 ** 3 } },
+            { tmux_session: `babysit_b`, name: `b`, agent: `codex`, babysit_id: `b`, pwd: `/w`, usage: { cpu_percent: 150, memory_bytes: 1024 ** 3, sampled_at, host_cpus: 4, host_memory_bytes: 16 * 1024 ** 3 } },
+            { tmux_session: `babysit_c`, name: `c`, agent: `codex`, babysit_id: `c`, pwd: `/w` },
+        ], { show_usage: true } ) )
+
+        expect( output ).toContain( `\x1b[90midle` )
+        expect( output ).toContain( `\x1b[32mrunning` )
+        expect( output ).toContain( `\x1b[38;5;208mwaiting` )
+        // 300% of 400% is red; 9 GiB of 16 GiB is yellow
+        expect( output ).toContain( `\x1b[31m300.0%` )
+        expect( output ).toContain( `\x1b[33m9216 MiB` )
+
+    } )
+
+    it( `stays plain without a color-capable terminal`, async () => {
+        const output = await capture_console( () => print_active_sessions_table(
+            [ { name: `babysit_a`, attached: false, agent_status: `running` } ],
+            [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` } ]
+        ) )
+        expect( output ).not.toContain( `\x1b[` )
     } )
 
 } )

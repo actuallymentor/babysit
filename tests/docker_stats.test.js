@@ -1,75 +1,86 @@
 import { describe, it, expect } from 'bun:test'
-import { container_stats, parse_container_stats, stats_for_session } from '../src/docker/stats.js'
+import {
+    cached_usage,
+    docker_host_capacity,
+    format_memory,
+    parse_memory,
+    parse_usage_row,
+    sample_container_usage,
+    start_usage_sampler,
+} from '../src/docker/stats.js'
 
-const FULL_ID = `9d429cf6a1e0f5a442696abc80a69efac0815c706131dadbd4b4c8c64013ae7d`
+describe( `container usage`, () => {
 
-describe( `container stats`, () => {
-
-    it( `parses docker stats rows and keeps only used memory`, () => {
-
-        const rows = parse_container_stats( [
-            `${ FULL_ID }\tbabysit-one\t24.38%\t242.1MiB / 30.92GiB`,
-            `${ `b`.repeat( 64 ) }\tbabysit-two\t0.00%\t0B / 0B`,
-            ``,
-        ].join( `\n` ) )
-
-        expect( rows ).toEqual( [
-            { id: FULL_ID, name: `babysit-one`, cpu: `24.38%`, memory: `242.1MiB` },
-            { id: `b`.repeat( 64 ), name: `babysit-two`, cpu: `0.00%`, memory: `0B` },
-        ] )
-
+    it( `parses docker memory units into bytes and formats whole units back`, () => {
+        expect( parse_memory( `334.8MiB` ) ).toBe( Math.round( 334.8 * 1024 ** 2 ) )
+        expect( parse_memory( `1.5GiB` ) ).toBe( 1.5 * 1024 ** 3 )
+        expect( parse_memory( `0B` ) ).toBe( 0 )
+        expect( parse_memory( `12kB` ) ).toBe( 12_000 )
+        expect( parse_memory( `garbage` ) ).toBeNull()
+        expect( format_memory( 334.8 * 1024 ** 2 ) ).toBe( `335 MiB` )
+        expect( format_memory( 1.5 * 1024 ** 3 ) ).toBe( `1536 MiB` )
+        expect( format_memory( 12.4 * 1024 ** 3 ) ).toBe( `12 GiB` )
     } )
 
-    it( `lists running babysit containers, then samples only those through the docker prefix`, async () => {
+    it( `parses a single stats row and rejects unreadable ones`, () => {
+        expect( parse_usage_row( `24.38%\t242.1MiB / 30.92GiB\n` ) ).toEqual( { cpu_percent: 24.38, memory_bytes: Math.round( 242.1 * 1024 ** 2 ) } )
+        expect( parse_usage_row( `` ) ).toBeNull()
+        expect( parse_usage_row( `--\t-- / --` ) ).toBeNull()
+    } )
 
+    it( `samples one container through the docker prefix and degrades to null`, async () => {
         const calls = []
-        const rows = await container_stats( {
+        const usage = await sample_container_usage( `abc`, {
             command_prefix: [ `sudo`, `docker` ],
             run_command: async ( command, args ) => {
                 calls.push( [ command, ...args ] )
-                if( args.includes( `ps` ) ) return `${ FULL_ID }\n${ `b`.repeat( 64 ) }\n`
-                return `${ FULL_ID }\tbabysit-one\t1.00%\t10MiB / 1GiB\n`
+                return `1.00%\t10MiB / 1GiB\n`
             },
         } )
-
-        expect( calls ).toEqual( [
-            [ `sudo`, `docker`, `ps`, `--quiet`, `--no-trunc`, `--filter`, `name=^babysit-` ],
-            [ `sudo`, `docker`, `stats`, `--no-stream`, `--no-trunc`, `--format`, `{{.ID}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}`, FULL_ID, `b`.repeat( 64 ) ],
-        ] )
-        expect( rows ).toHaveLength( 1 )
-
+        expect( calls ).toEqual( [ [ `sudo`, `docker`, `stats`, `--no-stream`, `--format`, `{{.CPUPerc}}\t{{.MemUsage}}`, `abc` ] ] )
+        expect( usage ).toEqual( { cpu_percent: 1, memory_bytes: 10 * 1024 ** 2 } )
+        expect( await sample_container_usage( `gone`, { run_command: async () => Promise.reject( new Error( `no such container` ) ) } ) ).toBeNull()
     } )
 
-    it( `skips the stats call when no babysit container is running`, async () => {
-
-        const calls = []
-        const rows = await container_stats( { run_command: async ( _, args ) => {
-            calls.push( args )
-            return `\n`
-        } } )
-
-        expect( calls ).toHaveLength( 1 )
-        expect( rows ).toEqual( [] )
-
+    it( `reads host capacity from docker info`, async () => {
+        expect( await docker_host_capacity( { run_command: async () => `4 33204768768\n` } ) ).toEqual( { cpus: 4, memory_bytes: 33204768768 } )
+        expect( await docker_host_capacity( { run_command: async () => `` } ) ).toBeNull()
     } )
 
-    it( `degrades to no samples when docker fails`, async () => {
-        const rows = await container_stats( { run_command: async () => Promise.reject( new Error( `no daemon` ) ) } )
-        expect( rows ).toEqual( [] )
+    it( `caches samples with host capacity on the session record`, async () => {
+        const updates = []
+        const sampler = start_usage_sampler( { babysit_id: `baby`, container_id: `abc` }, {
+            interval_ms: 60_000,
+            sample: async () => ( { cpu_percent: 5, memory_bytes: 100 } ),
+            capacity: async () => ( { cpus: 2, memory_bytes: 1000 } ),
+            update: ( id, changes ) => updates.push( [ id, changes ] ),
+            now: () => Date.UTC( 2026, 9, 6 ),
+        } )
+        await sampler.tick()
+        sampler.stop()
+        expect( updates ).toEqual( [ [ `baby`, { usage: {
+            cpu_percent: 5, memory_bytes: 100, sampled_at: `2026-10-06T00:00:00.000Z`, host_cpus: 2, host_memory_bytes: 1000,
+        } } ] ] )
     } )
 
-    it( `matches a session by truncated id, full id, or container name`, () => {
+    it( `leaves the record untouched when the container is gone`, async () => {
+        const updates = []
+        const sampler = start_usage_sampler( { babysit_id: `baby`, container_id: `abc` }, {
+            interval_ms: 60_000, sample: async () => null, capacity: async () => null, update: ( ...args ) => updates.push( args ),
+        } )
+        await sampler.tick()
+        sampler.stop()
+        expect( updates ).toEqual( [] )
+    } )
 
-        const stats = [ { id: FULL_ID, name: `babysit-baby-1`, cpu: `1%`, memory: `1MiB` } ]
-
-        expect( stats_for_session( stats, { container_id: FULL_ID.slice( 0, 12 ) } )?.cpu ).toBe( `1%` )
-        expect( stats_for_session( stats, { container_id: FULL_ID } )?.cpu ).toBe( `1%` )
-        expect( stats_for_session( stats, { container_name: `babysit-baby-1` } )?.cpu ).toBe( `1%` )
-        expect( stats_for_session( stats, { babysit_id: `baby-1` } )?.cpu ).toBe( `1%` )
-        expect( stats_for_session( stats, undefined ) ).toBeNull()
-        expect( stats_for_session( stats, { container_id: `ffff`, container_name: `other` } ) ).toBeNull()
-        expect( stats_for_session( stats, {} ) ).toBeNull()
-
+    it( `ignores stale or malformed cached usage`, () => {
+        const now = Date.UTC( 2026, 9, 6, 12 )
+        const fresh = { cpu_percent: 1, memory_bytes: 1, sampled_at: new Date( now - 60_000 ).toISOString() }
+        const stale = { ...fresh, sampled_at: new Date( now - 10 * 60_000 ).toISOString() }
+        expect( cached_usage( { usage: fresh }, now ) ).toEqual( fresh )
+        expect( cached_usage( { usage: stale }, now ) ).toBeNull()
+        expect( cached_usage( { usage: { cpu_percent: `x` } }, now ) ).toBeNull()
+        expect( cached_usage( undefined, now ) ).toBeNull()
     } )
 
 } )
