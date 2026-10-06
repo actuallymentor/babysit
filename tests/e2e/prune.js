@@ -24,6 +24,9 @@ const env = { ...process.env, HOME: root, BABYSIT_HOME: ``, BABYSIT_TMUX_SOCKET:
 const terminal_driver = String.raw`
 import errno, json, os, pty, select, subprocess, sys, time
 
+// Prune tests exercise working-tree copies; the product default is git mode.
+const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
+
 steps = json.loads(sys.argv[1])
 master, slave = pty.openpty()
 child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave)
@@ -81,7 +84,7 @@ try {
     writeFileSync( join( source, `payload.txt` ), `Keep original workspace intact\n` )
 
     for( const clone_id of [ `unused-one`, `unused-two`, `active`, `protected`, `locked` ] ) {
-        const clone = prepare_clone_workspace( { source, clone_id, clones_dir } )
+        const clone = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clone_id, clones_dir } )
         save_session( {
             babysit_id: clone_id, clone_id, clone_path: clone.workspace,
             name: clone_id, tmux_session: `babysit_prune_${ clone_id }`,

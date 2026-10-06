@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.14.0 — 2026-10-06
+
+### Added
+- `--clone` on a repository clones its committed state with `git clone` instead of copying the working tree, then carries untracked and ignored files matching `config.clone.carry` (`.env`, `.env.*`, `.notes`, `babysit.yaml` by default). A 285 MB workspace now clones in about a second instead of twenty.
+- `config.clone.changes: true` carries uncommitted edits (staged and unstaged state kept) and untracked files; `config.clone.depth` clones shallow history; `config.clone.mode: copy` keeps the working-tree copy.
+- `config.clone.exclude` skips names at any depth in both modes; `node_modules` by default.
+- macOS working-tree copies use APFS file clones when the filesystem supports them.
+
+### Changed
+- The clone prompt tells the agent that dependencies and ignored build output are absent.
+
 ## 1.13.2 — 2026-10-06
 
 ### Fixed

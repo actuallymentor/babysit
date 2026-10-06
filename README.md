@@ -54,7 +54,7 @@ Use explicit commands in scripts.
 | `--yolo` | Maximum autonomy; skip agent permissions (Claude: also answers the bypass-immune "Dangerous rm operation" prompt) |
 | `--sandbox` | No workspace mount; ephemeral |
 | `--mudbox` | Read-only workspace mount |
-| `--clone` | Durable workspace copy + `/original`; explicit merge-back |
+| `--clone` | Durable workspace clone + `/original`; explicit merge-back |
 | `--docker` | Host Docker daemon access |
 | `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
@@ -64,10 +64,26 @@ Use explicit commands in scripts.
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
 
+`--clone` on a repository root clones its committed state (`git clone`, no hardlinks, all remotes kept) and
+carries untracked/ignored files matching `config.clone.carry` (default `.env`, `.env.*`, `.notes`, `babysit.yaml`).
+Dependencies and build output are not copied; uncommitted edits are not either unless `config.clone.changes: true`
+(staged and unstaged state survive; untracked files come along). `config.clone.depth: N` clones shallow history.
+Plain folders, repository subdirectories, and `config.clone.mode: copy` copy the working tree instead, skipping
+`config.clone.exclude` names (default `node_modules`) at any depth. Submodules are only present in copy mode.
+
+```yaml
+config:
+    clone:
+        mode: git            # git | copy
+        carry: ['.env', '.env.*', '.notes', 'babysit.yaml']
+        changes: false
+        depth: null
+        exclude: ['node_modules']
+```
+
 Linux copies preserve hard links within the clone, sparse files, timestamps, and supported ACLs/xattrs.
-Copies run as your user; privileged ownership/metadata remain limited by your permissions and filesystem.
-Copies use independent storage; filesystem reflinks are not requested.
-Completed clone reuse/resume does not require rsync.
+macOS copies clone files through APFS reflinks when available. Copies run as your user; privileged
+ownership/metadata remain limited by your permissions and filesystem. Completed clone reuse/resume does not require rsync.
 
 `--clone` preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
 Worktree metadata must stay within the copied source; cloning a linked worktree as the root remains unsupported.

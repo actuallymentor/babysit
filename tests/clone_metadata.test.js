@@ -6,6 +6,9 @@ import { join } from 'path'
 
 import { prepare_clone_workspace } from '../src/clone.js'
 
+// These suites exercise working-tree copies; the product default is git mode.
+const COPY_EVERYTHING = { mode: `copy`, exclude: [] }
+
 const run = ( command, args ) => {
 
     const result = spawnSync( command, args, { encoding: `utf8` } )
@@ -58,7 +61,7 @@ os.utime(file, ns=(1700000000123456789, 1700000000987654321))
 os.utime(root / 'empty', ns=(1700000000123456789, 1700000000765432109))
 `, source ] )
 
-        const result = prepare_clone_workspace( { source, clones_dir, clone_id: `metadata` } )
+        const result = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source, clones_dir, clone_id: `metadata` } )
         const metadata = path => JSON.parse( run( `python3`, [ `-c`, `
 import json, os, sys
 path = sys.argv[1]
@@ -103,7 +106,7 @@ print(json.dumps({'mode': stat.st_mode & 0o7777, 'mtime_ns': stat.st_mtime_ns, '
             writeFileSync( join( acl_source, `file` ), `ACL payload` )
             run( `setfacl`, [ `-m`, `u:65534:r--`, join( acl_source, `file` ) ] )
             run( `setfacl`, [ `-m`, `u:65534:r-x,d:u:65534:r-x`, acl_source ] )
-            const clone = prepare_clone_workspace( { source: acl_source, clones_dir: join( acl_root, `clones` ), clone_id: `acl` } )
+            const clone = prepare_clone_workspace( { clone_config: COPY_EVERYTHING, source: acl_source, clones_dir: join( acl_root, `clones` ), clone_id: `acl` } )
             expect( run( `getfacl`, [ `-cp`, join( clone.workspace, `file` ) ] ) )
                 .toBe( run( `getfacl`, [ `-cp`, join( acl_source, `file` ) ] ) )
             expect( run( `getfacl`, [ `-cp`, clone.workspace ] ) ).toBe( `user::rwx\ngroup::---\nother::---` )
@@ -157,7 +160,7 @@ print(json.dumps({'mode': stat.st_mode & 0o7777, 'mtime_ns': stat.st_mtime_ns, '
 
     it( `reuses completed clones without rsync`, () => {
 
-        const options = { source, clones_dir, clone_id: `reuse` }
+        const options = { clone_config: COPY_EVERYTHING, source, clones_dir, clone_id: `reuse` }
         const clone = prepare_clone_workspace( options )
         writeFileSync( join( clone.workspace, `keep` ), `existing edit` )
         const node = run( `node`, [ `-p`, `process.execPath` ] )
