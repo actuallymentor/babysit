@@ -123,7 +123,7 @@ const trigger_dialog = async () => {
 const approve_with_monitor = async () => {
     let alive = true
     const monitor = start_monitor( {
-        session_name: pane, config: { idle_timeout_s: 300 }, rules: [], agent_patterns: null,
+        session_name: pane, config: { idle_timeout_s: 300 }, rules: [],
         agent: claude, approve_dangerous_commands: true,
         has_session_fn: async () => alive,
         capture_pane_fn: capture,

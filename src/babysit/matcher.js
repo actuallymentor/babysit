@@ -108,46 +108,20 @@ const test_pattern = ( pattern, output ) => {
 }
 
 /**
- * Check if cleaned output matches any patterns in a list
- * @param {string} output - Cleaned pane output (last N lines)
- * @param {RegExp[]} patterns - Array of regex patterns to test
- * @returns {boolean} True if any pattern matches
- */
-export const matches_patterns = ( output, patterns ) => {
-
-    return patterns.some( pattern => test_pattern( pattern, output ) )
-
-}
-
-/**
  * Evaluate a single rule against the current pane state
  * @param {Object} rule - Parsed rule from babysit.yaml
- * @param {Object} context - { output, idle_seconds, agent_patterns, config }
+ * @param {Object} context - { output, idle_seconds, config }
  * @returns {boolean} True if the rule matches
  */
 export const evaluate_rule = ( rule, context ) => {
 
-    const { output, idle_seconds, agent_patterns, config } = context
+    const { output, idle_seconds, config } = context
     const { on } = rule
 
     switch ( on.type ) {
 
     case `idle`:
         return idle_seconds >= ( rule.timeout_s || config.idle_timeout_s )
-
-    case `plan`:
-        if( !agent_patterns?.plan ) return false
-        return matches_patterns(
-            last_n_lines( output, config.lines_for_literal_match ),
-            agent_patterns.plan
-        )
-
-    case `choice`:
-        if( !agent_patterns?.choice ) return false
-        return matches_patterns(
-            last_n_lines( output, config.lines_for_literal_match ),
-            agent_patterns.choice
-        )
 
     case `regex`:
         return test_pattern( on.value, last_n_lines( output, config.lines_for_regex_match ) )

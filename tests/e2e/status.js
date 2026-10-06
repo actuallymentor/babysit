@@ -100,7 +100,6 @@ const run_inside = async () => {
         session_name: session,
         config: { idle_timeout_s: 10 },
         rules: [],
-        agent_patterns: {},
         agent: codex,
     } )
     try {
@@ -161,7 +160,7 @@ const run_inside = async () => {
     const claude_monitor = start_monitor( {
         session_name: session,
         config: { idle_timeout_s: 10 },
-        rules: [], agent_patterns: {}, agent: claude,
+        rules: [], agent: claude,
     } )
     try {
         await wait_until( `monitor waiting`, async () => await status() === `waiting` )

@@ -77,7 +77,7 @@ export const publish_agent_status = async ( {
  * (debounce + first-match timing) without standing up a tmux session.
  *
  * @param {Object} rule - Parsed rule with on/timeout_s/last_fired_at/first_matched_at
- * @param {Object} context - { output, idle_seconds, agent_patterns, config }
+ * @param {Object} context - { output, idle_seconds, config }
  * @param {number} now - `Date.now()` for this tick
  * @returns {boolean} True if the action should fire this tick
  */
@@ -122,7 +122,6 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {string} options.session_name - Tmux session name
  * @param {Object} options.config - Parsed babysit config
  * @param {Array} options.rules - Parsed babysit rules
- * @param {Object} options.agent_patterns - Agent-specific plan/choice patterns
  * @param {Object} options.agent - Agent adapter
  * @param {Object|null} [options.web_bridge] - Optional filesystem bridge controller
  * @param {Function|null} [options.open_web_bridge_fn] - Retry bridge initialization until enabled
@@ -136,7 +135,6 @@ export const start_monitor = async ( {
     session_name,
     config,
     rules,
-    agent_patterns,
     agent,
     web_bridge = null,
     open_web_bridge_fn = null,
@@ -361,7 +359,7 @@ export const start_monitor = async ( {
 
             // Evaluate rules in order — first match wins
             const now = Date.now()
-            const context = { output: clean_output, idle_seconds, agent_patterns, config }
+            const context = { output: clean_output, idle_seconds, config }
 
             for( const rule of rules ) {
 

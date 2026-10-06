@@ -44,8 +44,8 @@ config:
 babysit:
 
     # Format:
-    # - on: <event> # unquoted words are special keywords, quotes words are literal matches, regex is supported with /regex/flags. Note that the \`on:\` only triggers if the match is the latest seen output for longer than the timeout
-    #   do: <action> # unquoted words are special keywords or commands specified in config.commands, quoted words are literal input followed by and enter keystroke
+    # - on: <event> # idle, a literal string found in the last 10 lines of output, or /regex/flags
+    #   do: <action> # enter, a command named in config.commands, a Markdown file (=== separates steps), or text to type
 
     # Examples are disabled until you uncomment and configure them.
 
@@ -54,19 +54,9 @@ babysit:
     #   do: ./IDLE.md # create this file first; relative and absolute paths work
     #   timeout: 30:00 # overrides idle_timeout_s; SS, MM:SS, or HH:MM:SS
 
-    # This instructs babysit to accept any plan that the coding agent submits by pressing "enter" when it encounters a plan acceptance step
-    # - on: plan # this means the coding agent is asking the user to accept a plan
-    #   do: enter
-    #   timeout: 10 # waits 10 seconds
-
-    # Run the configured notification command when the agent needs input.
-    # - on: choice
-    #   do: notify_command
-    #   timeout: 1:00:00
-
+    # Run the configured notification command when the agent reports an error.
     # - on: /error/i
     #   do: notify_command
-    #   timeout: 05:00
 `
 
 /**
@@ -211,8 +201,6 @@ const parse_on = ( value ) => {
 
     // Keywords
     if( str === `idle` ) return { type: `idle` }
-    if( str === `plan` ) return { type: `plan` }
-    if( str === `choice` ) return { type: `choice` }
 
     // Regex: /pattern/flags
     const regex_match = str.match( /^\/(.+)\/([gimsuy]*)$/ )
