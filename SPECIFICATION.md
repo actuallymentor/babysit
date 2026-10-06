@@ -15,7 +15,7 @@ The core functionality is that when run, `babysit` will:
 - Run mode is passed to the container through the environment variable AGENT_AUTONOMY_MODE, which can be `sandbox`, `mudbox`, `yolo`, or empty for default. The system prompt of the coding agent is configured based on this mode to give the agent appropriate instructions and limitations.
 - The `babysit` cli monitors the content of the sessions and provides input based on `babysit.yaml`, a file the cli creates on first run in the current directory. The instructions there are "first one wins" when there are conflicts.
 - The `babysit.yaml` file has `config` and `babysit` sections. The `config` section contains configutations about behavior. The `babysit` section contains the actions that `babysit` takes depending on the output (or idle) of the tmux session with the coding agent. The `babysit:` section contains `on/do` pairs where `on` can be a keyword, a literal string, or a regex. The `do` can be a command defined in the `config:` section, a literal string, or a markdown file. In both string and markdown cases, sections may be defined using `===` segments, which instructs `babysit` to wait for idle after executing each segment. This allows the user to create complex instructions that are executed step by step when the agent is idle in between.
-- The `on:` keyword options are: idle, plan, choice, literal string, and regex. Idle means "no new output in the tmux session for longer than the timeout". Plan means the agent is asking the user to accept a plan, this is detected through a matching table (like a patterns.js kind of file with agent>regex pairings) that `babysit` keeps per coding agent. Choice means the agent is waiting for user input other than accepting a plan, this is also detected through a matching table. Literal string matching works on the latest output going back N lines (this is a config variable set to 10 by default). Regex matching also works on the latest output with a separate lines config.
+- The `on:` keyword options are: idle, literal string, and regex. Idle means "no new output in the tmux session for longer than the timeout". Literal and regex matching work on the last 10 lines of output and fire as soon as they match. Plan and choice detection (per-agent pattern tables) were removed in 1.16.0: every supported agent now has a native bypass mode and plan UI, so Babysit no longer presses keys for them.
 
 The generated `babysit.yaml` has the following shape. The full mode-aware launch prompt replaces the abbreviated `initial_prompt` content below. Commands and supervision rules are examples only; users explicitly uncomment and configure the ones they want.
 
@@ -39,7 +39,7 @@ config:
 babysit:
 
     # Format:
-    # - on: <event> # unquoted words are special keywords, quotes words are literal matches, regex is supported with /regex/flags. Note that the `on:` only triggers if the match is the latest seen output for longer than the timeout
+    # - on: <event> # idle, a literal string, or /regex/flags
     #   do: <action> # unquoted words are special keywords or commands specified in config.commands, quoted words are literal input followed by and enter keystroke
 
     # Examples are disabled until you uncomment and configure them.
@@ -49,15 +49,7 @@ babysit:
     #   do: ./IDLE.md # create this file first; relative and absolute paths work
     #   timeout: 30:00 # overrides idle_timeout_s; SS, MM:SS, or HH:MM:SS
 
-    # This instructs babysit to accept any plan that the coding agent submits by pressing "enter" when it encounters a plan acceptance step
-    # - on: plan # this means the coding agent is asking the user to accept a plan
-    #   do: enter
-    #   timeout: 10 # waits 10 seconds
 
-    # Run the configured notification command when the agent needs input.
-    # - on: choice
-    #   do: notify_command
-    #   timeout: 1:00:00
 
     # - on: /error/i
     #   do: notify_command

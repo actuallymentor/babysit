@@ -292,20 +292,19 @@ config:
 
 babysit:
     # Uncomment wanted rules.
-    # - on: plan
-    #   do: accept
-    #   timeout: 10
-
     # - on: idle
     #   do: ./IDLE.md
     #   timeout: 30:00
+
+    # - on: /error/i
+    #   do: notify_command
 ```
 
 | Setting | Values |
 |---|---|
-| `on` | `idle`, `plan`, `choice`, quoted literal, `/regex/flags` |
-| `do` | `enter`, `accept`, `shift_tab`, named `config.commands` command, text, Markdown file |
-| `timeout` | `SS`, `MM:SS`, `HH:MM:SS` |
+| `on` | `idle`, literal text, `/regex/flags` (literal and regex look at the last 10 pane lines) |
+| `do` | `enter`, named `config.commands` command, text, Markdown file |
+| `timeout` | Idle rules only: `SS`, `MM:SS`, `HH:MM:SS`; overrides `idle_timeout_s` |
 | Markdown steps | Separate with `===`; wait for idle between steps |
 | `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going` |
 

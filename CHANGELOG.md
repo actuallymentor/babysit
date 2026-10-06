@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.16.0 — 2026-10-06
+
+### Removed
+- `on: plan` and `on: choice` rules and the per-agent pattern tables behind them. Every supported agent has a native bypass mode and plan UI; the patterns had been frozen since May and misfired on current Claude footers.
+- `do: shift_tab` and `do: accept`; `enter` is the only key action.
+- `config.lines_for_literal_match` and `config.lines_for_regex_match`; literal and regex rules always look at the last 10 pane lines.
+- `timeout` on literal and regex rules (they fire as soon as they match; a timeout there now warns). Idle rules keep theirs.
+
+### Fixed
+- `--loop` keeps a custom `timeout` on the idle rule instead of silently reverting to `idle_timeout_s`.
+
 ## 1.15.1 — 2026-10-06
 
 ### Fixed
