@@ -108,3 +108,49 @@ test( `expired controls can dismiss their owned dialog but cannot keep typing`, 
     expect( sent ).toEqual( [ `Escape` ] )
     await bridge.close()
 } )
+
+test( `exit requests go to the exit handler for every agent, including codex`, async () => {
+    const results = []
+    let exits = 0
+    const bridge = create_control_bridge( { ...session, agent: `codex` }, {
+        on_exit_request: async () => {
+            exits++
+            return `Exiting after the current turn finishes.`
+        },
+        runner: async ( command, args ) => {
+            const input = JSON.parse( Buffer.from( args.at( -1 ), `base64` ) )
+            if( input.action === `result` ) results.push( input )
+            return Buffer.from( JSON.stringify( input.action === `take` ? {
+                id: `bye`, operation: `exit`, remaining_ms: 60_000,
+            } : input ) ).toString( `base64` )
+        },
+        execute: async () => {
+            throw new Error( `terminal control must not run for exit` )
+        },
+    } )
+    bridge.tick()
+    await settle( bridge )
+    expect( exits ).toBe( 1 )
+    expect( results ).toEqual( [ { action: `result`, id: `bye`, status: `applied`, message: `Exiting after the current turn finishes.`, launch_id: session.control_id } ] )
+    await bridge.close()
+} )
+
+test( `codex sessions without an exit handler get no bridge, and terminal controls are refused`, async () => {
+    expect( create_control_bridge( { ...session, agent: `codex` } ) ).toBeNull()
+    const results = []
+    const bridge = create_control_bridge( { ...session, agent: `codex` }, {
+        on_exit_request: async () => `bye`,
+        runner: async ( command, args ) => {
+            const input = JSON.parse( Buffer.from( args.at( -1 ), `base64` ) )
+            if( input.action === `result` ) results.push( input )
+            return Buffer.from( JSON.stringify( input.action === `take` ? {
+                id: `m`, operation: `model`, value: `gpt`, remaining_ms: 60_000,
+            } : input ) ).toString( `base64` )
+        },
+    } )
+    bridge.tick()
+    await settle( bridge )
+    expect( results[0].status ).toBe( `failed` )
+    expect( results[0].message ).toContain( `not a terminal control` )
+    await bridge.close()
+} )

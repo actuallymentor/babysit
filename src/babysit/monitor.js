@@ -100,6 +100,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {boolean} [options.approve_dangerous_commands=false] - YOLO: answer the agent's bypass-immune dangerous-command prompt with Yes
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
+ * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
  */
@@ -115,6 +116,7 @@ export const start_monitor = async ( {
     tmux_target = session_name,
     on_session_id,
     on_tick,
+    on_status = null,
     input_allowed = () => true,
     on_exit,
     agent_exit_sentinel = null,
@@ -223,6 +225,7 @@ export const start_monitor = async ( {
             // Background terminals are unfinished work, even when their pane
             // is static. Restart the idle timer once their footer disappears.
             if( agent_status === `waiting` ) idle_tracker.reset()
+            if( on_status ) await on_status( agent_status )
 
             // Store activity with the tmux session itself. Only transitions issue
             // a command, keeping the one-second monitor poll cheap. Failed writes

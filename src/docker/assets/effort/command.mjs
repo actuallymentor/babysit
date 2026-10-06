@@ -28,6 +28,16 @@ const parse_control = ( args, help ) => {
 }
 
 /** Run the same command from the host CLI and the small container executable. */
+export const exit_help = `Usage: babysit exit
+Ends this session gracefully: the agent quits after its current turn and Babysit cleans up.`
+
+/** Ask the host monitor to end this session once the agent is idle. */
+export const run_exit = async ( args = [] ) => {
+    if( args.includes( `--help` ) || args.includes( `-h` ) ) return exit_help
+    if( !process.env.BABYSIT_CONTROL_ID ) throw new Error( `babysit exit runs inside a managed session; on the host use: babysit close <number>` )
+    return terminal_request( `exit` )
+}
+
 export const run_effort = async args => {
     const parsed = parse_control( args, effort_help )
     if( parsed.help ) return parsed.help
