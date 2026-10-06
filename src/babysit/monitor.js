@@ -101,6 +101,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_status] - Callback with each tick's agent status
+ * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
  */
@@ -117,6 +118,7 @@ export const start_monitor = async ( {
     on_session_id,
     on_tick,
     on_status = null,
+    on_user_input = null,
     input_allowed = () => true,
     on_exit,
     agent_exit_sentinel = null,
@@ -309,6 +311,7 @@ export const start_monitor = async ( {
             }
 
             if( bridge_sent ) {
+                on_user_input?.()
                 idle_tracker.reset()
                 await wait_fn( POLL_INTERVAL_MS )
                 continue

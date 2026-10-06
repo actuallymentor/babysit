@@ -23,7 +23,7 @@ import { cmd_prune } from './cli/prune.js'
 import { cmd_web } from './cli/web.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
-import { run_effort, run_model, run_exit } from './docker/assets/effort/command.mjs'
+import { run_effort, run_model, run_exit, run_stuck } from './docker/assets/effort/command.mjs'
 import { run_usage } from './cli/usage.js'
 
 // Subcommands that need a dep check before they run. `help` and `--version`
@@ -48,6 +48,10 @@ const main = async () => {
     }
     if( process.argv[2] === `exit` ) {
         console.log( await run_exit( process.argv.slice( 3 ) ) )
+        return
+    }
+    if( process.argv[2] === `stuck` ) {
+        console.log( await run_stuck( process.argv.slice( 3 ) ) )
         return
     }
     if( process.argv[2] === `usage` ) {

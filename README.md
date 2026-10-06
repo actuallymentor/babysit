@@ -118,7 +118,8 @@ Idle rules do not start while waiting; manual input remains available.
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; Claude background shells → waiting; otherwise output stability; unreadable → unknown.
-Status is grey when idle, green when running, orange when waiting. CPU/MEM come from a cache each session's
+Status is grey when idle, green when running, orange when waiting, red when the agent ran `babysit stuck`
+(cleared by typing into that tmux session or sending input from the web companion). CPU/MEM come from a cache each session's
 monitor refreshes every 30s from `docker stats` (CPU: 100% = one core; MEM: used, whole MiB); `-` when no sample
 is younger than 5 minutes. The totals row is green under 50% of the Docker host's cores/memory, yellow under 70%, red above.
 Colors follow `NO_COLOR`, `TERM=dumb`, and non-TTY output.
@@ -196,6 +197,7 @@ babysit effort high
 babysit model --status <id>    # Result of a queued terminal request
 babysit effort --status <id>
 babysit exit                  # End this session gracefully after the current turn
+babysit stuck                 # Mark this session "stuck" in babysit list until the user types into it
 ```
 
 `babysit exit` marks the session intentionally closed (recovery will not relaunch it), waits for the

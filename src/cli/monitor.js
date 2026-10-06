@@ -18,6 +18,7 @@ import { start_usage_sampler } from '../docker/stats.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
 import { create_exit_controller } from '../control/exit.js'
+import { create_stuck_controller } from '../control/stuck.js'
 import { send_text } from '../tmux/send.js'
 import {
     clear_host_auth_cache,
@@ -207,6 +208,7 @@ export const cmd_monitor = async ( cmd ) => {
     let creds_sync = null
     let usage_sampler = null
     let exit_controller = null
+    let stuck_controller = null
     let credential_setup_complete = false
     let caffeinate = null
     let container_cleaned = false
@@ -360,14 +362,24 @@ export const cmd_monitor = async ( cmd ) => {
             },
         } )
 
+        // `babysit stuck`: a list status that only the user's typing clears.
+        stuck_controller = create_stuck_controller( session, { update: update_session } )
+
         await start_monitor( {
             session_name: session.tmux_session,
             config,
             rules,
             agent,
             open_web_bridge_fn: () => open_web_bridge( { session } ),
-            control_bridge: create_control_bridge( session, { on_exit_request: () => exit_controller.request() } ),
-            on_status: status => exit_controller.on_status( status ),
+            control_bridge: create_control_bridge( session, { handlers: {
+                exit: () => exit_controller.request(),
+                stuck: () => stuck_controller.request(),
+            } } ),
+            on_status: async status => {
+                await exit_controller.on_status( status )
+                await stuck_controller.tick()
+            },
+            on_user_input: () => stuck_controller.clear(),
             approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target: session.pane_id || session.tmux_session,
             agent_exit_sentinel: session.agent_exit_sentinel,

@@ -86,11 +86,14 @@ test( `late confirmation cannot replace an expired result`, () => {
     expect( request( { action: `result`, id, status: `applied`, message: `late` } ).status ).toBe( `failed` )
 } )
 
-test( `exit requests queue like other controls`, () => {
+test( `exit and stuck requests queue like other controls`, () => {
     const { request } = fixture()
-    const id = randomUUID()
-    expect( request( { action: `enqueue`, id, operation: `exit` } ).status ).toBe( `pending` )
-    expect( request( { action: `take` } ).operation ).toBe( `exit` )
-    request( { action: `result`, id, status: `applied`, message: `bye` } )
-    expect( request( { action: `status`, id } ).status ).toBe( `applied` )
+    for( const operation of [ `exit`, `stuck` ] ) {
+        const id = randomUUID()
+        expect( request( { action: `enqueue`, id, operation } ).status ).toBe( `pending` )
+        expect( request( { action: `take` } ).operation ).toBe( operation )
+        request( { action: `result`, id, status: `applied`, message: `ok` } )
+        expect( request( { action: `status`, id } ).status ).toBe( `applied` )
+    }
+    expect( () => request( { action: `enqueue`, id: randomUUID(), operation: `reboot` } ) ).toThrow( /Invalid control operation/ )
 } )
