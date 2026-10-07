@@ -144,3 +144,4 @@
 - 2026-10-07: Review fixes: watch empty-state message, model help wording, render tests for — cells. v1.22.1.
 - 2026-10-07: list shows version notice + host-share CPU; monitor pollers slowed (identity 30s idle, completion 5s). v1.23.0.
 - 2026-10-07: Deferred credential upload into the running container behind an entrypoint gate; cp 5-10s -> ~60ms measured. v1.24.0.
+- 2026-10-07: Review fix: sync connects between upload() and release(); headless never defers. v1.24.1.

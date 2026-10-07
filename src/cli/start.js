@@ -1645,7 +1645,11 @@ async function start_session( cmd ) {
         if( prepared_launch.deferred ) {
             startup_status.set( `uploading credentials` )
             await time_phase( `deferred credential upload`, () => prepared_launch.upload() )
+            // Sync must be live before the gate opens: if the release exec
+            // loses its acknowledgement the agent may already be rotating
+            // tokens, and failure cleanup pulls through this transport.
             if( creds_sync ) creds_sync.connect( prepared_launch.container_id )
+            await time_phase( `bootstrap release`, () => prepared_launch.release() )
         }
 
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )

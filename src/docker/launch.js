@@ -219,8 +219,9 @@ const image_supports_bootstrap_gate = async run_command => {
  * With `deferred_upload`, and an image whose entrypoint honours the bootstrap
  * gate, the upload waits until the container runs: a copy into a stopped
  * container mounts its rootfs (seconds on a busy daemon), into a running one
- * it takes milliseconds. The caller starts the container, then calls
- * `upload()`, which stages files, registers recovery and releases the gate.
+ * it takes milliseconds. The caller starts the container, calls `upload()`
+ * (stages files, registers recovery), connects credential sync, then
+ * `release()` opens the gate.
  *
  * @param {Object} options - Options accepted by build_docker_command_args
  * @param {boolean} [options.deferred_upload=false] - Upload after start when the image supports the gate
@@ -233,6 +234,7 @@ const image_supports_bootstrap_gate = async run_command => {
  *   abort: Function,
  *   await_started: Function,
  *   upload: Function|null,
+ *   release: Function|null,
  *   deferred: boolean,
  *   pull_synced_files: Function,
  *   retain: Function,
@@ -253,7 +255,10 @@ export const prepare_docker_launch = async ( options, {
 
     let planned_options
     let seccomp_transport
-    const deferred = options.deferred_upload === true && await image_supports_bootstrap_gate( run_command )
+    // Only an interactive launch carries the gate env; a headless probe that
+    // deferred would start its agent against an empty home.
+    const deferred = options.deferred_upload === true && options.interactive !== false
+        && await image_supports_bootstrap_gate( run_command )
     try {
         planned_options = build_docker_launch_plan( options, { build_private_file } )
         seccomp_transport = create_seccomp_profile()
@@ -532,15 +537,21 @@ export const prepare_docker_launch = async ( options, {
         }
 
         // Deferred staging: the entrypoint is parked on the gate, so the agent
-        // cannot have run yet. Stage, then mark the container as possibly
-        // executing BEFORE the release exec: an ambiguous release must retain
-        // refreshable credentials rather than destroy them.
+        // cannot have run yet. upload() stages and marks the container as
+        // possibly executing; the caller connects credential sync, THEN calls
+        // release(). An ambiguous release (gate opened, exec timed out) is
+        // therefore covered by a connected sync whose final pull recovers a
+        // rotated token instead of deleting it.
         const upload = async () => {
             if( staging_complete ) return
             if( !await await_started( { require_running: true } ) ) {
                 throw new Error( `Docker container did not reach a running state before credential upload` )
             }
             await stage()
+        }
+
+        const release = async () => {
+            if( !staging_complete ) throw new Error( `Cannot release the bootstrap gate before credentials are staged` )
             await time_phase( `bootstrap release`, () => run_docker( [
                 ...docker_prefix_args, `exec`, container_id,
                 `sh`, `-c`, `mkdir -m 700 -p ${ BOOTSTRAP_GATE_FILE.replace( /\/[^/]+$/, `` ) } && : > ${ BOOTSTRAP_GATE_FILE }`,
@@ -557,6 +568,7 @@ export const prepare_docker_launch = async ( options, {
             abort,
             await_started,
             upload: deferred ? upload : null,
+            release: deferred ? release : null,
             deferred,
             pull_synced_files,
             retain,

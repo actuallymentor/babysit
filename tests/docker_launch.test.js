@@ -110,13 +110,45 @@ describe( `prepared Docker launch`, () => {
         expect( create_index ).toBeGreaterThan( -1 )
 
         await launch.upload()
-        expect( calls.slice( create_index + 1 ) ).toEqual( [ `inspect --format`, `inspect --format`, `cp -`, `exec ${ CONTAINER_ID }` ] )
+        expect( calls.slice( create_index + 1 ) ).toEqual( [ `inspect --format`, `inspect --format`, `cp -` ] )
         expect( existsSync( transport.directory ) ).toBe( false )
 
-        // A second call is a no-op: staging already completed.
+        // Release is a separate step so the caller can connect sync in between.
+        await launch.release()
+        expect( calls.at( -1 ) ).toBe( `exec ${ CONTAINER_ID }` )
+
+        // A second upload is a no-op: staging already completed.
         await launch.upload()
         expect( calls.filter( call => call.startsWith( `cp` ) ) ).toHaveLength( 1 )
         launch.handoff()
+
+    } )
+
+    it( `refuses to release before staging and never defers headless launches`, async () => {
+
+        const { mount } = private_transport()
+        const launch = await prepare_docker_launch( { ...make_options( mount ), deferred_upload: true }, {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                const label = gate_label( true )( args )
+                if( label !== null ) return label
+                return args.includes( `create` ) ? CONTAINER_ID : ``
+            },
+        } )
+        await expect( launch.release() ).rejects.toThrow( `before credentials are staged` )
+        await launch.abort()
+
+        const headless = private_transport()
+        const headless_launch = await prepare_docker_launch( { ...make_options( headless.mount ), deferred_upload: true, interactive: false }, {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                if( args.includes( `image` ) ) throw new Error( `label must not be consulted for headless launches` )
+                return args.includes( `create` ) ? CONTAINER_ID : ``
+            },
+        } )
+        expect( headless_launch.deferred ).toBe( false )
+        expect( existsSync( headless.transport.directory ) ).toBe( false )
+        headless_launch.handoff()
 
     } )
 
