@@ -3,8 +3,9 @@ import { list_stored_sessions } from '../sessions/store.js'
 import { capture_pane } from '../tmux/capture.js'
 import { agent_status } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
-import { cached_usage, format_cpu, format_memory } from '../docker/stats.js'
+import { cached_usage, format_cpu, format_memory, host_cpu_percent } from '../docker/stats.js'
 import { paint } from '../utils/color.js'
+import { newer_version_available } from './version_check.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
@@ -267,7 +268,7 @@ export const trunk_labels = pwds => {
 
 /**
  * Sum cached usage into a table row, colored against the Docker host's
- * capacity when a sample recorded it (CPU capacity is cores × 100%).
+ * capacity when a sample recorded it (CPU is already a share of the host).
  * @param {string[]} headers - Column labels, to place the cells
  * @param {Array<Object|null>} usages - Cached usage per session
  * @returns {Array} Row with empty cells outside NAME/CPU/MEM
@@ -275,7 +276,7 @@ export const trunk_labels = pwds => {
 export const usage_totals_row = ( headers, usages ) => {
 
     const samples = usages.filter( Boolean )
-    const cpu = samples.reduce( ( total, usage ) => total + usage.cpu_percent, 0 )
+    const cpu = samples.reduce( ( total, usage ) => total + host_cpu_percent( usage ), 0 )
     const memory = samples.reduce( ( total, usage ) => total + usage.memory_bytes, 0 )
     const host_cpus = Math.max( 0, ...samples.map( usage => usage.host_cpus || 0 ) )
     const host_memory = Math.max( 0, ...samples.map( usage => usage.host_memory_bytes || 0 ) )
@@ -283,7 +284,7 @@ export const usage_totals_row = ( headers, usages ) => {
     const row = headers.map( () => `` )
     row[ headers.indexOf( `NAME` ) ] = `Total`
     row[ headers.indexOf( `CPU` ) ] = samples.length
-        ? { text: format_cpu( cpu ), color: host_cpus ? load_color( cpu / ( host_cpus * 100 ) ) : null }
+        ? { text: format_cpu( cpu ), color: host_cpus ? load_color( cpu / 100 ) : null }
         : `-`
     row[ headers.indexOf( `MEM` ) ] = samples.length
         ? { text: format_memory( memory ), color: host_memory ? load_color( memory / host_memory ) : null }
@@ -353,7 +354,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
                 // Archived rows are dimmed as a whole, so the status keeps no color of its own.
                 { text: status, color: archived ? null : STATUS_COLORS[ status ] },
                 agent,
-                ... show_usage ? [ usage ? format_cpu( usage.cpu_percent ) : `-`, usage ? format_memory( usage.memory_bytes ) : `-` ] : [],
+                ... show_usage ? [ usage ? format_cpu( host_cpu_percent( usage ) ) : `-`, usage ? format_memory( usage.memory_bytes ) : `-` ] : [],
                 ... show_flags ? [ flags ] : [],
                 ... all ? [ tmux_status, session_id, tmux.name ] : [],
             ],
@@ -392,6 +393,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.observe_activity_fn] - Fresh pane activity observer
+ * @param {Function} [deps.version_check_fn] - Newer-release lookup
  * @param {Function} [deps.wait_fn] - Delay between --watch redraws
  * @param {Function} [deps.write_fn] - Raw terminal writer for --watch
  * @param {number} [deps.watch_rounds] - Redraw count for --watch; endless by default
@@ -401,6 +403,7 @@ export const cmd_list = async ( {
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     observe_activity_fn = observe_session_activity,
+    version_check_fn = newer_version_available,
     wait_fn = delay,
     write_fn = text => process.stdout.write( text ),
     watch_rounds = Infinity,
@@ -414,6 +417,12 @@ export const cmd_list = async ( {
         show_usage: true,
         all: flags.all,
     } )
+
+    // Cached lookup: never a network wait in front of the table.
+    const print_version_notice = () => {
+        const { latest } = version_check_fn()
+        if( latest ) console.log( paint( `New babysit version available: ${ latest } (run babysit update)`, `orange` ) + `\n` )
+    }
 
     const render = async ( { before_print = () => {} } = {} ) => {
 
@@ -438,6 +447,7 @@ export const cmd_list = async ( {
         const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
         before_print()
         print_sessions( observed_sessions, stored_sessions, numbers )
+        print_version_notice()
 
     }
 

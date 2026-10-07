@@ -4,7 +4,8 @@ import { log } from '../utils/log.js'
 
 const MAX_RECORD_BYTES = 1_024 * 1_024
 const MAX_TEXT_BYTES = 256 * 1_024
-const POLL_INTERVAL_MS = 2_000
+// A completed reply lands once per turn; polling slower keeps daemon exec load down.
+const POLL_INTERVAL_MS = 5_000
 const READ_TIMEOUT_MS = 5_000
 const LAUNCH_ID = /^[a-f0-9-]{36}$/
 

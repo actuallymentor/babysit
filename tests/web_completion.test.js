@@ -87,19 +87,19 @@ describe( `completed reply reader`, () => {
         expect( first.text ).toBe( output.text )
         expect( calls ).toBe( 1 )
 
-        now += 2_000
+        now += 5_000
         reader.read()
         await settle()
         expect( reader.read() ).toBe( first )
 
         output = reply( { session_id: `new-root-session`, text: `New conversation` } )
-        now += 2_000
+        now += 5_000
         reader.read()
         await settle()
         expect( reader.read().text ).toBe( `New conversation` )
 
         output = reply( { turn_id: `turn-2`, text: `New final reply`, completed_at: `2026-09-07T12:01:00.000Z` } )
-        now += 2_000
+        now += 5_000
         reader.read()
         await settle()
         expect( reader.read().text ).toBe( `New final reply` )
