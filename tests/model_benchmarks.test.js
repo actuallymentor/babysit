@@ -27,18 +27,19 @@ const page = ( data, current = 1, has_more = false ) => ( {
     data, intelligence_index_version: 4.3, pagination: { page: current, has_more },
 } )
 
-it( `defaults to coding; complete rows, provider filter, sort, then limit`, async () => {
+it( `defaults to coding; provider filter, sort, then limit; missing metrics stay`, async () => {
     const models = [ model( `cheap`, 40, 40, 1 ), model( `coder`, 20, 80, 4 ), model( `missing`, 90, null ), model( `foreign`, 99, 99, 1, `Google` ) ].map( normalise_benchmark )
     const providers = new Set( [ `OpenAI` ] )
     expect( parse_benchmarks( [ `--benchmarks` ] ).sort ).toBe( `coding` )
     expect( select_benchmarks( models, providers, { limit: 1 } ).map( row => row.name ) ).toEqual( [ `coder` ] )
-    expect( select_benchmarks( models, providers, { sort: `cost-per-point` } ).map( row => row.name ) ).toEqual( [ `cheap`, `coder` ] )
-    expect( select_benchmarks( models, providers, { all: true } ).map( row => row.name ) ).toEqual( [ `coder`, `cheap`, `missing` ] )
+    expect( select_benchmarks( models, providers, { sort: `cost-per-point` } ).map( row => row.name ) ).toEqual( [ `missing`, `cheap`, `coder` ] )
+    expect( select_benchmarks( models, providers ).map( row => row.name ) ).toEqual( [ `coder`, `cheap`, `missing` ] )
+    expect( parse_benchmarks( [ `--benchmarks`, `--all` ] ) ).toEqual( parse_benchmarks( [ `--benchmarks` ] ) )
     const text = await run_benchmarks( [ `--benchmarks`, `--limit`, `1` ], {
         load: async () => ( { fetched_at: Date.now(), models } ), providers: async () => providers,
     } )
     expect( text ).toContain( `sorted by coding` )
-    expect( text ).toContain( `1/2 rows` )
+    expect( text ).toContain( `1/3 rows` )
     expect( text ).toContain( `$/point` )
     expect( text ).not.toContain( `price_1m` )
 } )
@@ -46,14 +47,13 @@ it( `defaults to coding; complete rows, provider filter, sort, then limit`, asyn
 it( `handles every sort, missing columns, zero cost and undefined ratios`, () => {
     const rows = [ model( `B`, 40, 20, 0 ), model( `A`, 20, 40, 2 ), model( `Zero`, 0, 90, 1 ), model( `No cost`, 30, 80, null ) ].map( normalise_benchmark )
     const providers = new Set( [ `OpenAI` ] )
-    expect( select_benchmarks( rows, providers ).map( row => row.name ) ).toEqual( [ `A`, `B` ] )
+    expect( select_benchmarks( rows, providers ).map( row => row.name ) ).toEqual( [ `Zero`, `No cost`, `A`, `B` ] )
     for( const sort of [ `intelligence`, `cost`, `cost-per-point` ] ) expect( select_benchmarks( rows, providers, { sort } )[0].name ).toBe( `B` )
     expect( select_benchmarks( rows, providers, { sort: `name` } )[0].name ).toBe( `A` )
     expect( select_benchmarks( rows, providers, { sort: `agentic` } )[0].name ).toBe( `A` )
-    expect( select_benchmarks( rows, providers, { all: true, sort: `cost-per-point` } ).slice( -2 ).every( row => row.cost_per_point === null ) ).toBe( true )
+    expect( select_benchmarks( rows, providers, { sort: `cost-per-point` } ).slice( -2 ).every( row => row.cost_per_point === null ) ).toBe( true )
     const incomplete = rows.map( row => ( { ...row, agentic: null } ) )
-    expect( select_benchmarks( incomplete, providers ) ).toEqual( [] )
-    expect( select_benchmarks( incomplete, providers, { all: true } ) ).toHaveLength( 4 )
+    expect( select_benchmarks( incomplete, providers ) ).toHaveLength( 4 )
 } )
 
 it( `rejects invalid flags and model-switch combinations`, () => {

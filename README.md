@@ -235,10 +235,10 @@ its live controls remain unavailable.
 ## Model benchmarks
 
 ```bash
-babysit model --benchmarks                         # Complete rows, coding descending
+babysit model --benchmarks                         # Coding descending, missing metrics as —
 babysit model --benchmarks --sort cost --limit 20   # Cheapest intelligence task
 babysit model --benchmarks --sort cost-per-point    # Cost/task ÷ intelligence
-babysit model --benchmarks --all --json             # Include missing metrics
+babysit model --benchmarks --json                  # Machine-readable report
 ```
 
 Bare `babysit model` appends `--benchmarks --limit 30` after available models.
@@ -247,7 +247,7 @@ A missing benchmark key or API failure leaves the model list visible.
 Sorts: `coding` (default), `intelligence`, `agentic`, `cost`, `cost-per-point`,
 `name`. Scores descend; costs and names ascend. Missing values sort last.
 `--limit N` takes a positive integer; omit for all matching rows.
-Rows missing any metric are excluded unless `--all` is passed.
+Rows missing a metric still show, with `—` in that column.
 
 Columns: model/effort variant, provider, intelligence, coding, agentic,
 intelligence benchmark USD/task, USD/intelligence point. Token pricing is omitted.
