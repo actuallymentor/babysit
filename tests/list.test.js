@@ -492,7 +492,7 @@ describe( `list --watch`, () => {
         expect( output ).toMatch( /3\s+b\s/ )
     } )
 
-    it( `reports no sessions when every active session is archived`, async () => {
+    it( `points at plain list when every active session is archived`, async () => {
         const output = await capture_console( () => cmd_list( {
             flags: { watch: true },
             watch_rounds: 1,
@@ -503,7 +503,7 @@ describe( `list --watch`, () => {
             wait_fn: async () => {},
         } ) )
 
-        expect( output ).toContain( `No active babysit sessions.` )
+        expect( output ).toContain( `No unarchived babysit sessions. Run babysit list to see archived ones.` )
     } )
 
 } )

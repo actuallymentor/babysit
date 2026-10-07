@@ -428,7 +428,10 @@ export const cmd_list = async ( {
 
         if( tmux_sessions.length === 0 ) {
             before_print()
-            console.log( `No active babysit sessions.` )
+            // Archived sessions still run; tell the watcher where they went.
+            console.log( ordered_sessions.length
+                ? `No unarchived babysit sessions. Run babysit list to see archived ones.`
+                : `No active babysit sessions.` )
             return
         }
 

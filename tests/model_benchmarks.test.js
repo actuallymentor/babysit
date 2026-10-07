@@ -42,6 +42,10 @@ it( `defaults to coding; provider filter, sort, then limit; missing metrics stay
     expect( text ).toContain( `1/3 rows` )
     expect( text ).toContain( `$/point` )
     expect( text ).not.toContain( `price_1m` )
+    const full = await run_benchmarks( [ `--benchmarks` ], { load: async () => ( { fetched_at: Date.now(), models } ), providers: async () => providers } )
+    expect( full.split( `\n` ).find( line => line.startsWith( `missing` ) ) ).toContain( `—` )
+    const json = JSON.parse( await run_benchmarks( [ `--benchmarks`, `--json` ], { load: async () => ( { fetched_at: Date.now(), models } ), providers: async () => providers } ) )
+    expect( json.models.find( row => row.name === `missing` ).coding ).toBeNull()
 } )
 
 it( `handles every sort, missing columns, zero cost and undefined ratios`, () => {
