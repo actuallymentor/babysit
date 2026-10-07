@@ -10,3 +10,8 @@
 - 2026-10-06 (done in v1.15.0): colorize `babysit list` STATUS (grey idle / green running / orange waiting), drop TMUX column from default view, cache CPU/MEM instead of querying in the command, format memory as integer with a space before the unit, add a color-coded totals row (green <50% of host capacity incl. cores, yellow <70%, red above).
 - 2026-10-06 (done in 1.16.0, verified): implement `babysit exit` that gracefully closes the current tmux session; callable by the LLM from inside a session.
 - 2026-10-06 (done in 1.16.0): `babysit stuck` sets the session's list status to "stuck" until user typing is seen in that tmux session.
+
+## 2026-10-07 — bootstrap gate review leftovers
+
+- Pre-existing race (flagged by two reviewers, not fixed): `src/credentials/refresh.js` starts its 5-minute reconciliation tick before a transport is connected. During a slow launch a host re-login can be consumed (local copy + hashes updated) without being pushed; after connect the next pull can overwrite the newer host login with the archived credential. Fix idea: suspend periodic ticks until `set_transport`, or track an unpushed update separately. Needs a decision on scope.
+- GitHub returned `Internal Server Error` on every push (even ref-only pushes of commits it already has) from 16:55Z; githubstatus.com said all green. A retry loop was left running; if `3f7cd67` is not on origin/main, push it by hand.
