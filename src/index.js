@@ -15,6 +15,7 @@ import { cmd_archive } from './cli/archive.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume, is_resume_listing } from './cli/resume.js'
 import { cmd_recover, cmd_close, cmd_recovery_shutdown } from './cli/recover.js'
+import { cmd_restart } from './cli/restart.js'
 import { cmd_recover_init } from './cli/recover_init.js'
 import { cmd_monitor } from './cli/monitor.js'
 import { cmd_update } from './cli/update.js'
@@ -125,6 +126,10 @@ const main = async () => {
 
     case `close`:
         await cmd_close( cmd )
+        break
+
+    case `restart`:
+        await cmd_restart( cmd )
         break
 
     case `resume`:

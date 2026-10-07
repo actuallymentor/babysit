@@ -109,6 +109,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
+| `babysit restart <number or id> [--force] [--detach]` | Close gracefully and resume on the current image, continuing the agent by its native id. Refuses unless the agent is idle or waiting; `--force` skips that check, `--detach` returns instead of attaching |
 | `babysit archive <number, id or name>` | Dim the session and sink it to the bottom of its workspace; a workspace whose sessions are all archived sinks to the bottom of the list. `babysit open` un-archives |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Interactively prune unused Docker data and managed clones |

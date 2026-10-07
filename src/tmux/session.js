@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 import { execSync } from 'child_process'
-import { run } from '../utils/exec.js'
+import { command_exists, run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
 import { start_pipe_pane } from './capture.js'
@@ -56,13 +56,59 @@ export const set_status_label = async ( session_name, status_label, { run_comman
  * @param {string|null} [options.startup_log_path] - Optional short-lived startup diagnostic log path
  * @param {string|null} [options.status_label] - Literal session identity for the bottom status bar
  * @param {Function} [options.run_command] - Injectable command runner
+ * @param {string|null} [options.clipboard] - Host clipboard command for drag-to-copy
  * @returns {Promise<{pipe_started: boolean}>}
  */
+/**
+ * Pick the host tool that puts text on the system clipboard. Null means rely
+ * on tmux's own OSC 52 forwarding (set-clipboard), which most terminals honour.
+ * @param {Object} [options]
+ * @param {string} [options.platform] - process.platform seam
+ * @param {Object} [options.env] - Environment seam
+ * @param {Function} [options.exists] - PATH lookup seam
+ * @returns {string|null} Shell command reading stdin, or null
+ */
+export const clipboard_command = ( {
+    platform = process.platform,
+    env = process.env,
+    exists = command_exists,
+} = {} ) => {
+
+    const candidates = platform === `darwin`
+        ? [ `pbcopy` ]
+        : [ ...env.WAYLAND_DISPLAY ? [ `wl-copy` ] : [], `xclip -selection clipboard`, `xsel --clipboard --input` ]
+
+    return candidates.find( candidate => exists( candidate.split( ` ` )[0] ) ) || null
+
+}
+
+/**
+ * Mouse mode makes tmux own the drag, so terminals only select natively with
+ * Option/Shift held. Keep scroll-wheel scrollback, but make a plain drag copy
+ * to the system clipboard and leave copy mode, like a normal terminal.
+ * @param {Function} run_command - Command runner
+ * @param {string|null} clipboard - Host clipboard command, or null for OSC 52 only
+ */
+const configure_mouse_copy = async ( run_command, clipboard ) => {
+
+    const on_drag_end = clipboard
+        ? [ `copy-pipe-and-cancel`, clipboard ]
+        : [ `copy-selection-and-cancel` ]
+
+    await Promise.all( [
+        run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-s`, `set-clipboard`, `on` ] ),
+        run_command( `tmux`, [ `-L`, TMUX_SOCKET, `bind-key`, `-T`, `copy-mode`, `MouseDragEnd1Pane`, `send-keys`, `-X`, ...on_drag_end ] ),
+        run_command( `tmux`, [ `-L`, TMUX_SOCKET, `bind-key`, `-T`, `copy-mode-vi`, `MouseDragEnd1Pane`, `send-keys`, `-X`, ...on_drag_end ] ),
+    ] )
+
+}
+
 export const create_session = async ( session_name, command, {
     log_path = null,
     startup_log_path = null,
     status_label = null,
     run_command = run,
+    clipboard = clipboard_command(),
 } = {} ) => {
 
     const pipe_log_path = log_path || startup_log_path
@@ -90,6 +136,13 @@ export const create_session = async ( session_name, command, {
         run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `-g`, `mouse`, `on` ] ),
         run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, AGENT_STATUS_OPTION, `running` ] ),
     ] )
+
+    // Cosmetic: a failed binding must not stop the launch.
+    try {
+        await configure_mouse_copy( run_command, clipboard )
+    } catch ( error ) {
+        log.debug( `Could not configure mouse copy: ${ error.message }` )
+    }
 
     if( status_label ) {
         try {

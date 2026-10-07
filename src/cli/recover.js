@@ -297,23 +297,38 @@ export const close_session = async ( session, { shutdown = false } = {}, {
 
 }
 
-/** Close a listed number or stored session ID, preserving intentional-close handling. */
-export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, sessions = list_sessions, close = close_session, print = console.log } = {} ) => {
+/**
+ * Resolve a list number or stored session ID to its current launch record.
+ * Recovery reports the original ID even when a retry creates a new launch;
+ * keep that ID usable for retiring the whole conversation's current leaf.
+ * @param {string} selector - List number or babysit id
+ * @param {Object} [options]
+ * @param {Function} [options.inspect_records] - Stored session inspector
+ * @param {Function} [options.sessions] - Active tmux session loader
+ * @returns {Promise<Object>} Stored session
+ */
+export const select_stored_session = async ( selector, { inspect_records = inspect_stored_sessions, sessions = list_sessions } = {} ) => {
 
-    // Recovery reports the original ID even when a retry creates a new launch.
-    // Keep that ID usable for retiring the whole conversation's current leaf.
     const { records } = inspect_records()
     let session
-    if( /^\d+$/.test( cmd.session_id ) ) {
+    if( /^\d+$/.test( selector ) ) {
         // Match list/open ordinals before metadata lookup. Stored history has
         // a different order and may contain inactive or superseded launches.
         const active = order_active_sessions( await sessions( { strict: true } ), records.map( record => record.session ) )
-        const selected = active[ Number( cmd.session_id ) - 1 ]
-        if( !selected ) throw new Error( `No active session numbered ${ cmd.session_id }. Run babysit list to see active sessions.` )
+        const selected = active[ Number( selector ) - 1 ]
+        if( !selected ) throw new Error( `No active session numbered ${ selector }. Run babysit list to see active sessions.` )
         session = records.find( record => record.session.tmux_session === selected.name )?.session
-        if( !session ) throw new Error( `No stored session found for active session numbered ${ cmd.session_id } (${ selected.name }).` )
-    } else [ session ] = select_recovery_sessions( records.map( record => record.session ), cmd.session_id )
-    if( !session ) throw new Error( `No stored session found: ${ cmd.session_id }` )
+        if( !session ) throw new Error( `No stored session found for active session numbered ${ selector } (${ selected.name }).` )
+    } else [ session ] = select_recovery_sessions( records.map( record => record.session ), selector )
+    if( !session ) throw new Error( `No stored session found: ${ selector }` )
+    return session
+
+}
+
+/** Close a listed number or stored session ID, preserving intentional-close handling. */
+export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, sessions = list_sessions, close = close_session, print = console.log } = {} ) => {
+
+    const session = await select_stored_session( cmd.session_id, { inspect_records, sessions } )
     await close( session )
     print( `Closed ${ session.babysit_id }; it will not be recovered.` )
 
