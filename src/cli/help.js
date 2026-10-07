@@ -22,6 +22,7 @@ Usage:
   babysit recover [id|number]         Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
   babysit close <number|session_id>    Close intentionally; disable recovery for this launch
+  babysit restart <number|session_id>  Rebuild an idle session on the current image, keeping the conversation; --force, --detach
   babysit archive <number|session_id>  Dim a session and sink it to the bottom of babysit list; open un-archives
   babysit config                       Show settings and setup status
   babysit effort [level]               Inspect/change effort inside a managed agent session

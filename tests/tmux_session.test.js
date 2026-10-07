@@ -1,5 +1,39 @@
 import { describe, it, expect } from 'bun:test'
-import { attach_session, create_session, get_session_pane, has_session, kill_session, list_sessions, set_agent_status } from '../src/tmux/session.js'
+import { attach_session, clipboard_command, create_session, get_session_pane, has_session, kill_session, list_sessions, set_agent_status } from '../src/tmux/session.js'
+
+describe( `create_session mouse copy`, () => {
+
+    it( `copies a plain drag to the clipboard and leaves copy mode`, async () => {
+        const calls = []
+        await create_session( `babysit_test`, `agent`, { clipboard: `pbcopy`, run_command: async ( command, args ) => {
+            calls.push( args ) 
+        } } )
+        const binds = calls.filter( args => args.includes( `bind-key` ) )
+        expect( calls.some( args => args.join( ` ` ).includes( `set-option -s set-clipboard on` ) ) ).toBe( true )
+        expect( binds.map( args => args.slice( -4 ).join( ` ` ) ) ).toEqual( [
+            `send-keys -X copy-pipe-and-cancel pbcopy`,
+            `send-keys -X copy-pipe-and-cancel pbcopy`,
+        ] )
+        expect( binds.map( args => args[ args.indexOf( `-T` ) + 1 ] ) ).toEqual( [ `copy-mode`, `copy-mode-vi` ] )
+    } )
+
+    it( `falls back to tmux's own clipboard forwarding without a host tool`, async () => {
+        const calls = []
+        await create_session( `babysit_test`, `agent`, { clipboard: null, run_command: async ( command, args ) => {
+            calls.push( args ) 
+        } } )
+        expect( calls.filter( args => args.includes( `bind-key` ) ).every( args => args.at( -1 ) === `copy-selection-and-cancel` ) ).toBe( true )
+    } )
+
+    it( `picks the platform clipboard tool`, () => {
+        const have = ( ...names ) => name => names.includes( name )
+        expect( clipboard_command( { platform: `darwin`, exists: have( `pbcopy` ) } ) ).toBe( `pbcopy` )
+        expect( clipboard_command( { platform: `linux`, env: { WAYLAND_DISPLAY: `wayland-0` }, exists: have( `wl-copy`, `xclip` ) } ) ).toBe( `wl-copy` )
+        expect( clipboard_command( { platform: `linux`, env: {}, exists: have( `wl-copy`, `xclip` ) } ) ).toBe( `xclip -selection clipboard` )
+        expect( clipboard_command( { platform: `linux`, env: {}, exists: () => false } ) ).toBeNull()
+    } )
+
+} )
 
 describe( `create_session status bar`, () => {
 

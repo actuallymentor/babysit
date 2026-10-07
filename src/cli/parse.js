@@ -219,6 +219,16 @@ export const parse_args = ( argv ) => {
     // babysit open <id>
     if( verb === `open` ) return { verb: `open`, agent: null, session_id: positionals[1], flags, passthrough: [] }
 
+    // babysit restart <number|session_id> [--force] [--detach]
+    if( verb === `restart` ) {
+        const selector = positionals[1] || null
+        const allowed = new Set( [ `--help`, `-h`, `--force`, `--detach` ] )
+        const unexpected = prepared.slice( 1 ).filter( argument => argument !== selector && !allowed.has( argument ) )
+        if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown restart argument: ${ unexpected[0] || positionals[2] }` )
+        if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id> [--force] [--detach]` )
+        return { verb: `restart`, agent: null, session_id: selector, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ) }, passthrough: [] }
+    }
+
     // babysit resume <id> [--yolo] [extra flags…]
     if( verb === `resume` ) {
         const session_id = positionals[1]

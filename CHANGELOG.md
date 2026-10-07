@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.25.0 — 2026-10-07
+
+### Added
+- `babysit restart <number|id>` rebuilds a session on the current Docker image without losing the conversation: graceful close (credentials flush to the host), then resume by the agent's native session id. It refuses while the agent is mid-turn unless `--force` is passed; `--detach` skips the attach. Prints whether the image changed.
+- A plain mouse drag in a babysit tmux session now copies to the system clipboard and leaves copy mode, no Option or Shift needed. Uses `pbcopy`, `wl-copy`, `xclip` or `xsel` when present and tmux's OSC 52 forwarding otherwise. Scroll-wheel scrollback is unchanged.
+
 ## 1.24.1 — 2026-10-07
 
 ### Fixed
