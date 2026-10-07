@@ -4,22 +4,22 @@ import { benchmark_providers } from './benchmark-providers.mjs'
 export const benchmarks_help = `Usage: babysit model --benchmarks [--sort <field>] [--limit <N>] [--all] [--json]
 Sort: coding (default), intelligence, agentic, cost, cost-per-point, name.
 Cost = intelligence benchmark USD/task; cost-per-point = cost / intelligence.
-Only complete rows from locally authenticated CLI providers are shown; --all includes missing metrics.
-Missing metrics sort last. --limit is a positive integer; omitted means all rows.
+Rows from locally authenticated CLI providers are shown; missing metrics print as — and sort last.
+--all is accepted for compatibility and changes nothing. --limit is a positive integer; omitted means all rows.
 ARTIFICIAL_ANALYSIS_API_KEY is required. ARTIFICIAL_ANALYSIS_TTL_MINUTES defaults to 15; 0 disables caching.`
 
 const sort_fields = { coding: `coding`, intelligence: `intelligence`, agentic: `agentic`, cost: `cost`, 'cost-per-point': `cost_per_point`, name: `name` }
-const metrics = [ `intelligence`, `coding`, `agentic`, `cost`, `cost_per_point` ]
 
 /** Parse only benchmark flags; never reinterpret a model-switch request. */
 export const parse_benchmarks = args => {
-    const options = { sort: `coding`, limit: Infinity, all: false, json: false }
+    const options = { sort: `coding`, limit: Infinity, json: false }
     for( let index = 0; index < args.length; index++ ) {
         const argument = args[index]
         if( argument === `--benchmarks` ) continue
         if( [ `--help`, `-h` ].includes( argument ) ) return { help: true }
-        if( argument === `--all` ) options.all = true
-        else if( argument === `--json` ) options.json = true
+        // --all once included rows with missing metrics; that is now the only behaviour.
+        if( argument === `--all` ) continue
+        if( argument === `--json` ) options.json = true
         else if( argument === `--sort` ) {
             options.sort = args[++index]
             if( !Object.hasOwn( sort_fields, options.sort ) ) throw new Error( benchmarks_help )
@@ -32,11 +32,11 @@ export const parse_benchmarks = args => {
     return options
 }
 
-/** Apply local access and completeness before sorting and limiting the shared data. */
-export const select_benchmarks = ( models, providers, { sort = `coding`, limit = Infinity, all = false } = {} ) => {
+/** Apply local access before sorting and limiting the shared data; missing metrics stay visible. */
+export const select_benchmarks = ( models, providers, { sort = `coding`, limit = Infinity } = {} ) => {
     const field = sort_fields[sort]
     const ascending = [ `cost`, `cost_per_point`, `name` ].includes( field )
-    return models.filter( model => providers.has( model.provider ) && ( all || metrics.every( key => model[key] !== null ) ) )
+    return models.filter( model => providers.has( model.provider ) )
         .sort( ( a, b ) => {
             if( a[field] === null && b[field] !== null ) return 1
             if( b[field] === null && a[field] !== null ) return -1
@@ -50,7 +50,7 @@ const number = ( value, digits ) => value === null ? `—` : value.toFixed( digi
 
 /** Plain terminal table; preserve the provider's full variant/effort label. */
 export const format_benchmarks = report => {
-    if( !report.models.length ) return `No matching benchmarks. Use --all to include missing metrics; check CLI authentication.`
+    if( !report.models.length ) return `No matching benchmarks; check CLI authentication.`
     const rows = [ [ `Model`, `Provider`, `Intelligence`, `Coding`, `Agentic`, `$/task`, `$/point` ],
         ...report.models.map( model => [ safe_text( model.name ), safe_text( model.provider ),
             number( model.intelligence, 1 ), number( model.coding, 1 ), number( model.agentic, 1 ), number( model.cost, 4 ), number( model.cost_per_point, 6 ),

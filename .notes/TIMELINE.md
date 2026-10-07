@@ -140,3 +140,4 @@
 - 2026-10-07: `babysit loop` toggles the loop modifier live (record, rules rebuilt from config, tmux label via `set_status_label`). v1.20.0.
 
 - 2026-10-07: `babysit list --watch` hides archived sessions (global numbers kept). v1.21.0.
+- 2026-10-07: `babysit model` shows rows with missing metrics as — instead of hiding them; `--all` is a no-op. v1.22.0.

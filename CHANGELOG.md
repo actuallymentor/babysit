@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.22.0 — 2026-10-07
+
+### Changed
+- `babysit model` no longer drops models that lack a coding or agentic score; missing metrics show as `—` and sort last. `--all` is accepted but changes nothing.
+
 ## 1.21.0 — 2026-10-07
 
 ### Changed
