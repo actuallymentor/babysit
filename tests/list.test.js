@@ -468,4 +468,42 @@ describe( `list --watch`, () => {
         expect( output ).toContain( `Ctrl+C to stop` )
     } )
 
+    it( `hides archived sessions but keeps global numbers`, async () => {
+        const output = await capture_console( () => cmd_list( {
+            flags: { watch: true },
+            watch_rounds: 1,
+            list_sessions_fn: async () => [
+                { name: `babysit_a`, attached: false, agent_status: `idle` },
+                { name: `babysit_old`, attached: false, agent_status: `idle` },
+                { name: `babysit_b`, attached: false, agent_status: `idle` },
+            ],
+            list_stored_sessions_fn: () => [
+                { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` },
+                { tmux_session: `babysit_old`, name: `old`, agent: `codex`, babysit_id: `old`, pwd: `/w`, archived_at: `2026-01-01T00:00:00.000Z` },
+                { tmux_session: `babysit_b`, name: `b`, agent: `codex`, babysit_id: `b`, pwd: `/other` },
+            ],
+            observe_activity_fn: async sessions => sessions,
+            write_fn: () => {},
+            wait_fn: async () => {},
+        } ) )
+
+        expect( output ).not.toContain( `old` )
+        expect( output ).toMatch( /1\s+a\s/ )
+        expect( output ).toMatch( /3\s+b\s/ )
+    } )
+
+    it( `reports no sessions when every active session is archived`, async () => {
+        const output = await capture_console( () => cmd_list( {
+            flags: { watch: true },
+            watch_rounds: 1,
+            list_sessions_fn: async () => [ { name: `babysit_old`, attached: false, agent_status: `idle` } ],
+            list_stored_sessions_fn: () => [ { tmux_session: `babysit_old`, name: `old`, agent: `codex`, babysit_id: `old`, pwd: `/w`, archived_at: `2026-01-01T00:00:00.000Z` } ],
+            observe_activity_fn: async sessions => sessions,
+            write_fn: () => {},
+            wait_fn: async () => {},
+        } ) )
+
+        expect( output ).toContain( `No active babysit sessions.` )
+    } )
+
 } )

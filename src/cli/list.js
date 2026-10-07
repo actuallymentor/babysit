@@ -407,8 +407,9 @@ export const cmd_list = async ( {
 } = {} ) => {
 
     // CPU/MEM come from the cache each session's monitor keeps; no Docker call here.
-    const print_sessions = ( observed_sessions, stored_sessions ) => print_active_sessions_table( observed_sessions, stored_sessions, {
+    const print_sessions = ( observed_sessions, stored_sessions, numbers ) => print_active_sessions_table( observed_sessions, stored_sessions, {
         numbered: true,
+        numbers,
         show_flags: true,
         show_usage: true,
         all: flags.all,
@@ -417,7 +418,13 @@ export const cmd_list = async ( {
     const render = async ( { before_print = () => {} } = {} ) => {
 
         const stored_sessions = list_stored_sessions_fn()
-        const tmux_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
+        const ordered_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
+
+        // --watch is a live dashboard: archived sessions are noise there. Numbers
+        // stay global so `babysit open <n>` means the same thing as in a plain list.
+        const is_archived = tmux => Boolean( stored_sessions.find( session => session.tmux_session === tmux.name )?.archived_at )
+        const tmux_sessions = flags.watch ? ordered_sessions.filter( tmux => !is_archived( tmux ) ) : ordered_sessions
+        const numbers = tmux_sessions.map( tmux => ordered_sessions.indexOf( tmux ) + 1 )
 
         if( tmux_sessions.length === 0 ) {
             before_print()
@@ -427,7 +434,7 @@ export const cmd_list = async ( {
 
         const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
         before_print()
-        print_sessions( observed_sessions, stored_sessions )
+        print_sessions( observed_sessions, stored_sessions, numbers )
 
     }
 

@@ -138,3 +138,5 @@
 - 2026-10-07: Launch no longer auto-writes babysit.yaml; `babysit init` creates it. Missing file = defaults (`load_config` is read-only). Released as v1.18.0.
 - 2026-10-07: `--config FILE` (absolute path stored as `session.config_path`, honored by monitor/resume/recovery hash/clone config) and interactive `babysit init [file]`. v1.19.0.
 - 2026-10-07: `babysit loop` toggles the loop modifier live (record, rules rebuilt from config, tmux label via `set_status_label`). v1.20.0.
+
+- 2026-10-07: `babysit list --watch` hides archived sessions (global numbers kept). v1.21.0.

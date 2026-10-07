@@ -15,7 +15,7 @@ Usage:
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id|number>  Resume a previous session
   babysit init [file.yaml]             Write a commented default config; asks for the file name
-  babysit list [--all] [--watch]       List active sessions and launch flags; --watch redraws every 2s
+  babysit list [--all] [--watch]       List active sessions and launch flags; --watch redraws every 2s, hiding archived
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
   babysit prune [--list]               Prune unused Docker data and clone workspaces
