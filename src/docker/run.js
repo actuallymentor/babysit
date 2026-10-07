@@ -403,6 +403,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {boolean} [options.auth_probe=false] - Build an auth-only agent config profile
  * @param {string|null} [options.container_name=null] - Stable launch-scoped container name
  * @param {string|null} [options.exit_sentinel=null] - Per-session exit marker token
+ * @param {boolean} [options.bootstrap_gate=false] - Hold the entrypoint until credentials are uploaded
  * @param {string} [options.babysit_rc_path=DEFAULT_BABYSIT_RC_PATH] - Host rc file path to source inside the container
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
  * @param {Object} [options.agent_context={}] - Injectable host context for dynamic agent defaults
@@ -435,6 +436,7 @@ export const build_docker_command_args = ( options ) => {
         completion_capture = null,
         container_name = null,
         exit_sentinel = randomUUID(),
+        bootstrap_gate = false,
         babysit_rc_path = DEFAULT_BABYSIT_RC_PATH,
         agent_command = null,
         agent_context = {},
@@ -474,6 +476,9 @@ export const build_docker_command_args = ( options ) => {
     if( interactive ) {
         flags.push( `-e`, `BABYSIT_SUPERVISED_SESSION=1` )
         flags.push( `-e`, `BABYSIT_EXIT_SENTINEL=${ exit_sentinel }` )
+        // Hold the entrypoint until the launcher has uploaded credentials into
+        // the running container and released the gate (see launch.js).
+        if( bootstrap_gate ) flags.push( `-e`, `BABYSIT_BOOTSTRAP_WAIT=1` )
     }
 
     if( process.env.BABYSIT_E2E_RUN_ID ) {

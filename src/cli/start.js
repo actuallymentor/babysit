@@ -1605,12 +1605,15 @@ async function start_session( cmd ) {
             container_name,
             exit_sentinel: agent_exit_sentinel,
             completion_capture,
+            deferred_upload: true,
         } ) )
 
         // Connect before the tmux pane can start Docker. A very fast agent may
         // refresh and exit before await_started() observes a running state; the
         // failure cleanup still needs a transport for its final credential pull.
-        if( creds_sync && prepared_launch.container_id ) {
+        // With a deferred upload the agent is gated, so sync connects after the
+        // files land: a host re-login must not race the bootstrap archive.
+        if( creds_sync && prepared_launch.container_id && !prepared_launch.deferred ) {
             creds_sync.connect( prepared_launch.container_id )
         }
 
@@ -1637,6 +1640,12 @@ async function start_session( cmd ) {
         startup_status.set( `waiting for the container to start` )
         if( !await time_phase( `main container start`, () => prepared_launch.await_started() ) ) {
             throw new Error( `Docker container did not reach a running state after launch` )
+        }
+
+        if( prepared_launch.deferred ) {
+            startup_status.set( `uploading credentials` )
+            await time_phase( `deferred credential upload`, () => prepared_launch.upload() )
+            if( creds_sync ) creds_sync.connect( prepared_launch.container_id )
         }
 
         if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
