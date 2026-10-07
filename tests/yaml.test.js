@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'fs'
+import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { parse } from 'yaml'
-import { load_config, get_default_yaml } from '../src/babysit/yaml.js'
+import { load_config, get_default_yaml, write_default_config } from '../src/babysit/yaml.js'
 import { base } from '../src/system_prompt/index.js'
 
 describe( `babysit.yaml`, () => {
@@ -18,9 +18,18 @@ describe( `babysit.yaml`, () => {
         rmSync( tmpdir_path, { recursive: true, force: true } )
     } )
 
-    it( `creates default yaml when missing`, () => {
-        load_config( tmpdir_path )
-        expect( existsSync( join( tmpdir_path, `babysit.yaml` ) ) ).toBe( true )
+    it( `uses defaults without writing a file when babysit.yaml is missing`, () => {
+        const { config, rules } = load_config( tmpdir_path )
+        expect( existsSync( join( tmpdir_path, `babysit.yaml` ) ) ).toBe( false )
+        expect( config.idle_timeout_s ).toBe( 300 )
+        expect( rules ).toEqual( [] )
+    } )
+
+    it( `babysit init writes the default yaml once`, () => {
+        const path = write_default_config( tmpdir_path, { initial_prompt: `custom default prompt` } )
+        expect( readFileSync( path, `utf8` ) ).toContain( `custom default prompt` )
+        expect( () => write_default_config( tmpdir_path ) ).toThrow( /already exists/ )
+        expect( load_config( tmpdir_path ).config.initial_prompt ).toBe( `custom default prompt` )
     } )
 
     it( `parses default config values`, () => {
@@ -30,7 +39,7 @@ describe( `babysit.yaml`, () => {
         expect( config.isolate_dependencies ).toBe( true )
     } )
 
-    it( `writes the supplied default prompt into a newly-created yaml`, () => {
+    it( `uses the supplied default prompt when no yaml exists`, () => {
         const { config } = load_config( tmpdir_path, { default_initial_prompt: `custom default prompt` } )
         expect( config.initial_prompt ).toBe( `custom default prompt` )
     } )

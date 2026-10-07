@@ -126,24 +126,33 @@ export const load_clone_config = ( dir = process.cwd() ) => {
 }
 
 /**
- * Load babysit.yaml from the current directory, creating a default if missing
+ * Write the commented default babysit.yaml into a workspace (`babysit init`).
+ * @param {string} [dir=process.cwd()] - Workspace
+ * @param {Object} [options]
+ * @param {string} [options.initial_prompt] - Prompt to embed
+ * @returns {string} Path written
+ */
+export const write_default_config = ( dir = process.cwd(), { initial_prompt = build_system_prompt( {} ) } = {} ) => {
+
+    const config_path = resolve( dir, `babysit.yaml` )
+    if( existsSync( config_path ) ) throw new Error( `${ config_path } already exists; edit it or remove it first` )
+    writeFileSync( config_path, build_default_yaml( { initial_prompt } ), `utf-8` )
+    return config_path
+
+}
+
+/**
+ * Load babysit.yaml from the current directory. A missing file means the
+ * defaults; nothing is written (`babysit init` creates the file on request).
  * @param {string} [dir=process.cwd()] - Directory to look for babysit.yaml
  * @param {Object} [options]
- * @param {string} [options.default_initial_prompt] - Prompt to write into a newly-created babysit.yaml
+ * @param {string} [options.default_initial_prompt] - Prompt used when the file omits initial_prompt
  * @returns {{ config: Object, rules: Array }} Parsed config and rules
  */
 export const load_config = ( dir = process.cwd(), { default_initial_prompt = build_system_prompt( {} ) } = {} ) => {
 
     const config_path = resolve( dir, `babysit.yaml` )
-
-    // Create default if not present
-    if( !existsSync( config_path ) ) {
-        log.info( `Creating default babysit.yaml` )
-        writeFileSync( config_path, build_default_yaml( { initial_prompt: default_initial_prompt } ), `utf-8` )
-    }
-
-    const raw = readFileSync( config_path, `utf-8` )
-    const parsed = parse( raw ) || {}
+    const parsed = ( existsSync( config_path ) ? parse( readFileSync( config_path, `utf-8` ) ) : null ) || {}
 
     // Merge with defaults. Older babysit.yaml files may predate
     // config.initial_prompt; treat absence as "use the generated default",

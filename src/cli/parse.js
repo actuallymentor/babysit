@@ -116,6 +116,9 @@ export const parse_args = ( argv ) => {
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
 
+    // babysit init — write the commented default babysit.yaml
+    if( verb === `init` ) return { verb: `init`, agent: null, flags, passthrough: [] }
+
     // babysit archive <number|session_id|name>
     if( verb === `archive` ) {
         const selector = positionals[1] || null
