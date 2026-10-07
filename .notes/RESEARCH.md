@@ -1,5 +1,11 @@
 # Operational Research
 
+## "preparing container" latency — 2026-10-07
+
+- Phase = `docker create` + one tar `docker cp` into the stopped container. Measured from inside a babysit container on the dev host: create 3-10s (raw API 3.2s, CLI 6-10s, one lucky burst 0.2s each), first cp 5-10s, rm <0.3s. Image size irrelevant (node:24-slim same). Three concurrent creates each take ~6.4s: latency, not throughput.
+- Host daemon load: 64 running containers, 1014 volumes, 242 images, 888 build-cache entries. Babysit's own monitors issue ~1.3 `docker exec` per second per session (identity reader 2s, completion reader 2s, control-store take ~3s); 11 sessions => ~14 exec/s, the majority of daemon exec traffic.
+- Babysit levers: (1) replace the stopped-container `docker cp` with a private bind-mounted bootstrap dir consumed by the entrypoint (saves the rootfs-mount cost, ~5-10s); (2) overlap `docker create` with credential staging; (3) collapse the three per-session pollers into one exec per tick or slow them to 5s. Host levers: prune build cache/dangling images/unused volumes; unverified gain.
+
 ## Docker daemon latency on the dev host — 2026-10-02
 
 - `docker create` 8-10s for any image, with or without volumes, even after idle; occasionally 0.2-0.3s. Daemon-side (overlay2 on ZFS, 991 volumes). Not addressable from Babysit.
