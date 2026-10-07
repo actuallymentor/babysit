@@ -136,10 +136,20 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
             // credential cannot overwrite the newly selected host account.
             if( source && source_hash !== last_source_hash ) {
 
+                // No container yet: leave the baselines alone so the change is
+                // still visible when the transport connects. Acting now would
+                // mark the login as delivered while only the local copy has
+                // it, and a later pull of the container's older token would
+                // then read as a fresh rotation and overwrite the host login.
+                if( !transport ) {
+                    log.debug( `Credential sync: host changed before the container connected; deferring` )
+                    return
+                }
+
                 source_changed = true
 
                 rewrite_tmpfile( tmpfile_path, source )
-                if( transport ) await transport.push( tmpfile_path )
+                await transport.push( tmpfile_path )
 
                 last_source_hash = source_hash
                 last_tmpfile_hash = source_hash

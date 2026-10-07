@@ -103,6 +103,9 @@ describe( `start_credential_sync`, () => {
         writeFileSync( host_path, `{"token":"Z"}` )
         writeFileSync( tmpfile_path, `{"token":"Y"}` )
 
+        // Credentials only reach a container through a transport; the local
+        // file is never the delivery medium on its own.
+        sync.set_transport( { push: async () => {}, pull: async () => {} } )
         await sync.stop()
 
         expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"Z"}` )
@@ -182,6 +185,38 @@ describe( `start_credential_sync`, () => {
         await sync.stop()
 
         expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"Y"}` )
+
+    } )
+
+    it( `defers a host reauthentication seen before connection instead of marking it delivered`, async () => {
+
+        writeFileSync( host_path, `{"token":"A"}` )
+        writeFileSync( tmpfile_path, `{"token":"A"}` )
+        const sync = start_credential_sync(
+            async () => readFileSync( host_path, `utf-8` ),
+            tmpfile_path,
+            async content => writeFileSync( host_path, content )
+        )
+
+        // Host re-login lands while the archive (token A) is in flight and no
+        // transport exists: a periodic tick must not touch the baselines.
+        writeFileSync( host_path, `{"token":"B"}` )
+        await sync.flush()
+        expect( readFileSync( tmpfile_path, `utf-8` ) ).toBe( `{"token":"A"}` )
+
+        // Connect: the container holds A. The pending host change is pushed,
+        // and the pulled A is never mistaken for a rotation that beats B.
+        const pushes = []
+        sync.set_transport( {
+            push: async path => pushes.push( readFileSync( path, `utf-8` ) ),
+            pull: async path => {
+                if( !pushes.length ) writeFileSync( path, `{"token":"A"}` ) 
+            },
+        } )
+        await sync.stop()
+
+        expect( pushes ).toEqual( [ `{"token":"B"}` ] )
+        expect( readFileSync( host_path, `utf-8` ) ).toBe( `{"token":"B"}` )
 
     } )
 
@@ -330,7 +365,11 @@ describe( `host credential watcher`, () => {
         pulls = 0
         sync = start_credential_sync(
             async () => {
-                try { return readFileSync( host_path, `utf-8` ) } catch { return null }
+                try {
+                    return readFileSync( host_path, `utf-8` ) 
+                } catch {
+                    return null 
+                }
             },
             tmpfile_path,
             async content => writeFileSync( host_path, content ),
@@ -339,7 +378,11 @@ describe( `host credential watcher`, () => {
     } )
 
     afterEach( async () => {
-        try { await sync.stop() } finally { rmSync( dir, { recursive: true, force: true } ) }
+        try {
+            await sync.stop() 
+        } finally {
+            rmSync( dir, { recursive: true, force: true } ) 
+        }
     } )
 
     it( `observes repeated atomic replacements without a flush or restart`, async () => {
@@ -395,7 +438,9 @@ describe( `host credential watcher`, () => {
     it( `serializes a host replacement during a container pull`, async () => {
         let release_pull
         let pulling = false
-        const pull_gate = new Promise( resolve => { release_pull = resolve } )
+        const pull_gate = new Promise( resolve => {
+            release_pull = resolve 
+        } )
         const connected = transport()
         sync.set_transport( {
             ...connected,

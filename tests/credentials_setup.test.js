@@ -393,6 +393,8 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         // the new content into the tmpfile so the container picks it up.
         writeFileSync( join( dir, `.codex/auth.json` ), `{"refresh_token":"reauthed"}` )
 
+        // A host change only flows once the container transport is attached.
+        mon.sync.set_transport( { push: async () => {}, pull: async () => {} } )
         await mon.sync.stop()
 
         expect( readFileSync( fg_tmpfile, `utf-8` ) ).toBe( `{"refresh_token":"reauthed"}` )
