@@ -541,6 +541,10 @@ describe( `build_docker_command`, () => {
         expect( interactive_args ).toContain( `BABYSIT_SUPERVISED_SESSION=1` )
         expect( headless_args ).toContain( `--init` )
         expect( headless_args ).not.toContain( `BABYSIT_SUPERVISED_SESSION=1` )
+        // The bootstrap gate is opt-in and interactive only.
+        expect( interactive_args ).not.toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
+        expect( build_docker_command_args( make_options( { bootstrap_gate: true } ) ) ).toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
+        expect( build_docker_command_args( make_options( { interactive: false, bootstrap_gate: true } ) ) ).not.toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
     } )
 
     it( `supports Chrome's sandbox without granting SYS_ADMIN`, () => {

@@ -17,6 +17,7 @@ import {
     docker_command_prefix,
     shell_quote,
 } from './run.js'
+import { get_image_name } from './update.js'
 import { create_chrome_seccomp_profile } from './chrome-seccomp.js'
 import { build_tar_archive } from './tar.js'
 import { time_phase } from '../utils/timing.js'
@@ -27,6 +28,9 @@ const DOCKER_CLEANUP_TIMEOUT_MS = 30_000
 const DOCKER_INSPECT_TIMEOUT_MS = 15_000
 const DOCKER_START_TIMEOUT_MS = 60_000
 const DOCKER_START_POLL_MS = 100
+const DOCKER_RELEASE_TIMEOUT_MS = 30_000
+const BOOTSTRAP_GATE_LABEL = `babysit.bootstrap-gate`
+const BOOTSTRAP_GATE_FILE = `/run/babysit-bootstrap/ready`
 const DOCKER_CONTAINER_ID_PATTERN = /^[0-9a-f]{12,64}$/
 const LAUNCH_SIGNALS = [ `SIGHUP`, `SIGINT`, `SIGTERM` ]
 const SECRET_ENV_BOOTSTRAP_PATH = `/tmp/.babysit-credentials.env`
@@ -186,11 +190,40 @@ export const build_docker_launch_plan = ( options, {
 const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
 
 /**
+ * Only images whose entrypoint parks on the bootstrap gate may be started
+ * before their credentials land. Older images (and pinned recovery images)
+ * would run the agent against an empty home, so they keep the stopped copy.
+ * @param {Function} run_command - Process runner seam
+ * @returns {Promise<boolean>}
+ */
+const image_supports_bootstrap_gate = async run_command => {
+
+    const [ command, ...prefix_args ] = docker_command_prefix()
+    try {
+        const label = await run_command( command, [
+            ...prefix_args, `image`, `inspect`, `--format`, `{{index .Config.Labels "${ BOOTSTRAP_GATE_LABEL }"}}`, get_image_name(),
+        ], {}, DOCKER_INSPECT_TIMEOUT_MS )
+        return String( label ).trim() === `1`
+    } catch ( error ) {
+        log.debug( `Could not read the bootstrap gate label: ${ error.message }` )
+        return false
+    }
+
+}
+
+/**
  * Build a launch command through a stopped container. `docker create` is the
  * acknowledgment boundary for the seccomp profile; any private files are then
  * uploaded before short-lived host transports are removed.
  *
+ * With `deferred_upload`, and an image whose entrypoint honours the bootstrap
+ * gate, the upload waits until the container runs: a copy into a stopped
+ * container mounts its rootfs (seconds on a busy daemon), into a running one
+ * it takes milliseconds. The caller starts the container, then calls
+ * `upload()`, which stages files, registers recovery and releases the gate.
+ *
  * @param {Object} options - Options accepted by build_docker_command_args
+ * @param {boolean} [options.deferred_upload=false] - Upload after start when the image supports the gate
  * @param {Object} [dependencies] - Injectable process seams for tests
  * @param {AbortSignal|null} [dependencies.signal] - External preparation cancellation
  * @returns {Promise<{
@@ -199,6 +232,8 @@ const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
  *   container_id: string|null,
  *   abort: Function,
  *   await_started: Function,
+ *   upload: Function|null,
+ *   deferred: boolean,
  *   pull_synced_files: Function,
  *   retain: Function,
  *   handoff: Function
@@ -218,12 +253,14 @@ export const prepare_docker_launch = async ( options, {
 
     let planned_options
     let seccomp_transport
+    const deferred = options.deferred_upload === true && await image_supports_bootstrap_gate( run_command )
     try {
         planned_options = build_docker_launch_plan( options, { build_private_file } )
         seccomp_transport = create_seccomp_profile()
         planned_options = {
             ...planned_options,
             chrome_seccomp_profile_path: seccomp_transport.file,
+            bootstrap_gate: deferred,
         }
     } catch ( error ) {
         const cleanup_mounts = planned_options
@@ -416,23 +453,27 @@ export const prepare_docker_launch = async ( options, {
 
         // One archive, one upload: every `docker cp` into a stopped container
         // mounts its rootfs, which costs seconds apiece on busy daemons.
-        if( copy_mounts.length ) {
-            await time_phase( `credential upload`, () => run_docker(
-                [ ...docker_prefix_args, `cp`, `-`, `${ container_id }:/` ],
-                DOCKER_COPY_TIMEOUT_MS,
-                { input: build_tar_archive( copy_mounts ) }
-            ), { slow_ms: Infinity } )
+        const stage = async () => {
+            if( copy_mounts.length ) {
+                await time_phase( `credential upload`, () => run_docker(
+                    [ ...docker_prefix_args, `cp`, `-`, `${ container_id }:/` ],
+                    DOCKER_COPY_TIMEOUT_MS,
+                    { input: build_tar_archive( copy_mounts ) }
+                ), { slow_ms: Infinity } )
+            }
+
+            if( !cleanup_credentials( copy_mounts ) ) {
+                throw new Error( `Could not remove a private launch transport` )
+            }
+
+            recovery_id = register_recovery( {
+                container_id,
+                sync_paths: recoverable_sync_paths,
+            } )
+            staging_complete = true
         }
 
-        if( !cleanup_credentials( copy_mounts ) ) {
-            throw new Error( `Could not remove a private launch transport` )
-        }
-
-        recovery_id = register_recovery( {
-            container_id,
-            sync_paths: recoverable_sync_paths,
-        } )
-        staging_complete = true
+        if( !deferred ) await stage()
 
         const command_args = [ ...prefix, `start`, `-ai`, container_id ]
 
@@ -454,6 +495,7 @@ export const prepare_docker_launch = async ( options, {
         const await_started = async ( {
             timeout_ms = DOCKER_START_TIMEOUT_MS,
             poll_ms = DOCKER_START_POLL_MS,
+            require_running = false,
         } = {} ) => {
             if( handed_off ) return true
 
@@ -480,13 +522,29 @@ export const prepare_docker_launch = async ( options, {
                     continue
                 }
 
-                if( [ `running`, `paused`, `restarting` ].includes( status ) ) return true
+                if( status === `running` || !require_running && [ `paused`, `restarting` ].includes( status ) ) return true
                 if( [ `exited`, `dead`, `removing` ].includes( status ) ) return false
 
                 await wait( poll_ms )
             }
 
             return false
+        }
+
+        // Deferred staging: the entrypoint is parked on the gate, so the agent
+        // cannot have run yet. Stage, then mark the container as possibly
+        // executing BEFORE the release exec: an ambiguous release must retain
+        // refreshable credentials rather than destroy them.
+        const upload = async () => {
+            if( staging_complete ) return
+            if( !await await_started( { require_running: true } ) ) {
+                throw new Error( `Docker container did not reach a running state before credential upload` )
+            }
+            await stage()
+            await time_phase( `bootstrap release`, () => run_docker( [
+                ...docker_prefix_args, `exec`, container_id,
+                `sh`, `-c`, `mkdir -m 700 -p ${ BOOTSTRAP_GATE_FILE.replace( /\/[^/]+$/, `` ) } && : > ${ BOOTSTRAP_GATE_FILE }`,
+            ], DOCKER_RELEASE_TIMEOUT_MS ), { slow_ms: Infinity } )
         }
 
         if( signal?.aborted ) throw new Error( `Docker launch preparation cancelled` )
@@ -498,6 +556,8 @@ export const prepare_docker_launch = async ( options, {
             container_id,
             abort,
             await_started,
+            upload: deferred ? upload : null,
+            deferred,
             pull_synced_files,
             retain,
             handoff,

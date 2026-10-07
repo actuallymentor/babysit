@@ -70,6 +70,109 @@ const fake_signals = () => new EventEmitter()
 
 describe( `prepared Docker launch`, () => {
 
+    const gate_label = supported => ( args ) =>
+        args.includes( `image` ) && args.includes( `inspect` ) ?  supported ? `1` : ``  : null
+
+    it( `defers the upload into the running container when the image has the gate`, async () => {
+
+        const { transport, mount } = private_transport()
+        const calls = []
+        const statuses = [ `created`, `running` ]
+
+        const launch = await prepare_docker_launch( { ...make_options( mount ), deferred_upload: true }, {
+            signal_target: fake_signals(),
+            run_command: async ( command, args, options ) => {
+                calls.push( args.join( ` ` ).split( ` ` ).slice( 0, 2 ).join( ` ` ) )
+                const label = gate_label( true )( args )
+                if( label !== null ) return label
+                if( args.includes( `create` ) ) return CONTAINER_ID
+                if( args.includes( `inspect` ) ) return statuses.shift()
+                if( args.includes( `cp` ) ) {
+                    // Host transport must survive until Docker acknowledges the copy.
+                    expect( existsSync( transport.file ) ).toBe( true )
+                    expect( options.input.toString( `utf-8` ) ).toContain( `fake-token` )
+                    return ``
+                }
+                if( args.includes( `exec` ) ) {
+                    expect( existsSync( transport.directory ) ).toBe( false )
+                    expect( args.join( ` ` ) ).toContain( `/run/babysit-bootstrap/ready` )
+                    return ``
+                }
+                throw new Error( `Unexpected Docker command: ${ args.join( ` ` ) }` )
+            },
+        } )
+
+        expect( launch.deferred ).toBe( true )
+        // Nothing was copied before the caller starts the container.
+        expect( calls.some( call => call.startsWith( `cp` ) ) ).toBe( false )
+        expect( existsSync( transport.file ) ).toBe( true )
+        const create_index = calls.findIndex( call => call.startsWith( `create` ) )
+        expect( create_index ).toBeGreaterThan( -1 )
+
+        await launch.upload()
+        expect( calls.slice( create_index + 1 ) ).toEqual( [ `inspect --format`, `inspect --format`, `cp -`, `exec ${ CONTAINER_ID }` ] )
+        expect( existsSync( transport.directory ) ).toBe( false )
+
+        // A second call is a no-op: staging already completed.
+        await launch.upload()
+        expect( calls.filter( call => call.startsWith( `cp` ) ) ).toHaveLength( 1 )
+        launch.handoff()
+
+    } )
+
+    it( `keeps the stopped-container upload for images without the gate`, async () => {
+
+        const { transport, mount } = private_transport()
+        const calls = []
+
+        const launch = await prepare_docker_launch( { ...make_options( mount ), deferred_upload: true }, {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                calls.push( args[0] === `image` ? `image inspect` : args[0] )
+                const label = gate_label( false )( args )
+                if( label !== null ) return label
+                if( args.includes( `create` ) ) {
+                    expect( args ).not.toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
+                    return CONTAINER_ID
+                }
+                if( args.includes( `cp` ) ) return ``
+                throw new Error( `Unexpected Docker command: ${ args.join( ` ` ) }` )
+            },
+        } )
+
+        expect( launch.deferred ).toBe( false )
+        expect( launch.upload ).toBeNull()
+        expect( calls ).toEqual( [ `image inspect`, `create`, `cp` ] )
+        expect( existsSync( transport.directory ) ).toBe( false )
+        launch.handoff()
+
+    } )
+
+    it( `passes the gate flag to docker create only when deferring`, async () => {
+
+        const { mount } = private_transport()
+        let create_args = null
+
+        const launch = await prepare_docker_launch( { ...make_options( mount ), deferred_upload: true }, {
+            signal_target: fake_signals(),
+            run_command: async ( command, args ) => {
+                const label = gate_label( true )( args )
+                if( label !== null ) return label
+                if( args.includes( `create` ) ) {
+                    create_args = args
+                    return CONTAINER_ID
+                }
+                return ``
+            },
+        } )
+
+        expect( create_args ).toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
+        // Abort before upload: the gated container is removed and the host transport with it.
+        await launch.abort()
+        expect( existsSync( mount.source ) ).toBe( false )
+
+    } )
+
     it( `keeps isolated generated config and credentials out of bind metadata`, () => {
 
         const config = build_private_tmpfile( `config`, `settings.json`, `{}` )

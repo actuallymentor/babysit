@@ -1,6 +1,26 @@
 #!/bin/bash
 set -e
 
+# Bootstrap gate. A `docker cp` into a STOPPED container mounts its rootfs and
+# costs seconds on a busy daemon; into a running one it takes milliseconds. So
+# the launcher starts us first, uploads credentials and generated config, and
+# releases the gate with one exec once recovery bookkeeping is in place. Until
+# then nothing below runs, so the agent never sees a half-staged home.
+BOOTSTRAP_GATE=/run/babysit-bootstrap/ready
+if [ "${BABYSIT_BOOTSTRAP_WAIT:-0}" = "1" ] && [ ! -f "$BOOTSTRAP_GATE" ]; then
+    bootstrap_deadline=$(( $(date +%s) + ${BABYSIT_BOOTSTRAP_TIMEOUT_SECONDS:-180} ))
+    while [ ! -f "$BOOTSTRAP_GATE" ]; do
+        if [ "$(date +%s)" -ge "$bootstrap_deadline" ]; then
+            printf 'Babysit did not release the credential bootstrap gate in time\n' >&2
+            exit 1
+        fi
+        sleep 0.05
+    done
+    unset bootstrap_deadline
+fi
+# The gate file stays: a restarted container must not wait for a release that
+# nobody will send again.
+
 # UID remap — make the in-container `node` user match the host user that owns
 # the bind-mounted /workspace, so files written by the agent inherit the host
 # uid and the host can edit/commit them without git's "dubious ownership" or

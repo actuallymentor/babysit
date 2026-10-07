@@ -263,6 +263,9 @@ RUN set -eux; \
 
 ARG BABYSIT_VERSION=unknown
 LABEL org.opencontainers.image.version="${BABYSIT_VERSION}"
+# The entrypoint can wait for a credential upload into the running container.
+# Launchers check this label; images without it get the stopped-container copy.
+LABEL babysit.bootstrap-gate="1"
 
 WORKDIR /workspace
 

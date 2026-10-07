@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.24.0 — 2026-10-07
+
+### Changed
+- Launch uploads credentials and generated config into the *running* container instead of the stopped one. A stopped-container `docker cp` mounts the rootfs and took 5 to 10 seconds on a busy daemon; into a running container it takes milliseconds. The image entrypoint now parks on a bootstrap gate until the launcher has staged files and registered credential recovery, then releases it with one `docker exec`. Images without the `babysit.bootstrap-gate` label (older pulls, pinned recovery images) keep the previous stopped-container path. Pull the new image with `babysit update` to get the faster start.
+
 ## 1.23.0 — 2026-10-07
 
 ### Added
