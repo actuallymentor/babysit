@@ -29,7 +29,8 @@ describe( `babysit.yaml`, () => {
         const path = write_default_config( tmpdir_path, { initial_prompt: `custom default prompt` } )
         expect( readFileSync( path, `utf8` ) ).toContain( `custom default prompt` )
         expect( () => write_default_config( tmpdir_path ) ).toThrow( /already exists/ )
-        expect( load_config( tmpdir_path ).config.initial_prompt ).toBe( `custom default prompt` )
+        // All comments: loading the written file still yields the defaults
+        expect( load_config( tmpdir_path ).config.idle_timeout_s ).toBe( 300 )
     } )
 
     it( `parses default config values`, () => {
@@ -112,14 +113,14 @@ babysit:
         expect( rules[0].on.value ).toBe( `test string` )
     } )
 
-    it( `returns default yaml string`, () => {
+    it( `returns a default yaml that is all comments and documents every setting`, () => {
         const yaml = get_default_yaml()
-        expect( yaml ).toContain( `idle_timeout_s` )
-        expect( yaml ).toContain( `initial_prompt` )
-        expect( parse( yaml ).config.initial_prompt ).toBe( base )
-        expect( yaml ).toContain( `babysit:` )
-        expect( parse( yaml ).babysit ).toBeNull()
-        expect( parse( yaml ).config.commands ).toBeUndefined()
+        expect( yaml.split( `\n` ).every( line => !line.trim() || line.startsWith( `#` ) ) ).toBe( true )
+        expect( parse( yaml ) ).toBeNull()
+        for( const key of [ `initial_prompt`, `idle_timeout_s`, `yolo_approve_dangerous_commands`, `isolate_dependencies`, `clone:`, `commands:`, `on: idle`, `===`, `--loop` ] ) {
+            expect( yaml ).toContain( key )
+        }
+        expect( yaml ).toContain( base.split( `\n` )[0] )
     } )
 
     it( `returns default yaml with a caller-supplied prompt`, () => {

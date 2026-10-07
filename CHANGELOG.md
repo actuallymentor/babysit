@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.18.1 — 2026-10-07
+
+### Changed
+- `babysit init` writes a fully commented `babysit.yaml` that documents every setting and rule form; nothing in it is active until uncommented.
+
 ## 1.18.0 — 2026-10-07
 
 ### Changed
