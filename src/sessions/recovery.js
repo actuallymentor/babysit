@@ -18,9 +18,9 @@ export const session_lock_key = session => {
 }
 
 /** Fingerprint configuration without copying commands or embedded secrets into metadata. */
-export const workspace_config_hash = workspace => {
+export const workspace_config_hash = ( workspace, config_path = null ) => {
 
-    const path = join( workspace, `babysit.yaml` )
+    const path = config_path || join( workspace, `babysit.yaml` )
     return existsSync( path ) ? createHash( `sha256` ).update( readFileSync( path ) ).digest( `hex` ) : null
 
 }

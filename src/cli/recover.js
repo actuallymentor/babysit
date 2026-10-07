@@ -31,7 +31,7 @@ export const recovery_blocker = ( session, { replay = true } = {} ) => {
     if( !/^sha256:[a-f0-9]{64}$/.test( session.image_id || `` ) ) return `Immutable launch image was not recorded`
     if( !session.agent_session_id || session.agent_session_id_source !== `structured` ) return `Exact native conversation identity was not captured`
     if( session.launch_spec?.unsupported ) return `Launch contains unsupported replay arguments; use babysit resume explicitly`
-    if( !session.launch_spec || session.launch_spec.config_hash !== workspace_config_hash( session_workspace( session ) ) ) return `Workspace configuration changed; use babysit resume explicitly`
+    if( !session.launch_spec || session.launch_spec.config_hash !== workspace_config_hash( session_workspace( session ), session.config_path || null ) ) return `Workspace configuration changed; use babysit resume explicitly`
     return null
 
 }

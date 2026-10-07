@@ -14,7 +14,7 @@ Usage:
   babysit ["session name"]           Open the interactive launch menu
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id|number>  Resume a previous session
-  babysit init                         Write a commented default babysit.yaml into this directory
+  babysit init [file.yaml]             Write a commented default config; asks for the file name
   babysit list [--all] [--watch]       List active sessions and launch flags; --watch redraws every 2s
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
@@ -50,6 +50,7 @@ Flags:
   --ignore-host-agents-md
                   Keep host agent instructions, skills, and preferences out of the container
   --name NAME     Give the session a human-readable name
+  --config FILE   Use FILE instead of ./babysit.yaml for this session (kept on resume)
   --port PORT     Publish host PORT to the same container port
   --port H:C      Publish host port H to container port C
   --auth          With "babysit doctor", make real model-backed auth checks

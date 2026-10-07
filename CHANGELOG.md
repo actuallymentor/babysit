@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.19.0 — 2026-10-07
+
+### Added
+- `--config FILE` uses any YAML file instead of `./babysit.yaml`; the path is stored on the session so the monitor, resume, recovery, and clone creation read the same file.
+- `babysit init` asks for the config file name (or takes it as an argument) and prints the matching `--config` hint.
+
 ## 1.18.1 — 2026-10-07
 
 ### Changed

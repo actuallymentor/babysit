@@ -579,6 +579,7 @@ describe( `merge_resume_flags`, () => {
             ignore_host_agents_md: false,
             name: false,
             log: false,
+            config: false,
             ports: [],
         } )
 

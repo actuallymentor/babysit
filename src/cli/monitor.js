@@ -68,6 +68,7 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
  */
 export const load_monitor_config = ( session = {} ) => load_config( session_workspace( session ), {
     default_initial_prompt: build_system_prompt( mode_from_modifiers( session.modifiers ) ),
+    config_path: session.config_path || null,
 } )
 
 /**
