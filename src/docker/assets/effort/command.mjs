@@ -48,6 +48,12 @@ export const run_exit = args => session_request( `exit`, exit_help, args )
 /** Flag this session as blocked on the user. */
 export const run_stuck = args => session_request( `stuck`, stuck_help, args )
 
+export const loop_help = `Usage: babysit loop [--status <request-id>]
+Toggles --loop for this session: when idle, Babysit types LOOP.md (or "Keep going").`
+
+/** Toggle looping on this session. */
+export const run_loop = args => session_request( `loop`, loop_help, args )
+
 export const run_effort = async args => {
     const parsed = parse_control( args, effort_help )
     if( parsed.help ) return parsed.help

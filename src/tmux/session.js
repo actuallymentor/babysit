@@ -30,6 +30,22 @@ export const make_session_name = ( pwd, agent_name ) => {
 }
 
 /**
+ * Write the bottom-bar identity label; the monitor rewrites it when flags change.
+ * @param {string} session_name - Tmux session
+ * @param {string} status_label - Literal label text
+ * @param {Object} [options]
+ * @param {Function} [options.run_command] - Command runner seam
+ */
+export const set_status_label = async ( session_name, status_label, { run_command = run } = {} ) => {
+
+    await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `@babysit_status_label`, status_label ] )
+    // Tmux measures this limit in terminal columns. Two columns per UTF-16
+    // code unit safely covers CJK and emoji labels.
+    await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left-length`, String( status_label.length * 2 + 1 ) ] )
+
+}
+
+/**
  * Create a new detached tmux session with babysit defaults.
  * The `command` is passed verbatim to `sh -c`, so callers must shell-quote
  * any embedded values (see docker/run.js#shell_quote).
@@ -78,13 +94,10 @@ export const create_session = async ( session_name, command, {
     if( status_label ) {
         try {
             await Promise.all( [
-                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `@babysit_status_label`, status_label ] ),
+                set_status_label( session_name, status_label, { run_command } ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status`, `on` ] ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-position`, `bottom` ] ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left`, `#[bold]#{@babysit_status_label}#[default] ` ] ),
-                // Tmux measures this limit in terminal columns. Two columns
-                // per UTF-16 code unit safely covers CJK and emoji labels.
-                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left-length`, String( status_label.length * 2 + 1 ) ] ),
             ] )
         } catch ( error ) {
             log.warn( `Could not configure the tmux status bar: ${ error.message }` )

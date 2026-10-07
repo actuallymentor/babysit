@@ -19,6 +19,7 @@ import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
 import { create_exit_controller } from '../control/exit.js'
 import { create_stuck_controller } from '../control/stuck.js'
+import { create_loop_controller } from '../control/loop.js'
 import { send_text } from '../tmux/send.js'
 import {
     clear_host_auth_cache,
@@ -365,6 +366,11 @@ export const cmd_monitor = async ( cmd ) => {
 
         // `babysit stuck`: a list status that only the user's typing clears.
         stuck_controller = create_stuck_controller( session, { update: update_session } )
+        // `babysit loop`: toggle the idle nudge without restarting the session.
+        const loop_controller = create_loop_controller( session, {
+            rules, workspace, update: update_session,
+            load_rules: () => load_monitor_config( session ).rules,
+        } )
 
         await start_monitor( {
             session_name: session.tmux_session,
@@ -375,6 +381,7 @@ export const cmd_monitor = async ( cmd ) => {
             control_bridge: create_control_bridge( session, { handlers: {
                 exit: () => exit_controller.request(),
                 stuck: () => stuck_controller.request(),
+                loop: () => loop_controller.toggle(),
             } } ),
             on_status: async status => {
                 await exit_controller.on_status( status )
