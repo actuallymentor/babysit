@@ -166,6 +166,7 @@ const rebuild_flags = ( modifiers = [], session = {} ) => ( {
     ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
     name: session.name || false,
     log: false,
+    config: false,
     ports: Array.isArray( session.ports ) ? session.ports : [],
 } )
 

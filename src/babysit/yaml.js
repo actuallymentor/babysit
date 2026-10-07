@@ -98,19 +98,21 @@ const string_list = ( value, fallback ) => Array.isArray( value )
     : fallback
 
 /**
- * Read `config.clone` from a workspace's babysit.yaml without creating the file.
+ * Read `config.clone` from a workspace's config without creating the file.
  * Clone creation runs before the workspace config is loaded and must read the
  * source, which may have no babysit.yaml yet.
  * @param {string} [dir=process.cwd()] - Source workspace
+ * @param {Object} [options]
+ * @param {string|null} [options.config_path] - Explicit --config file
  * @returns {{ mode: string, carry: string[], changes: boolean, depth: number|null, exclude: string[] }}
  */
-export const load_clone_config = ( dir = process.cwd() ) => {
+export const load_clone_config = ( dir = process.cwd(), { config_path = null } = {} ) => {
 
-    const config_path = resolve( dir, `babysit.yaml` )
+    const path = config_path || resolve( dir, `babysit.yaml` )
     let raw = {}
 
     try {
-        raw = parse( readFileSync( config_path, `utf-8` ) )?.config?.clone || {}
+        raw = parse( readFileSync( path, `utf-8` ) )?.config?.clone || {}
     } catch {
         // Missing or unreadable yaml means defaults; load_config reports syntax later.
     }
@@ -141,11 +143,12 @@ export const load_clone_config = ( dir = process.cwd() ) => {
  * @param {string} [dir=process.cwd()] - Workspace
  * @param {Object} [options]
  * @param {string} [options.initial_prompt] - Prompt to embed
+ * @param {string} [options.file] - File name or path, relative to dir
  * @returns {string} Path written
  */
-export const write_default_config = ( dir = process.cwd(), { initial_prompt = build_system_prompt( {} ) } = {} ) => {
+export const write_default_config = ( dir = process.cwd(), { initial_prompt = build_system_prompt( {} ), file = `babysit.yaml` } = {} ) => {
 
-    const config_path = resolve( dir, `babysit.yaml` )
+    const config_path = resolve( dir, file )
     if( existsSync( config_path ) ) throw new Error( `${ config_path } already exists; edit it or remove it first` )
     writeFileSync( config_path, build_default_yaml( { initial_prompt } ), `utf-8` )
     return config_path
@@ -153,17 +156,20 @@ export const write_default_config = ( dir = process.cwd(), { initial_prompt = bu
 }
 
 /**
- * Load babysit.yaml from the current directory. A missing file means the
- * defaults; nothing is written (`babysit init` creates the file on request).
+ * Load the workspace config. A missing babysit.yaml means the defaults and
+ * nothing is written (`babysit init` creates it); an explicit --config file
+ * must exist.
  * @param {string} [dir=process.cwd()] - Directory to look for babysit.yaml
  * @param {Object} [options]
  * @param {string} [options.default_initial_prompt] - Prompt used when the file omits initial_prompt
+ * @param {string|null} [options.config_path] - Explicit --config file
  * @returns {{ config: Object, rules: Array }} Parsed config and rules
  */
-export const load_config = ( dir = process.cwd(), { default_initial_prompt = build_system_prompt( {} ) } = {} ) => {
+export const load_config = ( dir = process.cwd(), { default_initial_prompt = build_system_prompt( {} ), config_path = null } = {} ) => {
 
-    const config_path = resolve( dir, `babysit.yaml` )
-    const parsed = ( existsSync( config_path ) ? parse( readFileSync( config_path, `utf-8` ) ) : null ) || {}
+    if( config_path && !existsSync( config_path ) ) throw new Error( `Config file not found: ${ config_path }` )
+    const path = config_path || resolve( dir, `babysit.yaml` )
+    const parsed = ( existsSync( path ) ? parse( readFileSync( path, `utf-8` ) ) : null ) || {}
 
     // Merge with defaults. Older babysit.yaml files may predate
     // config.initial_prompt; treat absence as "use the generated default",

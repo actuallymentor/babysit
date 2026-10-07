@@ -1,3 +1,4 @@
+import { resolve } from 'path'
 import mri from 'mri'
 import { is_agent } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
@@ -26,7 +27,7 @@ const AUTH_VERBS = [ `status`, `check`, `init` ]
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents` ] )
+const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `config` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -56,7 +57,7 @@ export const parse_args = ( argv ) => {
     } )
     const parse = tokens => mri( tokens, {
         boolean: [ ...BOOLEAN_FLAGS ],
-        string: [ `name`, `log`, `port`, `auth-check-agents` ],
+        string: [ `name`, `log`, `port`, `auth-check-agents`, `config` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -91,6 +92,9 @@ export const parse_args = ( argv ) => {
         // mri normalises the first two to args.log = '' / args.log = 'path'.
         // false (flag absent) vs string (flag present, possibly empty for default).
         log:  typeof args.log === `string`  ? args.log : false,
+        // Alternative config file; resolved against the launch directory now so
+        // clones, the monitor, and resume all read the same absolute path.
+        config: typeof args.config === `string` && args.config ? resolve( args.config ) : false,
         auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
         auth: verb === `doctor` && ( args.auth || false ),
         refresh: verb === `doctor` && ( args.refresh || false ),
@@ -116,8 +120,8 @@ export const parse_args = ( argv ) => {
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
 
-    // babysit init — write the commented default babysit.yaml
-    if( verb === `init` ) return { verb: `init`, agent: null, flags, passthrough: [] }
+    // babysit init [file.yaml] — write the commented default config
+    if( verb === `init` ) return { verb: `init`, agent: null, session_id: positionals[1] || null, flags, passthrough: [] }
 
     // babysit archive <number|session_id|name>
     if( verb === `archive` ) {

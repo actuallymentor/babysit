@@ -60,6 +60,7 @@ Use explicit commands in scripts.
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
 | `--log[=PATH]` | Append raw tmux output to file |
+| `--config FILE` | Use FILE instead of `./babysit.yaml`; the session keeps it on resume and in clones |
 
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
@@ -101,7 +102,7 @@ Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
-| `babysit init` | Write a commented default `babysit.yaml` into the current directory |
+| `babysit init [file.yaml]` | Write a commented default config; asks for the file name when none is given |
 | `babysit list [--all] [--watch]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU/MEM, totals row; `--all` adds tmux attachment, IDs, tmux names; `--watch` redraws every 2s with full colors (external `watch` drops 256-color codes) |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
@@ -291,7 +292,7 @@ is reported separately. Usage reads do not start inference.
 
 ## Supervision
 
-`babysit init` writes a commented `babysit.yaml`; without one, defaults apply. Rules run top-down; first match wins.
+`babysit init` writes a commented `babysit.yaml` (or the name you give it, used via `--config FILE`); without one, defaults apply. Rules run top-down; first match wins.
 
 ```yaml
 config:

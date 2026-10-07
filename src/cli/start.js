@@ -1274,6 +1274,8 @@ async function start_session( cmd ) {
     let clone_branch = stored_resume_session?.clone_branch || null
     let clone_git_repository = stored_resume_session?.clone_git_repository || false
     let workspace = original_exists ? original_workspace : launch_cwd
+    // An explicit --config wins; a resumed session keeps the file it launched with.
+    const config_path = flags.config || stored_resume_session?.config_path || null
 
     if( mode.clone ) {
         if( stored_resume_session ) {
@@ -1304,7 +1306,7 @@ async function start_session( cmd ) {
             }
         } else {
             // Clone options come from the source's babysit.yaml, read once at creation.
-            const clone_config = load_clone_config( original_workspace )
+            const clone_config = load_clone_config( original_workspace, { config_path } )
             log.info( `${ clone_config.mode === `git` ? `Cloning` : `Copying` } ${ original_workspace } into clone ${ clone_id }` )
             const prepared_clone = await prepare_clone_with_access_fix( {
                 source: original_workspace,
@@ -1350,6 +1352,7 @@ async function start_session( cmd ) {
     const started_at = new Date().toISOString()
     const base_session_data = {
         babysit_id,
+        config_path,
         name: session_display_name,
         agent: agent.name,
         agent_session_id: stored_resume_session?.agent_session_id || null,
@@ -1504,14 +1507,14 @@ async function start_session( cmd ) {
         }
     }
 
-    // Load babysit.yaml (creates default if missing). New config files get
-    // the generated mode-aware launch prompt written into config.initial_prompt;
-    // legacy configs that omit the field receive the same prompt as a fallback.
+    // Load the workspace config (or the --config file). Configs that omit
+    // initial_prompt receive the generated mode-aware launch prompt.
     const { config, rules } = load_config( workspace, {
         default_initial_prompt: build_system_prompt( mode ),
+        config_path,
     } )
 
-    base_session_data.launch_spec.config_hash = workspace_config_hash( workspace )
+    base_session_data.launch_spec.config_hash = workspace_config_hash( workspace, config_path )
     update_session( babysit_id, { launch_spec: base_session_data.launch_spec } )
 
     // Initialize the loop deadline file before docker mounts it.
