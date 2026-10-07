@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.19.1 — 2026-10-07
+
+### Fixed
+- `babysit --config FILE` (no agent) opens the launch menu and keeps the config file for the chosen session.
+
 ## 1.19.0 — 2026-10-07
 
 ### Added

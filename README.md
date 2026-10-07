@@ -60,7 +60,7 @@ Use explicit commands in scripts.
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
 | `--log[=PATH]` | Append raw tmux output to file |
-| `--config FILE` | Use FILE instead of `./babysit.yaml`; the session keeps it on resume and in clones |
+| `--config FILE` | Use FILE instead of `./babysit.yaml`; the session keeps it on resume and in clones. Works with the launch menu too: `babysit --config FILE` |
 
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.

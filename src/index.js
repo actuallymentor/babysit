@@ -76,8 +76,11 @@ const main = async () => {
     }
 
     if( cmd.verb === `launch` ) {
+        const { config } = cmd.flags
         cmd = await launch_menu( { name: cmd.flags.name || `` } )
         if( !cmd ) return
+        // The menu builds its own flags; keep the config file the user named.
+        if( config ) cmd.flags.config = config
         try {
             save_launch_defaults( cmd )
         } catch ( error ) {
