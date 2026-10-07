@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.22.1 — 2026-10-07
+
+### Fixed
+- `babysit list --watch` says when every running session is archived instead of claiming there are none.
+- `babysit model --help` no longer promises only complete benchmark rows.
+
 ## 1.22.0 — 2026-10-07
 
 ### Changed

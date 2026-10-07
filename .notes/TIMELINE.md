@@ -141,3 +141,4 @@
 
 - 2026-10-07: `babysit list --watch` hides archived sessions (global numbers kept). v1.21.0.
 - 2026-10-07: `babysit model` shows rows with missing metrics as — instead of hiding them; `--all` is a no-op. v1.22.0.
+- 2026-10-07: Review fixes: watch empty-state message, model help wording, render tests for — cells. v1.22.1.

@@ -14,7 +14,7 @@ OpenCode: 'default' restores the TUI's variant; overrides do not update its foot
 
 export const model_help = `Usage: babysit model [model-name]
 List models or switch within the current managed agent session.
-With no arguments, append the top 30 complete benchmarks, sorted by coding.
+With no arguments, append the top 30 benchmarks, sorted by coding; missing metrics show as —.
 Preserves compatible effort, otherwise uses the new model's default.
 Terminal controls queue for up to 60s; --status <request-id> reads the result.
 
