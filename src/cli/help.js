@@ -29,6 +29,7 @@ Usage:
   babysit model --benchmarks           Compare benchmarks; --sort coding is default
   babysit exit                         Inside a session: end it gracefully after the current turn
   babysit stuck                        Inside a session: show "stuck" in babysit list until the user types
+  babysit loop                         Inside a session: toggle --loop (list flags and tmux bar follow)
   babysit usage [--json]               Account usage and limits, on host or in container
   babysit web init                     Initialize or rotate babysit-web access
   babysit doctor --auth [agent|all]    Verify real agent authentication

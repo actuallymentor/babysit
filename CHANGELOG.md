@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.20.0 — 2026-10-07
+
+### Added
+- `babysit loop` inside a session toggles `--loop` live: the idle rule, the FLAGS column in `babysit list`, the tmux bar label, and resume all follow. It prints "Looping is now enabled" or "Looping is now disabled".
+
 ## 1.19.1 — 2026-10-07
 
 ### Fixed

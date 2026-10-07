@@ -201,6 +201,7 @@ babysit model --status <id>    # Result of a queued terminal request
 babysit effort --status <id>
 babysit exit                  # End this session gracefully after the current turn
 babysit stuck                 # Mark this session "stuck" in babysit list until the user types into it
+babysit loop                  # Toggle --loop for this session; prints "Looping is now enabled/disabled"
 ```
 
 `babysit exit` marks the session intentionally closed (recovery will not relaunch it), waits for the

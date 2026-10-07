@@ -137,3 +137,4 @@
 - 2026-10-06: Rule engine simplified for 1.16.0 (plan/choice/pattern tables, shift_tab/accept, lines_for_*, non-idle timeouts removed; `===` kept by user choice). Added `babysit exit` (graceful, idle-gated, recovery-safe, 30s forced fallback) and `babysit stuck` (red list status cleared by user typing).
 - 2026-10-07: Launch no longer auto-writes babysit.yaml; `babysit init` creates it. Missing file = defaults (`load_config` is read-only). Released as v1.18.0.
 - 2026-10-07: `--config FILE` (absolute path stored as `session.config_path`, honored by monitor/resume/recovery hash/clone config) and interactive `babysit init [file]`. v1.19.0.
+- 2026-10-07: `babysit loop` toggles the loop modifier live (record, rules rebuilt from config, tmux label via `set_status_label`). v1.20.0.

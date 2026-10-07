@@ -88,7 +88,7 @@ test( `late confirmation cannot replace an expired result`, () => {
 
 test( `exit and stuck requests queue like other controls`, () => {
     const { request } = fixture()
-    for( const operation of [ `exit`, `stuck` ] ) {
+    for( const operation of [ `exit`, `stuck`, `loop` ] ) {
         const id = randomUUID()
         expect( request( { action: `enqueue`, id, operation } ).status ).toBe( `pending` )
         expect( request( { action: `take` } ).operation ).toBe( operation )
