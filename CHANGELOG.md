@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.24.1 — 2026-10-07
+
+### Fixed
+- Credential sync now connects before the bootstrap gate opens, so a lost release acknowledgement can no longer drop a token the agent rotated. Headless probes never defer their upload.
+
 ## 1.24.0 — 2026-10-07
 
 ### Changed
