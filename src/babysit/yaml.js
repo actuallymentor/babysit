@@ -5,58 +5,69 @@ import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
 import { build_system_prompt } from '../modes/prompt.js'
 
-const yaml_block = ( text ) => String( text ).split( `\n` )
-    .map( line => `        ${ line }` )
+// Every line of the generated file is a comment: defaults apply until a line
+// is uncommented, and the file documents what can be changed.
+const comment_block = ( text, indent = `        ` ) => String( text ).split( `\n` )
+    .map( line => `#${ indent }${ line }` )
     .join( `\n` )
 
-const format_initial_prompt = ( text ) => {
-
-    if( !text ) return `""`
-
-    return `|-\n${ yaml_block( text ) }`
-
-}
-
 const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ) } = {} ) => `# babysit.yaml
+#
+# Babysit configuration. Everything here is commented out; the values shown are
+# the defaults. Uncomment a line to change it. Delete this file to go back to
+# the defaults entirely.
 
-# Babysit configuration
-config:
-    # Prompt typed into the agent screen on launch. Set to null or "" to disable.
-    initial_prompt: ${ format_initial_prompt( initial_prompt ) }
-    idle_timeout_s: 300 # The amount of seconds of inactivity (no output in the tmux session) that count as \`on: idle\`
-    yolo_approve_dangerous_commands: true # YOLO only: answer Claude's bypass-immune "Dangerous rm operation" prompt with Yes; false lets Claude auto-deny it
+# config:
+#     # Prompt typed into the agent once it is ready. null or "" sends nothing.
+#     initial_prompt: |-
+${ comment_block( initial_prompt ) }
+#
+#     # Seconds without new output before the agent counts as idle (on: idle, --loop).
+#     idle_timeout_s: 300
+#
+#     # YOLO only: answer Claude's bypass-immune "Dangerous rm operation" prompt with Yes.
+#     # false lets Claude auto-deny it.
+#     yolo_approve_dangerous_commands: true
+#
+#     # Mount Docker volumes over dependency folders (node_modules and friends) so the
+#     # container's Linux binaries never land in the host checkout.
+#     isolate_dependencies: true
+#
+#     # --clone workspace creation.
+#     clone:
+#         mode: git                   # git: clone the committed state (fast); copy: copy the working tree
+#         carry: ['.env', '.env.*', '.notes', 'babysit.yaml'] # git mode: untracked or ignored paths copied in (gitignore-style)
+#         changes: false              # git mode: also carry uncommitted edits and untracked files
+#         depth: null                 # git mode: shallow history depth; null keeps full history
+#         exclude: ['node_modules']   # directory or file names skipped everywhere
+#
+#     # Shell commands a rule can run by name.
+#     commands:
+#         notify_command: >
+#             curl -f -X POST -d \\
+#                 "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input&url=&priority=0" https://api.pushover.net/1/messages.json
 
-    # --clone workspace creation. Defaults shown; uncomment to change.
-    # clone:
-    #     mode: git                   # git: clone the repository's committed state (fast); copy: copy the working tree
-    #     carry: ['.env', '.env.*', '.notes', 'babysit.yaml'] # git mode: untracked/ignored paths copied in (gitignore-style patterns)
-    #     changes: false              # git mode: also carry uncommitted edits and untracked files
-    #     depth: null                 # git mode: shallow history depth; null keeps full history
-    #     exclude: ['node_modules']   # directory or file names skipped everywhere
+# Supervision rules, checked top-down every second; the first match acts.
+#
+#   on:  idle                 no new output for idle_timeout_s (or this rule's timeout)
+#        "literal text"       text seen in the last 10 lines of the pane
+#        /regex/flags         regex matched against the last 10 lines
+#   do:  enter                press Enter
+#        notify_command       run a command named under config.commands
+#        ./FILE.md            type the file's contents; === on its own line splits it
+#                             into steps, and Babysit waits for idle between steps
+#        any other text       type it, followed by Enter
+#   timeout: SS | MM:SS | HH:MM:SS   idle rules only; overrides idle_timeout_s
+#
+# --loop replaces the idle rule's action with ./LOOP.md, ~/.agents/LOOP.md, or "Keep going".
 
-    # Named shell commands are opt-in. Uncomment and configure before use.
-    # commands:
-    #     notify_command: >
-    #         curl -f -X POST -d \\
-    #             "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&title=Babysit&message=I need your input&url=&priority=0" https://api.pushover.net/1/messages.json
-
-# Babysit instructions
-babysit:
-
-    # Format:
-    # - on: <event> # idle, a literal string found in the last 10 lines of output, or /regex/flags
-    #   do: <action> # enter, a command named in config.commands, a Markdown file (=== separates steps), or text to type
-
-    # Examples are disabled until you uncomment and configure them.
-
-    # Send a markdown workflow when the coding agent is idle.
-    # - on: idle # this means no new output in the tmux session
-    #   do: ./IDLE.md # create this file first; relative and absolute paths work
-    #   timeout: 30:00 # overrides idle_timeout_s; SS, MM:SS, or HH:MM:SS
-
-    # Run the configured notification command when the agent reports an error.
-    # - on: /error/i
-    #   do: notify_command
+# babysit:
+#     - on: idle
+#       do: ./IDLE.md
+#       timeout: 30:00
+#
+#     - on: /error/i
+#       do: notify_command
 `
 
 /**
