@@ -74,9 +74,14 @@ export const clipboard_command = ( {
     exists = command_exists,
 } = {} ) => {
 
+    // xclip and xsel keep stdout open and would stall tmux's key handling
+    // without the redirect (tmux wiki, "Clipboard"). Both need an X display.
     const candidates = platform === `darwin`
         ? [ `pbcopy` ]
-        : [ ...env.WAYLAND_DISPLAY ? [ `wl-copy` ] : [], `xclip -selection clipboard`, `xsel --clipboard --input` ]
+        : [
+            ...env.WAYLAND_DISPLAY ? [ `wl-copy` ] : [],
+            ...env.DISPLAY ? [ `xclip -selection clipboard >/dev/null`, `xsel --clipboard --input >/dev/null` ] : [],
+        ]
 
     return candidates.find( candidate => exists( candidate.split( ` ` )[0] ) ) || null
 

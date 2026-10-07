@@ -46,7 +46,7 @@ const continuation_result = session => {
 const AUTH_ENVIRONMENT = [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
 
 /** Scope credential cleanup and relaunch to the original host profile. */
-const use_launch_environment = session => {
+export const use_launch_environment = session => {
 
     const saved = session.launch_spec?.environment
     if( !saved ) return () => {}

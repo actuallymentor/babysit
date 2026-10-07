@@ -21,7 +21,7 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach` ]
 const AUTH_VERBS = [ `status`, `check`, `init` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
