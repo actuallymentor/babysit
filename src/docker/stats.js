@@ -35,10 +35,19 @@ export const format_memory = bytes => bytes >= 10 * GIB
 
 /**
  * Format a CPU percentage with one decimal.
- * @param {number} percent - CPU percent (100 = one core)
+ * @param {number} percent - CPU percent
  * @returns {string}
  */
 export const format_cpu = percent => `${ percent.toFixed( 1 ) }%`
+
+/**
+ * Docker reports CPU per core (400% = four cores flat out). Express it as a
+ * share of the whole host when the sampler recorded the core count.
+ * @param {{ cpu_percent: number, host_cpus?: number|null }} usage - Cached sample
+ * @returns {number} Percent of total host CPU, or the raw figure without a core count
+ */
+export const host_cpu_percent = ( { cpu_percent, host_cpus = null } ) =>
+    host_cpus > 0 ? cpu_percent / host_cpus : cpu_percent
 
 /**
  * Parse one `docker stats --no-stream` row for a single container.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.23.0 — 2026-10-07
+
+### Added
+- `babysit list` prints an orange "New babysit version available" line when GitHub has a newer release. The check is cached for six hours in `~/.babysit/latest-version.json` and refreshes in the background, so listing never waits on the network.
+
+### Changed
+- `babysit list` CPU figures are a share of the whole Docker host, not per core: 150% on a four-core host shows as 37.5%. The totals row and its color follow.
+- Session monitors poll less: the native identity probe idles to every 30s once an identity is known and the web completion reader polls every 5s. Each poll is a `docker exec`, and eleven sessions were putting ~14 execs per second on the daemon.
+
 ## 1.22.1 — 2026-10-07
 
 ### Fixed

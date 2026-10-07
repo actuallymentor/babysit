@@ -162,6 +162,7 @@ describe( `print_active_sessions_table`, () => {
     it( `adds IDs and full tmux session names with --all`, async () => {
 
         const output = await capture_console( () => cmd_list( {
+            version_check_fn: () => ( { latest: null, refresh: null } ),
             flags: { all: true },
             observe_activity_fn: async sessions => sessions,
             list_sessions_fn: async () => [ {
@@ -379,6 +380,7 @@ describe( `observe_session_activity`, () => {
 
     it( `prints newly observed status rather than the cached list value`, async () => {
         const output = await capture_console( () => cmd_list( {
+            version_check_fn: () => ( { latest: null, refresh: null } ),
             list_sessions_fn: async () => [ { name: `babysit_stale`, attached: false, agent_status: `running` } ],
             list_stored_sessions_fn: () => [],
             observe_activity_fn: ( sessions, stored ) => observe_session_activity( sessions, stored, {
@@ -421,8 +423,9 @@ describe( `list colors`, () => {
         expect( output ).toContain( `\x1b[38;5;245midle` )
         expect( output ).toContain( `\x1b[32mrunning` )
         expect( output ).toContain( `\x1b[38;5;208mwaiting` )
-        // 300% of 400% is red; 9 GiB of 16 GiB is yellow
-        expect( output ).toContain( `\x1b[31m300.0%` )
+        // Each 150% of four cores is 37.5% of the host; 75% total is red; 9 GiB of 16 GiB is yellow
+        expect( output ).toContain( `37.5%` )
+        expect( output ).toContain( `\x1b[31m75.0%` )
         expect( output ).toContain( `\x1b[33m9216 MiB` )
 
     } )
@@ -446,11 +449,36 @@ describe( `list colors`, () => {
 
 } )
 
+describe( `list version notice`, () => {
+
+    it( `prints an orange notice under the table when a newer release is cached`, async () => {
+        const output = await capture_console( () => cmd_list( {
+            list_sessions_fn: async () => [ { name: `babysit_a`, attached: false, agent_status: `idle` } ],
+            list_stored_sessions_fn: () => [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` } ],
+            observe_activity_fn: async sessions => sessions,
+            version_check_fn: () => ( { latest: `9.9.9`, refresh: null } ),
+        } ) )
+        expect( output ).toContain( `New babysit version available: 9.9.9 (run babysit update)` )
+    } )
+
+    it( `stays quiet when up to date`, async () => {
+        const output = await capture_console( () => cmd_list( {
+            list_sessions_fn: async () => [ { name: `babysit_a`, attached: false, agent_status: `idle` } ],
+            list_stored_sessions_fn: () => [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` } ],
+            observe_activity_fn: async sessions => sessions,
+            version_check_fn: () => ( { latest: null, refresh: null } ),
+        } ) )
+        expect( output ).not.toContain( `New babysit version` )
+    } )
+
+} )
+
 describe( `list --watch`, () => {
 
     it( `redraws in place, clearing only right before each frame`, async () => {
         const events = []
         const output = await capture_console( () => cmd_list( {
+            version_check_fn: () => ( { latest: null, refresh: null } ),
             flags: { watch: true },
             watch_rounds: 2,
             list_sessions_fn: async () => [ { name: `babysit_a`, attached: false, agent_status: `idle` } ],
@@ -470,6 +498,7 @@ describe( `list --watch`, () => {
 
     it( `hides archived sessions but keeps global numbers`, async () => {
         const output = await capture_console( () => cmd_list( {
+            version_check_fn: () => ( { latest: null, refresh: null } ),
             flags: { watch: true },
             watch_rounds: 1,
             list_sessions_fn: async () => [
@@ -494,6 +523,7 @@ describe( `list --watch`, () => {
 
     it( `points at plain list when every active session is archived`, async () => {
         const output = await capture_console( () => cmd_list( {
+            version_check_fn: () => ( { latest: null, refresh: null } ),
             flags: { watch: true },
             watch_rounds: 1,
             list_sessions_fn: async () => [ { name: `babysit_old`, attached: false, agent_status: `idle` } ],

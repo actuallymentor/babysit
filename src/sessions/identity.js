@@ -10,6 +10,9 @@ import { READ_COMPLETION } from '../web_bridge/completion.js'
  * @param {Object} [options] - Async command runner and millisecond clock seams
  * @returns {{read: Function, refresh: Function, close: Function}} Identity reader
  */
+const POLL_INTERVAL_MS = 2_000
+const IDLE_POLL_INTERVAL_MS = 30_000
+
 export const create_identity_reader = ( session, { run_command = run, now_fn = Date.now } = {} ) => {
 
     const capture = session?.completion_capture
@@ -45,7 +48,9 @@ export const create_identity_reader = ( session, { run_command = run, now_fn = D
     const refresh = () => {
         if( closed || !enabled ) return Promise.resolve( latest )
         if( !pending ) {
-            next_poll_at = now_fn() + 2_000
+            // A root identity only changes on /clear, /new or resume, so once
+            // one is known the probe can idle; every exec is daemon load.
+            next_poll_at = now_fn() + ( latest ? IDLE_POLL_INTERVAL_MS : POLL_INTERVAL_MS )
             pending = poll().finally( () => {
                 pending = null
             } )
