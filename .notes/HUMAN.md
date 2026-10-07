@@ -13,5 +13,5 @@
 
 ## 2026-10-07 — bootstrap gate review leftovers
 
-- Pre-existing race (flagged by two reviewers, not fixed): `src/credentials/refresh.js` starts its 5-minute reconciliation tick before a transport is connected. During a slow launch a host re-login can be consumed (local copy + hashes updated) without being pushed; after connect the next pull can overwrite the newer host login with the archived credential. Fix idea: suspend periodic ticks until `set_transport`, or track an unpushed update separately. Needs a decision on scope.
+- Pre-existing sync race: FIXED in 1.25.2 (host changes seen without a transport are deferred until connect). No action needed.
 - GitHub returned `Internal Server Error` on every push (even ref-only pushes of commits it already has) from 16:55Z; githubstatus.com said all green. A retry loop was left running; if `3f7cd67` is not on origin/main, push it by hand.

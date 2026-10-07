@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.25.2 — 2026-10-07
+
+### Fixed
+- A host re-login seen by credential sync before the container transport connected was recorded as delivered without being pushed; a later pull of the container's older token could then overwrite the new host login. Such changes are now deferred until the transport connects and pushed then.
+
 ## 1.25.1 — 2026-10-07
 
 ### Fixed
