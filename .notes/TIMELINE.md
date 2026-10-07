@@ -146,3 +146,4 @@
 - 2026-10-07: Deferred credential upload into the running container behind an entrypoint gate; cp 5-10s -> ~60ms measured. v1.24.0.
 - 2026-10-07: Review fix: sync connects between upload() and release(); headless never defers. v1.24.1.
 - 2026-10-07: tmux drag-to-copy (set-clipboard + MouseDragEnd1Pane copy-pipe) and `babysit restart` (close + resume on current image, idle check, --force/--detach). v1.25.0.
+- 2026-10-07: restart review fixes (sandbox, control-based idle guard, native id, env/args carry-over, xclip stdout). v1.25.1.

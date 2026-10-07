@@ -29,7 +29,7 @@ describe( `create_session mouse copy`, () => {
         const have = ( ...names ) => name => names.includes( name )
         expect( clipboard_command( { platform: `darwin`, exists: have( `pbcopy` ) } ) ).toBe( `pbcopy` )
         expect( clipboard_command( { platform: `linux`, env: { WAYLAND_DISPLAY: `wayland-0` }, exists: have( `wl-copy`, `xclip` ) } ) ).toBe( `wl-copy` )
-        expect( clipboard_command( { platform: `linux`, env: {}, exists: have( `wl-copy`, `xclip` ) } ) ).toBe( `xclip -selection clipboard` )
+        expect( clipboard_command( { platform: `linux`, env: { DISPLAY: `:0` }, exists: have( `wl-copy`, `xclip` ) } ) ).toBe( `xclip -selection clipboard >/dev/null` )
         expect( clipboard_command( { platform: `linux`, env: {}, exists: () => false } ) ).toBeNull()
     } )
 

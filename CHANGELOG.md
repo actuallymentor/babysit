@@ -1,10 +1,15 @@
 # Changelog
 
+## 1.25.1 — 2026-10-07
+
+### Fixed
+- `babysit restart` guards after review: refuses sandbox sessions, requires a recognised idle/waiting control checked right before closing, requires a captured native session id unless `--force`, and keeps the launch's credential profile and agent arguments across close and resume. `--force`/`--detach` parse before the selector too. X clipboard tools get `>/dev/null` so tmux input never stalls.
+
 ## 1.25.0 — 2026-10-07
 
 ### Added
-- `babysit restart <number|id>` rebuilds a session on the current Docker image without losing the conversation: graceful close (credentials flush to the host), then resume by the agent's native session id. It refuses while the agent is mid-turn unless `--force` is passed; `--detach` skips the attach. Prints whether the image changed.
-- A plain mouse drag in a babysit tmux session now copies to the system clipboard and leaves copy mode, no Option or Shift needed. Uses `pbcopy`, `wl-copy`, `xclip` or `xsel` when present and tmux's OSC 52 forwarding otherwise. Scroll-wheel scrollback is unchanged.
+- `babysit restart <number|id>` rebuilds a session on the current Docker image without losing the conversation: graceful close (credentials flush to the host), then resume by the agent's native session id. It refuses unless the agent shows an idle or waiting control and a native session id is known, `--force` overrides both; sandbox sessions are never restarted. The launch's credential profile and agent arguments carry over. `--detach` skips the attach. Prints whether the image changed.
+- A plain mouse drag in a babysit tmux session now copies to the system clipboard and leaves copy mode, no Option or Shift needed. Uses `pbcopy`, `wl-copy`, or `xclip`/`xsel` under X when present, and tmux's OSC 52 forwarding otherwise (needs a terminal that allows clipboard writes). Scroll-wheel scrollback is unchanged.
 
 ## 1.24.1 — 2026-10-07
 
