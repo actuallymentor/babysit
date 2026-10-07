@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.21.0 — 2026-10-07
+
+### Changed
+- `babysit list --watch` hides archived sessions; selector numbers stay the same as in the plain list, so `babysit open <n>` is unaffected.
+
 ## 1.20.0 — 2026-10-07
 
 ### Added
