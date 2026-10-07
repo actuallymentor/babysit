@@ -259,8 +259,11 @@ export const parse_args = ( argv ) => {
     }
 
     // Explicit agents and subcommands take precedence over name-only launches.
-    if( !argv.length || argv.every( arg => !arg.startsWith( `-` ) ) ) {
-        flags.name = argv.length ? normalise_session_name( argv.join( ` ` ) ) : false
+    // `--config FILE` is the one flag the menu accepts; strip it before judging.
+    const menu_words = argv.filter( ( arg, index, all ) =>
+        !arg.startsWith( `--config` ) && !( index > 0 && all[ index - 1 ] === `--config` ) )
+    if( !menu_words.length || menu_words.every( arg => !arg.startsWith( `-` ) ) ) {
+        flags.name = menu_words.length ? normalise_session_name( menu_words.join( ` ` ) ) : false
         return { verb: `launch`, agent: null, flags, passthrough: [] }
     }
 
