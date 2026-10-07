@@ -10,6 +10,7 @@ import { launch_menu } from './cli/launcher.js'
 import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
+import { write_default_config } from './babysit/yaml.js'
 import { cmd_archive } from './cli/archive.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume, is_resume_listing } from './cli/resume.js'
@@ -128,6 +129,10 @@ const main = async () => {
 
     case `list`:
         await cmd_list( cmd )
+        break
+
+    case `init`:
+        log.info( `Wrote ${ write_default_config() }` )
         break
 
     case `open`:

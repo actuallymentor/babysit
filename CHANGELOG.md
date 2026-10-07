@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.18.0 — 2026-10-07
+
+### Changed
+- Launching no longer writes a `babysit.yaml` into the workspace; a missing file means the defaults. `babysit init` writes the commented default file on request and refuses to overwrite one.
+
 ## 1.17.0 — 2026-10-06
 
 ### Added

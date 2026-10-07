@@ -14,6 +14,7 @@ Usage:
   babysit ["session name"]           Open the interactive launch menu
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id|number>  Resume a previous session
+  babysit init                         Write a commented default babysit.yaml into this directory
   babysit list [--all] [--watch]       List active sessions and launch flags; --watch redraws every 2s
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one

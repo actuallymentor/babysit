@@ -101,6 +101,7 @@ Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
+| `babysit init` | Write a commented default `babysit.yaml` into the current directory |
 | `babysit list [--all] [--watch]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU/MEM, totals row; `--all` adds tmux attachment, IDs, tmux names; `--watch` redraws every 2s with full colors (external `watch` drops 256-color codes) |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
@@ -290,7 +291,7 @@ is reported separately. Usage reads do not start inference.
 
 ## Supervision
 
-First launch creates `babysit.yaml`. Rules run top-down; first match wins.
+`babysit init` writes a commented `babysit.yaml`; without one, defaults apply. Rules run top-down; first match wins.
 
 ```yaml
 config:
