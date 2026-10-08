@@ -1,3 +1,4 @@
+import { createInterface } from 'node:readline'
 import { effort as codex_effort } from './codex.mjs'
 import { effort as opencode_effort } from './opencode.mjs'
 import { model as codex_model } from './codex-model.mjs'
@@ -28,8 +29,11 @@ const parse_control = ( args, help ) => {
 }
 
 /** Run the same command from the host CLI and the small container executable. */
-export const exit_help = `Usage: babysit exit [--status <request-id>]
-Ends this session gracefully: the agent quits after its current turn and Babysit cleans up.`
+export const exit_help = `Usage: babysit exit [--yes] [--status <request-id>]
+Ends this session gracefully: the agent quits after its current turn and Babysit cleans up.
+Asks for confirmation first; --yes skips the prompt once the user has explicitly asked you to exit.`
+
+export const EXIT_CONFIRMATION = `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n `
 
 export const stuck_help = `Usage: babysit stuck [--status <request-id>]
 Marks this session "stuck" in babysit list until the user types into it.`
@@ -42,8 +46,37 @@ const session_request = ( operation, help, args = [] ) => {
     return terminal_request( operation, status_index >= 0 ? { status_id: args[ status_index + 1 ] } : {} )
 }
 
-/** Ask the host monitor to end this session once the agent is idle. */
-export const run_exit = args => session_request( `exit`, exit_help, args )
+// One line from stdin; null when stdin closes without an answer (no TTY, nothing piped).
+const ask = ( question, { input = process.stdin, output = process.stdout } = {} ) => new Promise( resolve => {
+    output.write( question )
+    const lines = createInterface( { input } )
+    let answered = false
+    lines.once( `line`, line => {
+        answered = true
+        lines.close()
+        resolve( line.trim() )
+    } )
+    lines.once( `close`, () => {
+        if( !answered ) resolve( null )
+    } )
+} )
+
+/**
+ * Ask the host monitor to end this session once the agent is idle.
+ * Agents reach for exit when a task feels finished; the confirmation makes
+ * them check that the user actually asked. `--yes` carries that answer.
+ */
+export const run_exit = async ( args, { confirm = ask, request = session_request } = {} ) => {
+    const skip = args.includes( `--yes` ) || args.includes( `-y` )
+    const passthrough = args.filter( arg => ![ `--yes`, `-y` ].includes( arg ) )
+    if( skip || passthrough.includes( `--status` ) || passthrough.includes( `--help` ) || passthrough.includes( `-h` ) ) {
+        return request( `exit`, exit_help, passthrough )
+    }
+    const answer = await confirm( EXIT_CONFIRMATION )
+    if( answer === null ) throw new Error( `Exit not confirmed: no answer on stdin. If the user explicitly asked you to exit, run: babysit exit --yes` )
+    if( ![ ``, `y`, `yes` ].includes( answer.toLowerCase() ) ) throw new Error( `Exit cancelled.` )
+    return request( `exit`, exit_help, passthrough )
+}
 
 /** Flag this session as blocked on the user. */
 export const run_stuck = args => session_request( `stuck`, stuck_help, args )

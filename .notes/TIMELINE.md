@@ -153,3 +153,8 @@
 - 2026-10-08: YOLO prompt scoped to explicitly given tasks; ask when none given. (1.26.0)
 - 2026-10-08: prune handles root-owned quarantines via Docker root removal + sudo hint; CI caches agent CLIs. v1.26.0.
 - 2026-10-08: 1.26.0 was cut from c133544 before the yolo prompt commit; re-released as 1.26.1. Lesson: bump version in the last commit of a batch.
+
+## 2026-10-08 — 1.27.0: resume truncation + exit confirmation
+- `babysit resume` capped at 10 rows (`-n N`, `--all` lifts). Numbering unchanged.
+- `babysit exit` prompts "You may only exit if the user explicitly told you…"; `--yes` bypasses; closed stdin refuses. System prompt reworded to match.
+- Incident: first version of `tests/exit_command.test.js` hit the real control store and exited the live dev session. Fixed via injected `request` seam (GOTCHAS 150).

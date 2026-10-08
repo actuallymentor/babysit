@@ -24,6 +24,16 @@ describe( `parse_args`, () => {
         expect( agent_cmd.passthrough ).toContain( `--all` )
     } )
 
+    it( `scopes -n to the resume history listing`, () => {
+        expect( parse_args( [ `resume`, `-n`, `25` ] ) ).toMatchObject( { verb: `resume`, flags: { limit: 25 }, passthrough: [] } )
+        expect( parse_args( [ `resume`, `--all`, `-n`, `3` ] ).flags ).toMatchObject( { all: true, limit: 3 } )
+        expect( parse_args( [ `resume` ] ).flags.limit ).toBeNull()
+        expect( parse_args( [ `resume`, `abc-123`, `-n`, `5` ] ) ).toMatchObject( { flags: { limit: null }, passthrough: [ `-n`, `5` ] } )
+        expect( parse_args( [ `codex`, `-n`, `5` ] ).passthrough ).toEqual( [ `-n`, `5` ] )
+        expect( () => parse_args( [ `resume`, `-n` ] ) ).toThrow( `positive whole number` )
+        expect( () => parse_args( [ `resume`, `-n`, `0` ] ) ).toThrow( `positive whole number` )
+    } )
+
     it( `recognises babysit update`, () => {
         const cmd = parse_args( [ `update` ] )
         expect( cmd.verb ).toBe( `update` )
