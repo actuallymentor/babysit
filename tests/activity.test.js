@@ -48,7 +48,7 @@ describe( `agent activity controls`, () => {
         expect( agent_status( screen, `claude`, 300 ) ).toBe( `waiting` )
 
         // A long agent list pushes the footer above the last 8 rows.
-        const rows = Array.from( { length: 12 }, ( _, i ) => `○ worker-${ i }  Running task ${ i }` ).join( `\n` )
+        const rows = Array.from( { length: 60 }, ( _, i ) => `○ worker-${ i }  Running task ${ i }` ).join( `\n` )
         expect( agent_status( `${ screen }\n${ rows }`, `claude`, 300 ) ).toBe( `waiting` )
     } )
 

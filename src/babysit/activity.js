@@ -41,10 +41,9 @@ export const agent_activity = ( output, agent_name ) => {
         // monitors alive: "2 shells, 2 monitors · ← for agents". Only read the
         // native footer below the composer (❯, or › in newer builds), never
         // transcript prose. The expanded agent list can push that footer well
-        // above the last 8 rows, so look deeper but still require the composer.
-        const tail = screen.slice( -40 )
-        const composer = tail.findLastIndex( line => /^\s*[❯›]/.test( line ) )
-        const controls = composer < 0 ? `` : tail.slice( composer + 1 ).join( `\n` )
+        // above the last 8 rows, so search the whole pane but require the composer.
+        const composer = screen.findLastIndex( line => /^\s*[❯›]/.test( line ) )
+        const controls = composer < 0 ? `` : screen.slice( composer + 1 ).join( `\n` )
         const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*$/m )
         if( counts && /\b[1-9]\d* [a-z]+/.test( counts[ 1 ] ) ) return `waiting`
         if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
