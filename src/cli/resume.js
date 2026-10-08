@@ -66,6 +66,9 @@ export const select_resumable_sessions = ( sessions, cwd ) => {
 }
 
 
+// Bare `babysit resume` shows this many rows; `--all` lifts it, `-n N` sets it.
+export const DEFAULT_RESUME_ROWS = 10
+
 // Listing and numbered selection must use exactly the same ordered history.
 const resume_history = ( history, flags, cwd ) => {
 
@@ -118,8 +121,9 @@ export const resolve_numbered_resume = ( cmd, {
  * @param {Object} [options]
  * @param {string|null} [options.workspace=null] - Workspace scope when rows are filtered
  * @param {boolean} [options.all=false] - Preserve global numbering in the resume hint
+ * @param {number} [options.total=sessions.length] - History size before truncation
  */
-export const print_resumable_sessions_table = ( sessions, { workspace = null, all = false } = {} ) => {
+export const print_resumable_sessions_table = ( sessions, { workspace = null, all = false, total = sessions.length } = {} ) => {
 
     if( sessions.length === 0 ) {
         console.log( `No resumable babysit sessions.` )
@@ -145,6 +149,7 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null, al
 
     } )
 
+    if( sessions.length < total ) console.log( `\nShowing ${ sessions.length } of ${ total }. More rows: babysit resume -n <N>${ all ? ` --all` : `` }` )
     if( workspace ) console.log( `\nShow every workspace with: babysit resume --all` )
 
     console.log( `\nResume one with: babysit resume <number|babysit_id>${ all ? ` --all` : `` }\n` )
@@ -262,7 +267,9 @@ export const cmd_resume = async ( cmd, options = {} ) => {
         const { sessions, workspace } = resume_history(
             list_stored_sessions_fn(), flags, flags.all ? null : get_cwd()
         )
-        print_sessions( sessions, { workspace, ...flags.all ? { all: true } : {} } )
+        // Truncate for display only; numbering stays aligned with the full history.
+        const limit = flags.limit ?? ( flags.all ? Infinity : DEFAULT_RESUME_ROWS )
+        print_sessions( sessions.slice( 0, limit ), { workspace, total: sessions.length, ...flags.all ? { all: true } : {} } )
         return
     }
 

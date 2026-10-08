@@ -8,6 +8,7 @@ import {
     is_resume_listing,
     merge_resume_flags,
     print_resumable_sessions_table,
+    resolve_numbered_resume,
     resolve_resume_target,
     select_resumable_sessions,
 } from '../src/cli/resume.js'
@@ -108,8 +109,8 @@ describe( `cmd_resume session listing`, () => {
             },
         } )
 
-        expect( rendered_sessions ).toBe( sessions )
-        expect( rendered_options ).toEqual( { workspace: null } )
+        expect( rendered_sessions ).toEqual( sessions )
+        expect( rendered_options ).toEqual( { workspace: null, total: sessions.length } )
         expect( start_called ).toBe( false )
 
     } )
@@ -129,7 +130,7 @@ describe( `cmd_resume session listing`, () => {
         } )
 
         expect( rendered_sessions ).toEqual( [ sessions[1] ] )
-        expect( rendered_options ).toEqual( { workspace: `/workspace/claude-project` } )
+        expect( rendered_options ).toEqual( { workspace: `/workspace/claude-project`, total: 1 } )
 
     } )
 
@@ -147,8 +148,42 @@ describe( `cmd_resume session listing`, () => {
             get_cwd: () => `/workspace/claude-project`,
         } )
 
-        expect( rendered_sessions ).toBe( sessions )
-        expect( rendered_options ).toEqual( { workspace: null, all: true } )
+        expect( rendered_sessions ).toEqual( sessions )
+        expect( rendered_options ).toEqual( { workspace: null, all: true, total: sessions.length } )
+
+    } )
+
+    it( `shows ten rows by default, -n rows on request, and every row with --all`, async () => {
+
+        const many = Array.from( { length: 14 }, ( _, index ) => ( { ...sessions[0], babysit_id: `many-${ index }` } ) )
+        const render = async flags => {
+            let rendered = null
+            await cmd_resume( { session_id: null, flags }, {
+                list_stored_sessions_fn: () => many,
+                print_sessions: ( value, options ) => {
+                    rendered = { count: value.length, total: options.total } 
+                },
+                get_cwd: () => `/workspace/codex-project`,
+            } )
+            return rendered
+        }
+
+        expect( await render( {} ) ).toEqual( { count: 10, total: 14 } )
+        expect( await render( { limit: 3 } ) ).toEqual( { count: 3, total: 14 } )
+        expect( await render( { all: true } ) ).toEqual( { count: 14, total: 14 } )
+        expect( await render( { all: true, limit: 2 } ) ).toEqual( { count: 2, total: 14 } )
+
+    } )
+
+    it( `keeps history numbers aligned with the truncated listing`, () => {
+
+        const many = Array.from( { length: 14 }, ( _, index ) => ( { ...sessions[0], babysit_id: `many-${ index }` } ) )
+        const cmd = resolve_numbered_resume( { session_id: `12`, flags: {} }, {
+            list_stored_sessions_fn: () => many,
+            get_cwd: () => `/workspace/codex-project`,
+        } )
+
+        expect( cmd.session_id ).toBe( `many-11` )
 
     } )
 
@@ -271,6 +306,16 @@ describe( `cmd_resume session listing`, () => {
 
         expect( output ).toContain( `Resumable babysit sessions for /workspace/claude-project:` )
         expect( output ).toContain( `Show every workspace with: babysit resume --all` )
+
+    } )
+
+    it( `says how many rows were hidden and how to see more`, async () => {
+
+        const output = await capture_console( async () => {
+            print_resumable_sessions_table( [ sessions[0] ], { total: 12 } )
+        } )
+
+        expect( output ).toContain( `Showing 1 of 12. More rows: babysit resume -n <N>` )
 
     } )
 

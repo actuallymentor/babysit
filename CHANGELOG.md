@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.27.0 — 2026-10-08
+
+### Added
+- `babysit resume` shows the newest 10 history rows by default. `-n N` shows N rows; `--all` now shows every workspace and every row. Row numbers stay aligned with the full history, so `babysit resume 12` still works when only 10 rows are shown.
+- `babysit exit` asks `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n` before queueing the exit. Enter, `y`, or `yes` confirms; `n` cancels; a closed stdin (agent tool calls) refuses and points at `--yes`, which skips the prompt.
+
+### Changed
+- The system prompt now tells agents to run `babysit exit` only when the user explicitly asks to end the session, never because their work is done.
+
 ## 1.26.1 — 2026-10-08
 
 ### Fixed

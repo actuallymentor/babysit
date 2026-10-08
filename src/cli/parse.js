@@ -27,7 +27,7 @@ const AUTH_VERBS = [ `status`, `check`, `init` ]
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `config` ] )
+const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -57,7 +57,7 @@ export const parse_args = ( argv ) => {
     } )
     const parse = tokens => mri( tokens, {
         boolean: [ ...BOOLEAN_FLAGS ],
-        string: [ `name`, `log`, `port`, `auth-check-agents`, `config` ],
+        string: [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -71,6 +71,7 @@ export const parse_args = ( argv ) => {
     const numbered_resume = ( verb === `resume` || is_agent( verb ) && command_positionals[1] === `resume` )
         && /^\d+$/.test( resume_selector )
     const uses_resume_history = verb === `resume` && !positionals[1] || numbered_resume
+    const resume_listing = verb === `resume` && !positionals[1]
     const flags = {
         help: args.help || false,
         version: args.version || false,
@@ -85,6 +86,8 @@ export const parse_args = ( argv ) => {
         // Command-scoped: list and resume history/number selectors consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
         all: ( verb === `list` || uses_resume_history ) && ( args.all || false ),
+        // `-n N` caps the resume history listing; numbered resumes ignore it.
+        limit: resume_listing ? normalise_limit( args.n ) : null,
         watch: verb === `list` && ( args.watch || false ),
         list: verb === `prune` && ( args.list || false ),
         name: normalise_session_name( args.name ),
@@ -241,7 +244,7 @@ export const parse_args = ( argv ) => {
                 prepared,
                 null,
                 session_id,
-                uses_resume_history ? [ `all` ] : []
+                resume_listing ? [ `all`, `n` ] : uses_resume_history ? [ `all` ] : []
             ),
         }
     }
@@ -303,6 +306,20 @@ const normalise_session_name = ( value ) => {
     if( /[\u0000-\u001f\u007f]/.test( name ) ) throw new Error( `--name cannot contain control characters` )
 
     return name
+
+}
+
+/**
+ * Validate `-n N` for the resume history listing.
+ * @param {string|undefined} value - Parsed -n value
+ * @returns {number|null} Positive row count, or null when omitted
+ */
+const normalise_limit = ( value ) => {
+
+    if( value === undefined ) return null
+    if( !/^[1-9]\d*$/.test( String( value ) ) ) throw new Error( `-n requires a positive whole number of rows` )
+
+    return Number( value )
 
 }
 

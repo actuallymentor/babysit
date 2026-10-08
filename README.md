@@ -105,7 +105,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit init [file.yaml]` | Write a commented default config; asks for the file name when none is given |
 | `babysit list [--all] [--watch]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names; `--watch` redraws every 2s with full colors and hides archived sessions, numbers unchanged (external `watch` drops 256-color codes) |
 | `babysit open [id\|name\|number]` | Attach |
-| `babysit resume [--all]` | Workspace history; all history if none here or `--all` |
+| `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
@@ -200,13 +200,15 @@ babysit effort                # Supported effort levels
 babysit effort high
 babysit model --status <id>    # Result of a queued terminal request
 babysit effort --status <id>
-babysit exit                  # End this session gracefully after the current turn
+babysit exit [--yes]          # End this session gracefully after the current turn; asks for confirmation first
 babysit stuck                 # Mark this session "stuck" in babysit list until the user types into it
 babysit loop                  # Toggle --loop for this session; prints "Looping is now enabled/disabled"
 ```
 
-`babysit exit` marks the session intentionally closed (recovery will not relaunch it), waits for the
-agent's composer to be idle, sends `/exit`, and forces a close if the agent has not quit after 30 seconds.
+`babysit exit` first asks `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n`;
+without a TTY or piped answer it refuses and points at `--yes`. Confirmed, it marks the session intentionally
+closed (recovery will not relaunch it), waits for the agent's composer to be idle, sends `/exit`, and forces a
+close if the agent has not quit after 30 seconds.
 
 Changes affect this session, not future launch defaults. Claude subagent calls
 control the main session; they do not change the subagent's private model.

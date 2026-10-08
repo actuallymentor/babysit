@@ -28,7 +28,7 @@ Usage:
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session
   babysit model --benchmarks           Compare benchmarks; --sort coding is default
-  babysit exit                         Inside a session: end it gracefully after the current turn
+  babysit exit [--yes]                 Inside a session: end it gracefully after the current turn (asks first)
   babysit stuck                        Inside a session: show "stuck" in babysit list until the user types
   babysit loop                         Inside a session: toggle --loop (list flags and tmux bar follow)
   babysit usage [--json]               Account usage and limits, on host or in container
@@ -59,7 +59,8 @@ Flags:
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
   --remove        With "babysit auth init", uninstall the scheduled checker
   --no-linger     With "babysit auth init", do not enable loginctl lingering (checks then stop at logout)
-  --all           With "list", show full details; with "resume [number]", use every workspace
+  --all           With "list", show full details; with "resume [number]", use every workspace and show every row
+  -n N            With "resume", show N history rows (default 10)
   --dry-run       With "recover", inspect without restarting
   --json          With "recover", print machine-readable results
   --no-continue   With "recover", reopen without submitting a continuation
