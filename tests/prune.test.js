@@ -394,6 +394,69 @@ describe( `clone prune storage`, () => {
 
     } )
 
+    it( `falls back to root removal for foreign-owned quarantine and reports when that fails`, async () => {
+
+        const clone = create_clone()
+        const [ managed ] = list_managed_clones( { clones_dir } ).clones
+        const root_calls = []
+        const result = await prune_managed_clone( {
+            clone: managed,
+            session_ids: [],
+            clones_dir,
+            mark_sessions: async () => {},
+            revalidate: async () => ( {} ),
+            remove_as_root: async path => root_calls.push( path ),
+        } )
+        expect( result.pruned ).toBe( true )
+        // Owned tree: rm succeeds directly, root helper never consulted
+        expect( root_calls ).toEqual( [] )
+        expect( existsSync( clone.clone_path ) ).toBe( false )
+
+    } )
+
+    it( `reports a root-owned quarantine with a sudo hint when root removal fails`, async () => {
+
+        const sudo = spawnSync( `sudo`, [ `-n`, `true` ] )
+        if( sudo.status !== 0 ) return // needs passwordless sudo to plant a root-owned file
+
+        const clone = create_clone()
+        const [ managed ] = list_managed_clones( { clones_dir } ).clones
+        const root_dir = join( clone.clone_path, `artifacts` )
+        mkdirSync( root_dir )
+        expect( spawnSync( `sudo`, [ `-n`, `sh`, `-c`, `touch '${ root_dir }/gpu' && chmod 700 '${ root_dir }' && chown root:root '${ root_dir }' '${ root_dir }/gpu'` ] ).status ).toBe( 0 )
+
+        try {
+            const root_calls = []
+            await expect( prune_managed_clone( {
+                clone: managed,
+                session_ids: [],
+                clones_dir,
+                mark_sessions: async () => {},
+                revalidate: async () => ( {} ),
+                remove_as_root: async path => {
+                    root_calls.push( path )
+                    throw new Error( `no docker` )
+                },
+            } ) ).rejects.toMatchObject( { code: `EFOREIGN` } )
+            expect( root_calls.length ).toBe( 1 )
+            expect( root_calls[0] ).toContain( `/trash/` )
+
+            // The journal stays, so the next run retries; a working root remover finishes it
+            const recovery = await recover_prune_operations( {
+                clones_dir,
+                mark_sessions: async () => {},
+                remove_as_root: async path => {
+                    expect( spawnSync( `sudo`, [ `-n`, `rm`, `-rf`, path ] ).status ).toBe( 0 )
+                },
+            } )
+            expect( recovery.recovered ).toEqual( [ managed.clone_id ] )
+            expect( recovery.failed ).toEqual( [] )
+        } finally {
+            spawnSync( `sudo`, [ `-n`, `rm`, `-rf`, clone.clone_path, join( clones_dir, `.babysit-state`, `trash` ) ] )
+        }
+
+    } )
+
     it( `cannot prune through a live launch lock`, async () => {
 
         const clone = create_clone()
@@ -595,6 +658,25 @@ describe( `prune command interaction`, () => {
         expect( rendered() ).toContain( `1 clone currently in /tmp/clones` )
         expect( rendered() ).toContain( `2.0 KiB` )
         expect( rendered() ).toContain( `/tmp/clones/old-clone` )
+
+    } )
+
+    it( `prints the sudo hint for a foreign-owned quarantine and continues`, async () => {
+
+        const { output, rendered } = output_collector()
+        const error = Object.assign( new Error( `boom` ), { code: `EFOREIGN`, path: `/clones/.babysit-state/trash/old-1` } )
+        await cmd_prune( { flags: {} }, {
+            input: { isTTY: true },
+            output,
+            ask: async () => `n`,
+            inspect_inventory: async () => ( { ...inventory, clones: [] } ),
+            recover_prunes: async () => ( { recovered: [], failed: [ { path: `/j.json`, clone_id: `old`, error } ] } ),
+            prune_docker: async () => ``,
+        } )
+
+        expect( rendered() ).toContain( `Skipping quarantined clone old` )
+        expect( rendered() ).toContain( `sudo rm -rf /clones/.babysit-state/trash/old-1` )
+        expect( rendered() ).toContain( `No clone workspaces found.` )
 
     } )
 

@@ -18,6 +18,7 @@ import {
     CLONE_STATE_VERSION,
 } from './clone.js'
 import { CLONES_DIR } from './utils/paths.js'
+import { log } from './utils/log.js'
 
 const CLONE_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/
 const TRASH_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,164}$/
@@ -214,15 +215,59 @@ const make_tree_removable = path => {
 
 }
 
-const remove_owned_tree = path => {
+/**
+ * Error for a quarantine the host user cannot delete because a container
+ * wrote files into it as another uid (usually root via sudo or Docker).
+ */
+export class ForeignOwnerError extends Error {
+
+    constructor( path, blocked_path ) {
+        super( `${ path } contains files owned by another user (${ blocked_path }); run: sudo rm -rf ${ path }` )
+        this.code = `EFOREIGN`
+        this.path = path
+        this.blocked_path = blocked_path
+    }
+
+}
+
+/**
+ * Delete a quarantined tree. Permission failures first get an owner-only chmod
+ * pass; files the user does not own cannot be chmod-ed (EPERM), so those fall
+ * through to `remove_as_root` when one is provided, else raise ForeignOwnerError.
+ * @param {string} path - Quarantine path
+ * @param {Object} [options]
+ * @param {Function|null} [options.remove_as_root] - Async root deletion fallback
+ * @returns {Promise<void>}
+ */
+const remove_owned_tree = async ( path, { remove_as_root = null } = {} ) => {
 
     try {
         rmSync( path, { recursive: true, force: true } )
+        return
     } catch ( error ) {
         if( ![ `EACCES`, `EPERM` ].includes( error.code ) ) throw error
+    }
+
+    let foreign = null
+
+    try {
         make_tree_removable( path )
         rmSync( path, { recursive: true, force: true } )
+        return
+    } catch ( error ) {
+        if( error.code !== `EPERM` ) throw error
+        foreign = new ForeignOwnerError( path, error.path || path )
     }
+
+    if( !remove_as_root ) throw foreign
+
+    try {
+        await remove_as_root( path )
+    } catch ( error ) {
+        log.debug( `Root removal of ${ path } failed: ${ error.message }` )
+        throw foreign
+    }
+    if( path_entry( path ) ) throw foreign
 
 }
 
@@ -242,11 +287,11 @@ const valid_prune_marker = ( marker, paths ) => {
 
 }
 
-const complete_prune = async ( marker, journal_path, paths, mark_sessions ) => {
+const complete_prune = async ( marker, journal_path, paths, mark_sessions, remove_as_root ) => {
 
     const trash_path = join( paths.trash, marker.trash_name )
     await mark_sessions( marker.session_ids, marker.pruned_at )
-    if( path_entry( trash_path ) ) remove_owned_tree( trash_path )
+    if( path_entry( trash_path ) ) await remove_owned_tree( trash_path, { remove_as_root } )
 
     const manifest = read_json( marker.manifest_path )
     if( manifest && (
@@ -274,6 +319,7 @@ const complete_prune = async ( marker, journal_path, paths, mark_sessions ) => {
 export const recover_prune_operations = async ( {
     mark_sessions,
     clones_dir = CLONES_DIR,
+    remove_as_root = null,
 } ) => {
 
     const paths = clone_state_paths( clones_dir )
@@ -307,10 +353,10 @@ export const recover_prune_operations = async ( {
             }
             if( clone_exists && trash_exists ) throw new Error( `Both clone and prune quarantine exist` )
 
-            await complete_prune( marker, journal_path, paths, mark_sessions )
+            await complete_prune( marker, journal_path, paths, mark_sessions, remove_as_root )
             recovered.push( marker.clone_id )
         } catch ( error ) {
-            failed.push( { path: journal_path, error } )
+            failed.push( { path: journal_path, clone_id: marker.clone_id, error } )
         } finally {
             release_lock?.()
         }
@@ -329,6 +375,7 @@ export const recover_prune_operations = async ( {
  * @param {Function} options.mark_sessions - Idempotent session tombstone writer
  * @param {string} [options.clones_dir] - Clone root, injectable for tests
  * @param {number} [options.now] - Epoch milliseconds for the prune timestamp
+ * @param {Function|null} [options.remove_as_root] - Root deletion fallback for foreign-owned files
  * @returns {Promise<{ pruned: boolean, reason?: string, clone_id: string }>} Prune result
  */
 export const prune_managed_clone = async ( {
@@ -338,6 +385,7 @@ export const prune_managed_clone = async ( {
     mark_sessions,
     clones_dir = CLONES_DIR,
     now = Date.now(),
+    remove_as_root = null,
 } ) => {
 
     const release_lock = acquire_clone_lock( clone.clone_path, { clones_dir } )
@@ -374,7 +422,7 @@ export const prune_managed_clone = async ( {
             write_json_atomically( journal_path, marker )
             renameSync( current.clone_path, join( paths.trash, trash_name ) )
             quarantined = true
-            await complete_prune( marker, journal_path, paths, mark_sessions )
+            await complete_prune( marker, journal_path, paths, mark_sessions, remove_as_root )
         } catch ( error ) {
             if( !quarantined ) rmSync( journal_path, { force: true } )
             throw error

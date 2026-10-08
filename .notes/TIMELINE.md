@@ -151,3 +151,4 @@
 - 2026-10-08: --config idle rules win over sticky --loop; relative .md actions resolve beside the config file. v1.25.3.
 - 2026-10-08: run_on_start for idle rules (first fire after 30s quiet, then timeout). v1.26.0.
 - 2026-10-08: YOLO prompt scoped to explicitly given tasks; ask when none given. (1.26.0)
+- 2026-10-08: prune handles root-owned quarantines via Docker root removal + sudo hint; CI caches agent CLIs. v1.26.0.

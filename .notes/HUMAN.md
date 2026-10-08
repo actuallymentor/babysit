@@ -18,3 +18,6 @@
 
 ## 2026-10-08 — `--loop` vs `--config` idle rule
 - Decision: an explicit `--config FILE` with its own `on: idle` rule now wins over `--loop`, including a deliberate `--loop` flag and the live `babysit loop` toggle (which then reports enabled/disabled without changing the idle action). Chosen because the launch menu remembers the loop toggle and silently clobbered the user's config loop. Reviewers flagged that a deliberately typed `--loop` can no longer force LOOP.md over such a config. Distinguishing remembered-default from explicit flag would need source tracking through the menu; skipped for simplicity. Revisit if you want `--loop` to force LOOP.md.
+
+## 2026-10-08 — CI cache commit needs a `workflow`-scoped token
+- `.github/workflows/test.yml` change (cache pinned Codex/Claude CLIs under `~/.npm-global`, ~1 min per regression run) is committed locally on `main` but not pushed: the token in `.env.local` lacks the `workflow` scope and gh is not logged in here. Push it from a host with a scoped token or SSH key. Docker builds already use `type=gha` layer cache; `RUNTIME_REFRESH` intentionally rebuilds the agent layers nightly. Bun/npm caches are in place; Puppeteer uses system Chrome (puppeteer-core), nothing to cache there.
