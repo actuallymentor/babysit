@@ -52,10 +52,16 @@ const ask = ( question, { input = process.stdin, output = process.stdout } = {} 
     if( !input.isTTY ) return resolve( null )
     output.write( question )
     const lines = createInterface( { input } )
+    let answered = false
     lines.once( `line`, line => {
+        answered = true
         lines.close()
         input.unref?.()
         resolve( line.trim() )
+    } )
+    // Ctrl-D on the terminal: no answer given.
+    lines.once( `close`, () => {
+        if( !answered ) resolve( null )
     } )
 } )
 
