@@ -32,6 +32,14 @@ it( `cancels on n and refuses when stdin gives no answer`, async () => {
     expect( calls ).toEqual( [] )
 } )
 
+it( `rejects --status without an id instead of queueing an exit`, async () => {
+    const { calls, request } = stub()
+    for( const args of [ [ `--status` ], [ `--status`, `--yes` ] ] ) {
+        await expect( run_exit( args, { request, confirm: async () => `y` } ) ).rejects.toThrow( `Usage: babysit exit` )
+    }
+    expect( calls ).toEqual( [] )
+} )
+
 it( `skips the prompt for --yes, --help, and --status`, async () => {
     const { calls, request } = stub()
     let asked = 0

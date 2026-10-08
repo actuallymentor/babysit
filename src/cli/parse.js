@@ -41,6 +41,8 @@ export const parse_args = ( argv ) => {
     // Pre-process so a bare `--log` (no value) becomes `--log=` and mri's
     // `string` consumer doesn't grab the next flag as the value.
     const prepared = normalise_value_flags( argv[0] === `agy` ? [ `antigravity`, ...argv.slice( 1 ) ] : argv )
+        // mri reads `-n25` as the cluster n,2,5; split the attached row count for resume history.
+        .flatMap( arg => argv[0] === `resume` && /^-n\d+$/.test( arg ) ? [ `-n`, arg.slice( 2 ) ] : [ arg ] )
 
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
     // — so we omit it. Unknown flags are handled via collect_passthrough below.
@@ -244,7 +246,7 @@ export const parse_args = ( argv ) => {
                 prepared,
                 null,
                 session_id,
-                resume_listing ? [ `all`, `n` ] : uses_resume_history ? [ `all` ] : []
+                uses_resume_history ? [ `all`, `n` ] : []
             ),
         }
     }
@@ -265,7 +267,7 @@ export const parse_args = ( argv ) => {
         // Collect passthrough args (unknown flags for the agent CLI).
         // Drop the session id when present so the agent adapter is the only place
         // that injects the resume flag — otherwise the id appears twice.
-        const passthrough = collect_passthrough( prepared, agent, session_id, numbered_resume ? [ `all` ] : [] )
+        const passthrough = collect_passthrough( prepared, agent, session_id, numbered_resume ? [ `all`, `n` ] : [] )
 
         return { verb: sub_verb, agent, session_id, flags, passthrough }
 
