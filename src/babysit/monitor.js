@@ -3,7 +3,7 @@ import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
 import { send_keys } from '../tmux/send.js'
 import { has_session, kill_session, set_agent_status } from '../tmux/session.js'
-import { IdleTracker, strip_ansi, evaluate_rule } from './matcher.js'
+import { IdleTracker, strip_ansi, evaluate_rule, idle_timeout_for } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
 import { write_loop_deadline } from '../statusline/render.js'
@@ -169,7 +169,6 @@ export const start_monitor = async ( {
 
     // Find the idle rule once — used to publish the countdown for the statusline
     const idle_rule = rules.find( r => r.on.type === `idle` )
-    const idle_timeout_s = idle_rule?.timeout_s || config.idle_timeout_s
 
     log.info( `Monitoring session: ${ session_name }` )
     log.debug( `${ rules.length } rules loaded, polling every ${ POLL_INTERVAL_MS }ms` )
@@ -240,7 +239,7 @@ export const start_monitor = async ( {
 
             // Publish the idle countdown deadline for the statusline (only when it changes)
             if( idle_rule ) {
-                const deadline = agent_status === `waiting` ? `idle` : idle_tracker.get_deadline( idle_timeout_s )
+                const deadline = agent_status === `waiting` ? `idle` : idle_tracker.get_deadline( idle_timeout_for( idle_rule, config ) )
                 if( deadline !== null && deadline !== last_written_deadline ) {
                     write_loop_deadline_fn( deadline )
                     last_written_deadline = deadline

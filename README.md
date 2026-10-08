@@ -316,6 +316,7 @@ babysit:
 | `on` | `idle`, literal text, `/regex/flags` (literal and regex look at the last 10 pane lines) |
 | `do` | `enter`, named `config.commands` command, text, Markdown file |
 | `timeout` | Idle rules only: `SS`, `MM:SS`, `HH:MM:SS`; overrides `idle_timeout_s` |
+| `run_on_start` | Idle rules only: `true` fires on the first idle (30s of quiet) instead of waiting a full timeout; later fires use `timeout` |
 | Markdown steps | Separate with `===`; wait for idle between steps |
 | `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going`. A `--config FILE` with its own idle rule keeps that rule |
 

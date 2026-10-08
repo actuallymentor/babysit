@@ -80,6 +80,19 @@ describe( `should_fire_rule`, () => {
             expect( should_fire_rule( rule, ctx, 1_000_000 ) ).toBe( true )
         } )
 
+        it( `run_on_start fires on the first short idle, then waits the timeout`, () => {
+            const rule = make_rule( {
+                on: { type: `idle` },
+                timeout_s: 6 * 3600,
+                run_on_start: true,
+            } )
+            expect( should_fire_rule( rule, make_context( { idle_seconds: 10 } ), 1_000_000 ) ).toBe( false )
+            expect( should_fire_rule( rule, make_context( { idle_seconds: 30 } ), 1_000_000 ) ).toBe( true )
+            rule.last_fired_at = 1_000_000
+            expect( should_fire_rule( rule, make_context( { idle_seconds: 600 } ), 2_000_000_000 ) ).toBe( false )
+            expect( should_fire_rule( rule, make_context( { idle_seconds: 6 * 3600 } ), 2_000_000_000 ) ).toBe( true )
+        } )
+
         it( `does not fire when idle_seconds is below the timeout`, () => {
             const rule = make_rule( {
                 on: { type: `idle` },

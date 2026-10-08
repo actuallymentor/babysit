@@ -99,6 +99,23 @@ babysit:
         expect( rules[0].do ).toBe( join( clone, `babysit`, `LOOP.md` ) )
     } )
 
+    it( `parses run_on_start on idle rules only`, () => {
+        writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
+babysit:
+    - on: idle
+      do: keep going
+      timeout: 06:00:00
+      run_on_start: true
+    - on: /error/
+      do: enter
+      run_on_start: true
+` )
+        const { rules } = load_config( tmpdir_path )
+        expect( rules[0].run_on_start ).toBe( true )
+        expect( rules[0].timeout_s ).toBe( 6 * 3600 )
+        expect( rules[1].run_on_start ).toBe( false )
+    } )
+
     it( `parses custom config`, () => {
         writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
 config:

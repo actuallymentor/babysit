@@ -58,6 +58,8 @@ ${ comment_block( initial_prompt ) }
 #                             into steps, and Babysit waits for idle between steps
 #        any other text       type it, followed by Enter
 #   timeout: SS | MM:SS | HH:MM:SS   idle rules only; overrides idle_timeout_s
+#   run_on_start: true               idle rules only; fire on the first idle (30s quiet),
+#                                    then every timeout
 #
 # --loop replaces the idle rule's action with ./LOOP.md, ~/.agents/LOOP.md, or "Keep going".
 
@@ -254,17 +256,21 @@ const resolve_markdown_action = ( value, config_dir, commands = {} ) => {
  */
 const parse_rule = ( raw_rule, config_dir = process.cwd(), commands = {} ) => {
 
-    const { on: on_value, do: raw_do, timeout } = raw_rule
+    const { on: on_value, do: raw_do, timeout, run_on_start } = raw_rule
     const on = parse_on( on_value )
     const do_value = resolve_markdown_action( raw_do, config_dir, commands )
 
     // Only idle has a duration to override; other rules fire as soon as they match.
     if( timeout && on.type !== `idle` ) log.warn( `babysit.yaml: timeout on an "${ on_value }" rule is ignored; only idle rules take one` )
+    if( run_on_start && on.type !== `idle` ) log.warn( `babysit.yaml: run_on_start on an "${ on_value }" rule is ignored; only idle rules take one` )
 
     return {
         on,
         do: do_value,
         timeout_s: timeout && on.type === `idle` ? parse_timeout( timeout ) : null,
+
+        // First fire on the first idle instead of waiting a full timeout.
+        run_on_start: on.type === `idle` && run_on_start === true,
 
         // Last-fire timestamp for the per-rule debounce that suppresses
         // double-fires from TUI redraw flicker.
