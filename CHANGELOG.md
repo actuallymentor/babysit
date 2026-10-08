@@ -2,6 +2,9 @@
 
 ## 1.26.0 — 2026-10-08
 
+### Changed
+- The YOLO system prompt now says autonomy applies to tasks explicitly given in the session, that branch names, repository state, and notes are context rather than instructions, and that the agent should ask for a task when none was given.
+
 ### Added
 - `run_on_start: true` on an `on: idle` rule fires the action on the first idle (30 seconds of quiet) instead of waiting a full `timeout`; later fires use the timeout. `--loop` keeps the flag when it overrides the idle action.
 

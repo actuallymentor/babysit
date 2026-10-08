@@ -103,7 +103,7 @@ describe( `build_system_prompt`, () => {
     it( `appends YOLO fragment when mode.yolo is set`, () => {
         const prompt = build_system_prompt( { yolo: true } )
         expect( prompt ).toContain( `YOLO mode:` )
-        expect( prompt ).toContain( `act autonomously` )
+        expect( prompt ).toContain( `complete the tasks you are given autonomously` )
     } )
 
     it( `appends SANDBOX fragment when mode.sandbox is set`, () => {
@@ -128,7 +128,7 @@ describe( `build_system_prompt`, () => {
     it( `combines yolo and mudbox fragments`, () => {
         const prompt = build_system_prompt( { yolo: true, mudbox: true } )
         expect( prompt ).toContain( `read-only` )
-        expect( prompt ).toContain( `act autonomously` )
+        expect( prompt ).toContain( `complete the tasks you are given autonomously` )
     } )
 
     it( `appends Docker socket guidance when mode.docker is set`, () => {
