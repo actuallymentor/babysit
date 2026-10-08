@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { resolve } from 'path'
+import { dirname, isAbsolute, resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
@@ -181,22 +181,45 @@ export const load_config = ( dir = process.cwd(), { default_initial_prompt = bui
     }
 
     // Parse the rules array
+    // Markdown actions live next to the file that names them, so `./FILE.md`
+    // in a --config file outside the workspace still resolves.
     const raw_rules = Array.isArray( parsed.babysit ) ? parsed.babysit : []
-    const rules = raw_rules.map( parse_rule )
+    const rules = raw_rules.map( raw_rule => parse_rule( raw_rule, dirname( path ) ) )
 
     return { config, rules }
 
 }
 
 /**
+ * Anchor a relative markdown action to the config file's directory. Falls back
+ * to the raw value (resolved against cwd at execution time) when no such file
+ * exists beside the config, so workspace-relative paths keep working.
+ * @param {*} value - Raw do: value
+ * @param {string} config_dir - Directory holding the yaml file
+ * @returns {*} Absolute markdown path, or the untouched value
+ */
+const resolve_markdown_action = ( value, config_dir ) => {
+
+    if( typeof value !== `string` ) return value
+    const action = value.trim()
+    if( !action.endsWith( `.md` ) || isAbsolute( action ) ) return value
+
+    const beside_config = resolve( config_dir, action )
+    return existsSync( beside_config ) ? beside_config : value
+
+}
+
+/**
  * Parse a single babysit rule from the yaml
  * @param {Object} raw_rule - Raw { on, do, timeout } from yaml
+ * @param {string} [config_dir=process.cwd()] - Directory of the yaml file; relative `.md` actions resolve here
  * @returns {Object} Parsed rule with type, matcher, action, timeout_s
  */
-const parse_rule = ( raw_rule ) => {
+const parse_rule = ( raw_rule, config_dir = process.cwd() ) => {
 
-    const { on: on_value, do: do_value, timeout } = raw_rule
+    const { on: on_value, do: raw_do, timeout } = raw_rule
     const on = parse_on( on_value )
+    const do_value = resolve_markdown_action( raw_do, config_dir )
 
     // Only idle has a duration to override; other rules fire as soon as they match.
     if( timeout && on.type !== `idle` ) log.warn( `babysit.yaml: timeout on an "${ on_value }" rule is ignored; only idle rules take one` )

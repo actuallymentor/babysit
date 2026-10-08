@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { parse } from 'yaml'
@@ -48,6 +48,24 @@ describe( `babysit.yaml`, () => {
     it( `keeps default supervision examples disabled`, () => {
         const { rules } = load_config( tmpdir_path )
         expect( rules ).toEqual( [] )
+    } )
+
+    it( `resolves relative markdown actions beside a --config file`, () => {
+        const config_dir = join( tmpdir_path, `babysit` )
+        mkdirSync( config_dir )
+        writeFileSync( join( config_dir, `LOOP_ERRORS.md` ), `Fix errors` )
+        const config_path = join( config_dir, `errors.yaml` )
+        writeFileSync( config_path, `
+babysit:
+    - on: idle
+      do: ./LOOP_ERRORS.md
+    - on: idle
+      do: ./MISSING.md
+` )
+        const { rules } = load_config( tmpdir_path, { config_path } )
+        expect( rules[0].do ).toBe( join( config_dir, `LOOP_ERRORS.md` ) )
+        // Not beside the config: left for cwd resolution at execution time
+        expect( rules[1].do ).toBe( `./MISSING.md` )
     } )
 
     it( `parses custom config`, () => {
