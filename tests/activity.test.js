@@ -26,6 +26,8 @@ describe( `agent activity controls`, () => {
         for( const footer of [
             `⏵⏵ bypass permissions on · 1 shell · ← for agents`,
             `  2 shells · ← for agents`,
+            `⏵⏵ bypass permissions on · 2 shells, 2 monitors · ← for agents`,
+            `⏵⏵ bypass permissions on · 0 shells, 1 monitor · ← for agents`,
         ] ) {
             const screen = `✻ Churned for 2m 4s · done 1:03 PM · 1 shell still running\n────\n❯ ok, keep going\n────\nyolo·docker workspace\n${ footer }`
             expect( agent_status( screen, `claude`, 0 ) ).toBe( `waiting` )
@@ -35,11 +37,23 @@ describe( `agent activity controls`, () => {
         }
     } )
 
+    it( `keeps Claude waiting with the › composer and an expanded agent list`, () => {
+        const screen = [
+            `✻ Cogitated for 29s · done 7:37 PM · 2 shells, 2 monitors still running`,
+            ``, `────`, `› `, `────`,
+            `yolo·docker·clone org/repo ⎇ babysit/branch`,
+            `⏵⏵ bypass permissions on · 2 shells, 2 monitors · ← for agents`,
+            ``, `● main`, `○ general-purpose  Running WorkerTests device-memory release test`,
+        ].join( `\n` )
+        expect( agent_status( screen, `claude`, 300 ) ).toBe( `waiting` )
+    } )
+
     it( `returns to idle when shells finish and ignores historical shell counts`, () => {
         for( const screen of [
             `✻ Churned · 1 shell still running\n❯\n? for shortcuts`,
             `⏵⏵ bypass permissions on · 1 shell · ← for agents\n❯\n? for shortcuts`,
             `❯\n0 shells · ← for agents\n? for shortcuts`,
+            `›\n0 shells, 0 monitors · ← for agents\n? for shortcuts`,
             `The task has 1 shell still running\n❯\n? for shortcuts`,
         ] ) expect( agent_status( screen, `claude`, 300 ) ).toBe( `idle` )
         expect( agent_activity( `❯\n1 shell · ← for agents`, `codex` ) ).toBeNull()
