@@ -158,3 +158,4 @@
 - `babysit resume` capped at 10 rows (`-n N`, `--all` lifts). Numbering unchanged.
 - `babysit exit` prompts "You may only exit if the user explicitly told you…"; `--yes` bypasses; closed stdin refuses. System prompt reworded to match.
 - Incident: first version of `tests/exit_command.test.js` hit the real control store and exited the live dev session. Fixed via injected `request` seam (GOTCHAS 150).
+- Two phoneafriend rounds (gpt-6.1-sol) → 2233948 (`--status` w/o id no longer queues exit; non-TTY refuses immediately; `-n25`; numbered-resume passthrough) and 5845bde (TTY Ctrl-D; `-n25` only before `--`, also `<agent> resume`).
