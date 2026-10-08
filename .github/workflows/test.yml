@@ -35,13 +35,28 @@ jobs:
         with:
           bun-version: 1.3.14
 
+      # Pinned agent CLIs rarely change; restore the global prefix instead of
+      # reinstalling them (~1 min) on every run. Bump the key with the versions.
+      - name: Cache agent CLIs
+        id: agent-clis
+        uses: actions/cache@v6
+        with:
+          path: ~/.npm-global
+          key: agent-clis-${{ runner.os }}-codex-0.159.2-claude-2.1.285
+
+      - name: Install agent CLIs
+        if: steps.agent-clis.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/.npm-global"
+          npm install -g --prefix "$HOME/.npm-global" @openai/codex@0.159.2 @anthropic-ai/claude-code@2.1.285
+
       - name: Install test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y tmux python3 jq rsync acl
           bash src/docker/assets/install-antigravity.sh
-          npm install -g @openai/codex@0.159.2 @anthropic-ai/claude-code@2.1.285
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
           npm ci
           npm ci --prefix web
 
