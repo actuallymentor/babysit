@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
-import { dirname, isAbsolute, resolve } from 'path'
+import { dirname, isAbsolute, relative, resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
@@ -163,9 +163,14 @@ export const write_default_config = ( dir = process.cwd(), { initial_prompt = bu
  * @param {Object} [options]
  * @param {string} [options.default_initial_prompt] - Prompt used when the file omits initial_prompt
  * @param {string|null} [options.config_path] - Explicit --config file
+ * @param {string|null} [options.source_dir] - Clone source; a config inside it anchors its markdown to `dir` instead
  * @returns {{ config: Object, rules: Array }} Parsed config and rules
  */
-export const load_config = ( dir = process.cwd(), { default_initial_prompt = build_system_prompt( {} ), config_path = null } = {} ) => {
+export const load_config = ( dir = process.cwd(), {
+    default_initial_prompt = build_system_prompt( {} ),
+    config_path = null,
+    source_dir = null,
+} = {} ) => {
 
     if( config_path && !existsSync( config_path ) ) throw new Error( `Config file not found: ${ config_path }` )
     const path = config_path || resolve( dir, `babysit.yaml` )
@@ -180,29 +185,49 @@ export const load_config = ( dir = process.cwd(), { default_initial_prompt = bui
         config.initial_prompt = default_initial_prompt
     }
 
-    // Parse the rules array
     // Markdown actions live next to the file that names them, so `./FILE.md`
-    // in a --config file outside the workspace still resolves.
+    // in a --config file outside the workspace still resolves. A clone keeps
+    // reading the source's config file but must run the clone's own markdown.
+    const config_dir = rebase_dir( dirname( path ), source_dir, dir )
     const raw_rules = Array.isArray( parsed.babysit ) ? parsed.babysit : []
-    const rules = raw_rules.map( raw_rule => parse_rule( raw_rule, dirname( path ) ) )
+    const rules = raw_rules.map( raw_rule => parse_rule( raw_rule, config_dir, config.commands ) )
 
     return { config, rules }
 
 }
 
 /**
+ * Map a directory inside `from` to the same relative spot inside `to`.
+ * Directories outside `from` (or without a `from`) are returned unchanged.
+ * @param {string} dir - Directory to map
+ * @param {string|null} from - Source root
+ * @param {string} to - Target root
+ * @returns {string}
+ */
+const rebase_dir = ( dir, from, to ) => {
+
+    if( !from ) return dir
+    const inside = relative( from, dir )
+    if( inside.startsWith( `..` ) || isAbsolute( inside ) ) return dir
+    return resolve( to, inside )
+
+}
+
+/**
  * Anchor a relative markdown action to the config file's directory. Falls back
  * to the raw value (resolved against cwd at execution time) when no such file
- * exists beside the config, so workspace-relative paths keep working.
+ * exists beside the config, so workspace-relative paths keep working. Named
+ * commands are dispatched first by execute_action, so they are never touched.
  * @param {*} value - Raw do: value
  * @param {string} config_dir - Directory holding the yaml file
+ * @param {Object} [commands={}] - config.commands lookup
  * @returns {*} Absolute markdown path, or the untouched value
  */
-const resolve_markdown_action = ( value, config_dir ) => {
+const resolve_markdown_action = ( value, config_dir, commands = {} ) => {
 
     if( typeof value !== `string` ) return value
     const action = value.trim()
-    if( !action.endsWith( `.md` ) || isAbsolute( action ) ) return value
+    if( commands?.[ action ] || !action.endsWith( `.md` ) || isAbsolute( action ) ) return value
 
     const beside_config = resolve( config_dir, action )
     return existsSync( beside_config ) ? beside_config : value
@@ -213,13 +238,14 @@ const resolve_markdown_action = ( value, config_dir ) => {
  * Parse a single babysit rule from the yaml
  * @param {Object} raw_rule - Raw { on, do, timeout } from yaml
  * @param {string} [config_dir=process.cwd()] - Directory of the yaml file; relative `.md` actions resolve here
+ * @param {Object} [commands={}] - config.commands, which take precedence over file paths
  * @returns {Object} Parsed rule with type, matcher, action, timeout_s
  */
-const parse_rule = ( raw_rule, config_dir = process.cwd() ) => {
+const parse_rule = ( raw_rule, config_dir = process.cwd(), commands = {} ) => {
 
     const { on: on_value, do: raw_do, timeout } = raw_rule
     const on = parse_on( on_value )
-    const do_value = resolve_markdown_action( raw_do, config_dir )
+    const do_value = resolve_markdown_action( raw_do, config_dir, commands )
 
     // Only idle has a duration to override; other rules fire as soon as they match.
     if( timeout && on.type !== `idle` ) log.warn( `babysit.yaml: timeout on an "${ on_value }" rule is ignored; only idle rules take one` )
