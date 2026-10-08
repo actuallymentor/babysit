@@ -152,3 +152,4 @@
 - 2026-10-08: run_on_start for idle rules (first fire after 30s quiet, then timeout). v1.26.0.
 - 2026-10-08: YOLO prompt scoped to explicitly given tasks; ask when none given. (1.26.0)
 - 2026-10-08: prune handles root-owned quarantines via Docker root removal + sudo hint; CI caches agent CLIs. v1.26.0.
+- 2026-10-08: 1.26.0 was cut from c133544 before the yolo prompt commit; re-released as 1.26.1. Lesson: bump version in the last commit of a batch.
