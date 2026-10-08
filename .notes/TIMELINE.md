@@ -159,3 +159,5 @@
 - `babysit exit` prompts "You may only exit if the user explicitly told you…"; `--yes` bypasses; closed stdin refuses. System prompt reworded to match.
 - Incident: first version of `tests/exit_command.test.js` hit the real control store and exited the live dev session. Fixed via injected `request` seam (GOTCHAS 150).
 - Two phoneafriend rounds (gpt-6.1-sol) → 2233948 (`--status` w/o id no longer queues exit; non-TTY refuses immediately; `-n25`; numbered-resume passthrough) and 5845bde (TTY Ctrl-D; `-n25` only before `--`, also `<agent> resume`).
+
+- 2026-10-08 — 1.27.1: Claude footer gained comma-separated background counts ("2 shells, 2 monitors · ← for agents") and a `›` composer; activity matcher now parses any count list, non-zero ⇒ waiting.

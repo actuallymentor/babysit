@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.27.1 — 2026-10-08
+
+### Fixed
+- Claude's newer footer `2 shells, 2 monitors · ← for agents` (comma-separated counts, `›` composer, agent rows below the footer) now keeps the session in `waiting`, so idle rules no longer fire while background shells or monitors are still running. Any non-zero count holds; `0 shells, 0 monitors` returns to idle.
+
 ## 1.27.0 — 2026-10-08
 
 ### Added

@@ -36,11 +36,14 @@ export const agent_activity = ( output, agent_name ) => {
         break
 
     case `claude`: {
-        // A completed foreground reply can leave background shells alive. Only
-        // read the native footer below the composer, never old transcript text.
-        const composer = lines.findLastIndex( line => /^\s*❯/.test( line ) )
+        // A completed foreground reply can leave background shells or
+        // monitors alive: "2 shells, 2 monitors · ← for agents". Only read the
+        // native footer below the composer (❯, or › in newer builds), never old
+        // transcript text. Any non-zero count keeps the session waiting.
+        const composer = lines.findLastIndex( line => /^\s*[❯›]/.test( line ) )
         const controls = lines.slice( composer + 1 ).join( `\n` )
-        if( /(?:^\s*|[·•]\s*)[1-9]\d* shells?\s*[·•]\s*← for agents\s*$/m.test( controls ) ) return `waiting`
+        const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*$/m )
+        if( counts && /\b[1-9]\d* [a-z]+/.test( counts[ 1 ] ) ) return `waiting`
         if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
     }
