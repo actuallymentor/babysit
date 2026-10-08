@@ -1526,6 +1526,7 @@ async function start_session( cmd ) {
     // keeps the rules object internally consistent during the foreground.
     if( flags.loop ) apply_loop( rules, workspace, {
         include_global_loop: !mode.ignore_host_agents_md,
+        config_path,
     } )
 
     // /original remains writable for deliberate merge-back work, so clone

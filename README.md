@@ -60,7 +60,7 @@ Use explicit commands in scripts.
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
 | `--log[=PATH]` | Append raw tmux output to file |
-| `--config FILE` | Use FILE instead of `./babysit.yaml`; the session keeps it on resume and in clones. Works with the launch menu too: `babysit --config FILE` |
+| `--config FILE` | Use FILE instead of `./babysit.yaml`; relative `do: ./X.md` paths resolve beside FILE. The session keeps it on resume and in clones. Works with the launch menu too: `babysit --config FILE` |
 
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
@@ -317,7 +317,7 @@ babysit:
 | `do` | `enter`, named `config.commands` command, text, Markdown file |
 | `timeout` | Idle rules only: `SS`, `MM:SS`, `HH:MM:SS`; overrides `idle_timeout_s` |
 | Markdown steps | Separate with `===`; wait for idle between steps |
-| `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going` |
+| `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going`. A `--config FILE` with its own idle rule keeps that rule |
 
 `--ignore-host-agents-md` skips the host `LOOP.md`.
 

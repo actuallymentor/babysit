@@ -339,6 +339,7 @@ export const cmd_monitor = async ( cmd ) => {
         if( session.modifiers?.includes( `loop` ) ) {
             apply_loop( rules, workspace, {
                 include_global_loop: !session.modifiers.includes( `ignore-host-agents-md` ),
+                config_path: session.config_path || null,
             } )
         }
 

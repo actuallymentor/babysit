@@ -32,7 +32,10 @@ export const create_loop_controller = ( session, {
 
     const rebuild_rules = () => {
         rules.splice( 0, rules.length, ...load_rules() )
-        if( enabled() ) apply( rules, workspace, { include_global_loop: !modifiers().includes( `ignore-host-agents-md` ) } )
+        if( enabled() ) apply( rules, workspace, {
+            include_global_loop: !modifiers().includes( `ignore-host-agents-md` ),
+            config_path: session.config_path || null,
+        } )
     }
 
     return {

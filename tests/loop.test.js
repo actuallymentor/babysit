@@ -45,4 +45,33 @@ describe( `apply_loop`, () => {
 
     } )
 
+    it( `keeps an explicit --config idle rule instead of LOOP.md`, () => {
+
+        const workspace = mkdtempSync( join( tmpdir(), `babysit-loop-config-` ) )
+        writeFileSync( join( workspace, `LOOP.md` ), `Project instructions` )
+
+        try {
+            const rules = make_rules()
+            apply_loop( rules, workspace, { config_path: join( workspace, `errors.yaml` ) } )
+            expect( rules[0].do ).toBe( `old action` )
+        } finally {
+            rmSync( workspace, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `still inserts the loop rule when the --config file has no idle rule`, () => {
+
+        const workspace = mkdtempSync( join( tmpdir(), `babysit-loop-config-empty-` ) )
+
+        try {
+            const rules = []
+            apply_loop( rules, workspace, { include_global_loop: false, config_path: join( workspace, `errors.yaml` ) } )
+            expect( rules[0].do ).toBe( `Keep going` )
+        } finally {
+            rmSync( workspace, { recursive: true, force: true } )
+        }
+
+    } )
+
 } )

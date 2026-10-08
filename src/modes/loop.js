@@ -13,10 +13,20 @@ const DEFAULT_LOOP_TEXT = `Keep going`
  * @param {string} [workspace=process.cwd()] - Current working directory
  * @param {Object} [options]
  * @param {boolean} [options.include_global_loop=true] - Allow the host ~/.agents fallback
+ * @param {string|null} [options.config_path=null] - Explicit --config file; its own idle rule wins over LOOP.md
  */
 export const apply_loop = ( rules, workspace = process.cwd(), {
     include_global_loop = true,
+    config_path = null,
 } = {} ) => {
+
+    // A hand-picked --config file that defines its own idle action is the
+    // user's loop; a remembered --loop toggle must not swap it for LOOP.md.
+    const idle_index = rules.findIndex( r => r.on.type === `idle` )
+    if( config_path && idle_index >= 0 ) {
+        log.info( `Loop mode: keeping the idle rule from ${ config_path }` )
+        return
+    }
 
     // Find the loop source
     const local_loop = resolve( workspace, `LOOP.md` )
@@ -36,8 +46,6 @@ export const apply_loop = ( rules, workspace = process.cwd(), {
     }
 
     // Override the idle rule's action but keep its timeout, or insert one at position 0
-    const idle_index = rules.findIndex( r => r.on.type === `idle` )
-
     const loop_rule = {
         on: { type: `idle` },
         do: loop_action,

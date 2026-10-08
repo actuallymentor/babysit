@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.25.3 — 2026-10-08
+
+### Fixed
+- `--config FILE` idle rules now win over `--loop`. The launch menu remembers the loop toggle, so a config with its own `on: idle` action was silently replaced by `./LOOP.md` or `~/.agents/LOOP.md`. Relative `.md` actions (`do: ./FILE.md`) also resolve beside the config file first, so a config outside the workspace finds its own instruction files.
+
 ## 1.25.2 — 2026-10-07
 
 ### Fixed
