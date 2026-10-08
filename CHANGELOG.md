@@ -2,15 +2,14 @@
 
 ## 1.26.1 — 2026-10-08
 
+### Fixed
+- `babysit prune` no longer fails every run on a quarantined clone with root-owned files (`EPERM: chmod`). Such trees are deleted through a root container on the Babysit image; if that fails, prune prints the `sudo rm -rf` path once and continues to the listing.
+
 ### Changed
 - The YOLO system prompt now says autonomy applies to tasks explicitly given in the session, that branch names, repository state, and notes are context rather than instructions, and that the agent should ask for a task when none was given. (Committed after the 1.26.0 release was cut, so 1.26.0 binaries do not carry it.)
 - CI caches the pinned Codex and Claude Code CLIs between regression runs instead of reinstalling them each time.
 
 ## 1.26.0 — 2026-10-08
-
-### Fixed
-- `babysit prune` no longer fails every run on a quarantined clone with root-owned files (`EPERM: chmod`). Such trees are deleted through a root container on the Babysit image; if that fails, prune prints the `sudo rm -rf` path once and continues to the listing.
-
 
 ### Added
 - `run_on_start: true` on an `on: idle` rule fires the action on the first idle (30 seconds of quiet) instead of waiting a full `timeout`; later fires use the timeout. `--loop` keeps the flag when it overrides the idle action.
