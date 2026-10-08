@@ -15,7 +15,8 @@ export const agent_activity = ( output, agent_name ) => {
 
     // Ignore trailing blank rows and old transcript text above the controls.
     // Interrupt hints remain present while a tool waits without printing output.
-    const lines = strip_ansi( output ).trimEnd().split( `\n` ).slice( -8 )
+    const screen = strip_ansi( output ).trimEnd().split( `\n` )
+    const lines = screen.slice( -8 )
     const footer = lines.join( `\n` )
     const interrupt = /(?:^\s*|[·•(]\s*|\s{2,})esc(?:ape)?\s+(?:to\s+)?(?:interrupt|cancel|stop)\b/i
 
@@ -38,10 +39,12 @@ export const agent_activity = ( output, agent_name ) => {
     case `claude`: {
         // A completed foreground reply can leave background shells or
         // monitors alive: "2 shells, 2 monitors · ← for agents". Only read the
-        // native footer below the composer (❯, or › in newer builds), never old
-        // transcript text. Any non-zero count keeps the session waiting.
-        const composer = lines.findLastIndex( line => /^\s*[❯›]/.test( line ) )
-        const controls = lines.slice( composer + 1 ).join( `\n` )
+        // native footer below the composer (❯, or › in newer builds), never
+        // transcript prose. The expanded agent list can push that footer well
+        // above the last 8 rows, so look deeper but still require the composer.
+        const tail = screen.slice( -40 )
+        const composer = tail.findLastIndex( line => /^\s*[❯›]/.test( line ) )
+        const controls = composer < 0 ? `` : tail.slice( composer + 1 ).join( `\n` )
         const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*$/m )
         if( counts && /\b[1-9]\d* [a-z]+/.test( counts[ 1 ] ) ) return `waiting`
         if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
