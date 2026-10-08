@@ -206,7 +206,7 @@ babysit loop                  # Toggle --loop for this session; prints "Looping 
 ```
 
 `babysit exit` first asks `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n`;
-without a TTY or piped answer it refuses and points at `--yes`. Confirmed, it marks the session intentionally
+without a terminal on stdin it refuses and points at `--yes`. Confirmed, it marks the session intentionally
 closed (recovery will not relaunch it), waits for the agent's composer to be idle, sends `/exit`, and forces a
 close if the agent has not quit after 30 seconds.
 

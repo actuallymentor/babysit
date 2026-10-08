@@ -149,7 +149,7 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null, al
 
     } )
 
-    if( sessions.length < total ) console.log( `\nShowing ${ sessions.length } of ${ total }. More rows: babysit resume -n <N>${ all ? ` --all` : `` }` )
+    if( sessions.length < total ) console.log( `\nShowing ${ sessions.length } of ${ total }. Show all ${ total } rows: babysit resume -n ${ total }${ all ? ` --all` : `` }` )
     if( workspace ) console.log( `\nShow every workspace with: babysit resume --all` )
 
     console.log( `\nResume one with: babysit resume <number|babysit_id>${ all ? ` --all` : `` }\n` )

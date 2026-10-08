@@ -46,34 +46,30 @@ const session_request = ( operation, help, args = [] ) => {
     return terminal_request( operation, status_index >= 0 ? { status_id: args[ status_index + 1 ] } : {} )
 }
 
-// One line from stdin; null when stdin closes without an answer (no TTY, nothing piped).
+// Prompt on a terminal only. Agent tools hold stdin open or closed without a
+// TTY; either way there is nobody to answer, so refuse instead of hanging.
 const ask = ( question, { input = process.stdin, output = process.stdout } = {} ) => new Promise( resolve => {
+    if( !input.isTTY ) return resolve( null )
     output.write( question )
     const lines = createInterface( { input } )
-    let answered = false
     lines.once( `line`, line => {
-        answered = true
         lines.close()
+        input.unref?.()
         resolve( line.trim() )
-    } )
-    lines.once( `close`, () => {
-        if( !answered ) resolve( null )
     } )
 } )
 
-/**
- * Ask the host monitor to end this session once the agent is idle.
- * Agents reach for exit when a task feels finished; the confirmation makes
- * them check that the user actually asked. `--yes` carries that answer.
- */
 export const run_exit = async ( args, { confirm = ask, request = session_request } = {} ) => {
     const skip = args.includes( `--yes` ) || args.includes( `-y` )
     const passthrough = args.filter( arg => ![ `--yes`, `-y` ].includes( arg ) )
-    if( skip || passthrough.includes( `--status` ) || passthrough.includes( `--help` ) || passthrough.includes( `-h` ) ) {
+    // A status query must never turn into an exit request: insist on its id.
+    const status_index = passthrough.indexOf( `--status` )
+    if( status_index >= 0 && !passthrough[ status_index + 1 ] ) throw new Error( exit_help )
+    if( skip || status_index >= 0 || passthrough.includes( `--help` ) || passthrough.includes( `-h` ) ) {
         return request( `exit`, exit_help, passthrough )
     }
     const answer = await confirm( EXIT_CONFIRMATION )
-    if( answer === null ) throw new Error( `Exit not confirmed: no answer on stdin. If the user explicitly asked you to exit, run: babysit exit --yes` )
+    if( answer === null ) throw new Error( `${ EXIT_CONFIRMATION.trim() }\nNo terminal to answer on. If the user explicitly asked you to exit, run: babysit exit --yes` )
     if( ![ ``, `y`, `yes` ].includes( answer.toLowerCase() ) ) throw new Error( `Exit cancelled.` )
     return request( `exit`, exit_help, passthrough )
 }

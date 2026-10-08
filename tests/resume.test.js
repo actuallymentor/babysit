@@ -315,7 +315,7 @@ describe( `cmd_resume session listing`, () => {
             print_resumable_sessions_table( [ sessions[0] ], { total: 12 } )
         } )
 
-        expect( output ).toContain( `Showing 1 of 12. More rows: babysit resume -n <N>` )
+        expect( output ).toContain( `Showing 1 of 12. Show all 12 rows: babysit resume -n 12` )
 
     } )
 
