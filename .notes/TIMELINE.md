@@ -149,3 +149,4 @@
 - 2026-10-07: restart review fixes (sandbox, control-based idle guard, native id, env/args carry-over, xclip stdout). v1.25.1.
 - 2026-10-07: Fixed pre-connect credential sync race (defer host changes until transport). v1.25.2.
 - 2026-10-08: --config idle rules win over sticky --loop; relative .md actions resolve beside the config file. v1.25.3.
+- 2026-10-08: run_on_start for idle rules (first fire after 30s quiet, then timeout). v1.26.0.

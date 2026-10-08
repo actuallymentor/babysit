@@ -9,6 +9,7 @@ const make_rules = () => [ {
     on: { type: `idle` },
     do: `old action`,
     timeout_s: 30,
+    run_on_start: true,
 } ]
 
 describe( `apply_loop`, () => {
@@ -23,8 +24,9 @@ describe( `apply_loop`, () => {
             const rules = make_rules()
             apply_loop( rules, workspace, { include_global_loop: false } )
             expect( rules[0].do ).toBe( local_loop )
-            // The user's idle timeout survives the action override
+            // The user's idle timeout and run_on_start survive the action override
             expect( rules[0].timeout_s ).toBe( 30 )
+            expect( rules[0].run_on_start ).toBe( true )
         } finally {
             rmSync( workspace, { recursive: true, force: true } )
         }

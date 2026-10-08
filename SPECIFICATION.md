@@ -15,7 +15,7 @@ The core functionality is that when run, `babysit` will:
 - Run mode is passed to the container through the environment variable AGENT_AUTONOMY_MODE, which can be `sandbox`, `mudbox`, `yolo`, or empty for default. The system prompt of the coding agent is configured based on this mode to give the agent appropriate instructions and limitations.
 - The `babysit` cli monitors the content of the sessions and provides input based on `babysit.yaml`, a file the cli creates on first run in the current directory. The instructions there are "first one wins" when there are conflicts.
 - The `babysit.yaml` file has `config` and `babysit` sections. The `config` section contains configutations about behavior. The `babysit` section contains the actions that `babysit` takes depending on the output (or idle) of the tmux session with the coding agent. The `babysit:` section contains `on/do` pairs where `on` can be a keyword, a literal string, or a regex. The `do` can be a command defined in the `config:` section, a literal string, or a markdown file. In both string and markdown cases, sections may be defined using `===` segments, which instructs `babysit` to wait for idle after executing each segment. This allows the user to create complex instructions that are executed step by step when the agent is idle in between.
-- The `on:` keyword options are: idle, literal string, and regex. Idle means "no new output in the tmux session for longer than the timeout". Literal and regex matching work on the last 10 lines of output and fire as soon as they match. Plan and choice detection (per-agent pattern tables) were removed in 1.16.0: every supported agent now has a native bypass mode and plan UI, so Babysit no longer presses keys for them.
+- The `on:` keyword options are: idle, literal string, and regex. Idle means "no new output in the tmux session for longer than the timeout". An idle rule with `run_on_start: true` fires its first action after the first 30 seconds of quiet and only then starts counting full timeouts. Literal and regex matching work on the last 10 lines of output and fire as soon as they match. Plan and choice detection (per-agent pattern tables) were removed in 1.16.0: every supported agent now has a native bypass mode and plan UI, so Babysit no longer presses keys for them.
 
 The generated `babysit.yaml` has the following shape. The full mode-aware launch prompt replaces the abbreviated `initial_prompt` content below. Commands and supervision rules are examples only; users explicitly uncomment and configure the ones they want.
 
@@ -48,6 +48,7 @@ babysit:
     # - on: idle # this means no new output in the tmux session
     #   do: ./IDLE.md # create this file first; relative and absolute paths work
     #   timeout: 30:00 # overrides idle_timeout_s; SS, MM:SS, or HH:MM:SS
+    #   run_on_start: true # fire on the first idle (30s quiet) instead of waiting a full timeout
 
 
 

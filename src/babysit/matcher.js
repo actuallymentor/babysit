@@ -13,6 +13,25 @@ const ANSI_RE = /\x1b\[\??[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][0-9A-Za-z]
  */
 const quick_hash = ( str ) => createHash( `sha256` ).update( str ).digest( `hex` )
 
+// Quiet time that counts as "first idle" for run_on_start rules. Matches the
+// idle wait between markdown segments, so a brief pause mid-work is not idle.
+const FIRST_IDLE_S = 30
+
+/**
+ * Seconds of quiet an idle rule needs before it fires. A `run_on_start` rule
+ * that has never fired uses the short first-idle window; after that, its
+ * timeout applies.
+ * @param {Object} rule - Parsed idle rule
+ * @param {Object} [config={}] - Babysit config section (idle_timeout_s fallback)
+ * @returns {number}
+ */
+export const idle_timeout_for = ( rule, config = {} ) => {
+
+    if( rule.run_on_start && !rule.last_fired_at ) return FIRST_IDLE_S
+    return rule.timeout_s || config.idle_timeout_s
+
+}
+
 /**
  * Strip ANSI escape sequences from text, preserving visual spacing
  * @param {string} text - Raw terminal output
@@ -125,7 +144,7 @@ export const evaluate_rule = ( rule, context ) => {
     switch ( on.type ) {
 
     case `idle`:
-        return idle_seconds >= ( rule.timeout_s || config.idle_timeout_s )
+        return idle_seconds >= idle_timeout_for( rule, config )
 
     case `regex`:
         return test_pattern( on.value, last_n_lines( output, MATCH_WINDOW_LINES ) )

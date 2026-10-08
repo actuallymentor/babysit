@@ -50,6 +50,7 @@ export const apply_loop = ( rules, workspace = process.cwd(), {
         on: { type: `idle` },
         do: loop_action,
         timeout_s: rules[ idle_index ]?.timeout_s ?? null,
+        run_on_start: rules[ idle_index ]?.run_on_start ?? false,
         last_fired_at: 0,
     }
 

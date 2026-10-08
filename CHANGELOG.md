@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.26.0 — 2026-10-08
+
+### Added
+- `run_on_start: true` on an `on: idle` rule fires the action on the first idle (30 seconds of quiet) instead of waiting a full `timeout`; later fires use the timeout. `--loop` keeps the flag when it overrides the idle action.
+
 ## 1.25.3 — 2026-10-08
 
 ### Fixed
