@@ -68,6 +68,37 @@ babysit:
         expect( rules[1].do ).toBe( `./MISSING.md` )
     } )
 
+    it( `leaves a named command alone even when a same-named file exists`, () => {
+        writeFileSync( join( tmpdir_path, `notify.md` ), `not a command` )
+        writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
+config:
+    commands:
+        notify.md: echo hi
+babysit:
+    - on: idle
+      do: notify.md
+` )
+        const { rules } = load_config( tmpdir_path )
+        expect( rules[0].do ).toBe( `notify.md` )
+    } )
+
+    it( `anchors in-tree config markdown to the clone workspace`, () => {
+        const source = join( tmpdir_path, `source` )
+        const clone = join( tmpdir_path, `clone` )
+        mkdirSync( join( source, `babysit` ), { recursive: true } )
+        mkdirSync( join( clone, `babysit` ), { recursive: true } )
+        writeFileSync( join( source, `babysit`, `LOOP.md` ), `source copy` )
+        writeFileSync( join( clone, `babysit`, `LOOP.md` ), `clone copy` )
+        const config_path = join( source, `babysit`, `errors.yaml` )
+        writeFileSync( config_path, `
+babysit:
+    - on: idle
+      do: ./LOOP.md
+` )
+        const { rules } = load_config( clone, { config_path, source_dir: source } )
+        expect( rules[0].do ).toBe( join( clone, `babysit`, `LOOP.md` ) )
+    } )
+
     it( `parses custom config`, () => {
         writeFileSync( join( tmpdir_path, `babysit.yaml` ), `
 config:

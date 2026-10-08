@@ -5,7 +5,7 @@ import { read_durable_exit } from '../sessions/transcript.js'
 import { existsSync } from 'fs'
 
 import { log } from '../utils/log.js'
-import { load_session, session_workspace, update_session } from '../sessions/store.js'
+import { load_session, session_original_workspace, session_workspace, update_session } from '../sessions/store.js'
 import { load_config } from '../babysit/yaml.js'
 import { get_agent } from '../agents/index.js'
 import { apply_loop } from '../modes/loop.js'
@@ -70,6 +70,7 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
 export const load_monitor_config = ( session = {} ) => load_config( session_workspace( session ), {
     default_initial_prompt: build_system_prompt( mode_from_modifiers( session.modifiers ) ),
     config_path: session.config_path || null,
+    source_dir: session.clone ? session_original_workspace( session ) : null,
 } )
 
 /**

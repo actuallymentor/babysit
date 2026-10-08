@@ -1512,6 +1512,7 @@ async function start_session( cmd ) {
     const { config, rules } = load_config( workspace, {
         default_initial_prompt: build_system_prompt( mode ),
         config_path,
+        source_dir: mode.clone ? original_workspace : null,
     } )
 
     base_session_data.launch_spec.config_hash = workspace_config_hash( workspace, config_path )

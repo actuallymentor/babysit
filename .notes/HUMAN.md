@@ -15,3 +15,6 @@
 
 - Pre-existing sync race: FIXED in 1.25.2 (host changes seen without a transport are deferred until connect). No action needed.
 - GitHub returned `Internal Server Error` on every push (even ref-only pushes of commits it already has) from 16:55Z; githubstatus.com said all green. A retry loop was left running; if `3f7cd67` is not on origin/main, push it by hand.
+
+## 2026-10-08 — `--loop` vs `--config` idle rule
+- Decision: an explicit `--config FILE` with its own `on: idle` rule now wins over `--loop`, including a deliberate `--loop` flag and the live `babysit loop` toggle (which then reports enabled/disabled without changing the idle action). Chosen because the launch menu remembers the loop toggle and silently clobbered the user's config loop. Reviewers flagged that a deliberately typed `--loop` can no longer force LOOP.md over such a config. Distinguishing remembered-default from explicit flag would need source tracking through the menu; skipped for simplicity. Revisit if you want `--loop` to force LOOP.md.
