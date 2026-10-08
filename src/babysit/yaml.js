@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, realpathSync } from 'fs'
 import { dirname, isAbsolute, relative, resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
@@ -207,10 +207,21 @@ export const load_config = ( dir = process.cwd(), {
 const rebase_dir = ( dir, from, to ) => {
 
     if( !from ) return dir
-    const inside = relative( from, dir )
-    if( inside.startsWith( `..` ) || isAbsolute( inside ) ) return dir
+
+    // Compare canonical paths: the launcher canonicalizes the source workspace,
+    // while --config may have been typed through a symlinked alias.
+    const inside = relative( real_path( from ), real_path( dir ) )
+    if( inside === `..` || inside.startsWith( `../` ) || isAbsolute( inside ) ) return dir
     return resolve( to, inside )
 
+}
+
+const real_path = path => {
+    try {
+        return realpathSync( path )
+    } catch {
+        return path
+    }
 }
 
 /**
