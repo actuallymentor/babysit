@@ -1,7 +1,9 @@
 import { inspect_stored_sessions } from '../sessions/store.js'
 import { run } from '../utils/exec.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
-import { docker_command_prefix } from './run.js'
+import { basename, dirname } from 'path'
+import { docker_command_prefix, resolve_workspace_mount_source } from './run.js'
+import { get_image_name } from './update.js'
 
 const lines = value => value.split( `\n` ).filter( Boolean )
 
@@ -73,5 +75,34 @@ export const prune_unused_docker = async ( {
     await docker( [ `builder`, `prune`, `--force` ], 10 * 60_000 )
 
     return `Docker: removed ${ removed_containers } stopped containers and ${ removed_images } images; pruned unused networks and build cache. Volumes kept.`
+
+}
+
+/**
+ * Delete a quarantined clone tree that contains files the host user does not
+ * own (written as root inside a container). A throwaway container running as
+ * root on the babysit image removes it; only the quarantine's parent is mounted.
+ * @param {string} path - Absolute quarantine path
+ * @param {Object} [options]
+ * @param {Function} [options.run_command] - Docker command runner
+ * @param {string[]} [options.command_prefix] - Docker executable and optional sudo prefix
+ * @param {string} [options.image] - Image to run `rm` from
+ * @returns {Promise<void>}
+ */
+export const remove_tree_as_root = async ( path, {
+    run_command = run,
+    command_prefix = docker_command_prefix(),
+    image = get_image_name(),
+} = {} ) => {
+
+    const [ command, ...prefix_args ] = command_prefix
+
+    // Bind mounts are resolved by the daemon host, so a nested Babysit session
+    // must hand over the host-visible path.
+    await run_command( command, [
+        ...prefix_args, `run`, `--rm`, `--user`, `0`, `--network`, `none`,
+        `-v`, `${ resolve_workspace_mount_source( dirname( path ) ) }:/babysit-trash`,
+        `--entrypoint`, `rm`, image, `-rf`, `/babysit-trash/${ basename( path ) }`,
+    ], {}, 120_000 )
 
 }

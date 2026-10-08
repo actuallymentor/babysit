@@ -11,7 +11,7 @@ import {
     recover_prune_operations,
 } from '../prune.js'
 import { inspect_docker_container_state } from '../docker/file_transport.js'
-import { prune_unused_docker } from '../docker/prune.js'
+import { prune_unused_docker, remove_tree_as_root } from '../docker/prune.js'
 import { inspect_stored_sessions, update_session } from '../sessions/store.js'
 import { list_sessions } from '../tmux/session.js'
 import { CLONES_DIR, SESSIONS_DIR } from '../utils/paths.js'
@@ -418,6 +418,7 @@ export const cmd_prune = async ( cmd, {
     prune_clone = prune_managed_clone,
     recover_prunes = recover_prune_operations,
     prune_docker = prune_unused_docker,
+    remove_as_root = remove_tree_as_root,
     ask = null,
     now = Date.now,
 } = {} ) => {
@@ -429,9 +430,13 @@ export const cmd_prune = async ( cmd, {
     const inventory_options = { clones_dir, sessions_dir }
     const mark_sessions = session_marker( sessions_dir )
     if( !cmd.flags.list ) {
-        const recovery = await recover_prunes( { clones_dir, mark_sessions } )
+        // Finish prunes that were confirmed earlier but never fully deleted.
+        // A quarantine with root-owned files is reported with the fix and skipped.
+        const recovery = await recover_prunes( { clones_dir, mark_sessions, remove_as_root } )
         recovery.recovered.forEach( clone_id => write_line( output, `Finished interrupted prune: ${ clone_id }` ) )
-        recovery.failed.forEach( ( { path, error } ) => write_line( output, `Could not finish interrupted prune ${ path }: ${ error.message }` ) )
+        recovery.failed.forEach( ( { path, clone_id, error } ) => write_line( output, error.code === `EFOREIGN`
+            ? `Skipping quarantined clone ${ clone_id }: it has files owned by another user and Docker could not delete them. Run: sudo rm -rf ${ error.path }`
+            : `Could not finish interrupted prune ${ path }: ${ error.message }` ) )
     }
 
     const initial = await inspect_inventory( inventory_options )
@@ -491,6 +496,7 @@ export const cmd_prune = async ( cmd, {
                     session_ids: clone.records.map( ( { session } ) => session.babysit_id ).filter( Boolean ),
                     clones_dir,
                     mark_sessions,
+                    remove_as_root,
                     now: now(),
                     revalidate: async current => {
                         const fresh = await inspect_inventory( {

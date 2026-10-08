@@ -2,6 +2,9 @@
 
 ## 1.26.0 — 2026-10-08
 
+### Fixed
+- `babysit prune` no longer fails every run on a quarantined clone with root-owned files (`EPERM: chmod`). Such trees are deleted through a root container on the Babysit image; if that fails, prune prints the `sudo rm -rf` path once and continues to the listing.
+
 ### Changed
 - The YOLO system prompt now says autonomy applies to tasks explicitly given in the session, that branch names, repository state, and notes are context rather than instructions, and that the agent should ask for a task when none was given.
 
