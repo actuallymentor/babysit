@@ -46,6 +46,15 @@ describe( `agent activity controls`, () => {
             ``, `● main`, `○ general-purpose  Running WorkerTests device-memory release test`,
         ].join( `\n` )
         expect( agent_status( screen, `claude`, 300 ) ).toBe( `waiting` )
+
+        // A long agent list pushes the footer above the last 8 rows.
+        const rows = Array.from( { length: 12 }, ( _, i ) => `○ worker-${ i }  Running task ${ i }` ).join( `\n` )
+        expect( agent_status( `${ screen }\n${ rows }`, `claude`, 300 ) ).toBe( `waiting` )
+    } )
+
+    it( `ignores shell counts in prose when no composer is visible`, () => {
+        const prose = `The documentation says · 2 monitors · ← for agents\n? for shortcuts`
+        expect( agent_status( prose, `claude`, 300 ) ).toBe( `idle` )
     } )
 
     it( `returns to idle when shells finish and ignores historical shell counts`, () => {
