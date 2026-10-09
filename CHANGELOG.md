@@ -4,7 +4,15 @@
 
 ### Added
 - `--adb` flag and launch-menu `ADB` toggle. Every session reuses one adb key pair from the shared `babysit-adb` volume, so a phone authorises babysit once, not once per container. The key is minted once under a lock, validated, and published atomically. Each session gets its own copy in `~/.android`, so sessions with different uids never fight over ownership. Also maps `host.docker.internal` (on Linux too). Network devices only (`adb pair` / `adb connect`); USB is not passed through.
-- Image ships Android tooling by default: `adb`/`fastboot` 34 from Debian backports (stable's adb 29 lacks `adb pair`), plus system-wide Python `uiautomator2` + `adbutils` for taps, swipes, text, element queries, and screenshots.
+- Image ships Android tooling by default: `adb`/`fastboot` 34 (new enough for `adb pair`), plus system-wide Python `uiautomator2` + `adbutils` for taps, swipes, text, element queries, and screenshots.
+
+- Pushover alerts from the hourly `babysit auth check` daemon. It alerts when a verified agent logs out, and once per window when any usage limit (session, daily, weekly, credits) reaches 90%. It is a no-op unless `PUSHOVER_TOKEN` and `PUSHOVER_USER` are set; rerun `babysit auth init` to put them in the schedule.
+
+### Fixed
+- Babysit Web no longer logs you out on restarts, redeploys, or flaky connections. Sessions are signed cookies, not in-memory state. They last 30 days and renew on use. Only a real 401 shows the login page; other errors retry.
+
+### Changed
+- Image base `node:24-slim` (Debian 12 bookworm) → `node:24-trixie-slim` (Debian 13, current stable; Python 3.13). The codename is pinned so the base no longer drifts with the `slim` tag.
 
 ## 1.29.0 — 2026-10-09
 
