@@ -162,3 +162,4 @@
 
 - 2026-10-08 — 1.27.1: Claude footer gained comma-separated background counts ("2 shells, 2 monitors · ← for agents") and a `›` composer; activity matcher now parses any count list, non-zero ⇒ waiting.
 - 2026-10-09 — 1.28.0: `babysit usage` human output became a colored table with relative resets. Formatter moved to `src/docker/assets/usage/format.mjs` (self-contained, ships into the image; cannot import `src/utils/color.js`). `--json` untouched. Review round (Linus+DHH via gpt-6.1-sol) caught FORCE_COLOR=0, TZ-dependent test, untrimmed percentages; all fixed.
+- 2026-10-09 — 1.29.0: Claude default model `best` → `default`. Fable has its own small weekly cap and loses to Opus 5.5 at medium effort on AA intelligence and cost. Rejected a usage-based Fable→Opus auto-switch: duplicates provider fallback, breaks prompt cache mid-session. Revisit effort (medium vs high) once AA publishes Opus 5.5 coding scores.

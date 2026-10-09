@@ -132,9 +132,11 @@ export const claude = {
     },
 
     defaults: {
-        // `best` tracks Claude Code's strongest generally available model.
+        // `default` is Claude Code's recommended everyday model (Opus 5.5 today).
+        // `best` (Fable) has its own much smaller weekly cap and, at medium
+        // effort, benchmarks below Opus 5.5 at twice the cost; keep it opt-in.
         // Start with balanced reasoning; deeper effort remains an explicit opt-in.
-        model: `best`,
+        model: `default`,
         effort: `medium`,
     },
 

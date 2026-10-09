@@ -884,13 +884,13 @@ describe( `build_docker_command`, () => {
 
     } )
 
-    it( `auto-applies Claude's strongest available model and recommended effort`, () => {
+    it( `auto-applies Claude's recommended model and effort`, () => {
 
         const cmd = build_docker_command( make_options( { agent: claude } ) )
 
-        // `best` follows Claude Code's strongest generally available model;
-        // Claude starts with balanced reasoning.
-        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model best --effort medium` )
+        // `default` follows Claude Code's recommended model; Claude starts
+        // with balanced reasoning.
+        expect( cmd ).toContain( ` claude --dangerously-skip-permissions --model default --effort medium` )
 
     } )
 
@@ -992,7 +992,7 @@ describe( `build_docker_command`, () => {
         expect( build_docker_command( make_options( {
             agent: claude,
             agent_args: claude.flags.resume( uuid ),
-        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model best --effort medium --resume ${ uuid }` )
+        } ) ) ).toContain( ` claude --dangerously-skip-permissions --model default --effort medium --resume ${ uuid }` )
 
         expect( build_docker_command( make_options( {
             agent: codex,
