@@ -1,6 +1,9 @@
 import { discover_credentials } from './credentials.mjs'
 import { read_codex_limits } from './codex.mjs'
 import { claude_usage, codex_usage, openrouter_usage, provider_request } from './providers.mjs'
+import { format_usage } from './format.mjs'
+
+export { format_usage }
 
 const unavailable = message => ( { status: `unavailable`, message, limits: [] } )
 const unauthenticated = () => ( { status: `unauthenticated`, message: `No credentials found`, limits: [] } )
@@ -103,26 +106,6 @@ export const collect_usage = async ( {
 
 }
 
-const safe_text = value => String( value ).replace( /[\x00-\x1f\x7f-\x9f]/g, `` )
-const amount = value => value === null || value === undefined ? null : safe_text( value )
-
-/** Render native windows/units without presenting missing information as zero. */
-export const format_usage = report => report.agents.map( result => {
-    const title = `${ result.agent }${ result.provider ? ` / ${ safe_text( result.provider ) }` : `` }`
-    if( result.status !== `ok` ) return `${ title }: ${ result.status } — ${ safe_text( result.message ) }`
-    return [ title, ...result.limits.map( limit => {
-        const values = []
-        if( typeof limit.used_percent === `number` ) values.push( `${ limit.used_percent }% used` )
-        if( typeof limit.remaining_percent === `number` ) values.push( `${ limit.remaining_percent }% remaining` )
-        if( amount( limit.used ) !== null ) values.push( `${ amount( limit.used ) }${ amount( limit.limit ) !== null ? ` / ${ amount( limit.limit ) }` : `` } ${ limit.unit || `` } used`.trim() )
-        else if( amount( limit.limit ) !== null ) values.push( `limit ${ amount( limit.limit ) } ${ limit.unit || `` }`.trim() )
-        if( amount( limit.remaining ) !== null ) values.push( `${ amount( limit.remaining ) } ${ limit.unit || `` } remaining`.trim() )
-        if( limit.unlimited ) values.push( `no ${ limit.unit === `USD` ? `key spending cap` : `limit` }` )
-        if( limit.resets_at ) values.push( `resets ${ safe_text( limit.resets_at ) }` )
-        return `  ${ safe_text( limit.name ) }: ${ values.join( ` · ` ) || `not reported` }`
-    } ) ].join( `\n` )
-} ).join( `\n\n` )
-
 /** Run the same command on host and in the image; return a partial-failure exit code. */
 export const run_usage = async ( args = [], { output = process.stdout, ...options } = {} ) => {
 
@@ -132,7 +115,7 @@ export const run_usage = async ( args = [], { output = process.stdout, ...option
     }
     if( args.some( argument => argument !== `--json` ) ) throw new Error( `Usage: babysit usage [--json]` )
     const report = await collect_usage( options )
-    output.write( `${ args.includes( `--json` ) ? JSON.stringify( report, null, 2 ) : format_usage( report ) }\n` )
+    output.write( `${ args.includes( `--json` ) ? JSON.stringify( report, null, 2 ) : format_usage( report, { stream: output } ) }\n` )
     return report.agents.some( result => result.status === `error` || result.status === `unavailable` ) ? 1 : 0
 
 }

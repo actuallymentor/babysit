@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.28.0 — 2026-10-09
+
+### Changed
+- `babysit usage` renders each agent as a table (`limit · used · remaining · resets`) instead of dot-separated lines. Used and remaining percentages are colored green below 50%, yellow below 70%, red above. Resets read `in 2d 6h` / `in 3h 12m` / `now` with the local date dimmed beside them. Long provider decimals are trimmed to two places; columns no agent fills are dropped. Colors respect `NO_COLOR`, `TERM=dumb`, non-TTY output, and `FORCE_COLOR`. `--json` is unchanged.
+
 ## 1.27.1 — 2026-10-08
 
 ### Fixed
