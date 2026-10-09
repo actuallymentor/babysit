@@ -289,6 +289,17 @@ Queries authenticated agents independently. Claude/Codex show provider quota
 windows and reset times; OpenRouter shows API-key budgets and spend. Unknown
 allowances stay unknown. Local token history is not an account limit.
 
+```
+claude / anthropic
+  limit                  used  resets
+  session                2%    in 3h 25m Oct 9 13:09
+  weekly_all             65%   in 3d 6h Oct 12 15:59
+  weekly_scoped / Fable  99%   in 3d 6h Oct 12 15:59
+```
+
+Percentages are green below 50%, yellow below 70%, red above; resets are relative
+with the local date dimmed. Colors follow `NO_COLOR`, `FORCE_COLOR`, and TTY detection.
+
 Internal provider endpoints are used where needed. Unsupported credentials/providers
 (including Antigravity quota retrieval) are labeled unavailable; other results remain
 visible. Exit 1 indicates unavailable usage or fetch errors. Missing authentication

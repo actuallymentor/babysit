@@ -161,3 +161,4 @@
 - Two phoneafriend rounds (gpt-6.1-sol) → 2233948 (`--status` w/o id no longer queues exit; non-TTY refuses immediately; `-n25`; numbered-resume passthrough) and 5845bde (TTY Ctrl-D; `-n25` only before `--`, also `<agent> resume`).
 
 - 2026-10-08 — 1.27.1: Claude footer gained comma-separated background counts ("2 shells, 2 monitors · ← for agents") and a `›` composer; activity matcher now parses any count list, non-zero ⇒ waiting.
+- 2026-10-09 — 1.28.0: `babysit usage` human output became a colored table with relative resets. Formatter moved to `src/docker/assets/usage/format.mjs` (self-contained, ships into the image; cannot import `src/utils/color.js`). `--json` untouched.

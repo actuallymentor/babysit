@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process'
 
 import { discover_credentials } from '../src/docker/assets/usage/credentials.mjs'
 import { collect_usage, run_usage, format_usage } from '../src/docker/assets/usage/command.mjs'
+import { relative_time, usage_color } from '../src/docker/assets/usage/format.mjs'
 import { claude_usage, codex_usage, openrouter_usage, provider_request } from '../src/docker/assets/usage/providers.mjs'
 import { read_codex_limits } from '../src/docker/assets/usage/codex.mjs'
 
@@ -13,6 +14,34 @@ const no_codex = async () => null
 const response = data => new Response( JSON.stringify( data ), { status: 200 } )
 
 describe( `account usage`, () => {
+
+    it( `renders limits as a table with colored percentages and relative resets`, () => {
+        const now = `2026-10-09T10:00:00Z`
+        const report = { fetched_at: now, agents: [ { agent: `claude`, provider: `anthropic`, status: `ok`, fetched_at: now, limits: [
+            { name: `five_hour`, used_percent: 42, resets_at: `2026-10-09T13:12:00Z` },
+            { name: `seven_day`, used_percent: 95, resets_at: `2026-10-11T16:00:00Z` },
+            { name: `credit balance`, unit: `credits`, remaining: `12.34` },
+        ] } ] }
+        const plain = format_usage( report, { env: { NO_COLOR: `1` } } )
+        expect( plain ).toContain( `  limit           used  remaining      resets` )
+        expect( plain ).toMatch( /five_hour +42% +in 3h 12m Oct 9 \d\d:12/ )
+        expect( plain ).toMatch( /seven_day +95% +in 2d 6h/ )
+        expect( plain ).toContain( `12.34 credits` )
+        const colored = format_usage( report, { env: { FORCE_COLOR: `1` } } )
+        expect( colored ).toContain( `\x1b[32m42%\x1b[0m` )
+        expect( colored ).toContain( `\x1b[31m95%\x1b[0m` )
+        expect( format_usage( { agents: [ { agent: `codex`, status: `ok`, limits: [ { name: `x` } ] } ] }, { env: { NO_COLOR: `1` } } ) ).toContain( `x      not reported` )
+    } )
+
+    it( `expresses resets as the two largest time units`, () => {
+        const now = `2026-10-09T10:00:00Z`
+        expect( relative_time( `2026-10-09T10:00:30Z`, now ) ).toBe( `now` )
+        expect( relative_time( `2026-10-09T10:45:00Z`, now ) ).toBe( `in 45m` )
+        expect( relative_time( `2026-10-09T13:00:00Z`, now ) ).toBe( `in 3h` )
+        expect( relative_time( `2026-10-31T22:30:00Z`, now ) ).toBe( `in 22d 12h` )
+        expect( relative_time( `garbage`, now ) ).toBe( null )
+        expect( [ 0, 49, 50, 69, 70, 100 ].map( usage_color ) ).toEqual( [ `green`, `green`, `yellow`, `yellow`, `red`, `red` ] )
+    } )
 
     it( `preserves Claude scoped limits that do not appear in legacy fields`, () => {
         const limits = claude_usage( { seven_day: null, limits: [
@@ -92,7 +121,7 @@ describe( `account usage`, () => {
         expect( report.agents.find( agent => agent.agent === `claude` ).status ).toBe( `error` )
         expect( report.agents.find( agent => agent.agent === `opencode` ).status ).toBe( `ok` )
         expect( JSON.stringify( report ) ).not.toContain( `private-` )
-        expect( format_usage( report ) ).toContain( `2 / 20 USD used` )
+        expect( format_usage( report ) ).toContain( `2 / 20 USD` )
     } )
 
     it( `exposes authenticated unsupported providers instead of fabricating usage`, async () => {
