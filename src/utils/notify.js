@@ -6,7 +6,7 @@ import { log } from './log.js'
 
 const PUSHOVER_URL = `https://api.pushover.net/1/messages.json`
 export const USAGE_ALERT_PERCENT = 90
-export const USAGE_ALERTS_PATH = join( BABYSIT_DIR, `usage-alerts.json` )
+export const ALERTS_PATH = join( BABYSIT_DIR, `alerts.json` )
 
 /**
  * Whether Pushover credentials are present. Without them every notifier is
@@ -43,21 +43,26 @@ export const notify_pushover = async ( { title, message }, { env = process.env, 
 }
 
 /**
- * Used share of one limit; Codex individual limits report remaining instead.
+ * Used share of one limit. Codex individual limits report remaining instead,
+ * and money budgets (OpenRouter) only report used against limit.
  * @param {Object} limit - Normalised usage limit
- * @returns {number|null} Percent used, or null when the limit has no percentage
+ * @returns {number|null} Percent used, or null when the limit has no share
  */
 export const used_percent = limit => {
     if( Number.isFinite( limit.used_percent ) ) return limit.used_percent
     if( Number.isFinite( limit.remaining_percent ) ) return 100 - limit.remaining_percent
+    if( Number.isFinite( limit.used ) && Number.isFinite( limit.limit ) && limit.limit > 0 ) return limit.used / limit.limit * 100
     return null
 }
 
+// { usage: { "<agent>/<provider>/<limit>": "<resets_at>" },
+//   logouts: { "<agent>": { login: "<authenticated_at>", delivered: bool } } }
 const read_alerts = path => {
     try {
-        return JSON.parse( readFileSync( path, `utf8` ) ) || {}
+        const parsed = JSON.parse( readFileSync( path, `utf8` ) ) || {}
+        return { usage: parsed.usage || {}, logouts: parsed.logouts || {} }
     } catch {
-        return {}
+        return { usage: {}, logouts: {} }
     }
 }
 
@@ -72,17 +77,25 @@ const write_alerts = ( path, alerts ) => {
  * Notify once per limit window when usage crosses USAGE_ALERT_PERCENT.
  * A limit is remembered by its reset time while it stays high; dropping
  * back below the threshold or a new window (new resets_at) re-arms it.
+ * Providers that failed to report keep their state, so a fetch error
+ * cannot cause a repeat alert once they recover.
  * @param {Object} usage - collect_usage() result
  * @param {Object} [options] - State path and notifier seams
  * @returns {Promise<string[]>} Keys of limits that were notified
  */
-export const alert_high_usage = async ( usage, { alerts_path = USAGE_ALERTS_PATH, notify = notify_pushover } = {} ) => {
+export const alert_high_usage = async ( usage, { alerts_path = ALERTS_PATH, notify = notify_pushover } = {} ) => {
 
-    const previous = read_alerts( alerts_path )
-    const next = {}
+    const alerts = read_alerts( alerts_path )
+    const reported = new Set( ( usage?.agents || [] )
+        .filter( entry => entry.status === `ok` )
+        .map( entry => `${ entry.agent }/${ entry.provider }/` ) )
+    const next = Object.fromEntries( Object.entries( alerts.usage )
+        .filter( ( [ key ] ) => ![ ...reported ].some( prefix => key.startsWith( prefix ) ) ) )
     const sent = []
 
     for( const entry of usage?.agents || [] ) {
+        if( entry.status !== `ok` ) continue
+
         for( const limit of entry.limits || [] ) {
 
             const used = used_percent( limit )
@@ -90,7 +103,7 @@ export const alert_high_usage = async ( usage, { alerts_path = USAGE_ALERTS_PATH
 
             const key = `${ entry.agent }/${ entry.provider }/${ limit.name }`
             const window = limit.resets_at || `open`
-            if( previous[ key ] === window ) {
+            if( alerts.usage[ key ] === window ) {
                 next[ key ] = window
                 continue
             }
@@ -109,18 +122,38 @@ export const alert_high_usage = async ( usage, { alerts_path = USAGE_ALERTS_PATH
         }
     }
 
-    write_alerts( alerts_path, next )
+    write_alerts( alerts_path, { ...read_alerts( alerts_path ), usage: next } )
     return sent
 
 }
 
 /**
- * Notify that a previously verified agent is now logged out.
- * @param {string} agent - Agent name
- * @param {Object} [options] - Notifier seam
- * @returns {Promise<boolean>} Whether the notification was delivered
+ * Notify once per lost login. Each logout is keyed by the login it ended
+ * (the cache entry's authenticated_at), so a re-probe of the same dead login
+ * stays silent, and an undelivered alert is retried on every later run.
+ * @param {{ agent: string, login: string }[]} logouts - Newly observed logouts
+ * @param {Object} [options] - State path and notifier seams
+ * @returns {Promise<string[]>} Agents whose logout alert was delivered
  */
-export const alert_logout = ( agent, { notify = notify_pushover } = {} ) => notify( {
-    title: `Babysit: ${ agent } logged out`,
-    message: `${ agent } was authenticated but its latest check failed authentication. Log in again on the host.`,
-} )
+export const alert_logouts = async ( logouts, { alerts_path = ALERTS_PATH, notify = notify_pushover } = {} ) => {
+
+    const alerts = read_alerts( alerts_path )
+    for( const { agent, login } of logouts ) {
+        if( alerts.logouts[ agent ]?.login !== login ) alerts.logouts[ agent ] = { login, delivered: false }
+    }
+
+    const sent = []
+    for( const [ agent, logout ] of Object.entries( alerts.logouts ) ) {
+        if( logout.delivered ) continue
+
+        logout.delivered = await notify( {
+            title: `Babysit: ${ agent } logged out`,
+            message: `${ agent } was authenticated but its latest check failed authentication. Log in again on the host.`,
+        } )
+        if( logout.delivered ) sent.push( agent )
+    }
+
+    write_alerts( alerts_path, { ...read_alerts( alerts_path ), logouts: alerts.logouts } )
+    return sent
+
+}

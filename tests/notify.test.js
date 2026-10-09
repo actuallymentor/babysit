@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { alert_high_usage, alert_logout, notify_pushover, pushover_configured, used_percent } from '../src/utils/notify.js'
+import { alert_high_usage, alert_logouts, notify_pushover, pushover_configured, used_percent } from '../src/utils/notify.js'
 
 const ENV = { PUSHOVER_TOKEN: `app-token`, PUSHOVER_USER: `user-key` }
 
@@ -48,14 +48,6 @@ describe( `pushover`, () => {
 
     } )
 
-    it( `words logout alerts with the agent name`, async () => {
-
-        const sent = []
-        await alert_logout( `codex`, { notify: async message => sent.push( message ) } )
-        expect( sent[0].title ).toBe( `Babysit: codex logged out` )
-
-    } )
-
 } )
 
 describe( `usage alerts`, () => {
@@ -65,7 +57,7 @@ describe( `usage alerts`, () => {
 
     beforeEach( () => {
         directory = mkdtempSync( join( tmpdir(), `babysit-usage-alerts-` ) )
-        alerts_path = join( directory, `usage-alerts.json` )
+        alerts_path = join( directory, `alerts.json` )
     } )
 
     afterEach( () => rmSync( directory, { recursive: true, force: true } ) )
@@ -83,7 +75,8 @@ describe( `usage alerts`, () => {
 
         expect( used_percent( { used_percent: 42 } ) ).toBe( 42 )
         expect( used_percent( { remaining_percent: 5 } ) ).toBe( 95 )
-        expect( used_percent( { unit: `credits` } ) ).toBeNull()
+        expect( used_percent( { unit: `USD`, used: 19, limit: 20 } ) ).toBe( 95 )
+        expect( used_percent( { unit: `USD`, used: 3 } ) ).toBeNull()
 
     } )
 
@@ -104,7 +97,7 @@ describe( `usage alerts`, () => {
 
         // Dropping below the threshold forgets it, so the next crossing alerts
         await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z`, used_percent: 10 } ] )
-        expect( JSON.parse( readFileSync( alerts_path, `utf8` ) ) ).toEqual( {} )
+        expect( JSON.parse( readFileSync( alerts_path, `utf8` ) ).usage ).toEqual( {} )
         expect( ( await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [ `claude/anthropic/weekly` ] )
 
     } )
@@ -114,6 +107,66 @@ describe( `usage alerts`, () => {
         const limit = { name: `five_hour`, used_percent: 95, resets_at: `2026-10-09T20:00:00Z` }
         expect( ( await run( [ limit ], false ) ).keys ).toEqual( [] )
         expect( ( await run( [ limit ] ) ).keys ).toEqual( [ `claude/anthropic/five_hour` ] )
+
+    } )
+
+    it( `keeps a failed provider's windows so its recovery does not repeat the alert`, async () => {
+
+        const weekly = { name: `weekly`, used_percent: 95, resets_at: `2026-10-12T15:59:00Z` }
+        await run( [ weekly ] )
+
+        const failed = { agents: [ { agent: `claude`, provider: `anthropic`, status: `error`, limits: [] } ] }
+        expect( await alert_high_usage( failed, { alerts_path, notify: async () => true } ) ).toEqual( [] )
+        expect( ( await run( [ weekly ] ) ).keys ).toEqual( [] )
+
+    } )
+
+} )
+
+describe( `logout alerts`, () => {
+
+    let directory
+    let alerts_path
+
+    beforeEach( () => {
+        directory = mkdtempSync( join( tmpdir(), `babysit-logout-alerts-` ) )
+        alerts_path = join( directory, `alerts.json` )
+    } )
+
+    afterEach( () => rmSync( directory, { recursive: true, force: true } ) )
+
+    it( `alerts once per lost login, retries until delivered, and re-arms on a new login`, async () => {
+
+        const titles = []
+        let up = false
+        const notify = async message => {
+            titles.push( message.title )
+            return up
+        }
+
+        // Pushover down: kept pending, retried next run even with no new logouts
+        expect( await alert_logouts( [ { agent: `codex`, login: `2026-10-09T08:00:00Z` } ], { alerts_path, notify } ) ).toEqual( [] )
+        up = true
+        expect( await alert_logouts( [], { alerts_path, notify } ) ).toEqual( [ `codex` ] )
+        expect( titles ).toEqual( [ `Babysit: codex logged out`, `Babysit: codex logged out` ] )
+
+        // The same dead login probed again stays silent
+        expect( await alert_logouts( [ { agent: `codex`, login: `2026-10-09T08:00:00Z` } ], { alerts_path, notify } ) ).toEqual( [] )
+
+        // A later login that is lost again alerts again
+        expect( await alert_logouts( [ { agent: `codex`, login: `2026-10-10T08:00:00Z` } ], { alerts_path, notify } ) ).toEqual( [ `codex` ] )
+
+    } )
+
+    it( `shares the state file with usage alerts without clobbering it`, async () => {
+
+        await alert_logouts( [ { agent: `claude`, login: `a` } ], { alerts_path, notify: async () => true } )
+        await alert_high_usage( usage( [ { name: `weekly`, used_percent: 99, resets_at: `r` } ] ), { alerts_path, notify: async () => true } )
+
+        expect( JSON.parse( readFileSync( alerts_path, `utf8` ) ) ).toEqual( {
+            usage: { 'claude/anthropic/weekly': `r` },
+            logouts: { claude: { login: `a`, delivered: true } },
+        } )
 
     } )
 

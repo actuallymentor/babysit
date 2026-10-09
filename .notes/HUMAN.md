@@ -26,3 +26,7 @@
 - USB devices are not passed through (impossible on Docker Desktop/macOS). Use network adb (`adb pair`/`adb connect`) or a host-forwarded emulator via `host.docker.internal`.
 - Not baked in: Maestro (needs a JRE, ~200MB), mobile-mcp / uiautomator2 MCP servers (each needs per-agent MCP config), scrcpy (needs a display). Add these if agents need them.
 - Outbound container traffic was already unrestricted (default bridge), so `--adb` does not open any extra ports.
+
+## 2026-10-09 — Babysit Web session trade-offs (accepted)
+- Session cookies are HMAC-keyed on the stored token hash. Anyone who can read `~/.babysit/web-bridge/access/access.json` can forge a session. That already takes host-user access, which can rewrite the file anyway. A separate secret in the same directory would add nothing.
+- Logout revokes the login's whole cookie family, but only in memory. After a server restart, a stolen cookie from a logged-out login works again until it expires (≤30d). Run `babysit web init` (token rotation) to kill every session for certain. Fixing this needs writable server state, which the read-only container avoids.

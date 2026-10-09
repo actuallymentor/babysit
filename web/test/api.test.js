@@ -319,7 +319,7 @@ test( `sessions survive restarts, renew on use, and die with logout or token rot
         // A tampered payload or signature is rejected
         const [ name, value ] = login.cookie.split( `=` )
         const [ payload, signature ] = decodeURIComponent( value ).split( `.` )
-        const forged_payload = Buffer.from( JSON.stringify( { expires_at: Date.now() + 1e9, nonce: `x`, role: `write` } ) ).toString( `base64url` )
+        const forged_payload = Buffer.from( JSON.stringify( { expires_at: Date.now() + 1e9, family: `x`, role: `write` } ) ).toString( `base64url` )
         const forged = await api_request( second.origin, `/api/me`, { cookie: `${ name }=${ forged_payload }.${ signature }` } )
         assert.equal( forged.status, 401 )
         const bad_signature = await api_request( second.origin, `/api/me`, { cookie: `${ name }=${ payload }.${ signature.slice( 0, -2 ) }AA` } )
@@ -337,6 +337,17 @@ test( `sessions survive restarts, renew on use, and die with logout or token rot
         assert.equal( ( await api_request( short.origin, `/api/me`, { cookie: short_login.cookie } ) ).status, 401 )
         assert.equal( ( await api_request( short.origin, `/api/me`, { cookie: renewed.cookie } ) ).status, 200 )
         await stop( short )
+
+        // Logout from a renewed cookie also revokes the cookie it replaced
+        const family = await start( { session_ttl_ms: 1_000 } )
+        const original = await api_request( family.origin, `/api/login`, { body: { token: `persistent key` }, method: `POST` } )
+        await new Promise( resolve_wait => setTimeout( resolve_wait, 600 ) )
+        const successor = await api_request( family.origin, `/api/sessions`, { cookie: original.cookie } )
+        assert.ok( successor.cookie && successor.cookie !== original.cookie )
+        assert.equal( ( await api_request( family.origin, `/api/logout`, { body: {}, cookie: successor.cookie, method: `POST` } ) ).status, 200 )
+        assert.equal( ( await api_request( family.origin, `/api/me`, { cookie: original.cookie } ) ).status, 401 )
+        assert.equal( ( await api_request( family.origin, `/api/me`, { cookie: successor.cookie } ) ).status, 401 )
+        await stop( family )
 
         // Logout revokes the cookie; rotating the token invalidates the rest
         const third = await start()

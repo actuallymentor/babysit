@@ -10,7 +10,7 @@ import {
 } from '../agents/auth_cache.js'
 import { acquire_host_auth_lease, is_host_auth_lease_wanted } from '../agents/auth_lease.js'
 import { run } from '../utils/exec.js'
-import { alert_high_usage, alert_logout, pushover_configured } from '../utils/notify.js'
+import { alert_high_usage, alert_logouts, pushover_configured } from '../utils/notify.js'
 import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
@@ -290,7 +290,7 @@ export const cmd_auth_check = async ( {
     select_agents = null,
     env = process.env,
     usage_alerts = alert_high_usage,
-    logout_alert = alert_logout,
+    logout_alerts = alert_logouts,
     read_usage = () => collect_usage( { allow_native_refresh: true } ),
     ...diagnostics
 } = {} ) => {
@@ -332,6 +332,7 @@ export const cmd_auth_check = async ( {
         }
 
         if( !agents.length ) {
+            if( notifying ) await logout_alerts( [] )
             lease.release()
             output.write( `No previously verified agents to keep warm; launch one or run babysit doctor --auth first.\n` )
             return 0
@@ -356,11 +357,15 @@ export const cmd_auth_check = async ( {
                 : result
         ) }\n` ) )
 
-        // Every probed agent had a verified login on record, and an
-        // unauthenticated result clears that record — so this fires once per
-        // logout, not hourly. `failed` (network blips) never alerts.
-        for( const result of results.filter( result => result.status === `unauthenticated` ) ) {
-            await logout_alert( result.name )
+        // Every probed agent had a verified login on record. Alert once per
+        // lost login, retrying undelivered ones; `failed` (network blips)
+        // never alerts.
+        if( notifying ) {
+            const logouts = results
+                .filter( result => result.status === `unauthenticated` )
+                .map( result => ( { agent: result.name, login: cache.agents?.[ result.name ]?.authenticated_at || `unknown` } ) )
+            const sent = await logout_alerts( logouts )
+            if( sent.length ) output.write( `Logout alerts sent: ${ sent.join( `, ` ) }\n` )
         }
 
         return results.some( result => [ `failed`, `unauthenticated` ].includes( result.status ) ) ? 1 : 0
