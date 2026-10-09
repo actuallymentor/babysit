@@ -274,3 +274,82 @@ test( `production proxy and HTTP cookie policy`, async () => {
         rmSync( fixture, { force: true, recursive: true } )
     }
 } )
+
+test( `sessions survive restarts, renew on use, and die with logout or token rotation`, async () => {
+    const fixture = mkdtempSync( join( tmpdir(), `babysit-web-session-` ) )
+    const access_file = join( fixture, `access.json` )
+    mkdirSync( join( fixture, `state` ) )
+    mkdirSync( join( fixture, `requests` ) )
+    writeFileSync( access_file, access_document( `persistent key` ) )
+
+    const config = {
+        access_file,
+        allow_insecure_http: true,
+        heartbeat_ttl_ms: 5_000,
+        login_limit: 8,
+        login_window_ms: 60_000,
+        public_origin: null,
+        request_dir: join( fixture, `requests` ),
+        request_ttl_ms: 500,
+        session_ttl_ms: 60_000,
+        state_dir: join( fixture, `state` ),
+        static_dir: join( fixture, `static` ),
+        trust_proxy: false,
+    }
+    const start = async ( overrides={} ) => {
+        const server = create_app( { ...config, ...overrides } )
+        await new Promise( resolve_listen => server.listen( 0, `127.0.0.1`, resolve_listen ) )
+        return { origin: `http://127.0.0.1:${ server.address().port }`, server }
+    }
+    const stop = ( { server } ) => new Promise( resolve_close => server.close( resolve_close ) )
+
+    try {
+        // Log in, then restart the server: the signed cookie still works
+        const first = await start()
+        const login = await api_request( first.origin, `/api/login`, { body: { token: `persistent key` }, method: `POST` } )
+        assert.equal( login.status, 200 )
+        await stop( first )
+
+        const second = await start()
+        const me = await api_request( second.origin, `/api/me`, { cookie: login.cookie } )
+        assert.equal( me.status, 200 )
+        assert.equal( me.body.role, `write` )
+        assert.equal( me.cookie, undefined )
+
+        // A tampered payload or signature is rejected
+        const [ name, value ] = login.cookie.split( `=` )
+        const [ payload, signature ] = decodeURIComponent( value ).split( `.` )
+        const forged_payload = Buffer.from( JSON.stringify( { expires_at: Date.now() + 1e9, nonce: `x`, role: `write` } ) ).toString( `base64url` )
+        const forged = await api_request( second.origin, `/api/me`, { cookie: `${ name }=${ forged_payload }.${ signature }` } )
+        assert.equal( forged.status, 401 )
+        const bad_signature = await api_request( second.origin, `/api/me`, { cookie: `${ name }=${ payload }.${ signature.slice( 0, -2 ) }AA` } )
+        assert.equal( bad_signature.status, 401 )
+        await stop( second )
+
+        // Past half its lifetime, /api/me reissues a fresh cookie
+        const short = await start( { session_ttl_ms: 1_000 } )
+        const short_login = await api_request( short.origin, `/api/login`, { body: { token: `persistent key` }, method: `POST` } )
+        await new Promise( resolve_wait => setTimeout( resolve_wait, 600 ) )
+        const renewed = await api_request( short.origin, `/api/me`, { cookie: short_login.cookie } )
+        assert.equal( renewed.status, 200 )
+        assert.ok( renewed.cookie && renewed.cookie !== short_login.cookie )
+        await new Promise( resolve_wait => setTimeout( resolve_wait, 500 ) )
+        assert.equal( ( await api_request( short.origin, `/api/me`, { cookie: short_login.cookie } ) ).status, 401 )
+        assert.equal( ( await api_request( short.origin, `/api/me`, { cookie: renewed.cookie } ) ).status, 200 )
+        await stop( short )
+
+        // Logout revokes the cookie; rotating the token invalidates the rest
+        const third = await start()
+        const kept = await api_request( third.origin, `/api/login`, { body: { token: `persistent key` }, method: `POST` } )
+        const dropped = await api_request( third.origin, `/api/login`, { body: { token: `persistent key` }, method: `POST` } )
+        assert.equal( ( await api_request( third.origin, `/api/logout`, { body: {}, cookie: dropped.cookie, method: `POST` } ) ).status, 200 )
+        assert.equal( ( await api_request( third.origin, `/api/me`, { cookie: dropped.cookie } ) ).status, 401 )
+        assert.equal( ( await api_request( third.origin, `/api/me`, { cookie: kept.cookie } ) ).status, 200 )
+
+        writeFileSync( access_file, access_document( `rotated key` ) )
+        assert.equal( ( await api_request( third.origin, `/api/me`, { cookie: kept.cookie } ) ).status, 401 )
+        await stop( third )
+    } finally {
+        rmSync( fixture, { force: true, recursive: true } )
+    }
+} )

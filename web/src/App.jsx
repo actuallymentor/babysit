@@ -19,10 +19,31 @@ export function App() {
 
     useEffect( () => {
         const expire_authentication = () => set_identity( null )
-        api( `/api/me` ).then( set_identity ).catch( () => set_identity( null ) ).finally( () => set_is_loading( false ) )
+        let retry_timer = null
+
+        // Only a real 401 means logged out. A redeploy (502), a cold proxy, or a
+        // stalled mobile connection keeps retrying instead of showing login.
+        const load_identity = ( attempt = 0 ) => api( `/api/me` )
+            .then( found => {
+                set_identity( found )
+                set_is_loading( false )
+            } )
+            .catch( failure => {
+                if( failure.status_code === 401 ) {
+                    set_identity( null )
+                    set_is_loading( false )
+                    return
+                }
+                retry_timer = setTimeout( () => load_identity( attempt + 1 ), Math.min( 1_000 * 2 ** attempt, 15_000 ) )
+            } )
+
+        load_identity()
         register_pwa( set_has_update )
         window.addEventListener( `babysit-auth-expired`, expire_authentication )
-        return () => window.removeEventListener( `babysit-auth-expired`, expire_authentication )
+        return () => {
+            clearTimeout( retry_timer )
+            window.removeEventListener( `babysit-auth-expired`, expire_authentication )
+        }
     }, [] )
 
     const login = async token => set_identity( await api( `/api/login`, { body: JSON.stringify( { token } ), method: `POST` } ) )

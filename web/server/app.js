@@ -107,18 +107,12 @@ const clear_cookie = ( request, config ) => [
     secure_cookie( request, config ) ? `Secure` : null,
 ].filter( Boolean ).join( `; ` )
 
-const authenticated_session = ( request, sessions, access ) => {
-    const token = cookie_value( request.headers.cookie, COOKIE_NAME )
-    const session = sessions.get( token )
-    if( !session ) return null
-
-    if( session.access_id !== access.current_access_id() ) {
-        sessions.delete( token )
-        return null
-    }
-
-    return session
-}
+// The signature is keyed on the current access token, so a rotated token
+// fails verification here without any explicit invalidation step.
+const authenticated_session = ( request, sessions, access ) => sessions.get(
+    cookie_value( request.headers.cookie, COOKIE_NAME ),
+    access.current_access_id()
+)
 
 const static_path = ( pathname, static_dir ) => {
     const requested_path = pathname === `/` ? `index.html` : decodeURIComponent( pathname.slice( 1 ) )
@@ -168,7 +162,14 @@ const api_route = async ( request, response, pathname, stores, config ) => {
     const identity = authenticated_session( request, sessions, access )
     if( !identity ) return json( response, 401, { error: `Authentication required` } )
 
-    if( request.method === `GET` && pathname === `/api/me` ) return json( response, 200, { role: identity.role } )
+    // Sliding expiry: the app checks /api/me on every open, so active users
+    // get a fresh cookie well before the old one lapses.
+    if( request.method === `GET` && pathname === `/api/me` ) {
+        const renewal = sessions.needs_renewal( identity )
+            ? { 'Set-Cookie': session_cookie( sessions.create( identity ), request, config ) }
+            : {}
+        return json( response, 200, { role: identity.role }, renewal )
+    }
 
     if( request.method === `POST` && pathname === `/api/logout` ) {
         sessions.delete( cookie_value( request.headers.cookie, COOKIE_NAME ) )
