@@ -134,7 +134,9 @@ installed agents still receive credentials but are checked by `doctor --auth`.
 Run `babysit auth init` once so an hourly host-level checker keeps verified logins warm (a launch that had to probe reminds you, and `babysit config` shows the checker state);
 launches then skip the "Checking authentication" probe. The checker only refreshes agents a
 launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
-project's provider route) to launch-time verification. Running sessions re-stamp the cache
+project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` set when you run
+`babysit auth init`, the checker also pushes an alert when a verified agent logs out, and once per
+limit window when any usage limit (session/daily/weekly/credit) reaches 90%; without them it's a no-op. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
@@ -361,6 +363,7 @@ docker compose -f examples/compose.web.yml up -d
 - Preserve original host, `X-Forwarded-Proto`, `X-Forwarded-For`.
 - Keep bridge directory private. Companion gets sanitized state + request queue; no Docker/tmux/home/workspace access.
 - Custom bridge: same absolute `BABYSIT_WEB_BRIDGE_DIR` for Babysit and Compose.
+- Login lasts 30 days, renewed on use (`BABYSIT_WEB_SESSION_TTL_MS`). Sessions are HMAC-signed against the token hash, so restarts/redeploys keep you logged in; `web init` (token rotation) and logout end them.
 - Running sessions discover newly initialized bridges. After upgrades, exit/resume old sessions to load updated monitor/capture helpers; first new reply fills the view.
 
 | Control / indicator | Meaning |

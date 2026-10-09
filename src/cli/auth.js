@@ -10,6 +10,8 @@ import {
 } from '../agents/auth_cache.js'
 import { acquire_host_auth_lease, is_host_auth_lease_wanted } from '../agents/auth_lease.js'
 import { run } from '../utils/exec.js'
+import { alert_high_usage, alert_logout, pushover_configured } from '../utils/notify.js'
+import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
 
@@ -112,7 +114,7 @@ export const resolve_checker_command = ( { exec_path = process.execPath, script 
  * @returns {Object<string,string>} Environment entries
  */
 export const checker_environment = ( env = process.env ) => Object.fromEntries(
-    [ `PATH`, `BABYSIT_HOME`, `BABYSIT_DOCKER_IMAGE`, `BABYSIT_DOCKER_USE_SUDO`, `DOCKER_HOST`, `DOCKER_CONTEXT`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
+    [ `PATH`, `PUSHOVER_TOKEN`, `PUSHOVER_USER`, `BABYSIT_HOME`, `BABYSIT_DOCKER_IMAGE`, `BABYSIT_DOCKER_USE_SUDO`, `DOCKER_HOST`, `DOCKER_CONTEXT`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
         .filter( key => env[ key ] )
         .map( key => [ key, env[ key ] ] )
 )
@@ -286,12 +288,17 @@ export const cmd_auth_check = async ( {
     is_wanted = is_host_auth_lease_wanted,
     poll_ms = AUTH_CHECK_YIELD_POLL_MS,
     select_agents = null,
+    env = process.env,
+    usage_alerts = alert_high_usage,
+    logout_alert = alert_logout,
+    read_usage = () => collect_usage( { allow_native_refresh: true } ),
     ...diagnostics
 } = {} ) => {
 
     const cache = read_host_auth_cache( diagnostics.cache_path ? { cache_path: diagnostics.cache_path } : {} )
     const agents = select_agents ? select_agents() : select_auth_check_agents( { cache } )
-    if( !agents.length ) {
+    const notifying = pushover_configured( env )
+    if( !agents.length && !notifying ) {
         output.write( `No previously verified agents to keep warm; launch one or run babysit doctor --auth first.\n` )
         return 0
     }
@@ -311,6 +318,25 @@ export const cmd_auth_check = async ( {
     watcher.unref?.()
 
     try {
+        // Usage alerts ride the hourly checker. Only with Pushover configured:
+        // otherwise they are a no-op, so skip the provider requests too. Runs
+        // first because run_auth_diagnostics releases the lease (native Codex
+        // refresh needs it held).
+        if( notifying ) {
+            try {
+                const sent = await usage_alerts( await read_usage() )
+                if( sent.length ) output.write( `Usage alerts sent: ${ sent.join( `, ` ) }\n` )
+            } catch ( error ) {
+                output.write( `Usage check failed: ${ error.message }\n` )
+            }
+        }
+
+        if( !agents.length ) {
+            lease.release()
+            output.write( `No previously verified agents to keep warm; launch one or run babysit doctor --auth first.\n` )
+            return 0
+        }
+
         const results = await run_auth_diagnostics( agents, {
             ...diagnostics,
             output,
@@ -329,6 +355,13 @@ export const cmd_auth_check = async ( {
                 ? { ...result, reason: `yielded to a Babysit launch` }
                 : result
         ) }\n` ) )
+
+        // Every probed agent had a verified login on record, and an
+        // unauthenticated result clears that record — so this fires once per
+        // logout, not hourly. `failed` (network blips) never alerts.
+        for( const result of results.filter( result => result.status === `unauthenticated` ) ) {
+            await logout_alert( result.name )
+        }
 
         return results.some( result => [ `failed`, `unauthenticated` ].includes( result.status ) ) ? 1 : 0
     } finally {

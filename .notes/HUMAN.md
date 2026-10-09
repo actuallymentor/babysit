@@ -24,6 +24,5 @@
 
 ## 2026-10-09 — `--adb` scope calls
 - USB devices are not passed through (impossible on Docker Desktop/macOS). Use network adb (`adb pair`/`adb connect`) or a host-forwarded emulator via `host.docker.internal`.
-- Not baked in: Maestro (needs a JRE, ~200MB), mobile-mcp / uiautomator2 MCP servers (each needs per-agent MCP config), scrcpy (not in bookworm; needs a display). Add these if agents need them.
-- Base `node:24-slim` is still bookworm. bookworm-backports is now oldstable-backports and past its update window: adb 34.0.5 stays installable but gets no updates. Moving the base to trixie gives adb 34 from stable, and the Dockerfile's `-t` falls back automatically.
+- Not baked in: Maestro (needs a JRE, ~200MB), mobile-mcp / uiautomator2 MCP servers (each needs per-agent MCP config), scrcpy (needs a display). Add these if agents need them.
 - Outbound container traffic was already unrestricted (default bridge), so `--adb` does not open any extra ports.
