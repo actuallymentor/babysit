@@ -73,15 +73,29 @@ if [ "${BABYSIT_VENV_ISOLATED:-0}" = "1" ] && [ -d /workspace/.venv ]; then
     chown -R "$HOST_UID:$HOST_GID" /workspace/.venv 2>/dev/null || true
 fi
 
-# --adb: the shared key volume may carry another session's uid, so claim it
-# (it holds a handful of small files). Generate the key pair once under a
-# lock — concurrent first launches would otherwise each mint a key and leave
-# devices trusting one that a sibling overwrote.
-if [ "${BABYSIT_ADB:-0}" = "1" ] && [ -d /home/node/.android ]; then
-    chown -R "$HOST_UID:$HOST_GID" /home/node/.android 2>/dev/null || true
-    chmod 700 /home/node/.android 2>/dev/null || true
-    gosu node flock /home/node/.android/.keygen.lock \
-        sh -c '[ -s /home/node/.android/adbkey ] || adb keygen /home/node/.android/adbkey' >/dev/null 2>&1 || true
+# --adb: one root-owned key pair in the shared volume, copied into a
+# container-local ~/.android. Sessions run as different uids (macOS host 501,
+# sandbox 1000), so they must never fight over ownership of shared files.
+# Mint the key once under a lock (concurrent first launches would otherwise
+# each mint one), validate it, and publish atomically: adb never regenerates
+# an existing key, so a truncated one would poison every later session.
+ADB_KEYS=/opt/babysit-adb
+if [ "${BABYSIT_ADB:-0}" = "1" ] && [ -d "$ADB_KEYS" ]; then
+    if ! flock "$ADB_KEYS/.keygen.lock" sh -c '
+        cd "$1" || exit 1
+        openssl rsa -check -noout -in adbkey >/dev/null 2>&1 && [ -s adbkey.pub ] && exit 0
+        rm -f .adbkey.tmp .adbkey.tmp.pub
+        adb keygen .adbkey.tmp >/dev/null 2>&1 \
+            && openssl rsa -check -noout -in .adbkey.tmp >/dev/null 2>&1 \
+            && mv .adbkey.tmp.pub adbkey.pub && mv .adbkey.tmp adbkey
+    ' _ "$ADB_KEYS"; then
+        echo "babysit: could not initialise the shared adb key; devices will ask to authorise this session" >&2
+    fi
+    mkdir -p /home/node/.android
+    cp "$ADB_KEYS/adbkey" "$ADB_KEYS/adbkey.pub" /home/node/.android/ 2>/dev/null || true
+    chown -R "$HOST_UID:$HOST_GID" /home/node/.android
+    chmod 700 /home/node/.android
+    chmod 600 /home/node/.android/adbkey 2>/dev/null || true
 fi
 
 # Materialize the credential-only GitHub profile uploaded into the stopped

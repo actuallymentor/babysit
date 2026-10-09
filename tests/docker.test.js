@@ -1213,7 +1213,7 @@ describe( `build_docker_command`, () => {
 
         const cmd = build_docker_command( make_options( { mode: { adb: true }, modifiers: [ `adb` ] } ) )
 
-        expect( cmd ).toContain( `babysit-adb:/home/node/.android:nocopy` )
+        expect( cmd ).toContain( `babysit-adb:/opt/babysit-adb` )
         expect( cmd ).toContain( `--add-host host.docker.internal:host-gateway` )
         expect( cmd ).toContain( `BABYSIT_ADB=1` )
 

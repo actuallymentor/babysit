@@ -284,9 +284,9 @@ const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => 
  */
 const add_adb_flags = flags => {
 
-    // nocopy: concurrent first launches must not race the image copy-up.
-    // The entrypoint chowns the root and generates the key pair under a lock.
-    flags.push( `-v`, `${ ADB_KEYS_VOLUME }:/home/node/.android:nocopy` )
+    // Mounted outside the home so the uid-remap sweep never touches it. The
+    // entrypoint mints the pair there once and copies it into ~/.android.
+    flags.push( `-v`, `${ ADB_KEYS_VOLUME }:/opt/babysit-adb` )
     flags.push( `--add-host`, `host.docker.internal:host-gateway` )
     flags.push( `-e`, `BABYSIT_ADB=1` )
 
