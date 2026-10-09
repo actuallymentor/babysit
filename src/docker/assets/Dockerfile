@@ -1,7 +1,8 @@
 # Babysit container image — sandboxed environment for LLM coding agents
-# Base: Node.js 24 LTS on Debian slim
+# Base: Node.js 24 LTS on Debian 13 (trixie) slim — pin the codename so the
+# base never silently tracks an older or newer Debian release.
 ARG NODE_VERSION=24
-FROM node:${NODE_VERSION}-slim
+FROM node:${NODE_VERSION}-trixie-slim
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -28,6 +29,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     htop strace lsof procps \
     # Network
     netcat-openbsd dnsutils iproute2 iputils-ping \
+    # Android device control (trixie ships adb 34: `adb pair` needs 30+)
+    adb fastboot \
     # Editors / pagers
     vim nano less \
     # Agent-friendly extras (sir-claudius parity). `ripgrep` comes from
@@ -107,19 +110,6 @@ RUN set -eux; \
     unzip -q /tmp/bun.zip -d /tmp; \
     install -m 0755 "/tmp/bun-linux-${BUN_ARCH}/bun" /usr/local/bin/bun; \
     rm -rf /tmp/bun.zip "/tmp/bun-linux-${BUN_ARCH}"
-
-# Android device tooling. Stable ships adb 29, which predates `adb pair`
-# (Wireless debugging needs 30+), so take adb/fastboot from the codename's
-# backports; `-t` falls back to stable once a release ships a current build.
-# Stable `aapt` links the old android libs and breaks beside them — omitted.
-# --adb sessions add the shared key volume; the tools are always present.
-RUN set -eux; \
-    . /etc/os-release; \
-    echo "deb http://deb.debian.org/debian ${VERSION_CODENAME}-backports main" > /etc/apt/sources.list.d/backports.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends -t "${VERSION_CODENAME}-backports" adb fastboot; \
-    rm -rf /var/lib/apt/lists/*; \
-    adb version
 
 # Python uv (fast pip replacement) — install system-wide
 RUN set -eux; \
