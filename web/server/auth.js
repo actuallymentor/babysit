@@ -51,19 +51,22 @@ export class SessionStore {
 
     constructor( ttl_ms ) {
         this.ttl_ms = ttl_ms
-        // Logged-out tokens until they expire. Lost on restart, which is fine:
-        // logout also clears the HttpOnly cookie, so the browser forgets it.
+        // Logged-out session families until their last cookie could expire.
+        // In memory only: the server keeps no writable state. Logout also
+        // clears the HttpOnly cookie, so the browser itself forgets it.
         this.revoked = new Map()
     }
 
-    create( { access_id, role } ) {
-        const payload = Buffer.from( JSON.stringify( { expires_at: Date.now() + this.ttl_ms, nonce: randomBytes( 9 ).toString( `base64url` ), role } ) ).toString( `base64url` )
+    // A family is one login; renewals keep it, so logout revokes every
+    // cookie descended from that login, not just the one presented.
+    create( { access_id, family = randomBytes( 12 ).toString( `base64url` ), role } ) {
+        const payload = Buffer.from( JSON.stringify( { expires_at: Date.now() + this.ttl_ms, family, role } ) ).toString( `base64url` )
         return `${ payload }.${ sign( payload, access_id ) }`
     }
 
     get( token, access_id ) {
         const [ payload, signature, extra ] = typeof token === `string` ? token.split( `.` ) : []
-        if( !payload || !signature || extra !== undefined || this.revoked.has( token ) ) return null
+        if( !payload || !signature || extra !== undefined ) return null
 
         const expected = Buffer.from( sign( payload, access_id ) )
         const supplied = Buffer.from( signature )
@@ -73,7 +76,8 @@ export class SessionStore {
             const session = JSON.parse( Buffer.from( payload, `base64url` ).toString( `utf8` ) )
             if( !Number.isFinite( session.expires_at ) || session.expires_at <= Date.now() ) return null
             if( `:${ session.role }` !== access_id.slice( access_id.lastIndexOf( `:` ) ) ) return null
-            return { access_id, expires_at: session.expires_at, role: session.role }
+            if( typeof session.family !== `string` || this.revoked.has( session.family ) ) return null
+            return { access_id, expires_at: session.expires_at, family: session.family, role: session.role }
         } catch {
             return null
         }
@@ -84,12 +88,11 @@ export class SessionStore {
         return session.expires_at - Date.now() < this.ttl_ms / 2
     }
 
-    delete( token ) {
-        if( !token ) return
-
+    /** Revoke a verified session's whole family (see create). */
+    delete( session ) {
         const now = Date.now()
-        for( const [ revoked, expires_at ] of this.revoked ) if( expires_at <= now ) this.revoked.delete( revoked )
-        this.revoked.set( token, now + this.ttl_ms )
+        for( const [ family, expires_at ] of this.revoked ) if( expires_at <= now ) this.revoked.delete( family )
+        this.revoked.set( session.family, now + this.ttl_ms )
     }
 }
 

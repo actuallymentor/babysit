@@ -162,17 +162,15 @@ const api_route = async ( request, response, pathname, stores, config ) => {
     const identity = authenticated_session( request, sessions, access )
     if( !identity ) return json( response, 401, { error: `Authentication required` } )
 
-    // Sliding expiry: the app checks /api/me on every open, so active users
-    // get a fresh cookie well before the old one lapses.
-    if( request.method === `GET` && pathname === `/api/me` ) {
-        const renewal = sessions.needs_renewal( identity )
-            ? { 'Set-Cookie': session_cookie( sessions.create( identity ), request, config ) }
-            : {}
-        return json( response, 200, { role: identity.role }, renewal )
-    }
+    // Sliding expiry: any authenticated call past half-life carries a fresh
+    // cookie, so an open (polling) app never lapses. Logout's own clearing
+    // Set-Cookie, passed to writeHead, takes precedence over this one.
+    if( sessions.needs_renewal( identity ) ) response.setHeader( `Set-Cookie`, session_cookie( sessions.create( identity ), request, config ) )
+
+    if( request.method === `GET` && pathname === `/api/me` ) return json( response, 200, { role: identity.role } )
 
     if( request.method === `POST` && pathname === `/api/logout` ) {
-        sessions.delete( cookie_value( request.headers.cookie, COOKIE_NAME ) )
+        sessions.delete( identity )
         return json( response, 200, { ok: true }, { 'Set-Cookie': clear_cookie( request, config ) } )
     }
 

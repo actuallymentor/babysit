@@ -136,7 +136,10 @@ describe( `auth check`, () => {
                 usage_runs.push( usage )
                 return [ `claude/anthropic/weekly` ]
             },
-            logout_alert: async name => logouts.push( name ),
+            logout_alerts: async found => {
+                logouts.push( ...found.map( logout => logout.agent ) )
+                return found.map( logout => logout.agent )
+            },
             run_auth_check: async agent => agent.name === `codex`
                 ? { name: `codex`, status: `unauthenticated`, authenticated: false, reason: `401` }
                 : { name: agent.name, status: `failed`, authenticated: false, reason: `network` },
@@ -145,6 +148,7 @@ describe( `auth check`, () => {
         expect( await exit_code ).toBe( 1 )
         expect( usage_runs ).toEqual( [ { agents: [] } ] )
         expect( rendered() ).toContain( `Usage alerts sent: claude/anthropic/weekly` )
+        expect( rendered() ).toContain( `Logout alerts sent: codex` )
         // A failed probe is a blip, not a logout
         expect( logouts ).toEqual( [ `codex` ] )
         expect( lease.released ).toBe( 1 )
@@ -164,7 +168,7 @@ describe( `auth check`, () => {
         expect( usage_reads ).toBe( 0 )
         expect( silent.lease.released ).toBe( 0 )
 
-        const notifying = check( { select_agents: () => [], read_usage, env: ENV_PUSHOVER, usage_alerts: async () => [] } )
+        const notifying = check( { select_agents: () => [], read_usage, env: ENV_PUSHOVER, usage_alerts: async () => [], logout_alerts: async () => [] } )
         expect( await notifying.exit_code ).toBe( 0 )
         expect( usage_reads ).toBe( 1 )
         expect( notifying.lease.released ).toBe( 1 )
