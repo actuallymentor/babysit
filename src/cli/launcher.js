@@ -5,8 +5,13 @@ import { read_launch_defaults } from '../babysit/launch_defaults.js'
 import { parse_args } from './parse.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
-const TOGGLES = [ `docker`, `yolo`, `clone`, `loop` ]
-const ROW_COUNT = 7
+const TOGGLES = [ `docker`, `adb`, `yolo`, `clone`, `loop` ]
+const LABELS = { adb: `ADB`, yolo: `YOLO` }
+
+// Rows: model, name, one per toggle, then mode.
+const FIRST_TOGGLE_ROW = 2
+const MODE_ROW = FIRST_TOGGLE_ROW + TOGGLES.length
+const ROW_COUNT = MODE_ROW + 1
 
 const cycle = ( choices, value, direction ) =>
     choices[ ( choices.indexOf( value ) + direction + choices.length ) % choices.length ]
@@ -40,7 +45,7 @@ export const launch_menu = async ( {
         const rows = [
             `Model   ‹ ${ state.agent } ›`,
             `Name    ${ name_value }`,
-            ...TOGGLES.map( flag => `[${ state[ flag ] ? `x` : ` ` }] ${ flag === `yolo` ? `YOLO` : flag[0].toUpperCase() + flag.slice( 1 ) }` ),
+            ...TOGGLES.map( flag => `[${ state[ flag ] ? `x` : ` ` }] ${ LABELS[ flag ] || flag[0].toUpperCase() + flag.slice( 1 ) }` ),
             `Mode    ‹ ${ state.mode } ›`,
         ]
         const lines = [
@@ -103,12 +108,12 @@ export const launch_menu = async ( {
                         cursor += Array.from( text ).length
                     }
                     state.name = letters.join( `` )
-                } else if( ( row === 0 || row === 6 ) && [ `left`, `right` ].includes( key.name ) ) {
+                } else if( ( row === 0 || row === MODE_ROW ) && [ `left`, `right` ].includes( key.name ) ) {
                     const field = row === 0 ? `agent` : `mode`
                     state[ field ] = cycle( row === 0 ? SUPPORTED_AGENTS : MODES, state[ field ], key.name === `right` ? 1 : -1 )
                     if( state.mode !== `regular` ) state.clone = false
-                } else if( row >= 2 && row <= 5 && key.name === `space` ) {
-                    const flag = TOGGLES[ row - 2 ]
+                } else if( row >= FIRST_TOGGLE_ROW && row < MODE_ROW && key.name === `space` ) {
+                    const flag = TOGGLES[ row - FIRST_TOGGLE_ROW ]
                     state[ flag ] = !state[ flag ]
                     if( flag === `clone` && state.clone ) state.mode = `regular`
                 }

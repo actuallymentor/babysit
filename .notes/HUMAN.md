@@ -21,3 +21,8 @@
 
 ## 2026-10-08 — CI cache commit needs a `workflow`-scoped token
 - `.github/workflows/test.yml` change (cache pinned Codex/Claude CLIs under `~/.npm-global`, ~1 min per regression run) is committed locally on `main` but not pushed: the token in `.env.local` lacks the `workflow` scope and gh is not logged in here. Push it from a host with a scoped token or SSH key. Docker builds already use `type=gha` layer cache; `RUNTIME_REFRESH` intentionally rebuilds the agent layers nightly. Bun/npm caches are in place; Puppeteer uses system Chrome (puppeteer-core), nothing to cache there.
+
+## 2026-10-09 — `--adb` scope calls
+- USB devices are not passed through (impossible on Docker Desktop/macOS). Use network adb (`adb pair`/`adb connect`) or a host-forwarded emulator via `host.docker.internal`.
+- Not baked in: Maestro (needs a JRE, ~200MB), mobile-mcp / uiautomator2 MCP servers (each needs per-agent MCP config), scrcpy (not in bookworm; needs a display). Add these if agents need them.
+- Outbound container traffic was already unrestricted (default bridge), so `--adb` does not open any extra ports.

@@ -13,6 +13,7 @@ const KNOWN_FLAGS = [
     `clone`,
     `loop`,
     `docker`,
+    `adb`,
     `yes`,
     `ignore-host-agents-md`,
     `name`,
@@ -21,7 +22,7 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach` ]
 const AUTH_VERBS = [ `status`, `check`, `init` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
@@ -87,6 +88,7 @@ export const parse_args = ( argv ) => {
         clone: args.clone || false,
         loop: args.loop || false,
         docker: args.docker || false,
+        adb: args.adb || false,
         yes: args.yes || false,
         ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
         // Command-scoped: list and resume history/number selectors consume `--all`, while

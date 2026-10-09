@@ -48,6 +48,7 @@ Flags:
   --mudbox        Read-only workspace mount
   --clone         Work in a copy while mounting the original at /original
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
+  --adb           Android Debug Bridge access with adb keys shared across sessions
   --yes           Skip clone safety confirmation prompts
   --ignore-host-agents-md
                   Keep host agent instructions, skills, and preferences out of the container

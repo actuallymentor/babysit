@@ -212,10 +212,10 @@ describe( `interactive launch menu`, () => {
         await save_launch_defaults( parse_args( [ `claude` ] ), options )
         const menu = await open_menu( { name: `draft` } )
 
-        menu.input.write( `${ right }${ down }\x7f\x7f\x7f\x7f\x7ffix login${ down } ${ down } ${ down } ${ down } \r` )
+        menu.input.write( `${ right }${ down }\x7f\x7f\x7f\x7f\x7ffix login${ down } ${ down } ${ down } ${ down } ${ down } \r` )
         expect( await menu.result ).toMatchObject( {
             verb: `start`, agent: `codex`, passthrough: [],
-            flags: { name: `fix login`, docker: true, yolo: true, clone: true, loop: true, sandbox: false, mudbox: false },
+            flags: { name: `fix login`, docker: true, adb: true, yolo: true, clone: true, loop: true, sandbox: false, mudbox: false },
         } )
         expect( menu.raw_modes ).toEqual( [ true, false ] )
         expect( menu.input.isPaused() ).toBe( true )
@@ -239,14 +239,14 @@ describe( `interactive launch menu`, () => {
 
         await save_launch_defaults( parse_args( [ `claude`, `--clone` ] ), options )
         const menu = await open_menu()
-        menu.input.write( `${ left }${ right }${ down.repeat( 6 ) }${ right }\r` )
+        menu.input.write( `${ left }${ right }${ down.repeat( 7 ) }${ right }\r` )
 
         expect( await menu.result ).toMatchObject( {
             agent: `claude`, flags: { clone: false, sandbox: true, mudbox: false },
         } )
 
         const second = await open_menu()
-        second.input.write( `${ down.repeat( 6 ) }${ left }${ up.repeat( 2 ) } \r` )
+        second.input.write( `${ down.repeat( 7 ) }${ left }${ up.repeat( 2 ) } \r` )
         expect( await second.result ).toMatchObject( {
             flags: { clone: true, sandbox: false, mudbox: false },
         } )

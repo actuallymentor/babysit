@@ -58,6 +58,7 @@ export const mode_from_modifiers = ( modifiers = [] ) => ( {
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
+    adb: modifiers.includes( `adb` ),
     clone: modifiers.includes( `clone` ),
     ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
 } )

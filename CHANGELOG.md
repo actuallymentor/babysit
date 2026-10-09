@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.30.0 — 2026-10-09
+
+### Added
+- `--adb` flag and launch-menu `ADB` toggle. Mounts the shared `babysit-adb` volume at `~/.android`, so every session reuses one adb key pair and a phone authorises it once, not once per container. The entrypoint generates the key under a lock, so concurrent first launches agree. Also maps `host.docker.internal` (on Linux too). Network devices only (`adb pair` / `adb connect`); USB is not passed through.
+- Image ships Android tooling by default: `adb`/`fastboot` 34 from Debian backports (stable's adb 29 lacks `adb pair`), plus system-wide Python `uiautomator2` + `adbutils` for taps, swipes, text, element queries, and screenshots.
+
 ## 1.29.0 — 2026-10-09
 
 ### Changed

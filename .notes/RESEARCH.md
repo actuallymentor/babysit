@@ -218,3 +218,7 @@ Source: strings in the native binary (`~/.local/share/claude/versions/2.1.283`).
 - In bypass mode the dialog carries an auto-deny window (`tengu_splendid_horizon`: 120 s, max 3 unanswered; after that it denies without a dialog). The deny text tells the model a person must approve and to use literal paths.
 - Env: `CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT` drops only the `$(…)` variant. `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT` removes the auto-deny window, so the dialog would block indefinitely (worse for unattended runs). Empty-variable check is server-gated (`tengu_bright_lake`).
 - "Allow reads outside the working directories?" is an auto-mode-only one-time question (`auto_mode_outside_reads`), not a bypass-mode dialog.
+
+## Android/adb tooling — 2026-10-09
+- adb versions: bookworm 29.0.6 (no pair); bookworm-backports/trixie 34.0.5; Google platform-tools r37.0.1 (x86_64 only on Linux).
+- Agent phone control options: mobile-mcp (mobile-next, most adopted), Maestro + `maestro mcp` (YAML flows, JRE), uiautomator2 MCP servers (community, so audit them first). Raw adb is enough for basics: `input tap/swipe/text`, `exec-out screencap -p`, `uiautomator dump`.

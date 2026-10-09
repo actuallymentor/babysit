@@ -619,6 +619,7 @@ describe( `merge_resume_flags`, () => {
             sandbox: false,
             mudbox: false,
             docker: false,
+            adb: false,
             clone: false,
             loop: false,
             ignore_host_agents_md: false,

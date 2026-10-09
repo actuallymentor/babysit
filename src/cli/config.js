@@ -118,7 +118,7 @@ export const cmd_config = async ( cmd, {
             : `unsupported on this platform` ],
         [ `Menu default agent`, defaults.agent ],
         [ `Menu default mode`, defaults.mode ],
-        [ `Menu default flags`, `yolo ${ toggle( defaults.yolo ) }, clone ${ toggle( defaults.clone ) }, loop ${ toggle( defaults.loop ) }, Docker access ${ toggle( defaults.docker ) }` ],
+        [ `Menu default flags`, `yolo ${ toggle( defaults.yolo ) }, clone ${ toggle( defaults.clone ) }, loop ${ toggle( defaults.loop ) }, Docker access ${ toggle( defaults.docker ) }, ADB ${ toggle( defaults.adb ) }` ],
     ]
 
     output.write( `\nbabysit config\n\n${ rows.map( ( [ label, value ] ) => `${ `${ label }:`.padEnd( 24 ) }${ value }` ).join( `\n` ) }\n\n` )
