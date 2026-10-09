@@ -24,12 +24,15 @@ describe( `account usage`, () => {
         ] } ] }
         const plain = format_usage( report, { env: { NO_COLOR: `1` } } )
         expect( plain ).toContain( `  limit           used  remaining      resets` )
-        expect( plain ).toMatch( /five_hour +42% +in 3h 12m Oct 9 \d\d:12/ )
+        // Absolute dates render in local time, so only their shape is asserted
+        expect( plain ).toMatch( /five_hour +42% +in 3h 12m \w{3} \d{1,2} \d\d:\d\d/ )
         expect( plain ).toMatch( /seven_day +95% +in 2d 6h/ )
         expect( plain ).toContain( `12.34 credits` )
         const colored = format_usage( report, { env: { FORCE_COLOR: `1` } } )
         expect( colored ).toContain( `\x1b[32m42%\x1b[0m` )
         expect( colored ).toContain( `\x1b[31m95%\x1b[0m` )
+        expect( format_usage( report, { env: { FORCE_COLOR: `0` }, stream: { isTTY: true } } ) ).not.toContain( `\x1b[` )
+        expect( format_usage( { agents: [ { agent: `c`, status: `ok`, limits: [ { name: `p`, used_percent: 65.123456789 } ] } ] }, { env: { NO_COLOR: `1` } } ) ).toContain( `65.12%` )
         expect( format_usage( { agents: [ { agent: `codex`, status: `ok`, limits: [ { name: `x` } ] } ] }, { env: { NO_COLOR: `1` } } ) ).toContain( `x      not reported` )
     } )
 

@@ -3,7 +3,7 @@
 
 const CODES = { dim: `2;38;5;242`, green: `32`, yellow: `33`, red: `31` }
 const color_enabled = ( { env = process.env, stream = process.stdout } = {} ) => {
-    if( env.FORCE_COLOR && env.FORCE_COLOR !== `0` ) return true
+    if( env.FORCE_COLOR ) return env.FORCE_COLOR !== `0`
     if( env.NO_COLOR || env.TERM === `dumb` ) return false
     return Boolean( stream?.isTTY )
 }
@@ -14,6 +14,7 @@ const safe_text = value => String( value ).replace( /[\x00-\x1f\x7f-\x9f]/g, `` 
 const trim_decimals = text => /^-?\d+\.\d{3,}$/.test( text ) ? Number( text ).toFixed( 2 ).replace( /\.?0+$/, `` ) : text
 const amount = value => value === null || value === undefined ? null : trim_decimals( safe_text( value ) )
 const is_number = value => typeof value === `number` && Number.isFinite( value )
+const percent = value => `${ trim_decimals( String( value ) ) }%`
 
 /** Calm below half, warning below 70%, red above; mirrors `babysit list` load colors. */
 export const usage_color = used_percent => used_percent < 50 ? `green` : used_percent < 70 ? `yellow` : `red`
@@ -59,12 +60,12 @@ const limit_row = ( limit, now, options ) => {
     const unit = limit.unit || ``
 
     const used = []
-    if( is_number( limit.used_percent ) ) used.push( { text: `${ limit.used_percent }%`, color: usage_color( limit.used_percent ) } )
+    if( is_number( limit.used_percent ) ) used.push( { text: percent( limit.used_percent ), color: usage_color( limit.used_percent ) } )
     if( amount( limit.used ) !== null ) used.push( `${ amount( limit.used ) }${ amount( limit.limit ) !== null ? ` / ${ amount( limit.limit ) }` : `` } ${ unit }`.trim() )
     else if( amount( limit.limit ) !== null ) used.push( `limit ${ amount( limit.limit ) } ${ unit }`.trim() )
 
     const remaining = []
-    if( is_number( limit.remaining_percent ) ) remaining.push( { text: `${ limit.remaining_percent }%`, color: usage_color( 100 - limit.remaining_percent ) } )
+    if( is_number( limit.remaining_percent ) ) remaining.push( { text: percent( limit.remaining_percent ), color: usage_color( 100 - limit.remaining_percent ) } )
     if( amount( limit.remaining ) !== null ) remaining.push( `${ amount( limit.remaining ) } ${ unit }`.trim() )
     if( limit.unlimited ) remaining.push( `no ${ unit === `USD` ? `spending cap` : `limit` }` )
 
