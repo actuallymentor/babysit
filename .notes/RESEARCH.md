@@ -108,7 +108,7 @@ Agent model defaults and container tool pins last verified against primary sourc
 - **Skip perms**: `--dangerously-skip-permissions`
 - **System prompt**: Claude supports `--append-system-prompt "text"` and `--system-prompt "text"`, but Babysit deliberately uses neither for its launch brief. It types `config.initial_prompt` into the ready TUI and mounts shared user globals at Claude's native instruction path.
 - **Resume**: `claude --resume <id>` or `claude -r <id>`
-- **Model**: `--model best` tracks Claude Code's highest-capability generally available model and currently resolves equivalently to Opus.
+- **Model**: babysit launches `--model default` (Claude Code's recommended model; `claude --model default` answered `claude-opus-5-5` on 2026-10-09). `--model best` resolves to Fable 5.1, which has a separate, much smaller weekly cap (`weekly_scoped / Fable` hit 100% while `weekly_all` was 65%). AA 2026-10-09 at medium effort: Opus 5.5 int 51.2 @ $1.34/task vs Fable 5.1 int 48.9 @ $2.98; Opus 5.5 coding/agentic scores not yet published.
 - **Effort**: `--effort medium` is Babysit's balanced default, explicitly requested by the user on 2026-10-01. Deeper effort remains opt-in.
 - **Creds**: `~/.claude/.credentials.json` (linux), Keychain service "Claude Code-credentials" (macOS)
 - **Install location**: `~/.local/bin/claude` (binary lives under `~/.local/share/claude/versions/` with a symlink in `~/.local/bin`). Container Dockerfile must add `~/.local/bin` to PATH.

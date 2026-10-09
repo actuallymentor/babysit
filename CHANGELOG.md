@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.29.0 — 2026-10-09
+
+### Changed
+- Claude sessions now launch with `--model default` (Claude Code's recommended model, Opus 5.5 today) instead of `--model best` (Fable 5.1). Fable has its own much smaller weekly cap, and at the default medium effort Opus 5.5 scores higher on the Artificial Analysis intelligence index (51.2 vs 48.9) at under half the cost per task. Pass `--model best` to opt into Fable; an explicit `--model` always wins.
+
 ## 1.28.0 — 2026-10-09
 
 ### Changed

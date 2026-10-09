@@ -29,7 +29,7 @@ babysit antigravity --mudbox
 
 Unknown flags pass through: `babysit claude --yolo --model sonnet --effort high`.
 Explicit models override defaults. Codex defaults to `gpt-6-astra`, effort `medium`.
-Claude defaults to `best`, effort `medium`; explicit effort flags override it.
+Claude defaults to `default` (Claude Code's recommended model), effort `medium`; explicit flags override it. Use `--model best` for Fable, which has a smaller weekly cap.
 
 ### Launcher
 
