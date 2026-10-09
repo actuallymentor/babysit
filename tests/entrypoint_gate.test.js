@@ -14,10 +14,7 @@ const run_gate = ( { env = {}, release_after_ms = null } = {} ) => new Promise( 
     const script = join( directory, `gate.sh` )
     writeFileSync( script, `${ section }\necho released` )
 
-    // Strip the launcher's own gate variables: this suite often runs inside a
-    // managed Babysit session, which would otherwise make the no-flag case wait.
-    const { BABYSIT_BOOTSTRAP_WAIT, BABYSIT_BOOTSTRAP_TIMEOUT_SECONDS, ...clean_env } = process.env
-    const child = spawn( `bash`, [ script ], { env: { ...clean_env, ...env }, stdio: [ `ignore`, `pipe`, `pipe` ] } )
+    const child = spawn( `bash`, [ script ], { env: { ...process.env, ...env }, stdio: [ `ignore`, `pipe`, `pipe` ] } )
     let output = ``
     let errors = ``
     child.stdout.on( `data`, data => {
