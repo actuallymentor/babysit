@@ -56,7 +56,7 @@ Use explicit commands in scripts.
 | `--mudbox` | Read-only workspace mount |
 | `--clone` | Durable workspace clone + `/original`; explicit merge-back |
 | `--docker` | Host Docker daemon access |
-| `--adb` | `adb` + shared key volume (`babysit-adb`): authorise a device once for every session. Network devices only (`adb pair` / `adb connect`), host at `host.docker.internal` |
+| `--adb` | `adb` + shared key (`babysit-adb` volume, copied into `~/.android`): authorise a device once for every session. Network devices only (`adb pair` / `adb connect`), host at `host.docker.internal` |
 | `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |

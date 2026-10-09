@@ -160,7 +160,6 @@ RUN set -eux; \
 # and prompt-file writes done by the `node` user).
 RUN mkdir -p \
         /home/node/.npm-global \
-        /home/node/.android \
         /home/node/.babysit-capture \
         /home/node/.claude/projects \
         /home/node/.claude/plans \
