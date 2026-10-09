@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/
@@ -40,34 +40,56 @@ export class AccessStore {
     }
 }
 
-/** Stores short-lived opaque browser sessions in memory. */
+// Derive the signing key from the stored token hash: sessions then survive
+// server restarts with no state to persist, and rotating the access token
+// (`babysit web init`) changes the key, invalidating every session at once.
+const session_key = access_id => createHmac( `sha256`, access_id ).update( `babysit-web-session-v1` ).digest()
+const sign = ( payload, access_id ) => createHmac( `sha256`, session_key( access_id ) ).update( payload ).digest( `base64url` )
+
+/** Issues stateless HMAC-signed browser sessions bound to the current access token. */
 export class SessionStore {
 
     constructor( ttl_ms ) {
         this.ttl_ms = ttl_ms
-        this.sessions = new Map()
+        // Logged-out tokens until they expire. Lost on restart, which is fine:
+        // logout also clears the HttpOnly cookie, so the browser forgets it.
+        this.revoked = new Map()
     }
 
     create( { access_id, role } ) {
-        const token = randomBytes( 32 ).toString( `base64url` )
-        this.sessions.set( token, { access_id, expires_at: Date.now() + this.ttl_ms, role } )
-        return token
+        const payload = Buffer.from( JSON.stringify( { expires_at: Date.now() + this.ttl_ms, nonce: randomBytes( 9 ).toString( `base64url` ), role } ) ).toString( `base64url` )
+        return `${ payload }.${ sign( payload, access_id ) }`
     }
 
-    get( token ) {
-        const session = token && this.sessions.get( token )
-        if( !session ) return null
+    get( token, access_id ) {
+        const [ payload, signature, extra ] = typeof token === `string` ? token.split( `.` ) : []
+        if( !payload || !signature || extra !== undefined || this.revoked.has( token ) ) return null
 
-        if( session.expires_at <= Date.now() ) {
-            this.sessions.delete( token )
+        const expected = Buffer.from( sign( payload, access_id ) )
+        const supplied = Buffer.from( signature )
+        if( supplied.length !== expected.length || !timingSafeEqual( supplied, expected ) ) return null
+
+        try {
+            const session = JSON.parse( Buffer.from( payload, `base64url` ).toString( `utf8` ) )
+            if( !Number.isFinite( session.expires_at ) || session.expires_at <= Date.now() ) return null
+            if( `:${ session.role }` !== access_id.slice( access_id.lastIndexOf( `:` ) ) ) return null
+            return { access_id, expires_at: session.expires_at, role: session.role }
+        } catch {
             return null
         }
+    }
 
-        return session
+    /** Sessions past half their lifetime are reissued, so active use never expires. */
+    needs_renewal( session ) {
+        return session.expires_at - Date.now() < this.ttl_ms / 2
     }
 
     delete( token ) {
-        if( token ) this.sessions.delete( token )
+        if( !token ) return
+
+        const now = Date.now()
+        for( const [ revoked, expires_at ] of this.revoked ) if( expires_at <= now ) this.revoked.delete( revoked )
+        this.revoked.set( token, now + this.ttl_ms )
     }
 }
 

@@ -29,7 +29,8 @@ export const read_config = ( environment=process.env ) => ( {
     public_origin: configured_origin( environment.BABYSIT_WEB_PUBLIC_ORIGIN ),
     request_dir: resolve( environment.BABYSIT_WEB_REQUEST_DIR || `/bridge/requests` ),
     request_ttl_ms: positive_integer( environment.BABYSIT_WEB_REQUEST_TTL_MS, 20_000 ),
-    session_ttl_ms: positive_integer( environment.BABYSIT_WEB_SESSION_TTL_MS, 43_200_000 ),
+    // 30 days, renewed on use (see /api/me).
+    session_ttl_ms: positive_integer( environment.BABYSIT_WEB_SESSION_TTL_MS, 2_592_000_000 ),
     state_dir: resolve( environment.BABYSIT_WEB_STATE_DIR || `/bridge/state` ),
     static_dir: resolve( environment.BABYSIT_WEB_STATIC_DIR || new URL( `../dist`, import.meta.url ).pathname ),
     trust_proxy: environment.BABYSIT_WEB_TRUST_PROXY === `1`,
