@@ -108,6 +108,19 @@ RUN set -eux; \
     install -m 0755 "/tmp/bun-linux-${BUN_ARCH}/bun" /usr/local/bin/bun; \
     rm -rf /tmp/bun.zip "/tmp/bun-linux-${BUN_ARCH}"
 
+# Android device tooling. Stable ships adb 29, which predates `adb pair`
+# (Wireless debugging needs 30+), so take adb/fastboot from the codename's
+# backports; `-t` falls back to stable once a release ships a current build.
+# Stable `aapt` links the old android libs and breaks beside them — omitted.
+# --adb sessions add the shared key volume; the tools are always present.
+RUN set -eux; \
+    . /etc/os-release; \
+    echo "deb http://deb.debian.org/debian ${VERSION_CODENAME}-backports main" > /etc/apt/sources.list.d/backports.list; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends -t "${VERSION_CODENAME}-backports" adb fastboot; \
+    rm -rf /var/lib/apt/lists/*; \
+    adb version
+
 # Python uv (fast pip replacement) — install system-wide
 RUN set -eux; \
     curl -fsSL https://astral.sh/uv/install.sh -o /tmp/install-uv.sh; \
@@ -147,6 +160,7 @@ RUN set -eux; \
 # and prompt-file writes done by the `node` user).
 RUN mkdir -p \
         /home/node/.npm-global \
+        /home/node/.android \
         /home/node/.babysit-capture \
         /home/node/.claude/projects \
         /home/node/.claude/plans \
@@ -196,6 +210,12 @@ RUN corepack enable \
     && npm install -g @openai/codex@latest opencode-ai@latest puppeteer \
     && mkdir -p /node_modules \
     && ln -s "$(npm root -g)/puppeteer" /node_modules/puppeteer
+
+# uiautomator2 (+ adbutils): the standard Python driver for Android UI
+# control over adb — taps, swipes, text, element queries, screenshots.
+# System-wide so any `python3` script can import it; refreshed with the layer.
+RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore uiautomator2 \
+    && python3 -c "import uiautomator2, adbutils"
 
 # Switch to non-root user for user-scoped agent installs
 USER node

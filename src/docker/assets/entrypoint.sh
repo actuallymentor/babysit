@@ -73,6 +73,17 @@ if [ "${BABYSIT_VENV_ISOLATED:-0}" = "1" ] && [ -d /workspace/.venv ]; then
     chown -R "$HOST_UID:$HOST_GID" /workspace/.venv 2>/dev/null || true
 fi
 
+# --adb: the shared key volume may carry another session's uid, so claim it
+# (it holds a handful of small files). Generate the key pair once under a
+# lock — concurrent first launches would otherwise each mint a key and leave
+# devices trusting one that a sibling overwrote.
+if [ "${BABYSIT_ADB:-0}" = "1" ] && [ -d /home/node/.android ]; then
+    chown -R "$HOST_UID:$HOST_GID" /home/node/.android 2>/dev/null || true
+    chmod 700 /home/node/.android 2>/dev/null || true
+    gosu node flock /home/node/.android/.keygen.lock \
+        sh -c '[ -s /home/node/.android/adbkey ] || adb keygen /home/node/.android/adbkey' >/dev/null 2>&1 || true
+fi
+
 # Materialize the credential-only GitHub profile uploaded into the stopped
 # container through `docker cp`. The bootstrap never appears in Config.Env or
 # bind-mount metadata, and is removed before the coding agent starts.

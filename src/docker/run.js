@@ -16,6 +16,10 @@ export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
 export const BABYSIT_RC_CONTAINER_PATH = `/home/node/.babysitrc`
 export const BABYSIT_HOST_RC_ENV = `BABYSIT_HOST_BABYSITRC`
+
+// One volume for every --adb session: devices authorise this key pair once.
+export const ADB_KEYS_VOLUME = `babysit-adb`
+
 export const WATCHTOWER_DISABLE_LABEL = `com.centurylinklabs.watchtower.enable=false`
 
 // Claude's Commander parser consumes required operands even when they look
@@ -268,6 +272,23 @@ const add_docker_socket_flags = ( flags, { socket_path, workspace_source } ) => 
     } catch ( e ) {
         log.debug( `Could not stat ${ socket_path } for group-add: ${ e.message }` )
     }
+
+}
+
+/**
+ * Add Android Debug Bridge flags: shared key volume and a host route.
+ * Outbound bridge traffic already reaches LAN devices (5555, Wireless
+ * debugging pair/connect ports); host-gateway adds the host side on Linux,
+ * where Docker Desktop's host.docker.internal alias does not exist.
+ * @param {string[]} flags - Docker command argument list to mutate
+ */
+const add_adb_flags = flags => {
+
+    // nocopy: concurrent first launches must not race the image copy-up.
+    // The entrypoint chowns the root and generates the key pair under a lock.
+    flags.push( `-v`, `${ ADB_KEYS_VOLUME }:/home/node/.android:nocopy` )
+    flags.push( `--add-host`, `host.docker.internal:host-gateway` )
+    flags.push( `-e`, `BABYSIT_ADB=1` )
 
 }
 
@@ -569,6 +590,7 @@ export const build_docker_command_args = ( options ) => {
     else if( mode.mudbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=mudbox` )
 
     if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
+    if( mode.adb ) add_adb_flags( flags )
 
     for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )

@@ -137,6 +137,11 @@ describe( `build_system_prompt`, () => {
         expect( prompt ).toContain( `BABYSIT_HOST_WORKSPACE` )
     } )
 
+    it( `appends adb guidance only when mode.adb is set`, () => {
+        expect( build_system_prompt( { adb: true } ) ).toContain( `ADB enabled` )
+        expect( build_system_prompt( {} ) ).not.toContain( `ADB enabled` )
+    } )
+
     it( `describes host-profile isolation when requested`, () => {
         const prompt = build_system_prompt( { ignore_host_agents_md: true } )
         expect( prompt ).toContain( `Host instructions, skills, and preferences are omitted` )

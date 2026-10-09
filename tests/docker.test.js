@@ -1209,6 +1209,20 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `mounts the shared adb key volume and host route when --adb is enabled`, () => {
+
+        const cmd = build_docker_command( make_options( { mode: { adb: true }, modifiers: [ `adb` ] } ) )
+
+        expect( cmd ).toContain( `babysit-adb:/home/node/.android:nocopy` )
+        expect( cmd ).toContain( `--add-host host.docker.internal:host-gateway` )
+        expect( cmd ).toContain( `BABYSIT_ADB=1` )
+
+        const plain = build_docker_command( make_options( {} ) )
+        expect( plain ).not.toContain( `babysit-adb` )
+        expect( plain ).not.toContain( `BABYSIT_ADB` )
+
+    } )
+
     it( `extracts local Unix sockets from DOCKER_HOST`, () => {
 
         expect( docker_host_socket_path( `unix:///tmp/docker.sock` ) ).toBe( `/tmp/docker.sock` )

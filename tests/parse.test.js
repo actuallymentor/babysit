@@ -208,6 +208,13 @@ describe( `parse_args`, () => {
         expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
     } )
 
+    it( `does not pass --adb through to the agent`, () => {
+        const cmd = parse_args( [ `claude`, `--adb`, `--model`, `sonnet` ] )
+        expect( cmd.flags.adb ).toBe( true )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `sonnet` ] )
+        expect( parse_args( [ `claude` ] ).flags.adb ).toBe( false )
+    } )
+
     it( `recognises clone safety flags without passing them to the agent`, () => {
         const cmd = parse_args( [ `codex`, `--clone`, `--yes`, `--model`, `gpt-5.6-sol` ] )
 

@@ -56,6 +56,7 @@ Use explicit commands in scripts.
 | `--mudbox` | Read-only workspace mount |
 | `--clone` | Durable workspace clone + `/original`; explicit merge-back |
 | `--docker` | Host Docker daemon access |
+| `--adb` | `adb` + shared key volume (`babysit-adb`): authorise a device once for every session. Network devices only (`adb pair` / `adb connect`), host at `host.docker.internal` |
 | `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
@@ -396,7 +397,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Codex config is staged in a temporary copy; invalid TOML fails before staging.
 - Codex host `auth.json` changes sync automatically; five-minute reconciliation remains as fallback.
 - Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
-- Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf.
+- Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf, adb/fastboot, Python uiautomator2.
 - Image builds refresh agent CLIs on every run/attempt and log installed versions.
 - `babysit update` allows 120 seconds for image pulls and reports the image version.
   Older/unlabelled images show `version unavailable`.

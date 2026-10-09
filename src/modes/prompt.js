@@ -1,4 +1,4 @@
-import { base, yolo, sandbox, mudbox, clone, docker_mode, host_agent_context_ignored } from '../system_prompt/index.js'
+import { base, yolo, sandbox, mudbox, clone, docker_mode, adb_mode, host_agent_context_ignored } from '../system_prompt/index.js'
 
 /**
  * Build the full system prompt based on active mode flags
@@ -13,6 +13,7 @@ export const build_system_prompt = ( mode ) => {
     if( mode.mudbox ) parts.push( mudbox )
     if( mode.clone ) parts.push( clone )
     if( mode.docker ) parts.push( docker_mode )
+    if( mode.adb ) parts.push( adb_mode )
     if( mode.ignore_host_agents_md ) parts.push( host_agent_context_ignored )
     if( mode.yolo ) parts.push( yolo )
 

@@ -16,4 +16,6 @@ export const clone = `Clone: /workspace is a copy of /original. Work in /workspa
 
 export const docker_mode = `Host Docker access enabled: containers run as siblings. Use BABYSIT_HOST_WORKSPACE for host workspace mounts. Docker access bypasses filesystem isolation.`
 
+export const adb_mode = `ADB enabled: ~/.android holds an adb key pair shared by every --adb session, so a device authorises it once. USB is not passed through; reach devices over the network with \`adb pair\` / \`adb connect HOST:PORT\`. The Docker host is host.docker.internal. Control devices with \`adb shell input\`, \`adb exec-out screencap -p\`, \`adb shell uiautomator dump\`, or Python uiautomator2.`
+
 export const host_agent_context_ignored = `Host instructions, skills, and preferences are omitted. Project instructions and authentication remain available.`

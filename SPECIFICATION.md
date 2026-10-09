@@ -9,7 +9,7 @@ The core functionality is that when run, `babysit` will:
 - Start a `babysit` docker container that will contain the LLM coding agent cli
 - The container mounts the current PWD in /workspace, so the LLM coding agent cli can read/write files in the current directory. With `--clone`, it instead mounts a durable copy from `~/.babysit/clones/<session-id>` at `/workspace` and mounts the original PWD read-write at `/original` for explicit merge-back work
 - By default, mounts the host ~/.agents to the container ~/.agents. With `--ignore-host-agents-md`, host-global agent instructions, skills, loop instructions, and preferences are omitted while credentials remain available.
-- The container installs the dependencies that sir-claudius has in the image as well (look at that dockerfile), plus common coding-agent tools including fzf, pkgconf, psmisc, socat, ACL/inotify utilities, entr, shfmt, git-filter-repo, Universal Ctags, qpdf, the latest multi-arch Google Chrome Stable, globally importable Puppeteer configured to reuse that browser, Xvfb/X11 utilities for headful automation, and Poppler PDF utilities
+- The container installs the dependencies that sir-claudius has in the image as well (look at that dockerfile), plus common coding-agent tools including fzf, pkgconf, psmisc, socat, ACL/inotify utilities, entr, shfmt, git-filter-repo, Universal Ctags, qpdf, the latest multi-arch Google Chrome Stable, globally importable Puppeteer configured to reuse that browser, Xvfb/X11 utilities for headful automation, Poppler PDF utilities, and Android device tooling (backports `adb`/`fastboot` new enough for `adb pair`, system-wide Python `uiautomator2` + `adbutils`)
 - Start the coding agent in the container
 - Importantly, the container has passwordlless sudo, and has all coding clis preinstalled, with the host credentials for these agents passed through in a platform-specific manner (we support OSX and Ubuntu Linux)
 - Run mode is passed to the container through the environment variable AGENT_AUTONOMY_MODE, which can be `sandbox`, `mudbox`, `yolo`, or empty for default. The system prompt of the coding agent is configured based on this mode to give the agent appropriate instructions and limitations.
@@ -99,6 +99,12 @@ With `--docker` this is APPENDED:
 Host Docker access enabled: containers run as siblings. Use BABYSIT_HOST_WORKSPACE for host workspace mounts. Docker access bypasses filesystem isolation.
 ```
 
+With `--adb` this is APPENDED:
+
+```
+ADB enabled: ~/.android holds an adb key pair shared by every --adb session, so a device authorises it once. USB is not passed through; reach devices over the network with `adb pair` / `adb connect HOST:PORT`. The Docker host is host.docker.internal. Control devices with `adb shell input`, `adb exec-out screencap -p`, `adb shell uiautomator dump`, or Python uiautomator2.
+```
+
 With `--ignore-host-agents-md` this is APPENDED:
 
 ```
@@ -111,6 +117,7 @@ Host instructions, skills, and preferences are omitted. Project instructions and
 `--sandbox` do not mount any host directory into the container, the fs inside the container is ephermal
 `--mudbox` mount the current pwd as read only, so the coding agent can read files but not write them
 `--clone` transactionally copy the full current PWD, including hidden files, symlinks, and dependency folders, to `~/.babysit/clones/<session-id>`; mount the copy read-write at `/workspace` and the original read-write at `/original`. Reject combinations with sandbox/mudbox and nested Babysit Docker launches
+`--adb` mount the shared `babysit-adb` volume at `/home/node/.android` so every `--adb` session reuses one key pair (generated once under a lock by the entrypoint) and devices authorise it only once; add `host.docker.internal:host-gateway` so the host is reachable on Linux too. Outbound bridge networking already reaches LAN adb ports (5555, Wireless debugging pair/connect ports). USB devices are not passed through. Available in the launch menu as a toggle
 `--ignore-host-agents-md` omit host-global agent instruction files, skills, loop instructions, executable `~/.babysitrc` setup, and preferences while retaining credentials from supported agent files, keychains, and environment variables, minimal authentication state, and project-local instructions under `/workspace`; sanitized GitHub profiles are uploaded to a stopped container through `docker cp` before launch so profile host/account tokens do not enter Docker environment or bind-mount metadata
 `--loop` overrides the `on: idle` in the babysit.yaml to run `./LOOP.md` if it exists, otherwise `~/.agents/LOOP.md` if it exists, otherwise it types "Keep going" into the session. A `--config FILE` that defines its own `on: idle` rule is the explicit loop for that session: `--loop` (including the launch menu's remembered toggle) keeps that rule instead of replacing it. Relative `do: ./FILE.md` actions resolve beside the config file first, then against the workspace; in a clone, a config inside the source tree resolves its markdown inside the clone. Example `LOOP.md`, note that === lines denote "wait for idle" within the `LOOP.md` execution:
 

@@ -166,6 +166,7 @@ const rebuild_flags = ( modifiers = [], session = {} ) => ( {
     sandbox: modifiers.includes( `sandbox` ),
     mudbox: modifiers.includes( `mudbox` ),
     docker: modifiers.includes( `docker` ),
+    adb: modifiers.includes( `adb` ),
     clone: modifiers.includes( `clone` ),
     loop: modifiers.includes( `loop` ),
     ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
