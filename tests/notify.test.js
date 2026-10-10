@@ -177,6 +177,16 @@ describe( `logout alerts`, () => {
 
     } )
 
+    it( `ends with the fix the checker names, else a host login`, async () => {
+
+        const messages = []
+        await alert_logouts( [ { agent: `claude`, login: `x`, reason: `the host CLI reports it logged out`, fix: `Run babysit auth init --claude-token on the host.` } ], {
+            alerts_path, notify: async message => messages.push( message.message ),
+        } )
+        expect( messages ).toEqual( [ `claude was authenticated but the host CLI reports it logged out. Run babysit auth init --claude-token on the host.` ] )
+
+    } )
+
     it( `shares the state file with usage alerts without clobbering it`, async () => {
 
         await alert_logouts( [ { agent: `claude`, login: `a` } ], { alerts_path, notify: async () => true } )

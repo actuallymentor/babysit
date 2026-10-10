@@ -22,7 +22,7 @@ const KNOWN_FLAGS = [
     `auth-check-agents`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
 const AUTH_VERBS = [ `status`, `check`, `init` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
@@ -112,6 +112,8 @@ export const parse_args = ( argv ) => {
         remove: verb === `auth` && ( args.remove || false ),
         // Lingering is on by default; --no-linger opts out.
         linger: verb === `auth` && args.linger !== false,
+        // Unset: offer the token when missing. --claude-token re-mints, --no-claude-token skips.
+        claude_token: verb === `auth` && typeof args[ `claude-token` ] === `boolean` ? args[ `claude-token` ] : undefined,
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),

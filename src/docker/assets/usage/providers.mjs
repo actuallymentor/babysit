@@ -52,6 +52,26 @@ export const claude_usage = data => {
 
 }
 
+// Tokens from `claude setup-token` cannot read the usage endpoint, but every
+// model response carries the same quotas as rate-limit headers
+const CLAUDE_HEADER_LIMITS = { '5h': `session`, '7d': `weekly_all` }
+const CLAUDE_HEADER_PATTERN = /^anthropic-ratelimit-unified-(.+)-utilization$/
+
+/** Normalize Claude's `anthropic-ratelimit-unified-<claim>-*` response headers. */
+export const claude_header_usage = headers => [ ...headers.keys() ]
+    .map( key => key.match( CLAUDE_HEADER_PATTERN )?.[ 1 ] )
+    .filter( Boolean )
+    .map( claim => {
+        const utilization = Number( headers.get( `anthropic-ratelimit-unified-${ claim }-utilization` ) )
+        const reset = headers.get( `anthropic-ratelimit-unified-${ claim }-reset` )
+        return {
+            name: CLAUDE_HEADER_LIMITS[ claim ] || claim,
+            used_percent: Number.isFinite( utilization ) ? Math.round( utilization * 100 ) : null,
+            resets_at: reset ? epoch( Number( reset ) ) : null,
+        }
+    } )
+    .filter( limit => limit.used_percent !== null )
+
 /** Normalize native app-server snapshots and the underlying account endpoint. */
 export const codex_usage = data => {
 
@@ -150,5 +170,51 @@ export const provider_request = async ( url, token, { headers = {}, fetch_fn = f
     } catch {
         throw new Error( `Usage endpoint returned invalid JSON` )
     }
+
+}
+
+// The cheapest model; OAuth subscription tokens only answer requests that
+// identify as Claude Code (anything else is refused as a bare 429)
+const CLAUDE_HEADER_MODEL = `claude-haiku-5-5`
+const CLAUDE_CODE_IDENTITY = `You are Claude Code, Anthropic's official CLI for Claude.`
+
+/**
+ * Spend one output token to read Claude's quota headers. A limit that is
+ * already exhausted still answers with headers, so any status carrying them
+ * counts. Never surfaces response bodies or bearer values.
+ */
+export const claude_header_request = async ( token, { fetch_fn = fetch, timeout_ms = 15000 } = {} ) => {
+
+    let response
+    try {
+        response = await fetch_fn( `https://api.anthropic.com/v1/messages`, {
+            method: `POST`,
+            headers: {
+                Authorization: `Bearer ${ token }`,
+                'anthropic-version': `2023-06-01`,
+                'anthropic-beta': `oauth-2025-04-20`,
+                'content-type': `application/json`,
+            },
+            body: JSON.stringify( {
+                model: CLAUDE_HEADER_MODEL,
+                max_tokens: 1,
+                system: CLAUDE_CODE_IDENTITY,
+                messages: [ { role: `user`, content: `hi` } ],
+            } ),
+            signal: AbortSignal.timeout( timeout_ms ),
+            redirect: `error`,
+        } )
+    } catch {
+        throw new Error( `Usage endpoint unreachable or timed out` )
+    }
+
+    // Free the connection; the body is never read
+    response.body?.cancel().catch( () => {} )
+
+    const limits = claude_header_usage( response.headers )
+    if( limits.length ) return limits
+
+    const reason = [ 401, 403 ].includes( response.status ) ? `; run babysit auth init --claude-token on the host` : ``
+    throw Object.assign( new Error( `Claude returned HTTP ${ response.status } without usage headers${ reason }` ), { http_status: response.status } )
 
 }

@@ -434,6 +434,26 @@ describe( `auth check`, () => {
 
         } )
 
+        it( `points a dead setup-token login at auth init, not /login`, async () => {
+
+            mounts.push( { type: `env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: `sk-ant-oat01-dead` } )
+            enrol( `claude`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
+            const { logout_alerts, calls } = alerts()
+
+            const run = check( {
+                select_agents: () => [ get_agent( `claude` ) ],
+                env: { ...ENV_PUSHOVER, CLAUDE_CODE_OAUTH_TOKEN: `sk-ant-oat01-dead` },
+                read_usage: async () => ( { agents: [] } ),
+                usage_alerts: async () => [],
+                logout_alerts,
+                run_auth_check: async agent => ( { name: agent.name, status: `unauthenticated`, authenticated: false } ),
+            } )
+            await run.exit_code
+
+            expect( calls[0].found ).toEqual( [ expect.objectContaining( { agent: `claude`, fix: `Run babysit auth init --claude-token on the host.` } ) ] )
+
+        } )
+
         it( `treats a cache hit as recovery from an earlier logout`, async () => {
 
             enrol( `codex`, 1_000, { credential_parts: null } )
@@ -615,6 +635,7 @@ describe( `scheduled checker installation`, () => {
                 command,
                 environment: { PATH: `/bin` },
                 uid: 1000,
+                claude_token: async () => `skipped`,
                 execute: async ( binary, args ) => {
                     calls.push( [ binary, ...args ] )
                     return `yes`
@@ -640,6 +661,7 @@ describe( `scheduled checker installation`, () => {
                 command,
                 environment: { PATH: `/bin` },
                 uid: 1000,
+                claude_token: async () => `skipped`,
                 execute: async ( binary, args ) => {
                     calls.push( [ binary, ...args ] )
                     return ``
@@ -656,6 +678,7 @@ describe( `scheduled checker installation`, () => {
                 command,
                 environment: { PATH: `/bin` },
                 uid: 1000,
+                claude_token: async () => `skipped`,
                 execute: async ( binary, args ) => {
                     if( binary === `loginctl` ) throw new Error( `Access denied\nmore` )
                     calls.push( [ binary, ...args ] )
@@ -665,18 +688,31 @@ describe( `scheduled checker installation`, () => {
             } )
             expect( rendered() ).toContain( `Could not enable lingering (Access denied)` )
 
+            // The Claude token step runs after the checker, and never on --remove
+            const token_steps = []
+            await cmd_auth_init( { flags: { claude_token: true } }, {
+                output, scheduler, command, environment: { PATH: `/bin` }, uid: 1000,
+                execute: async () => ``,
+                write: () => {},
+                claude_token: async cmd => token_steps.push( cmd.flags.claude_token ),
+            } )
+            expect( token_steps ).toEqual( [ true ] )
+
             calls.length = 0
             const removed = []
             await cmd_auth_init( { flags: { remove: true } }, {
                 output,
                 scheduler,
                 uid: 1000,
+                claude_token: async () => `skipped`,
                 execute: async ( binary, args ) => {
                     calls.push( [ binary, ...args ] )
                     return ``
                 },
                 remove: path => removed.push( path ),
+                claude_token: async () => token_steps.push( `remove` ),
             } )
+            expect( token_steps ).toEqual( [ true ] )
 
             expect( calls[0] ).toEqual( [ `systemctl`, `--user`, `disable`, `--now`, `babysit-auth.timer` ] )
             expect( removed ).toEqual( scheduler.files )

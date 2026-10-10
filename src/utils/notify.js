@@ -141,8 +141,8 @@ export const alert_logouts = async ( logouts, { recovered = [], alerts_path = AL
 
     const alerts = read_alerts( alerts_path )
     recovered.forEach( agent => delete alerts.logouts[ agent ] )
-    for( const { agent, login, reason } of logouts ) {
-        if( alerts.logouts[ agent ]?.login !== login ) alerts.logouts[ agent ] = { login, reason, delivered: false }
+    for( const { agent, login, reason, fix } of logouts ) {
+        if( alerts.logouts[ agent ]?.login !== login ) alerts.logouts[ agent ] = { login, reason, fix, delivered: false }
     }
 
     const sent = []
@@ -151,7 +151,7 @@ export const alert_logouts = async ( logouts, { recovered = [], alerts_path = AL
 
         logout.delivered = await notify( {
             title: `Babysit: ${ agent } logged out`,
-            message: `${ agent } was authenticated but ${ logout.reason || `its latest check failed authentication` }. Log in again on the host.`,
+            message: `${ agent } was authenticated but ${ logout.reason || `its latest check failed authentication` }. ${ logout.fix || `Log in again on the host.` }`,
         } )
         if( logout.delivered ) sent.push( agent )
     }

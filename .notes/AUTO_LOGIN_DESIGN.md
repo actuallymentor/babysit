@@ -1,6 +1,6 @@
 # Automated Claude re-login — parked design (options B and D)
 
-Status 2026-10-10: **not built.** The user chose option A first: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` in `~/.babysitrc` (supported since 1.33.0). Build B, then D, only if A falls short.
+Status 2026-10-10: **not built.** The user chose option A first: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` in `~/.babysitrc`, minted by `babysit auth init` (1.34.0). Build B, then D, only if A falls short.
 
 ## Build B when any of these holds
 - A setup-token login gets revoked or logged out in practice (alert names it).
@@ -33,7 +33,7 @@ Status 2026-10-10: **not built.** The user chose option A first: `claude setup-t
    **If A is in use, the dead credential is `CLAUDE_CODE_OAUTH_TOKEN`, not the file.** It outranks `/login`, so a fresh file changes nothing. Mint a replacement with `claude setup-token` (same browser authorize flow, the token prints to the pane) and rewrite the variable in its env file, or remove the variable so sessions fall back to `/login`.
 6. Pushover result: success, or the failing step name plus a screenshot path (`~/.babysit/relogin/runs/<ts>/`).
 
-**Config.** `CLAUDE_LOGIN_EMAIL`, `BABYSIT_RELOGIN_IMAP_HOST`, `_PORT` (993), `_USER`, `_PASSWORD` (app password), optional `_SENDERS` override. Keep it in `~/.babysit/relogin/env` (0600), passed only to the relogin container. **Never put it in `~/.babysitrc`:** every agent container mounts and exports that file (`src/docker/run.js`).
+**Config.** `CLAUDE_LOGIN_EMAIL`, `BABYSIT_RELOGIN_IMAP_HOST`, `_PORT` (993), `_USER`, `_PASSWORD` (app password), optional `_SENDERS` override. Lives in `~/.babysitrc` (user decision 2026-10-10: exposure to agent containers is accepted).
 
 **Page states** are a pure classifier `(url, DOM snapshot) → consent | email_entry | check_email | code_shown | email_code_entry | success | error | captcha | unknown`, unit-tested on saved HTML fixtures. `captcha`/Cloudflare challenge → stop and alert; never solve it.
 

@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { discover_credentials } from '../src/docker/assets/usage/credentials.mjs'
 import { collect_usage, run_usage, format_usage } from '../src/docker/assets/usage/command.mjs'
 import { relative_time, usage_color } from '../src/docker/assets/usage/format.mjs'
-import { claude_usage, codex_usage, openrouter_usage, provider_request } from '../src/docker/assets/usage/providers.mjs'
+import { claude_header_usage, claude_usage, codex_usage, openrouter_usage, provider_request } from '../src/docker/assets/usage/providers.mjs'
 import { read_codex_limits } from '../src/docker/assets/usage/codex.mjs'
 
 const no_codex = async () => null
@@ -127,31 +127,58 @@ describe( `account usage`, () => {
         expect( format_usage( report ) ).toContain( `2 / 20 USD` )
     } )
 
-    it( `reads Claude usage with the /login token before a setup-token`, async () => {
+    const quota_headers = {
+        'anthropic-ratelimit-unified-5h-utilization': `0.03`,
+        'anthropic-ratelimit-unified-5h-reset': `1791657600`,
+        'anthropic-ratelimit-unified-7d-utilization': `0.26`,
+        'anthropic-ratelimit-unified-7d-reset': `1791820800`,
+        'anthropic-ratelimit-unified-status': `allowed`,
+    }
+
+    it( `normalizes Claude quota headers to the usage endpoint's names`, () => {
+        expect( claude_header_usage( new Headers( { ...quota_headers, 'anthropic-ratelimit-unified-7d_opus-utilization': `1` } ) ) ).toEqual( [
+            { name: `session`, used_percent: 3, resets_at: `2026-10-10T18:40:00.000Z` },
+            { name: `weekly_all`, used_percent: 26, resets_at: `2026-10-12T16:00:00.000Z` },
+            { name: `7d_opus`, used_percent: 100, resets_at: null },
+        ] )
+    } )
+
+    it( `reads Claude usage free with /login, then with one setup-token request`, async () => {
         const seen = []
         const report = await collect_usage( { codex_read: no_codex,
             credentials: {
                 env: { CLAUDE_CODE_OAUTH_TOKEN: `long-lived` },
                 claude: { claudeAiOauth: { accessToken: `expired-login` } },
             },
-            fetch_fn: async ( url, { headers } ) => {
-                const token = headers.Authorization || headers.authorization
-                seen.push( token )
-                return token.endsWith( `long-lived` )
-                    ? response( { five_hour: { utilization: 12, resets_at: null } } )
-                    : new Response( ``, { status: 401 } )
+            fetch_fn: async ( url, { headers, body } ) => {
+                seen.push( [ new URL( url ).pathname, headers.Authorization.replace( `Bearer `, `` ) ] )
+                if( url.includes( `/oauth/usage` ) ) return new Response( ``, { status: 401 } )
+                const request = JSON.parse( body )
+                expect( request.max_tokens ).toBe( 1 )
+                expect( request.system ).toContain( `Claude Code` )
+                return new Response( `{}`, { status: 200, headers: quota_headers } )
             },
         } )
-        expect( seen.map( token => token.replace( `Bearer `, `` ) ) ).toEqual( [ `expired-login`, `long-lived` ] )
-        expect( report.agents.find( agent => agent.agent === `claude` ).status ).toBe( `ok` )
+        expect( seen ).toEqual( [ [ `/api/oauth/usage`, `expired-login` ], [ `/v1/messages`, `long-lived` ] ] )
+        const claude = report.agents.find( agent => agent.agent === `claude` )
+        expect( claude.status ).toBe( `ok` )
+        expect( claude.source ).toContain( `1-token request` )
+        expect( claude.limits.map( limit => limit.name ) ).toEqual( [ `session`, `weekly_all` ] )
     } )
 
-    it( `reports the /login failure when the setup-token cannot read usage either`, async () => {
-        const report = await collect_usage( { codex_read: no_codex,
-            credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: `long-lived` }, claude: { claudeAiOauth: { accessToken: `expired-login` } } },
-            fetch_fn: async ( url, { headers } ) => new Response( ``, { status: headers.Authorization.endsWith( `long-lived` ) ? 403 : 401 } ),
-        } )
-        expect( report.agents.find( agent => agent.agent === `claude` ).message ).toContain( `401` )
+    it( `keeps exhausted quotas visible and names the fix for a dead setup-token`, async () => {
+        const read = status_headers => collect_usage( { codex_read: no_codex,
+            credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: `long-lived` }, claude: {} },
+            fetch_fn: async () => new Response( `secret body`, status_headers ),
+        } ).then( report => report.agents.find( agent => agent.agent === `claude` ) )
+
+        const exhausted = await read( { status: 429, headers: { ...quota_headers, 'anthropic-ratelimit-unified-5h-utilization': `1` } } )
+        expect( exhausted.limits[0] ).toMatchObject( { name: `session`, used_percent: 100 } )
+
+        const dead = await read( { status: 401 } )
+        expect( dead.status ).toBe( `error` )
+        expect( dead.message ).toContain( `babysit auth init --claude-token` )
+        expect( dead.message ).not.toContain( `secret` )
     } )
 
     it( `exposes authenticated unsupported providers instead of fabricating usage`, async () => {

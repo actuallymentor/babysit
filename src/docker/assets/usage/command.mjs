@@ -1,6 +1,6 @@
 import { discover_credentials } from './credentials.mjs'
 import { read_codex_limits } from './codex.mjs'
-import { claude_usage, codex_usage, openrouter_usage, provider_request } from './providers.mjs'
+import { claude_header_request, claude_usage, codex_usage, openrouter_usage, provider_request } from './providers.mjs'
 import { format_usage } from './format.mjs'
 
 export { format_usage }
@@ -49,20 +49,25 @@ export const collect_usage = async ( {
         `https://openrouter.ai/api/v1/key`, token
     ) ), `OpenRouter API key` )
 
+    const claude_headers = async token => successful(
+        await claude_header_request( token, { fetch_fn } ), `Claude rate-limit headers (1-token request)`
+    )
+
     query( `claude`, `anthropic`, () => {
 
         if( env.ANTHROPIC_API_KEY ) return unsupported()
 
-        // A `claude setup-token` token can only make model requests, so the
-        // /login token (which may read usage) goes first when both exist
+        // A `claude setup-token` token can only make model requests. The free
+        // usage endpoint goes first with the /login token; once nothing keeps
+        // that token fresh, the setup-token buys the same numbers with one
+        // output token. Its error is the one to report: sessions run on it.
         const login = auth.claude?.claudeAiOauth?.accessToken
         const long_lived = env.CLAUDE_CODE_OAUTH_TOKEN
-        // Both failing reports the /login error: that is the one to fix
-        if( login && long_lived && login !== long_lived ) return claude( login )
-            .catch( error => claude( long_lived ).catch( () => Promise.reject( error ) ) )
+        if( long_lived && long_lived !== login ) return login
+            ? claude( login ).catch( () => claude_headers( long_lived ) )
+            : claude_headers( long_lived )
 
-        const token = login || long_lived
-        return token ? claude( token ) : unauthenticated()
+        return login ? claude( login ) : unauthenticated()
 
     } )
     query( `codex`, `openai`, async () => {
