@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.33.0 — 2026-10-10
+
+### Added
+- Claude accepts a `claude setup-token` login: put `export CLAUDE_CODE_OAUTH_TOKEN=…` in `~/.babysitrc` and every session uses the one-year token instead of the rotating `/login` token.
+
+### Fixed
+- `babysit usage` reads Claude usage with the `/login` token first and falls back to `CLAUDE_CODE_OAUTH_TOKEN`; setup-tokens cannot read usage.
+
 ## 1.32.0 — 2026-10-10
 
 ### Added

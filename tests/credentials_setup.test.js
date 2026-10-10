@@ -500,6 +500,22 @@ describe( `setup_credentials multi-agent capture`, () => {
 
     } )
 
+    it( `passes a Claude setup-token into the container next to the /login file`, async () => {
+
+        process.env.CLAUDE_CODE_OAUTH_TOKEN = `sk-ant-oat-test`
+
+        try {
+            const result = await setup_credentials( get_agent( `claude` ) )
+            expect( result.mounts ).toContainEqual( { type: `env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: `sk-ant-oat-test` } )
+            expect( result.mounts.some( mount => mount.target === container_targets.claude ) ).toBe( true )
+            await result.sync.stop()
+            result.sync.cleanup()
+        } finally {
+            delete process.env.CLAUDE_CODE_OAUTH_TOKEN
+        }
+
+    } )
+
     it( `monitor handoff reuses every foreground tmpfile without creating new mounts`, async () => {
 
         const foreground = await setup_credentials( get_agent( `codex` ) )

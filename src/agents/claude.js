@@ -106,13 +106,18 @@ export const claude = {
     // not change authentication state.
     credential_preflight: true,
 
+    // CLAUDE_CODE_OAUTH_TOKEN is the one-year `claude setup-token` login. It
+    // outranks the /login file and never rotates, so sessions cannot race
+    // each other for a one-use refresh token. It only makes model requests.
     credentials: {
         darwin: {
             keychain_service: `Claude Code-credentials`,
             fallback_file: `~/.claude/.credentials.json`,
+            env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
         },
         linux: {
             file: `~/.claude/.credentials.json`,
+            env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
         },
     },
 

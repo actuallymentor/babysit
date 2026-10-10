@@ -127,6 +127,33 @@ describe( `account usage`, () => {
         expect( format_usage( report ) ).toContain( `2 / 20 USD` )
     } )
 
+    it( `reads Claude usage with the /login token before a setup-token`, async () => {
+        const seen = []
+        const report = await collect_usage( { codex_read: no_codex,
+            credentials: {
+                env: { CLAUDE_CODE_OAUTH_TOKEN: `long-lived` },
+                claude: { claudeAiOauth: { accessToken: `expired-login` } },
+            },
+            fetch_fn: async ( url, { headers } ) => {
+                const token = headers.Authorization || headers.authorization
+                seen.push( token )
+                return token.endsWith( `long-lived` )
+                    ? response( { five_hour: { utilization: 12, resets_at: null } } )
+                    : new Response( ``, { status: 401 } )
+            },
+        } )
+        expect( seen.map( token => token.replace( `Bearer `, `` ) ) ).toEqual( [ `expired-login`, `long-lived` ] )
+        expect( report.agents.find( agent => agent.agent === `claude` ).status ).toBe( `ok` )
+    } )
+
+    it( `reports the /login failure when the setup-token cannot read usage either`, async () => {
+        const report = await collect_usage( { codex_read: no_codex,
+            credentials: { env: { CLAUDE_CODE_OAUTH_TOKEN: `long-lived` }, claude: { claudeAiOauth: { accessToken: `expired-login` } } },
+            fetch_fn: async ( url, { headers } ) => new Response( ``, { status: headers.Authorization.endsWith( `long-lived` ) ? 403 : 401 } ),
+        } )
+        expect( report.agents.find( agent => agent.agent === `claude` ).message ).toContain( `401` )
+    } )
+
     it( `exposes authenticated unsupported providers instead of fabricating usage`, async () => {
         const report = await collect_usage( { codex_read: no_codex, credentials: { env: {}, opencode: { custom: { type: `api`, key: `secret` } } } } )
         expect( report.agents.find( agent => agent.provider === `custom` ).status ).toBe( `unavailable` )
