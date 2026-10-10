@@ -232,6 +232,7 @@ export const run_auth_diagnostics = async ( agents, {
                 record_host_auth_success( result.name, {
                     credential_fingerprint: identity.fingerprint,
                     image_identity,
+                    credential_parts: identity.parts,
                 }, cache_options )
             }
         }

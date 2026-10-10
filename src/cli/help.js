@@ -35,8 +35,8 @@ Usage:
   babysit web init                     Initialize or rotate babysit-web access
   babysit doctor --auth [agent|all]    Verify real agent authentication
   babysit auth [status]                Show cached authentication ages and the checker state
-  babysit auth check                   Re-verify stale cached logins quietly (what the checker runs)
-  babysit auth init [--remove]         Install (or remove) the hourly host-level auth checker
+  babysit auth check [agent] [--force] Re-verify logins quietly (what the checker runs); --force probes now
+  babysit auth init [--remove]         Install (or remove) the 10-minute host-level auth checker
                                        Linux: also enables user lingering; --no-linger opts out
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 

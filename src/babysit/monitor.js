@@ -22,6 +22,23 @@ export const DEBOUNCE_MS = 3_000
 // Give an answered dialog time to close before judging a fresh one.
 export const APPROVAL_COOLDOWN_MS = 2_000
 
+// A lost login on screen asks for a real check at most this often while the
+// screen keeps showing it
+export const LOGOUT_RECHECK_MS = 15 * 60_000
+const LOGOUT_SCREEN_LINES = 25
+
+/**
+ * Whether the bottom of the pane shows the agent's own logged-out message.
+ * A hint, not a verdict: transcript text can quote the same words.
+ * @param {string} screen - ANSI-free pane capture
+ * @param {Object} agent - Adapter with auth_check.failure_pattern
+ * @returns {boolean} True when the latest lines match
+ */
+export const shows_logout = ( screen = ``, agent = null ) => {
+    const pattern = agent?.auth_check?.failure_pattern
+    return Boolean( pattern?.test( screen.trimEnd().split( `\n` ).slice( -LOGOUT_SCREEN_LINES ).join( `\n` ) ) )
+}
+
 /**
  * Read the supervised entrypoint's process exit marker from pane output.
  * @param {string} output - ANSI-normalised tmux pane output
@@ -100,6 +117,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {boolean} [options.approve_dangerous_commands=false] - YOLO: answer the agent's bypass-immune dangerous-command prompt with Yes
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
+ * @param {Function} [options.on_logout_screen] - Callback with the agent name when the pane shows a lost login
  * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
  * @param {Function} [options.on_exit] - Callback when session ends
@@ -116,6 +134,7 @@ export const start_monitor = async ( {
     approve_dangerous_commands = false,
     tmux_target = session_name,
     on_session_id,
+    on_logout_screen = null,
     on_tick,
     on_status = null,
     on_user_input = null,
@@ -142,6 +161,7 @@ export const start_monitor = async ( {
     let agent_target = web_bridge?.tmux_target || tmux_target
     let control_revision = control_bridge?.revision || 0
     let approval_ready_at = 0
+    let logout_check_ready_at = 0
 
     const begin_action = ( rule, now ) => {
 
@@ -254,6 +274,14 @@ export const start_monitor = async ( {
                     log.info( `Captured agent session ID: ${ captured_id }` )
                     if( on_session_id ) on_session_id( captured_id )
                 }
+            }
+
+            // The probe it starts decides whether to alert. Re-asks while the
+            // screen still shows it, so a check skipped for a busy lease retries.
+            if( on_logout_screen && Date.now() >= logout_check_ready_at && shows_logout( clean_output, agent ) ) {
+                log.info( `Pane shows a lost ${ agent.name } login; requesting an authentication check` )
+                logout_check_ready_at = Date.now() + LOGOUT_RECHECK_MS
+                on_logout_screen( agent.name )
             }
 
             // The entrypoint knows when the coding agent exits before Docker's

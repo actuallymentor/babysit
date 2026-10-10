@@ -6,7 +6,10 @@ import {
     start_monitor,
     AGENT_EXIT_SENTINEL,
     DEBOUNCE_MS,
+    LOGOUT_RECHECK_MS,
+    shows_logout,
 } from '../src/babysit/monitor.js'
+import { get_agent } from '../src/agents/index.js'
 
 const make_rule = ( overrides = {} ) => ( {
     on: { type: `regex`, value: /error/i },
@@ -276,6 +279,50 @@ describe( `supervised agent exit`, () => {
             [ `kill`, `babysit_test` ],
             [ `cleanup` ],
         ] )
+    } )
+
+} )
+
+describe( `logout screen trigger`, () => {
+
+    const claude = get_agent( `claude` )
+    const logged_out = `⏺ working\n  ⎿  Not logged in · Please run /login\n\n> `
+
+    it( `matches only the agent's own phrasing near the bottom of the pane`, () => {
+        expect( shows_logout( logged_out, claude ) ).toBe( true )
+        expect( shows_logout( `Please run /login\n${ `line\n`.repeat( 40 ) }`, claude ) ).toBe( false )
+        expect( shows_logout( logged_out, get_agent( `opencode` ) ) ).toBe( false )
+        expect( shows_logout( `401 Unauthorized`, get_agent( `codex` ) ) ).toBe( true )
+    } )
+
+    it( `requests a check, then re-asks only after the cooldown`, async () => {
+        const requests = []
+        let ticks = 0
+        const real_now = Date.now
+        let clock = real_now()
+        Date.now = () => clock
+
+        try {
+            await start_monitor( {
+                session_name: `babysit_test`,
+                config: { idle_timeout_s: 300 },
+                rules: [],
+                agent: claude,
+                on_logout_screen: name => requests.push( name ),
+                has_session_fn: async () => ticks++ < 4,
+                capture_pane_fn: async () => logged_out,
+                publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+                write_loop_deadline_fn: () => {},
+                on_exit: async () => {},
+                wait_fn: async () => {
+                    clock += ticks === 2 ? LOGOUT_RECHECK_MS : 1_000
+                },
+            } )
+        } finally {
+            Date.now = real_now
+        }
+
+        expect( requests ).toEqual( [ `claude`, `claude` ] )
     } )
 
 } )

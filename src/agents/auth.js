@@ -72,8 +72,23 @@ const AUTHENTICATION_FAILURE_PATTERNS = [
     /(?<![A-Za-z0-9])(?:api[_\s]+key|access[_\s]+token|refresh[_\s]+token|credentials?)\b[^\n]*(?:missing|expired|invalid|required|not found|not configured)/i,
 ]
 
-const is_authentication_failure = output =>
-    AUTHENTICATION_FAILURE_PATTERNS.some( pattern => pattern.test( output ) )
+// Connector noise ("MCP client startup failed: 401 Unauthorized") matches the
+// generic patterns but never speaks for the agent's own login.
+const without_connector_lines = output => output
+    .split( /\r?\n/ )
+    .filter( line => !/\bmcp\b/i.test( line ) )
+    .join( `\n` )
+
+/**
+ * Whether probe output reports a lost login. Adapters add the phrasings the
+ * generic patterns miss, captured from real logged-out runs.
+ * @param {string} output - Stripped probe stdout and stderr
+ * @param {Object|null} [agent] - Adapter with an optional auth_check.failure_pattern
+ * @returns {boolean} True when the output is an authentication failure
+ */
+export const is_authentication_failure = ( output, agent = null ) =>
+    Boolean( agent?.auth_check?.failure_pattern?.test( output ) )
+    || AUTHENTICATION_FAILURE_PATTERNS.some( pattern => pattern.test( without_connector_lines( output ) ) )
 
 /**
  * Format a date like the shell example in the boot auth-check prompt.
@@ -616,7 +631,7 @@ export const run_host_agent_auth_check = async ( agent, {
                     && attempt === 1
                     && can_restart_probe
                     && retry_pattern?.test?.( authentication_diagnostic )
-                    && !is_authentication_failure( authentication_diagnostic )
+                    && !is_authentication_failure( authentication_diagnostic, agent )
 
                 // Reuse only this prepared probe container. The single outer
                 // deadline and one retry keep transient recovery bounded.
@@ -639,7 +654,7 @@ export const run_host_agent_auth_check = async ( agent, {
                 const final_authenticated = !flush_error && is_authenticated
                 const status = final_authenticated
                     ? `authenticated`
-                    : is_authentication_failure( authentication_diagnostic ) ? `unauthenticated` : `failed`
+                    : is_authentication_failure( authentication_diagnostic, agent ) ? `unauthenticated` : `failed`
                 const failure_reason = flush_error?.message || diagnostic || `exited with code ${ code }`
 
                 finish( auth_result( agent.name, status, {

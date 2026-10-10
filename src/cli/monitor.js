@@ -2,6 +2,7 @@ import { create_identity_reader } from '../sessions/identity.js'
 import { continue_recovered_session } from '../sessions/continuation.js'
 import { get_boot_id } from '../sessions/lock.js'
 import { read_durable_exit } from '../sessions/transcript.js'
+import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 
 import { log } from '../utils/log.js'
@@ -26,6 +27,24 @@ import {
     refresh_file_credential_parts,
     refresh_host_auth_cache,
 } from '../agents/auth_cache.js'
+import { resolve_checker_command } from './auth.js'
+
+/**
+ * Ask a detached `babysit auth check <agent> --force` for a verdict. It
+ * outlives the monitor if needed and feeds the Pushover logout alerts.
+ * @param {string} agent_name - Agent whose pane shows a lost login
+ * @param {Object} [options] - Spawn and command seams
+ */
+export const request_auth_check = ( agent_name, { spawn_fn = spawn, command = resolve_checker_command() } = {} ) => {
+    try {
+        const [ bin, ...prefix ] = command
+        const child = spawn_fn( bin, [ ...prefix, `auth`, `check`, agent_name, `--force` ], { detached: true, stdio: `ignore` } )
+        child.on?.( `error`, error => log.warn( `Authentication check for ${ agent_name } failed to start: ${ error.message }` ) )
+        child.unref?.()
+    } catch ( error ) {
+        log.warn( `Could not start an authentication check for ${ agent_name }: ${ error.message }` )
+    }
+}
 
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
@@ -391,6 +410,7 @@ export const cmd_monitor = async ( cmd ) => {
                 await stuck_controller.tick()
             },
             on_user_input: () => stuck_controller.clear(),
+            on_logout_screen: request_auth_check,
             approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target: session.pane_id || session.tmux_session,
             agent_exit_sentinel: session.agent_exit_sentinel,

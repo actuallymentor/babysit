@@ -1016,6 +1016,7 @@ export const check_startup_agent_authentication = async ( agent, {
         record_host_auth_success( result.name, {
             credential_fingerprint: identity.fingerprint,
             image_identity,
+            credential_parts: identity.parts,
         }, cache_options )
         cache_contexts[ result.name ] = {
             credential_fingerprint: identity.fingerprint,

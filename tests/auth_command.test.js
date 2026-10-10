@@ -13,6 +13,8 @@ import {
 import { get_agent } from '../src/agents/index.js'
 import {
     AUTH_CHECK_REFRESH_AFTER_MS,
+    find_offline_logouts,
+    HOST_CHECK_AFTER_MS,
     auth_checker_hint,
     checker_environment,
     cmd_auth_check,
@@ -120,6 +122,10 @@ describe( `auth check`, () => {
                 probes.push( agent.name )
                 return { name: agent.name, status: `authenticated`, authenticated: true }
             },
+            run_host_check: async () => null,
+            list_active_sessions: async () => [],
+            read_credential: () => ( { state: `unknown` } ),
+            wait: async () => {},
             ...overrides,
         } )
         return { exit_code, rendered, lease, probes }
@@ -291,6 +297,166 @@ describe( `auth check`, () => {
 
     } )
 
+    describe( `faster logout detection`, () => {
+
+        const enrol = ( name, age_ms, extra = {} ) => {
+            const identity = fingerprint_agent_credentials( get_agent( name ), mounts )
+            record_host_auth_success( name, {
+                credential_fingerprint: identity?.fingerprint || `fingerprint`,
+                image_identity: IMAGE_IDENTITY,
+                ...extra,
+            }, { cache_path, now: Date.now() - age_ms } )
+        }
+        const alerts = () => {
+            const calls = []
+            return { calls, logout_alerts: async ( found, options ) => {
+                calls.push( { found, recovered: options?.recovered } )
+                return found.map( logout => logout.agent )
+            } }
+        }
+
+        it( `probes the host CLI once the last proof is an hour old, without touching the launch cache`, async () => {
+
+            enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
+            const before = read_host_auth_cache( { cache_path } ).agents.codex
+            const host = []
+            const { logout_alerts, calls } = alerts()
+
+            const { exit_code, probes, rendered } = check( {
+                select_agents: () => [ get_agent( `codex` ) ],
+                env: ENV_PUSHOVER,
+                read_usage: async () => ( { agents: [] } ),
+                usage_alerts: async () => [],
+                logout_alerts,
+                run_host_check: async agent => {
+                    host.push( agent.name )
+                    return { name: agent.name, status: `authenticated`, authenticated: true, probe: `host` }
+                },
+            } )
+
+            expect( await exit_code ).toBe( 0 )
+            expect( host ).toEqual( [ `codex` ] )
+            expect( probes ).toEqual( [] )
+            expect( rendered() ).toContain( `codex: authenticated` )
+            const after = read_host_auth_cache( { cache_path } ).agents.codex
+            expect( after.authenticated_at ).toBe( before.authenticated_at )
+            expect( after.credential_fingerprint ).toBe( before.credential_fingerprint )
+            expect( Date.now() - Date.parse( after.host_verified_at ) ).toBeLessThan( 60_000 )
+            expect( calls[0].recovered ).toEqual( [ `codex` ] )
+
+            // A fresh host proof defers the next host probe by an hour
+            host.length = 0
+            await check( { select_agents: () => [ get_agent( `codex` ) ], run_host_check: async agent => host.push( agent.name ) && null } ).exit_code
+            expect( host ).toEqual( [] )
+
+        } )
+
+        it( `alerts and un-enrols when the host CLI reports a logout`, async () => {
+
+            enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
+            const { logout_alerts, calls } = alerts()
+
+            const { exit_code, rendered } = check( {
+                select_agents: () => [ get_agent( `codex` ) ],
+                env: ENV_PUSHOVER,
+                read_usage: async () => ( { agents: [] } ),
+                usage_alerts: async () => [],
+                logout_alerts,
+                run_host_check: async agent => ( { name: agent.name, status: `unauthenticated`, authenticated: false, reason: `401 Unauthorized` } ),
+            } )
+
+            expect( await exit_code ).toBe( 1 )
+            expect( rendered() ).toContain( `Logout alerts sent: codex` )
+            expect( calls[0].found[0] ).toMatchObject( { agent: `codex`, reason: `the host CLI reports it logged out` } )
+            expect( read_host_auth_cache( { cache_path } ).agents.codex ).toBeUndefined()
+
+        } )
+
+        it( `defers a token-rotating host probe while a session runs, unless forced`, async () => {
+
+            enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
+            const host = []
+            const options = {
+                select_agents: () => [ get_agent( `codex` ) ],
+                list_active_sessions: async () => [ { name: `babysit_x` } ],
+                read_credential: () => ( { state: `present`, text: `{"tokens":{"access_token":"expired.e30.x"},"last_refresh":"2020-01-01T00:00:00Z"}` } ),
+                run_host_check: async agent => {
+                    host.push( agent.name )
+                    return { name: agent.name, status: `authenticated`, authenticated: true }
+                },
+            }
+
+            const deferred = check( options )
+            expect( await deferred.exit_code ).toBe( 0 )
+            expect( host ).toEqual( [] )
+            expect( deferred.probes ).toEqual( [] )
+            expect( deferred.rendered() ).toContain( `codex: deferred` )
+
+            const forced = check( { ...options, agent_name: `codex`, force: true } )
+            expect( await forced.exit_code ).toBe( 0 )
+            expect( host ).toEqual( [ `codex` ] )
+
+        } )
+
+        it( `falls back to the container probe when no host CLI is available`, async () => {
+
+            enrol( `codex`, 1_000 )
+            const forced = check( { select_agents: () => [ get_agent( `codex` ), get_agent( `claude` ) ], agent_name: `codex`, force: true } )
+
+            expect( await forced.exit_code ).toBe( 0 )
+            expect( forced.probes ).toEqual( [ `codex` ] )
+
+        } )
+
+        it( `alerts offline on a deleted sole credential file or an expired refresh token`, async () => {
+
+            enrol( `codex`, 1_000, { credential_parts: [ { kind: `file` } ] } )
+            enrol( `claude`, 1_000, { credential_parts: [ { kind: `file` } ] } )
+            const { logout_alerts, calls } = alerts()
+            const expired = JSON.stringify( { claudeAiOauth: { refreshTokenExpiresAt: Date.now() - 1 } } )
+
+            const { exit_code, probes } = check( {
+                env: ENV_PUSHOVER,
+                read_usage: async () => ( { agents: [] } ),
+                usage_alerts: async () => [],
+                logout_alerts,
+                read_credential: agent => agent.name === `codex` ? { state: `absent` } : { state: `present`, text: expired },
+            } )
+
+            expect( await exit_code ).toBe( 1 )
+            expect( probes ).toEqual( [] )
+            expect( calls[0].found.map( logout => [ logout.agent, logout.reason ] ) ).toEqual( [
+                [ `codex`, `its credential file was deleted` ],
+                [ `claude`, `its refresh token expired` ],
+            ] )
+            expect( read_host_auth_cache( { cache_path } ).agents ).toEqual( {} )
+
+        } )
+
+        it( `never calls a missing file a logout when the login had another source or the file came back`, async () => {
+
+            const cache = { agents: {
+                codex: { credential_kinds: [ `env`, `file` ] },
+                claude: { credential_kinds: [ `file` ] },
+                antigravity: {},
+            } }
+            let reads = 0
+            const found = await find_offline_logouts( [ get_agent( `codex` ), get_agent( `claude` ), get_agent( `antigravity` ) ], {
+                cache,
+                wait: async () => {},
+                read_credential: agent => {
+                    if( agent.name === `claude` ) reads += 1
+                    return agent.name === `claude` && reads > 1 ? { state: `present`, text: `{}` } : { state: `absent` }
+                },
+            } )
+
+            expect( found ).toEqual( [] )
+            expect( reads ).toBe( 2 )
+
+        } )
+
+    } )
+
     it( `reports a real failure through the exit code`, async () => {
 
         const { exit_code, rendered } = check( {
@@ -325,7 +491,7 @@ describe( `scheduled checker installation`, () => {
 
     const command = [ `/opt/babysit/babysit` ]
 
-    it( `renders a systemd user timer pair that runs auth check hourly`, () => {
+    it( `renders a systemd user timer pair that runs auth check every 10 minutes`, () => {
 
         const { service, timer } = render_auth_timer_units( { command, environment: { PATH: `/usr/bin:/bin`, BABYSIT_HOME: `/mnt/state 100%` } } )
 
@@ -333,7 +499,7 @@ describe( `scheduled checker installation`, () => {
         expect( service ).toContain( `ExecStart="/opt/babysit/babysit" auth check` )
         expect( service ).toContain( `Environment="PATH=/usr/bin:/bin"` )
         expect( service ).toContain( `Environment="BABYSIT_HOME=/mnt/state 100%%"` )
-        expect( timer ).toContain( `OnUnitActiveSec=3600` )
+        expect( timer ).toContain( `OnUnitActiveSec=600` )
         expect( timer ).toContain( `Persistent=true` )
         expect( timer ).toContain( `WantedBy=timers.target` )
         expect( () => render_auth_timer_units( { command: [ `babysit` ] } ) ).toThrow( `absolute` )
@@ -346,7 +512,7 @@ describe( `scheduled checker installation`, () => {
 
         expect( plist ).toContain( `<string>dev.babysit.auth</string>` )
         expect( plist ).toContain( `<string>/opt/babysit/babysit</string>\n        <string>auth</string>\n        <string>check</string>` )
-        expect( plist ).toContain( `<key>StartInterval</key>\n    <integer>3600</integer>` )
+        expect( plist ).toContain( `<key>StartInterval</key>\n    <integer>600</integer>` )
         expect( plist ).toContain( `<key>PATH</key>\n        <string>/usr/local/bin</string>` )
 
     } )

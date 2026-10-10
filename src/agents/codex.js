@@ -17,6 +17,32 @@ export const get_host_codex_home = () => ( process.env.CODEX_HOME || `~/.codex` 
  */
 export const get_host_codex_auth_file = () => `${ get_host_codex_home() }/auth.json`
 
+// Codex refreshes when the access token expires or the last refresh is over
+// eight days old. Inside both bounds a probe cannot rotate the refresh token
+// a running session holds too.
+const REFRESH_MARGIN_MS = 10 * 60_000
+const REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60_000
+
+const jwt_expiry = token => {
+    try {
+        return JSON.parse( Buffer.from( token.split( `.` )[1], `base64url` ).toString() ).exp * 1_000
+    } catch {
+        return NaN
+    }
+}
+
+const refresh_free = ( credential, now = Date.now() ) => {
+    try {
+        const { tokens, last_refresh } = JSON.parse( credential )
+        // API-key logins have nothing to rotate
+        if( !tokens ) return true
+        return jwt_expiry( tokens.access_token ) - now > REFRESH_MARGIN_MS
+            && now - Date.parse( last_refresh ) < REFRESH_INTERVAL_MS
+    } catch {
+        return false
+    }
+}
+
 const INITIAL_PROMPT_BLOCKERS = [
     /\b(?:model|directory):\s*loading\b/i,
     /Update available/i,
@@ -106,6 +132,15 @@ export const codex = {
 
     auth_check: {
         args: prompt => [ `exec`, `--ephemeral`, `--skip-git-repo-check`, `--color`, `never`, prompt ],
+
+        // Host probe: no session record, read-only sandbox, no MCP servers
+        host_args: prompt => [ `exec`, `--ephemeral`, `--skip-git-repo-check`, `--sandbox`, `read-only`, `--color`, `never`, `-c`, `mcp_servers={}`, prompt ],
+
+        // Logged-out phrasings beyond the generic patterns. Also the pane
+        // trigger for a running session.
+        failure_pattern: /refresh token (?:was |has )?already (?:been )?used|could not be refreshed|(?:log|sign) in again|not logged in|\b401 Unauthorized\b/i,
+
+        refresh_free,
     },
 
     defaults: {
