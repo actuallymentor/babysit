@@ -335,6 +335,15 @@ export const find_host_auth_cache_hit = ( name, {
 }
 
 /**
+ * Distinct secret kinds behind a fingerprint, sorted.
+ * @param {Object[]} parts - fingerprint_agent_credentials parts
+ * @returns {string[]} Subset of file and env
+ */
+export const credential_kinds = ( parts = [] ) => [ ...new Set( parts
+    .map( part => part.kind )
+    .filter( kind => [ `file`, `env` ].includes( kind ) ) ) ].sort()
+
+/**
  * Persist one successful real authentication check.
  * @param {string} name - Agent name
  * @param {Object} identity - Verified fingerprint and image identity
@@ -344,6 +353,7 @@ export const find_host_auth_cache_hit = ( name, {
 export const record_host_auth_success = ( name, {
     credential_fingerprint,
     image_identity,
+    credential_parts = null,
 }, {
     cache_path = HOST_AUTH_CACHE_PATH,
     now = Date.now(),
@@ -355,6 +365,10 @@ export const record_host_auth_success = ( name, {
         authenticated_at: new Date( now ).toISOString(),
         credential_fingerprint,
         image_identity,
+        // Which kinds of secret the login rode on (file, env), never values.
+        // The offline check may call a deleted file a logout only when the
+        // file was the sole source.
+        ...credential_parts && { credential_kinds: credential_kinds( credential_parts ) },
     }
 
     try {
@@ -368,6 +382,33 @@ export const record_host_auth_success = ( name, {
         // Cache metadata is optional. A verified launch must not fail because
         // its optimization file is unavailable or another process is writing.
         return null
+    }
+}
+
+/**
+ * Note a successful host CLI probe on an enrolled agent. Detection only: the
+ * launch cache keeps trusting authenticated_at, which only a container probe
+ * of the current image can set.
+ * @param {string} name - Agent name
+ * @param {Object} [options] - Cache path and clock
+ * @returns {boolean} Whether an entry was stamped
+ */
+export const stamp_host_verification = ( name, {
+    cache_path = HOST_AUTH_CACHE_PATH,
+    now = Date.now(),
+} = {} ) => {
+
+    try {
+        return with_cache_lock( cache_path, () => {
+            const cache = read_host_auth_cache( { cache_path } )
+            if( !cache.agents[ name ] ) return false
+
+            cache.agents[ name ].host_verified_at = new Date( now ).toISOString()
+            write_host_auth_cache( cache, { cache_path } )
+            return true
+        } )
+    } catch {
+        return false
     }
 }
 

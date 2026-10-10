@@ -114,7 +114,7 @@ export const cmd_config = async ( cmd, {
         [ `Recovery enablement`, recovery.enabled ],
         [ `Recovery state`, recovery.active === `unknown` ? `unknown (systemd unavailable or inaccessible)` : recovery.active ],
         [ `Auth checker`, auth_scheduler
-            ? `${ auth_scheduler.installed ? `installed` : `not installed` } (${ auth_scheduler.label }, hourly)`
+            ? `${ auth_scheduler.installed ? `installed` : `not installed` } (${ auth_scheduler.label }, every 10 minutes)`
             : `unsupported on this platform` ],
         [ `Menu default agent`, defaults.agent ],
         [ `Menu default mode`, defaults.mode ],
@@ -123,7 +123,7 @@ export const cmd_config = async ( cmd, {
 
     output.write( `\nbabysit config\n\n${ rows.map( ( [ label, value ] ) => `${ `${ label }:`.padEnd( 24 ) }${ value }` ).join( `\n` ) }\n\n` )
     output.write( `Boot recovery setup: babysit recover init (Ubuntu/systemd)\n` )
-    if( auth_scheduler && !auth_scheduler.installed ) output.write( `Auth checker setup: babysit auth init (keeps logins verified hourly so launches skip the probe)\n` )
+    if( auth_scheduler && !auth_scheduler.installed ) output.write( `Auth checker setup: babysit auth init (keeps logins verified and alerts on logouts)\n` )
     output.write( `Startup authentication: active agent plus supported host-installed CLIs, with concurrent misses and a 12-hour auth-input-bound success cache\n` )
     output.write( `Explicit checks: babysit doctor --auth [agent|all]\n` )
     output.write(

@@ -195,8 +195,12 @@ export const parse_args = ( argv ) => {
     if( verb === `auth` ) {
         const auth_verb = positionals[1] || `status`
         if( !AUTH_VERBS.includes( auth_verb ) ) throw new Error( `Unknown auth command: ${ auth_verb }. Use ${ AUTH_VERBS.join( `, ` ) }.` )
-        if( positionals.length > 2 ) throw new Error( `Unknown auth argument: ${ positionals[2] }` )
-        return { verb: `auth`, auth_verb, agent: null, flags, passthrough: [] }
+        // `auth check <agent> --force` re-verifies one agent now; a session
+        // monitor runs it when the agent's pane shows a lost login
+        const auth_agent = auth_verb === `check` ? positionals[2] || null : null
+        if( positionals.length > ( auth_agent ? 3 : 2 ) ) throw new Error( `Unknown auth argument: ${ positionals.at( -1 ) }` )
+        if( auth_agent && !is_agent( auth_agent ) ) throw new Error( `Unknown agent: ${ auth_agent }` )
+        return { verb: `auth`, auth_verb, agent: auth_agent, flags: { ...flags, force: Boolean( args.force ) }, passthrough: [] }
     }
 
     // babysit doctor --auth [agent|all] [--refresh]

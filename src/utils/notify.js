@@ -131,15 +131,18 @@ export const alert_high_usage = async ( usage, { alerts_path = ALERTS_PATH, noti
  * Notify once per lost login. Each logout is keyed by the login it ended
  * (the cache entry's authenticated_at), so a re-probe of the same dead login
  * stays silent, and an undelivered alert is retried on every later run.
- * @param {{ agent: string, login: string }[]} logouts - Newly observed logouts
- * @param {Object} [options] - State path and notifier seams
+ * Agents verified again since are recovered: their pending or delivered
+ * state is dropped, so a stale "log in again" never goes out after a fix.
+ * @param {{ agent: string, login: string, reason?: string }[]} logouts - Newly observed logouts
+ * @param {Object} [options] - Recovered agents, state path and notifier seams
  * @returns {Promise<string[]>} Agents whose logout alert was delivered
  */
-export const alert_logouts = async ( logouts, { alerts_path = ALERTS_PATH, notify = notify_pushover } = {} ) => {
+export const alert_logouts = async ( logouts, { recovered = [], alerts_path = ALERTS_PATH, notify = notify_pushover } = {} ) => {
 
     const alerts = read_alerts( alerts_path )
-    for( const { agent, login } of logouts ) {
-        if( alerts.logouts[ agent ]?.login !== login ) alerts.logouts[ agent ] = { login, delivered: false }
+    recovered.forEach( agent => delete alerts.logouts[ agent ] )
+    for( const { agent, login, reason } of logouts ) {
+        if( alerts.logouts[ agent ]?.login !== login ) alerts.logouts[ agent ] = { login, reason, delivered: false }
     }
 
     const sent = []
@@ -148,7 +151,7 @@ export const alert_logouts = async ( logouts, { alerts_path = ALERTS_PATH, notif
 
         logout.delivered = await notify( {
             title: `Babysit: ${ agent } logged out`,
-            message: `${ agent } was authenticated but its latest check failed authentication. Log in again on the host.`,
+            message: `${ agent } was authenticated but ${ logout.reason || `its latest check failed authentication` }. Log in again on the host.`,
         } )
         if( logout.delivered ) sent.push( agent )
     }

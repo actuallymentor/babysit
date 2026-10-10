@@ -158,6 +158,25 @@ describe( `logout alerts`, () => {
 
     } )
 
+    it( `names the evidence and drops a pending alert once the agent re-verifies`, async () => {
+
+        const messages = []
+        let up = false
+        const notify = async message => {
+            messages.push( message.message )
+            return up
+        }
+
+        await alert_logouts( [ { agent: `claude`, login: `2026-10-09T08:00:00Z`, reason: `its refresh token expired` } ], { alerts_path, notify } )
+        expect( messages[0] ).toBe( `claude was authenticated but its refresh token expired. Log in again on the host.` )
+
+        // Fixed before Pushover came back: nothing stale goes out
+        up = true
+        expect( await alert_logouts( [], { alerts_path, notify, recovered: [ `claude` ] } ) ).toEqual( [] )
+        expect( messages ).toHaveLength( 1 )
+
+    } )
+
     it( `shares the state file with usage alerts without clobbering it`, async () => {
 
         await alert_logouts( [ { agent: `claude`, login: `a` } ], { alerts_path, notify: async () => true } )

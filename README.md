@@ -116,8 +116,8 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit prune` | Interactively prune unused Docker data and managed clones |
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check for every installed agent; bypass 12h cache with `--refresh` |
 | `babysit auth [status]` | Cached authentication ages and whether the scheduled checker is installed |
-| `babysit auth check` | Quietly re-verify cached logins older than 6h; yields to a starting session |
-| `babysit auth init [--remove] [--no-linger]` | Install (or remove) the hourly checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
+| `babysit auth check [agent] [--force]` | What the checker runs: offline checks, host CLI probe after 1h, container re-verify after 6h; `--force` probes one agent now |
+| `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image; show image version |
 
@@ -131,11 +131,11 @@ Colors follow `NO_COLOR`, `TERM=dumb`, and non-TTY output.
 Attachment is separate. Pruning needs free space for locks/journals.
 Launch verifies only the launched agent's authentication (12h hash-bound cache); other
 installed agents still receive credentials but are checked by `doctor --auth`.
-Run `babysit auth init` once so an hourly host-level checker keeps verified logins warm (a launch that had to probe reminds you, and `babysit config` shows the checker state);
+Run `babysit auth init` once so a 10-minute host-level checker keeps verified logins warm (a launch that had to probe reminds you, and `babysit config` shows the checker state);
 launches then skip the "Checking authentication" probe. The checker only refreshes agents a
 launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
 project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`
-(or exported when you run `babysit auth init`), the checker also pushes an alert when a verified agent logs out, and once per
+(or exported when you run `babysit auth init`), the checker also pushes an alert when a verified agent logs out (deleted or expired credentials offline, an hourly ~3s host CLI probe, or a running session's pane showing the agent's logged-out message), and once per
 limit window when any usage limit (session/daily/weekly/credit) reaches 90%; without them it's a no-op. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.

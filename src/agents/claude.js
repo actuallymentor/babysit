@@ -2,6 +2,24 @@
  * Claude Code adapter
  * CLI docs: https://code.claude.com/docs/en/cli-reference
  */
+import { homedir } from 'os'
+import { join, resolve } from 'path'
+
+// A probe with this much access left uses the token as is, so it cannot
+// rotate a refresh token that a running session holds too
+const REFRESH_MARGIN_MS = 10 * 60_000
+
+const oauth_field = ( credential, key ) => {
+    try {
+        return Number( JSON.parse( credential )?.claudeAiOauth?.[ key ] ) || NaN
+    } catch {
+        return NaN
+    }
+}
+
+// A relocated config dir holds other credentials than the ones Babysit stages
+const uses_default_config_dir = ( env = process.env ) => !env.CLAUDE_CONFIG_DIR
+    || resolve( env.CLAUDE_CONFIG_DIR.replace( /^~(?=$|\/)/, env.HOME || homedir() ) ) === join( env.HOME || homedir(), `.claude` )
 const INITIAL_PROMPT_BLOCKERS = [
     /Choose the text style/i,
     /Select (?:a )?login method/i,
@@ -129,6 +147,22 @@ export const claude = {
 
     auth_check: {
         args: prompt => [ `-p`, prompt, `--no-session-persistence` ],
+
+        // Host probe: the user's own CLI with every customization (CLAUDE.md,
+        // hooks, plugins, MCP) and every tool off. `--tools ""` stays last:
+        // it is variadic.
+        host_args: ( prompt, { env } = {} ) => uses_default_config_dir( env )
+            ? [ `-p`, prompt, `--no-session-persistence`, `--safe-mode`, `--strict-mcp-config`, `--tools`, `` ]
+            : null,
+
+        // Logged-out phrasings the generic patterns miss, captured from real
+        // runs. Also the pane trigger for a running session.
+        failure_pattern: /Please run \/login|Failed to authenticate|authentication_error|OAuth (?:session|token) (?:has )?(?:expired|been revoked)/i,
+
+        refresh_free: ( credential, now = Date.now() ) => oauth_field( credential, `expiresAt` ) - now > REFRESH_MARGIN_MS,
+
+        // Past this the login is gone, no network needed to know it
+        refresh_expires_at: credential => oauth_field( credential, `refreshTokenExpiresAt` ),
     },
 
     defaults: {

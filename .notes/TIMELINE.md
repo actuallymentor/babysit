@@ -167,3 +167,4 @@
 - 2026-10-09 — Image base `node:24-slim` (bookworm) → `node:24-trixie-slim`. Pinned codename; adb 34 from stable, backports workaround dropped.
 - 2026-10-09 — Web sessions became stateless HMAC cookies (30d, sliding) instead of an in-memory Map that every restart wiped. Pushover alerts on the hourly auth checker: logout, and usage ≥90% once per window.
 - **2026-10-10**: Host CLI sources ~/.babysitrc at boot so the auth timer gets PUSHOVER_* without re-init (1.31.0).
+- **2026-10-10**: Faster logout detection (1.32.0). Timer 1h → 10 min; layers: offline (deleted file / expired Claude refresh token), host CLI probe hourly (~3s, `--safe-mode`/`-c mcp_servers={}`, detection only), container probe at 6h (unchanged, keeps launch cache warm), monitor pane trigger → `auth check <agent> --force`. Plan reviewed by Codex (Theo/Linus personas): host-success-writes-launch-cache and rotation race with live sessions were the P1s; both designed out.

@@ -81,6 +81,15 @@ describe( `parse_args`, () => {
         expect( cmd.flags.auth_check_agents ).toBe( `codex,claude` )
     } )
 
+    it( `parses a forced single-agent auth check`, () => {
+
+        expect( parse_args( [ `auth`, `check`, `claude`, `--force` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `check`, agent: `claude`, flags: { force: true } } )
+        expect( parse_args( [ `auth`, `check` ] ) ).toMatchObject( { agent: null, flags: { force: false } } )
+        expect( () => parse_args( [ `auth`, `check`, `nobody` ] ) ).toThrow( `Unknown agent` )
+        expect( () => parse_args( [ `auth`, `status`, `claude` ] ) ).toThrow( `Unknown auth argument` )
+
+    } )
+
     it( `parses doctor authentication selection and cache refresh`, () => {
 
         const all = parse_args( [ `doctor`, `--auth` ] )
