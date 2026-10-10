@@ -454,6 +454,82 @@ describe( `auth check`, () => {
 
         } )
 
+        describe( `automated re-login`, () => {
+
+            const GMAIL = { GMAIL_USER: `agent@gmail.com`, GMAIL_APP_PASSWORD: `abcdabcdabcdabcd` }
+
+            const dead_claude = ( env, overrides ) => {
+                mounts.push( { type: `env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: `sk-ant-oat01-dead` } )
+                enrol( `claude`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
+                const { logout_alerts, calls } = alerts()
+                const run = check( {
+                    select_agents: () => [ get_agent( `claude` ) ],
+                    env: { ...ENV_PUSHOVER, CLAUDE_CODE_OAUTH_TOKEN: `sk-ant-oat01-dead`, ...env },
+                    read_usage: async () => ( { agents: [] } ),
+                    usage_alerts: async () => [],
+                    logout_alerts,
+                    run_auth_check: async agent => ( { name: agent.name, status: `unauthenticated`, authenticated: false } ),
+                    ...overrides,
+                } )
+                return { run, calls }
+            }
+
+            it( `logs Claude back in instead of alerting, with the lease already released`, async () => {
+
+                const attempts = []
+                const notices = []
+                const { run, calls } = dead_claude( GMAIL, {
+                    relogin: async options => {
+                        attempts.push( options.login )
+                        return { ok: true, mode: `token` }
+                    },
+                    relogin_notify: async outcome => notices.push( outcome ),
+                } )
+                await run.exit_code
+
+                expect( attempts ).toHaveLength( 1 )
+                expect( notices ).toEqual( [ { ok: true, mode: `token` } ] )
+                expect( calls[0].found ).toEqual( [] )
+                expect( calls[0].recovered ).toContain( `claude` )
+                expect( run.lease.released ).toBe( 1 )
+
+            } )
+
+            it( `names a failed re-login in the logout alert`, async () => {
+
+                const { run, calls } = dead_claude( GMAIL, {
+                    relogin: async () => ( { ok: false, step: `captcha`, reason: `claude.ai asked for a human check` } ),
+                    relogin_notify: async () => {
+                        throw new Error( `failures ride the logout alert` )
+                    },
+                } )
+                await run.exit_code
+
+                expect( calls[0].found[0].fix ).toBe( `Auto re-login failed (captcha: claude.ai asked for a human check). Run babysit auth init --claude-token on the host.` )
+
+            } )
+
+            it( `leaves the alert alone when the attempt was skipped by its caps`, async () => {
+
+                const { run, calls } = dead_claude( GMAIL, { relogin: async () => ( { ok: false, skipped: true, reason: `already tried for this logout` } ) } )
+                await run.exit_code
+
+                expect( calls[0].found[0].fix ).toBe( `Run babysit auth init --claude-token on the host.` )
+
+            } )
+
+            it( `never runs without Gmail, or with BABYSIT_RELOGIN=0`, async () => {
+
+                const relogin = async () => {
+                    throw new Error( `must not run` )
+                }
+                await dead_claude( {}, { relogin } ).run.exit_code
+                await dead_claude( { ...GMAIL, BABYSIT_RELOGIN: `0` }, { relogin } ).run.exit_code
+
+            } )
+
+        } )
+
         it( `treats a cache hit as recovery from an earlier logout`, async () => {
 
             enrol( `codex`, 1_000, { credential_parts: null } )

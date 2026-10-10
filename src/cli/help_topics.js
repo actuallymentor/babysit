@@ -224,6 +224,7 @@ Examples:
     auth: () => `Usage: babysit auth [status]
        babysit auth check [agent] [--force]
        babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]
+       babysit auth relogin [claude] [--session-key]
 
 Keeps agent logins verified so launches start fast, and tells you when one
 breaks. A launch or babysit doctor --auth verifies a login and caches it for
@@ -234,12 +235,14 @@ breaks. A launch or babysit doctor --auth verifies a login and caches it for
   container      after 6h: re-verifies and refreshes the launch cache
   session pane   a session showing the agent's logged-out message triggers a check
 With PUSHOVER_TOKEN and PUSHOVER_USER (e.g. in ~/.babysitrc) it pushes logout
-alerts and usage alerts at 90%.
+alerts and usage alerts at 90%. With GMAIL_USER and GMAIL_APP_PASSWORD it first
+tries to log Claude back in by itself (babysit auth relogin --help).
 
 Subcommands:
   status    Cache ages and checker state (default)
   check     What the checker runs (babysit auth check --help)
   init      Install the checker and the Claude token (babysit auth init --help)
+  relogin   Log Claude back in through a browser container (babysit auth relogin --help)
 
 Examples:
   babysit auth
@@ -297,6 +300,39 @@ Examples:
   babysit auth init --claude-token
   babysit auth init --no-claude-token --no-linger
   babysit auth init --remove`,
+
+    'auth relogin': () => `Usage: babysit auth relogin [claude] [--session-key]
+
+Logs Claude back in without you. A throwaway babysit container runs the claude
+CLI and approves its sign-in page in a Chrome profile that keeps a claude.ai
+session (Docker volume babysit-relogin). The result replaces the dead login:
+  setup-token in use   a new CLAUDE_CODE_OAUTH_TOKEN in ~/.babysitrc
+                       (restart running Claude sessions to use it)
+  /login (Linux file)  a new login in ~/.claude/.credentials.json
+                       (running sessions pick it up)
+If the claude.ai session has expired, it requests a login email and opens the
+link from Gmail: only mail from anthropic.com, claude.ai or claude.com that
+Gmail verified (DKIM), sent after the request, is used. A Cloudflare human
+check is never solved; the run stops and alerts.
+
+babysit auth check runs this automatically on a confirmed Claude logout when
+GMAIL_USER and GMAIL_APP_PASSWORD are set: once per logout, at most 3 times a
+day. BABYSIT_RELOGIN=0 turns that off. Running it by hand ignores the limits.
+
+Setup, once (in ~/.babysitrc):
+  GMAIL_USER, GMAIL_APP_PASSWORD   Gmail box and app password that receive the login mail
+  CLAUDE_LOGIN_EMAIL               Claude account address, when Claude mail is forwarded
+                                   into Gmail (default: the host's last /login, else GMAIL_USER)
+Then seed the browser: babysit auth relogin --session-key
+
+Options:
+  --session-key   Paste a claude.ai sessionKey cookie first (from a private window
+                  where you logged in; close it without logging out)
+
+Examples:
+  babysit auth relogin --session-key
+  babysit auth relogin
+  BABYSIT_RELOGIN=0 babysit auth check`,
 
     web: () => `Usage: babysit web init
 

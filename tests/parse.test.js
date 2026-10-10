@@ -124,6 +124,8 @@ describe( `parse_args`, () => {
         expect( parse_args( [ `auth` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `status`, agent: null, passthrough: [] } )
         expect( parse_args( [ `auth`, `check` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `check` } )
         expect( parse_args( [ `auth`, `init`, `--remove` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `init`, flags: { remove: true, linger: true } } )
+        expect( parse_args( [ `auth`, `relogin`, `--session-key` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `relogin`, agent: null, flags: { session_key: true } } )
+        expect( parse_args( [ `auth`, `relogin`, `claude` ] ) ).toMatchObject( { auth_verb: `relogin`, agent: `claude`, flags: { session_key: false } } )
         expect( parse_args( [ `auth`, `init`, `--no-linger` ] ).flags.linger ).toBe( false )
         expect( () => parse_args( [ `auth`, `warm` ] ) ).toThrow( `Unknown auth command: warm` )
 
