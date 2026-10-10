@@ -238,6 +238,20 @@ describe( `babysit auth relogin`, () => {
         expect( await cmd_auth_relogin( { flags: { session_key: true } }, { input: paste( `not-a-key` ), output: collect().output, env: {}, relogin: spy, prove: async outcome => outcome } ) ).toBe( 1 )
         expect( await cmd_auth_relogin( { flags: { session_key: true } }, { input: paste( `sk-ant-sid01-abc_DEF-1` ), output: collect().output, env: {}, relogin: spy, prove: async outcome => outcome } ) ).toBe( 0 )
         expect( seen ).toEqual( [ `sk-ant-sid01-abc_DEF-1` ] )
+
+        // The proof sees the token the re-login installed, and the key does not linger
+        const env = { CLAUDE_CODE_OAUTH_TOKEN: `sk-ant-oat01-old` }
+        let proven_with = null
+        await cmd_auth_relogin( { flags: { session_key: true } }, {
+            input: paste( `sk-ant-sid01-abc` ), output: collect().output, env,
+            relogin: async options => {
+                options.env.CLAUDE_CODE_OAUTH_TOKEN = `sk-ant-oat01-new`
+                return { ok: true, mode: `token` }
+            },
+            prove: async outcome => ( proven_with = env.CLAUDE_CODE_OAUTH_TOKEN ) && outcome,
+        } )
+        expect( proven_with ).toBe( `sk-ant-oat01-new` )
+        expect( env.RELOGIN_SESSION_KEY ).toBeUndefined()
     } )
 
     it( `pushes a success note with the next step`, async () => {
