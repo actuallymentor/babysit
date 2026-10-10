@@ -338,7 +338,6 @@ export const cmd_auth_relogin = async ( cmd, {
 
     if( cmd.agent && cmd.agent !== `claude` ) throw new Error( `babysit auth relogin supports claude only` )
 
-    let run_env = env
     if( cmd.flags?.session_key ) {
         if( !input.isTTY ) throw new Error( `babysit auth relogin --session-key needs a terminal to paste into` )
         output.write( [
@@ -351,10 +350,12 @@ export const cmd_auth_relogin = async ( cmd, {
             output.write( `That does not look like a claude.ai sessionKey (sk-ant-sid…); nothing changed.\n` )
             return 1
         }
-        run_env = { ...env, RELOGIN_SESSION_KEY: key }
+        // Set on the real env: the installed token must reach the proof
+        env.RELOGIN_SESSION_KEY = key
     }
 
-    const result = await prove( await relogin( { env: run_env, output, manual: true } ), { output } )
+    const installed = await relogin( { env, output, manual: true } ).finally( () => delete env.RELOGIN_SESSION_KEY )
+    const result = await prove( installed, { output } )
     if( result.ok ) {
         output.write( `Claude is logged in again.${ result.mode === `token` ? ` Restart running Claude sessions to use the new token.` : `` }\n` )
         return 0
