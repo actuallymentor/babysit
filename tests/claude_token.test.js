@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'bun:test'
 import { PassThrough } from 'node:stream'
+import { spawnSync } from 'node:child_process'
 
-import { read_pasted_token, save_claude_token, setup_claude_token } from '../src/cli/claude_token.js'
+import { read_pasted_token, save_claude_token, setup_claude_token, token_probe_env } from '../src/cli/claude_token.js'
 
 const TOKEN = `sk-ant-oat01-Abc_def-123`
 
@@ -68,11 +69,13 @@ describe( `claude setup-token in auth init`, () => {
 
         const rejected = await run( {}, { verify: async () => ( { authenticated: false, status: `unauthenticated`, reason: `401` } ) } )
         expect( rejected ).toMatchObject( { result: `failed`, calls: { saved: null } } )
-        expect( rejected.rendered ).toContain( `Claude rejected the token (401)` )
+        expect( rejected.rendered ).toContain( `Could not prove the token (401)` )
+        expect( ( await run( {}, { verify: async () => null } ) ).calls.saved ).toBe( null )
     } )
 
-    it( `saves without a host probe when none is possible (relocated config dir)`, async () => {
-        expect( ( await run( {}, { verify: async () => null } ) ).calls.saved ).toBe( TOKEN )
+    it( `proves the pasted token alone, never a route that outranks it`, () => {
+        const env = token_probe_env( { PATH: `/bin`, ANTHROPIC_API_KEY: `k`, CLAUDE_CODE_USE_BEDROCK: `1`, CLAUDE_CONFIG_DIR: `/x`, CLAUDE_CODE_OAUTH_TOKEN: `old` }, TOKEN )
+        expect( env ).toEqual( { PATH: `/bin`, CLAUDE_CODE_OAUTH_TOKEN: TOKEN } )
     } )
 
     it( `joins a token the terminal wrapped across lines`, async () => {
@@ -82,8 +85,8 @@ describe( `claude setup-token in auth init`, () => {
         expect( await pasted ).toBe( TOKEN )
     } )
 
-    it( `replaces an earlier token in the rc, keeps the rest, and stays 0600`, () => {
-        const files = { rc: `export PUSHOVER_USER=u\n# Claude setup-token from babysit auth init, 2025-01-01; expires ~2026-01-01\nexport CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-old\nFOO=1\n` }
+    it( `replaces only its own rc block, leaves user lines, and stays 0600`, () => {
+        const files = { rc: `if true; then\n  export CLAUDE_CODE_OAUTH_TOKEN=mine\nfi\nexport CLAUDE_CODE_OAUTH_TOKEN=x PUSHOVER_USER=u\n# Claude setup-token from babysit auth init, 2025-01-01; expires ~2026-01-01\nexport CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-old\nFOO=1\n` }
         const modes = []
         save_claude_token( TOKEN, {
             path: `rc`,
@@ -92,8 +95,11 @@ describe( `claude setup-token in auth init`, () => {
             write: ( path, content, options ) => ( files[ path ] = content, modes.push( options.mode ) ),
             chmod: ( path, mode ) => modes.push( mode ),
         } )
-        expect( files.rc ).toBe( `export PUSHOVER_USER=u\nFOO=1\n\n# Claude setup-token from babysit auth init, 2026-10-10; expires ~2027-10-10\nexport CLAUDE_CODE_OAUTH_TOKEN=${ TOKEN }\n` )
+        expect( files.rc ).toBe( `if true; then\n  export CLAUDE_CODE_OAUTH_TOKEN=mine\nfi\nexport CLAUDE_CODE_OAUTH_TOKEN=x PUSHOVER_USER=u\nFOO=1\n\n# Claude setup-token from babysit auth init, 2026-10-10; expires ~2027-10-10\nexport CLAUDE_CODE_OAUTH_TOKEN=${ TOKEN }\n` )
         expect( modes ).toEqual( [ 0o600, 0o600 ] )
+
+        const sourced = spawnSync( `bash`, [ `-c`, `${ files.rc }printf %s "$CLAUDE_CODE_OAUTH_TOKEN $PUSHOVER_USER"` ], { encoding: `utf8`, env: { PATH: process.env.PATH } } )
+        expect( sourced.stdout ).toBe( `${ TOKEN } u` )
     } )
 
 } )

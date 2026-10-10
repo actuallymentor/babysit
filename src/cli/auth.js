@@ -594,8 +594,8 @@ export const cmd_auth_init = async ( cmd, {
 
     output.write( `Remove with: babysit auth init --remove\n` )
 
-    await claude_token( cmd, { output } )
-    return 0
+    // An explicitly requested token that could not be set up is a failure
+    return await claude_token( cmd, { output } ) === `failed` ? 1 : 0
 
 }
 

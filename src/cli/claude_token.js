@@ -17,11 +17,13 @@ import { resolve_host_bin, run_host_cli_auth_check } from '../agents/host_probe.
 export const CLAUDE_TOKEN_ENV = `CLAUDE_CODE_OAUTH_TOKEN`
 export const CLAUDE_TOKEN_PATTERN = /^sk-ant-oat\d+-[\w-]+$/
 
-const EXPORT_LINE = new RegExp( `^\\s*(?:export\\s+)?${ CLAUDE_TOKEN_ENV }=` )
-const COMMENT_LINE = /^# Claude setup-token from babysit auth init\b/
+const MANAGED_COMMENT = /^# Claude setup-token from babysit auth init\b/
+const MANAGED_EXPORT = new RegExp( `^export ${ CLAUDE_TOKEN_ENV }=\\S*$` )
 
 /**
- * Put `export KEY=value` into the rc, replacing an earlier assignment.
+ * Append Babysit's managed `export` block to the rc, replacing only an earlier
+ * managed block. A user's own assignment stays untouched (it may sit in a
+ * conditional or share a line); ours comes last, so it wins when sourced.
  * @param {string} token - Validated token
  * @param {Object} [options] - Path, clock, and fs seams
  * @returns {string} The rc path written
@@ -34,18 +36,37 @@ export const save_claude_token = ( token, {
     chmod = chmodSync,
 } = {} ) => {
 
-    const expires = new Date( now.getTime() + 365 * 24 * 3600_000 ).toISOString().slice( 0, 10 )
-    const kept = read( path ).split( `\n` ).filter( line => !EXPORT_LINE.test( line ) && !COMMENT_LINE.test( line ) )
+    const lines = read( path ).split( `\n` )
+    const kept = lines.filter( ( line, index ) => !MANAGED_COMMENT.test( line )
+        && !( MANAGED_EXPORT.test( line ) && MANAGED_COMMENT.test( lines[ index - 1 ] || `` ) ) )
     while( kept.length && !kept.at( -1 ).trim() ) kept.pop()
 
+    const day = date => date.toISOString().slice( 0, 10 )
     const block = [
-        `# Claude setup-token from babysit auth init, ${ now.toISOString().slice( 0, 10 ) }; expires ~${ expires }`,
+        `# Claude setup-token from babysit auth init, ${ day( now ) }; expires ~${ day( new Date( now.getTime() + 365 * 24 * 3600_000 ) ) }`,
         `export ${ CLAUDE_TOKEN_ENV }=${ token }`,
     ]
     write( path, `${ [ ...kept, ...kept.length ? [ `` ] : [], ...block ].join( `\n` ) }\n`, { mode: 0o600 } )
     chmod( path, 0o600 )
     return path
 
+}
+
+// Claude prefers these over CLAUDE_CODE_OAUTH_TOKEN; with any of them set, the
+// proof prompt would test that route instead of the pasted token. The config
+// dir is dropped so the host probe always runs (the env token outranks /login).
+const OUTRANKING_ENV = [ `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_PROFILE`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`, `CLAUDE_CONFIG_DIR` ]
+
+/**
+ * Environment that can only authenticate with the given token.
+ * @param {Object} env - Base environment
+ * @param {string} token - Pasted token
+ * @returns {Object} Probe environment
+ */
+export const token_probe_env = ( env, token ) => {
+    const isolated = { ...env, [ CLAUDE_TOKEN_ENV ]: token }
+    OUTRANKING_ENV.forEach( key => delete isolated[ key ] )
+    return isolated
 }
 
 /**
@@ -97,7 +118,7 @@ export const setup_claude_token = async ( cmd, {
     setup = run_setup_token,
     paste = read_pasted_token,
     confirm = ask_yes,
-    verify = token => run_host_cli_auth_check( get_agent( `claude` ), { env: { ...env, [ CLAUDE_TOKEN_ENV ]: token } } ),
+    verify = token => run_host_cli_auth_check( get_agent( `claude` ), { env: token_probe_env( env, token ) } ),
     save = save_claude_token,
 } = {} ) => {
 
@@ -133,12 +154,11 @@ export const setup_claude_token = async ( cmd, {
         return `failed`
     }
 
-    // One real prompt with the new token, so a bad paste never reaches sessions.
-    // A relocated CLAUDE_CONFIG_DIR has no host probe; the token stands on its format.
+    // One real prompt with the new token, so a bad paste never reaches sessions
     output.write( `Checking the token with one prompt…\n` )
     const result = await verify( token )
-    if( result && !result.authenticated ) {
-        output.write( `Claude rejected the token (${ result.reason || result.status }); nothing saved.\n` )
+    if( !result?.authenticated ) {
+        output.write( `Could not prove the token (${ result?.reason || result?.status || `no host probe` }); nothing saved.\n` )
         return `failed`
     }
 

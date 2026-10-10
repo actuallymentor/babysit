@@ -698,6 +698,12 @@ describe( `scheduled checker installation`, () => {
             } )
             expect( token_steps ).toEqual( [ true ] )
 
+            // A token step that fails makes init fail
+            expect( await cmd_auth_init( { flags: {} }, {
+                output, scheduler, command, environment: { PATH: `/bin` }, uid: 1000,
+                execute: async () => ``, write: () => {}, claude_token: async () => `failed`,
+            } ) ).toBe( 1 )
+
             calls.length = 0
             const removed = []
             await cmd_auth_init( { flags: { remove: true } }, {

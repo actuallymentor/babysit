@@ -25,7 +25,7 @@ babysit codex --sandbox --loop
 babysit antigravity --mudbox
 ```
 
-**Detach:** `Ctrl+B d` · **Reattach:** `babysit open` · **Reference:** `babysit --help`
+**Detach:** `Ctrl+B d` · **Reattach:** `babysit open` · **Reference:** `babysit --help`, and per command with examples: `babysit auth --help`, `babysit auth init --help`, `babysit help resume` (inside a session: `babysit help`)
 
 Unknown flags pass through: `babysit claude --yolo --model sonnet --effort high`.
 Explicit models override defaults. Codex defaults to `gpt-6-astra`, effort `medium`.

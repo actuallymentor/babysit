@@ -9,6 +9,7 @@ import pkg from '../package.json' with { type: 'json' }
 import { log } from './utils/log.js'
 import { parse_args } from './cli/parse.js'
 import { show_help } from './cli/help.js'
+import { wants_help } from './cli/help_topics.js'
 import { launch_menu } from './cli/launcher.js'
 import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
@@ -42,6 +43,13 @@ const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open`, `doctor`, 
  * Main entry point
  */
 const main = async () => {
+
+    // `<command> [sub] --help` and `help <command>` print that command's page
+    // before any command-specific parsing can reject or run it
+    if( wants_help( process.argv.slice( 2 ) ) ) {
+        show_help( process.argv.slice( 2 ) )
+        return
+    }
 
     // Keep the container helper and full CLI's effort syntax identical.
     if( process.argv[2] === `effort` ) {
