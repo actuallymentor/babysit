@@ -79,6 +79,16 @@ describe( `host CLI auth probe`, () => {
 
     } )
 
+    it( `judges soon after the CLI exits even when a helper holds its pipes`, async () => {
+
+        const started = Date.now()
+        const outcome = await probe( claude, fake_cli( `(sleep 30) & echo ok` ), { timeout_ms: 10_000 } )
+
+        expect( outcome ).toMatchObject( { status: `authenticated` } )
+        expect( Date.now() - started ).toBeLessThan( 5_000 )
+
+    } )
+
     it( `declines when the CLI is absent, unsupported, or reads a relocated config`, async () => {
 
         expect( await probe( claude, () => null ) ).toBeNull()
