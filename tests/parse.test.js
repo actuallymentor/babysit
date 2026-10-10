@@ -74,6 +74,13 @@ describe( `parse_args`, () => {
         expect( () => parse_args( [ `prune`, `--list=false` ] ) ).toThrow( `Unknown prune argument: --list=false` )
     } )
 
+    it( `keeps --config FILE for babysit, never the agent CLI`, () => {
+        const cmd = parse_args( [ `codex`, `--config`, `review.yaml`, `--model`, `x` ] )
+        expect( cmd.flags.config ).toEndWith( `/review.yaml` )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `x` ] )
+        expect( parse_args( [ `claude`, `--config=review.yaml` ] ).passthrough ).toEqual( [] )
+    } )
+
     it( `recognises babysit config`, () => {
         const cmd = parse_args( [ `config`, `--auth-check-agents`, `codex,claude` ] )
         expect( cmd.verb ).toBe( `config` )

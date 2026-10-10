@@ -20,6 +20,7 @@ const KNOWN_FLAGS = [
     `log`,
     `port`,
     `auth-check-agents`,
+    `config`,
 ]
 
 const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]

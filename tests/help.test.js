@@ -86,6 +86,8 @@ describe( `CLI help`, () => {
             expect( help_topic( [ `auth`, `bogus`, `--help` ] ) ).toStartWith( `Usage: babysit auth [status]` )
             expect( help_topic( [ `--help` ] ) ).toBe( null )
             expect( help_topic( [ `nonsense`, `--help` ] ) ).toBe( null )
+            expect( help_topic( [ `help`, `__proto__` ] ) ).toBe( null )
+            expect( help_topic( [ `agy`, `--help` ] ) ).toStartWith( `Usage: babysit antigravity [options]` )
         } )
 
         it( `gives every page a usage line and examples`, () => {
@@ -102,6 +104,7 @@ describe( `CLI help`, () => {
             expect( wants_help( [ `help` ] ) ).toBe( true )
             expect( wants_help( [ `feature help` ] ) ).toBe( false )
             expect( wants_help( [ `claude`, `--yolo` ] ) ).toBe( false )
+            expect( wants_help( [ `codex`, `--`, `-h` ] ) ).toBe( false )
         } )
 
         it( `prints the page instead of the overview`, () => {
