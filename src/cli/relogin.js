@@ -54,24 +54,22 @@ export const relogin_mode = ( env = process.env, { credential_file = () => host_
 }
 
 /**
- * The address to request a login email for: explicit, else the account the
- * host CLI last logged in as, else the Gmail box itself.
+ * The Claude account a re-login must land on: CLAUDE_LOGIN_EMAIL, else the
+ * account the host CLI last logged in as. Empty when neither is known.
  * @param {Object} [env] - Environment
  * @param {Object} [options] - Path and reader seams
- * @returns {string} Email, possibly empty
+ * @returns {string} Account email, possibly empty
  */
-export const relogin_email = ( env = process.env, {
+export const relogin_account = ( env = process.env, {
     path = join( env.CLAUDE_CONFIG_DIR || homedir(), `.claude.json` ),
     read = file => readFileSync( file, `utf8` ),
 } = {} ) => {
     if( env.CLAUDE_LOGIN_EMAIL ) return env.CLAUDE_LOGIN_EMAIL
     try {
-        const account = JSON.parse( read( path ) ).oauthAccount?.emailAddress
-        if( account ) return account
+        return JSON.parse( read( path ) ).oauthAccount?.emailAddress || ``
     } catch {
-        // no host account on record
+        return ``
     }
-    return env.GMAIL_USER || ``
 }
 
 // Driver inputs that are secrets travel in a 0600 env file, never on argv
@@ -79,10 +77,10 @@ export const RELOGIN_SECRET_ENV = [ `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `BABYSIT
 
 /**
  * docker argv for one driver run.
- * @param {Object} options - mode, email, seccomp_path, env_file, name, image
+ * @param {Object} options - mode, account, email, seccomp_path, env_file, name, image
  * @returns {string[]} Arguments after the docker binary
  */
-export const relogin_docker_args = ( { mode, email, seccomp_path, env_file, name, image = get_image_name() } ) => [
+export const relogin_docker_args = ( { mode, account = ``, email = account, seccomp_path, env_file, name, image = get_image_name() } ) => [
     `run`, `--rm`, `--init`, `--shm-size=1g`,
     `--security-opt`, `seccomp=${ seccomp_path }`,
     `--label`, WATCHTOWER_DISABLE_LABEL,
@@ -90,7 +88,7 @@ export const relogin_docker_args = ( { mode, email, seccomp_path, env_file, name
     `-v`, `${ RELOGIN_VOLUME }:/home/node/relogin`,
     `--env-file`, env_file,
     `--user`, `node`, `--entrypoint`, `xvfb-run`,
-    image, `-a`, `node`, `/opt/relogin/driver.mjs`, `--mode`, mode, `--email`, email,
+    image, `-a`, `node`, `/opt/relogin/driver.mjs`, `--mode`, mode, `--email`, email, `--account`, account,
 ]
 
 /**
@@ -98,7 +96,7 @@ export const relogin_docker_args = ( { mode, email, seccomp_path, env_file, name
  * @param {Object} options - mode, email, env, output, and process seams
  * @returns {Promise<Object>} Driver result
  */
-export const run_relogin_container = ( { mode, email, env = process.env, output = process.stdout, spawn_fn = spawn, timeout_ms = RELOGIN_TIMEOUT_MS } ) => new Promise( resolve => {
+export const run_relogin_container = ( { mode, account, email, env = process.env, output = process.stdout, spawn_fn = spawn, timeout_ms = RELOGIN_TIMEOUT_MS } ) => new Promise( resolve => {
 
     const name = `babysit-relogin-${ randomUUID().slice( 0, 8 ) }`
     const seccomp = create_chrome_seccomp_profile()
@@ -113,7 +111,7 @@ export const run_relogin_container = ( { mode, email, env = process.env, output 
     }
 
     const [ docker, ...prefix ] = docker_command_prefix( { env } )
-    const child = spawn_fn( docker, [ ...prefix, ...relogin_docker_args( { mode, email, seccomp_path: seccomp.file, env_file: secrets.file, name } ) ], { env, stdio: [ `ignore`, `pipe`, `pipe` ] } )
+    const child = spawn_fn( docker, [ ...prefix, ...relogin_docker_args( { mode, account, email, seccomp_path: seccomp.file, env_file: secrets.file, name } ) ], { env, stdio: [ `ignore`, `pipe`, `pipe` ] } )
 
     let stdout = ``
     let missing_driver = false
@@ -221,7 +219,7 @@ export const relogin_claude = async ( {
     state_path = RELOGIN_STATE_PATH,
     lock_path = RELOGIN_LOCK_PATH,
     mode = relogin_mode( env ),
-    email = relogin_email( env ),
+    account = relogin_account( env ),
     run = run_relogin_container,
     save_token = save_claude_token,
     credential_file = () => host_credential_file( get_agent( `claude` ) ),
@@ -245,8 +243,14 @@ export const relogin_claude = async ( {
         writeFileSync( state_path, JSON.stringify( { attempts, tried } ), { mode: 0o600 } )
 
         output.write( `Re-login: minting a ${ mode === `token` ? `setup-token` : `/login` } in a babysit container…\n` )
-        const result = await run( { mode, email, env, output } )
+        // Without a known account, the Gmail box is the best address to try
+        const result = await run( { mode, account, email: account || env.GMAIL_USER || ``, env, output } )
         if( !result.ok ) return { ...result, mode }
+
+        // A login for anyone else must never replace this one
+        if( account && result.account && result.account.toLowerCase() !== account.toLowerCase() ) {
+            return { ok: false, mode, step: `account`, reason: `the new login belongs to ${ result.account }, not ${ account }; nothing installed` }
+        }
 
         if( mode === `token` ) {
             const path = save_token( result.token )

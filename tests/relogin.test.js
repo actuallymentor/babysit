@@ -13,7 +13,7 @@ import {
     relogin_cap_reason,
     relogin_claude,
     relogin_docker_args,
-    relogin_email,
+    relogin_account,
     relogin_enabled,
     relogin_mode,
     run_relogin_container,
@@ -54,20 +54,21 @@ describe( `relogin settings`, () => {
         expect( relogin_mode( {}, { credential_file: () => null } ) ).toBe( null )
     } )
 
-    it( `asks for the explicit address, then the host account, then the Gmail box`, () => {
+    it( `expects the explicit account, else the host CLI's last login`, () => {
         const account = JSON.stringify( { oauthAccount: { emailAddress: `me@work.example` } } )
-        expect( relogin_email( { CLAUDE_LOGIN_EMAIL: `set@example.com` }, { read: () => account } ) ).toBe( `set@example.com` )
-        expect( relogin_email( { GMAIL_USER: `box@gmail.com` }, { read: () => account } ) ).toBe( `me@work.example` )
-        expect( relogin_email( { GMAIL_USER: `box@gmail.com` }, { read: () => {
+        expect( relogin_account( { CLAUDE_LOGIN_EMAIL: `set@example.com` }, { read: () => account } ) ).toBe( `set@example.com` )
+        expect( relogin_account( { GMAIL_USER: `box@gmail.com` }, { read: () => account } ) ).toBe( `me@work.example` )
+        // The Gmail box is only an address to try, never an account to enforce
+        expect( relogin_account( { GMAIL_USER: `box@gmail.com` }, { read: () => {
             throw new Error( `ENOENT` )
-        } } ) ).toBe( `box@gmail.com` )
+        } } ) ).toBe( `` )
     } )
 
     it( `keeps secrets off the docker argv`, () => {
-        const args = relogin_docker_args( { mode: `token`, email: `me@x.com`, seccomp_path: `/s.json`, env_file: `/e.env`, name: `n`, image: `img` } )
+        const args = relogin_docker_args( { mode: `token`, account: `me@x.com`, seccomp_path: `/s.json`, env_file: `/e.env`, name: `n`, image: `img` } )
         expect( args ).toContain( `--env-file` )
         expect( args.join( ` ` ) ).not.toMatch( /GMAIL|SESSION_KEY/ )
-        expect( args.slice( args.indexOf( `img` ) ) ).toEqual( [ `img`, `-a`, `node`, `/opt/relogin/driver.mjs`, `--mode`, `token`, `--email`, `me@x.com` ] )
+        expect( args.slice( args.indexOf( `img` ) ) ).toEqual( [ `img`, `-a`, `node`, `/opt/relogin/driver.mjs`, `--mode`, `token`, `--email`, `me@x.com`, `--account`, `me@x.com` ] )
     } )
 
     it( `tries once per logout and caps attempts per day`, () => {
@@ -88,7 +89,7 @@ describe( `relogin_claude`, () => {
         now: NOW,
         state_path: join( directory, `relogin.json` ),
         lock_path: join( directory, `relogin.lock` ),
-        email: `me@x.com`,
+        account: `me@x.com`,
         ...overrides,
     } )
 
@@ -121,6 +122,30 @@ describe( `relogin_claude`, () => {
         expect( await relogin_claude( options( { mode: `token`, manual: true, run } ) ) ).toMatchObject( { skipped: true } )
         writeFileSync( lock_path, `999999999` )
         expect( await relogin_claude( options( { mode: `token`, manual: true, run, save_token: () => `/rc` } ) ) ).toMatchObject( { ok: true } )
+    } )
+
+    it( `never installs a login that landed on another account`, async () => {
+        const saved = []
+        const result = await relogin_claude( options( {
+            mode: `token`, manual: true,
+            run: async () => ( { ok: true, token: `sk-ant-oat01-other`, account: `Someone@else.example` } ),
+            save_token: token => saved.push( token ),
+        } ) )
+        expect( result ).toMatchObject( { ok: false, step: `account` } )
+        expect( saved ).toEqual( [] )
+        // Same account, different case: fine
+        const same = await relogin_claude( options( { mode: `token`, manual: true, run: async () => ( { ok: true, token: `t`, account: `ME@x.com` } ), save_token: () => `/rc` } ) )
+        expect( same.ok ).toBe( true )
+    } )
+
+    it( `tries the Gmail box when no account is known, without enforcing it`, async () => {
+        const seen = []
+        await relogin_claude( options( {
+            env: { GMAIL_USER: `box@gmail.com` }, account: ``, mode: `token`, manual: true,
+            run: async ( { account, email } ) => seen.push( { account, email } ) && { ok: true, token: `t`, account: `me@work.example` },
+            save_token: () => `/rc`,
+        } ) )
+        expect( seen ).toEqual( [ { account: ``, email: `box@gmail.com` } ] )
     } )
 
     it( `says why a Keychain login cannot be replaced`, async () => {
@@ -233,6 +258,7 @@ describe( `sign-in page classifier`, () => {
 
     it( `ignores Cloudflare's passive widget but flags a real challenge`, () => {
         expect( classify_page( page( { email_input: true, buttons: [ `Continue with email` ], captcha_frame: true } ) ) ).toBe( `email_entry` )
+        expect( classify_page( page( { text: `Verify you are human`, buttons: [ `Authorize` ] } ) ) ).toBe( `captcha` )
         expect( classify_page( page( { url: `https://claude.ai/api/challenge_redirect`, title: `Just a moment...` } ) ) ).toBe( `captcha` )
     } )
 
@@ -278,6 +304,10 @@ describe( `login email judge (mail.py)`, () => {
         expect( judge( eml( { stamps: [ GMAIL_PASS.replace( `dkim=pass`, `dkim=fail` ), GMAIL_PASS ] } ) ).reason ).toMatch( /DKIM/ )
         // DKIM must be the From domain's, not the attacker's
         expect( judge( eml( { stamps: [ GMAIL_PASS.replace( `@mail.anthropic.com`, `@evil.example` ) ] } ) ).reason ).toMatch( /DKIM/ )
+        // An identity's local part may hold '@': only the domain after the last one signs
+        expect( judge( eml( { stamps: [ GMAIL_PASS.replace( `header.i=@mail.anthropic.com`, `header.i=anthropic.com@evil.example` ) ] } ) ).reason ).toMatch( /DKIM/ )
+        expect( judge( eml( { stamps: [ GMAIL_PASS.replace( `header.i=@mail.anthropic.com`, `header.i=anthropic.com@evil.example header.d=evil.example` ) ] } ) ).reason ).toMatch( /DKIM/ )
+        expect( judge( eml( { stamps: [ GMAIL_PASS.replace( `header.i=@mail.anthropic.com`, `header.d=mail.anthropic.com` ) ] } ) ) ).toHaveProperty( `link` )
         expect( judge( eml( { date: `Sat, 10 Oct 2026 11:50:00 +0000` } ) ).reason ).toMatch( /predates/ )
     } )
 

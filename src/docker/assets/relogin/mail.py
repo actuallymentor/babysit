@@ -55,10 +55,21 @@ def gmail_stamp(message):
     return None
 
 
+def dkim_signer(result):
+    """The signing domain of one dkim= result: header.d, else the domain of
+    header.i. The identity's local part may itself contain '@' (RFC 6376
+    3.5), so only the text after the last '@' is a domain."""
+    domain = re.search(r"header\.d=([\w.-]+)", result, re.I)
+    if domain:
+        return domain.group(1)
+    identity = re.search(r"header\.i=(\S+)", result, re.I)
+    return identity.group(1).rpartition("@")[2].rstrip(";") if identity else None
+
+
 def dkim_aligned(stamp, from_domain):
     for match in re.finditer(r"dkim=pass\b([^;]*)", stamp or "", re.I):
-        signer = re.search(r"header\.[id]=@?([\w.-]+)", match.group(1), re.I)
-        if signer and org_domain(signer.group(1)) == org_domain(from_domain):
+        signer = dkim_signer(match.group(1))
+        if signer and org_domain(signer) == org_domain(from_domain):
             return True
     return False
 
@@ -125,7 +136,8 @@ def search_query(since, senders):
     query = f'FROM "{senders[0]}"'
     for sender in senders[1:]:
         query = f'OR {query} FROM "{sender}"'
-    return f"(SINCE {day} {query})"
+    # Unread only: an accepted message is marked read and never reused
+    return f"(UNSEEN SINCE {day} {query})"
 
 
 def poll(since, timeout_s, senders):
