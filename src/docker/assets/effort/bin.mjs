@@ -8,7 +8,7 @@ const ALL_HELP = `In-session Babysit commands (host-only commands such as list o
 try {
     const [ command, ...args ] = process.argv.slice( 2 )
     // `babysit help [command]` and a bare `--help` explain; other misuse still fails below
-    if( [ `help`, `--help`, `-h` ].includes( command ) ) console.log( HELP[ args[0] ] || ALL_HELP )
+    if( [ `help`, `--help`, `-h` ].includes( command ) ) console.log( Object.hasOwn( HELP, args[0] ?? `` ) ? HELP[ args[0] ] : ALL_HELP )
     else if( command === `usage` ) process.exitCode = await run_usage( args )
     else if( command === `effort` ) console.log( await run_effort( args ) )
     else if( command === `model` ) console.log( await run_model( args ) )

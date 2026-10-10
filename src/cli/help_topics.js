@@ -49,8 +49,8 @@ Examples:
     'agent resume': agent => `Usage: babysit ${ agent } resume <id|number> [options] [agent CLI flags]
 
 Same as babysit resume <id|number>, but the selected history row must belong to
-${ agent }. The saved conversation, modes, ports, and image come back; credentials
-are reloaded from the host. Flags given here override the saved ones.
+${ agent }. The saved conversation, modes, and ports come back on the current
+image; credentials are reloaded from the host. Flags given here override the saved ones.
 
 Examples:
   babysit ${ agent } resume 1
@@ -61,7 +61,7 @@ Examples:
        babysit resume <id|number> [options] [agent CLI flags]
 
 Without a selector: list this workspace's saved sessions, newest 10 rows.
-With one: restore that session (conversation, modes, ports, image) and attach.
+With one: restore that session (conversation, modes, ports) on the current image and attach.
 Numbers follow the current listing; IDs are durable.
 
 Options:
@@ -287,7 +287,8 @@ Rerun after upgrading Babysit to pick up schedule changes.
 
 Options:
   --remove            Uninstall the checker (the Claude token stays)
-  --no-linger         Linux: leave lingering off (checks stop when you log out)
+  --no-linger         Linux: leave lingering as it is (without it, checks stop when you log out;
+                      undo an earlier enable with loginctl disable-linger)
   --claude-token      Mint a new Claude token even if one is set (e.g. after an alert)
   --no-claude-token   Skip the Claude token step
 
@@ -336,6 +337,9 @@ Example:
 // Flags whose next argument is a value, not a command word
 const VALUE_FLAGS = new Set( [ `--name`, `--log`, `--port`, `--config`, `-n`, `--status`, `--sort`, `--limit`, `--auth-check-agents` ] )
 
+// After `--` everything is literal agent input, `-h` included
+const babysit_args = argv => argv.includes( `--` ) ? argv.slice( 0, argv.indexOf( `--` ) ) : argv
+
 /**
  * Pick the help topic for an argv: `auth init --help`, `help auth init`,
  * `claude resume 2 --help`. Unknown commands fall back to the overview.
@@ -344,14 +348,16 @@ const VALUE_FLAGS = new Set( [ `--name`, `--log`, `--port`, `--config`, `-n`, `-
  */
 export const help_topic = argv => {
 
-    const words = argv.filter( ( arg, index ) => !arg.startsWith( `-` ) && !VALUE_FLAGS.has( argv[ index - 1 ] ) )
+    const own = babysit_args( argv )
+    const words = own.filter( ( arg, index ) => !arg.startsWith( `-` ) && !VALUE_FLAGS.has( own[ index - 1 ] ) )
     if( words[0] === `help` ) words.shift()
     if( !words.length ) return null
 
     const [ first, second ] = words
-    if( is_agent( first ) ) return TOPICS[ second === `resume` ? `agent resume` : `agent` ]( first )
+    const agent = first === `agy` ? `antigravity` : first
+    if( is_agent( agent ) ) return TOPICS[ second === `resume` ? `agent resume` : `agent` ]( agent )
 
-    const key = [ `${ first } ${ second }`, first ].find( candidate => TOPICS[ candidate ] )
+    const key = [ `${ first } ${ second }`, first ].find( candidate => Object.hasOwn( TOPICS, candidate ) )
     return key ? TOPICS[ key ]() : null
 
 }
@@ -361,6 +367,6 @@ export const help_topic = argv => {
  * @param {string[]} argv - process.argv.slice(2)
  * @returns {boolean}
  */
-export const wants_help = argv => argv[0] === `help` || argv.some( arg => arg === `--help` || arg === `-h` )
+export const wants_help = argv => argv[0] === `help` || babysit_args( argv ).some( arg => arg === `--help` || arg === `-h` )
 
 export const HELP_TOPIC_NAMES = Object.keys( TOPICS )
