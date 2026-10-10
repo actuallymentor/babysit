@@ -446,7 +446,10 @@ export const cmd_auth_check = async ( {
         // 2. Host CLI probes, detection only. The rotation guard holds even
         // when forced: one session's dead login says nothing about another
         // session still holding a live refresh token.
-        const sessions_active = ( await list_active_sessions() ).length > 0
+        // An unreadable tmux server counts as busy: failing open would
+        // let a probe rotate a token a session holds
+        const sessions_active = await list_active_sessions( { strict: true } )
+            .then( sessions => sessions.length > 0, () => true )
         const would_rotate = agent => {
             const credential = read_credential( agent )
             return credential.state !== `present` || !agent.auth_check?.refresh_free?.( credential.text, now )

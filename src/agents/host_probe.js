@@ -16,6 +16,7 @@ import { answered_ok, build_host_auth_prompt, is_authentication_failure, last_no
 
 export const HOST_CLI_CHECK_TIMEOUT_MS = 120_000
 export const HOST_CLI_KILL_GRACE_MS = 1_500
+const EXIT_SETTLE_MS = 500
 
 const detect_platform = () => process.platform === `darwin` ? `darwin` : `linux`
 
@@ -152,11 +153,22 @@ export const run_host_cli_auth_check = async ( agent, {
             resolve( outcome )
         }
 
+        let settled = false
         child.stdout?.on( `data`, chunk => stdout += chunk )
         child.stderr?.on( `data`, chunk => stderr += chunk )
-        child.on( `error`, error => finish( result( `failed`, { reason: error.message } ) ) )
+        child.on( `error`, error => {
+            if( settled ) return
+            settled = true
+            finish( result( `failed`, { reason: error.message } ) )
+        } )
 
-        child.on( `close`, code => {
+        // Judge on `close` (all output read), but no later than a moment
+        // after the CLI itself exits: a helper holding its pipes must not
+        // stall the verdict until the deadline
+        const settle = code => {
+
+            if( settled ) return
+            settled = true
 
             if( stop_reason === `timed out` ) return finish( result( `failed`, { reason: `timed out` } ) )
             if( stop_reason ) return finish( result( stop_reason ) )
@@ -168,7 +180,10 @@ export const run_host_cli_auth_check = async ( agent, {
             const status = is_authentication_failure( diagnostic, agent ) ? `unauthenticated` : `failed`
             finish( result( status, { reason: last_nonempty_line( diagnostic ) || `exited with code ${ code }` } ) )
 
-        } )
+        }
+
+        child.on( `close`, settle )
+        child.on( `exit`, code => setTimeout( () => settle( code ), EXIT_SETTLE_MS ).unref?.() )
 
     } )
 

@@ -404,6 +404,26 @@ describe( `auth check`, () => {
 
         } )
 
+        it( `treats an unreadable tmux server as a running session`, async () => {
+
+            enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
+            const { rendered, exit_code } = check( {
+                select_agents: () => [ get_agent( `codex` ) ],
+                list_active_sessions: async ( { strict } ) => {
+                    if( strict ) throw new Error( `tmux inspection timed out` )
+                    return []
+                },
+                read_credential: () => ( { state: `unknown` } ),
+                run_host_check: async () => {
+                    throw new Error( `must not probe` )
+                },
+            } )
+
+            expect( await exit_code ).toBe( 0 )
+            expect( rendered() ).toContain( `codex: deferred` )
+
+        } )
+
         it( `never host-probes a login that may have used a shell-only key`, async () => {
 
             enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
