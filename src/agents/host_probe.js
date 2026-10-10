@@ -124,7 +124,7 @@ export const run_host_cli_auth_check = async ( agent, {
             try {
                 process.kill( -child.pid, name )
             } catch {
-                child.kill?.( name )
+                if( child.exitCode === null ) child.kill?.( name )
             }
         }
 
@@ -144,6 +144,9 @@ export const run_host_cli_auth_check = async ( agent, {
         const finish = outcome => {
             clearTimeout( deadline )
             clearTimeout( kill_timer )
+            // The leader is gone; a helper that ignored SIGTERM or outlived
+            // a normal exit must not linger on the host
+            signal_group( `SIGKILL` )
             signal?.removeEventListener?.( `abort`, on_abort )
             rmSync( cwd, { recursive: true, force: true } )
             resolve( outcome )

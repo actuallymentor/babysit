@@ -86,9 +86,11 @@ const without_connector_lines = output => output
  * @param {Object|null} [agent] - Adapter with an optional auth_check.failure_pattern
  * @returns {boolean} True when the output is an authentication failure
  */
-export const is_authentication_failure = ( output, agent = null ) =>
-    Boolean( agent?.auth_check?.failure_pattern?.test( output ) )
-    || AUTHENTICATION_FAILURE_PATTERNS.some( pattern => pattern.test( without_connector_lines( output ) ) )
+export const is_authentication_failure = ( output, agent = null ) => {
+    const own_output = without_connector_lines( output )
+    return Boolean( agent?.auth_check?.failure_pattern?.test( own_output ) )
+        || AUTHENTICATION_FAILURE_PATTERNS.some( pattern => pattern.test( own_output ) )
+}
 
 /**
  * Format a date like the shell example in the boot auth-check prompt.

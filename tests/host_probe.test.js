@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { spawn } from 'child_process'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -68,6 +68,17 @@ describe( `host CLI auth probe`, () => {
 
     } )
 
+    it( `leaves no helper behind when the CLI exits`, async () => {
+
+        const marker = join( directory, `helper.pid` )
+        await probe( claude, fake_cli( `(trap '' TERM; sleep 30) >/dev/null 2>&1 & echo $! > ${ marker }; sleep 30` ), { timeout_ms: 50, kill_grace_ms: 5_000 } )
+        const pid = Number( readFileSync( marker, `utf8` ) )
+        await new Promise( resolve => setTimeout( resolve, 100 ) )
+
+        expect( () => process.kill( pid, 0 ) ).toThrow()
+
+    } )
+
     it( `declines when the CLI is absent, unsupported, or reads a relocated config`, async () => {
 
         expect( await probe( claude, () => null ) ).toBeNull()
@@ -103,6 +114,7 @@ describe( `login evidence`, () => {
     it( `ignores connector noise but keeps adapter phrasings`, () => {
 
         expect( is_authentication_failure( `MCP client startup failed: 401 Unauthorized\nok` ) ).toBe( false )
+        expect( is_authentication_failure( `MCP client startup failed: 401 Unauthorized`, codex ) ).toBe( false )
         expect( is_authentication_failure( `OAuth token has expired`, claude ) ).toBe( true )
         expect( is_authentication_failure( `Your refresh token was already used`, codex ) ).toBe( true )
 

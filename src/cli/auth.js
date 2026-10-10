@@ -280,6 +280,11 @@ export const cmd_auth_status = async ( {
 
 }
 
+// The login rode on a credential file alone. Anything else (a key in the
+// launch shell, legacy entries without provenance) is invisible to the
+// timer, so neither offline checks nor host probes may judge it.
+const sole_file_login = entry => JSON.stringify( entry?.credential_kinds ) === `["file"]`
+
 /**
  * Find logouts visible without a network call: a refresh token past its own
  * expiry, or a deleted credential file. Only logins whose sole recorded
@@ -297,10 +302,9 @@ export const find_offline_logouts = async ( agents, {
     wait = sleep,
 } ) => {
 
-    const sole_file = agent => JSON.stringify( cache.agents?.[ agent.name ]?.credential_kinds ) === `["file"]`
     const found = []
 
-    for( const agent of agents.filter( sole_file ) ) {
+    for( const agent of agents.filter( agent => sole_file_login( cache.agents?.[ agent.name ] ) ) ) {
 
         const credential = read_credential( agent )
         const expires_at = credential.state === `present` ? agent.auth_check?.refresh_expires_at?.( credential.text ) : NaN
@@ -337,9 +341,10 @@ const host_probe_due = ( entry, now ) => {
  * Quietly re-verify enrolled logins, cheapest evidence first:
  *
  * 1. Offline: expired refresh tokens and deleted credential files.
- * 2. Host CLI probe (seconds) once the last proof is an hour old. While a
- *    Babysit session runs, only when the access token is fresh enough that
- *    the probe cannot rotate a refresh token the session also holds.
+ * 2. Host CLI probe (seconds) once the last proof is an hour old, for logins
+ *    that rode on the credential file alone. While a Babysit session runs,
+ *    only when the access token is fresh enough that the probe cannot rotate
+ *    a refresh token the session also holds.
  * 3. Container probe at half the cache TTL, which keeps launches warm.
  *
  * Lost logins feed the Pushover logout alerts. Yields to a foreground launch
@@ -349,7 +354,8 @@ const host_probe_due = ( entry, now ) => {
  * interrupted session start.
  *
  * With an agent and `force` (a monitor saw a lost login on screen), that
- * agent is probed now: host CLI when possible, else the container.
+ * agent is probed now: host CLI when possible, else the container. The
+ * rotation guard still applies.
  *
  * @param {Object} [options] - Output and injectable seams
  * @returns {Promise<number>} Exit code; 0 unless a probe failed outright
@@ -437,13 +443,16 @@ export const cmd_auth_check = async ( {
         }
         const online = agents.filter( agent => !offline.some( found => found.agent === agent ) )
 
-        // 2. Host CLI probes, detection only
-        const sessions_active = !force && ( await list_active_sessions() ).length > 0
+        // 2. Host CLI probes, detection only. The rotation guard holds even
+        // when forced: one session's dead login says nothing about another
+        // session still holding a live refresh token.
+        const sessions_active = ( await list_active_sessions() ).length > 0
         const would_rotate = agent => {
             const credential = read_credential( agent )
             return credential.state !== `present` || !agent.auth_check?.refresh_free?.( credential.text, now )
         }
         const host_candidates = online.filter( agent => agent.auth_check?.host_args
+            && sole_file_login( cache.agents?.[ agent.name ] )
             && ( force || host_probe_due( cache.agents?.[ agent.name ], now ) ) )
         const host_results = ( await Promise.all( host_candidates.map( async agent => {
             if( sessions_active && would_rotate( agent ) ) {
@@ -482,7 +491,9 @@ export const cmd_auth_check = async ( {
             } )
 
             for( const result of container_results ) {
-                if( result.status === `authenticated` ) recovered.push( result.name )
+                // A cache hit matches today's credentials, so it is a login
+                // verified after any logout on record
+                if( [ `authenticated`, `cached` ].includes( result.status ) ) recovered.push( result.name )
                 if( result.status === `unauthenticated` ) logouts.push( { agent: result.name, login: login_of( result.name ) } )
                 results.push( labelled( result ) )
             }
