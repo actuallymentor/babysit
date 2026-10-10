@@ -166,17 +166,21 @@ const click_label = async ( page, pattern ) => {
     return false
 }
 
-// The claude.ai account the browser is signed in as: the account API, else
-// addresses shown on the page. Null when neither tells.
+// The claude.ai account the browser is signed in as: claude.ai's own account
+// APIs, else addresses shown on the page. Null when nothing tells.
 const signed_in_as = async page => {
     const api = await page.evaluate( async () => {
-        try {
-            const response = await fetch( `/api/account`, { credentials: `include` } )
-            const body = response.ok ? await response.json() : {}
-            return body.email_address || body.account?.email_address || null
-        } catch {
-            return null
+        for( const path of [ `/api/account`, `/api/bootstrap` ] ) {
+            try {
+                const response = await fetch( path, { credentials: `include` } )
+                const body = response.ok ? await response.json() : {}
+                const email = body.email_address || body.account?.email_address
+                if( email ) return email
+            } catch {
+                // try the next source
+            }
         }
+        return null
     } ).catch( () => null )
     if( api ) return [ api ]
     const text = await page.evaluate( () => document.body?.innerText || `` ).catch( () => `` )
@@ -287,7 +291,10 @@ const result = async () => {
             if( state === `foreign` ) return await fail( `browser`, `the sign-in flow left claude.ai (${ redact( snapshot.url ) })`, page )
 
             if( state === `consent` ) {
+                // Fail closed: setup-tokens record no account, so this is the
+                // only point where a wrong-account token can be stopped
                 const shown = args.account && await signed_in_as( page )
+                if( args.account && !shown ) return await fail( `account`, `could not confirm which claude.ai account the browser is signed in as`, page )
                 if( shown && !shown.some( address => address.toLowerCase() === args.account.toLowerCase() ) ) {
                     return await fail( `account`, `the browser is signed in as ${ shown[0] }, not ${ args.account }; re-seed it with babysit auth relogin --session-key`, page )
                 }

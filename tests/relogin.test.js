@@ -213,9 +213,13 @@ describe( `babysit auth relogin`, () => {
 
     it( `reports the outcome and exit code`, async () => {
         const { output, rendered } = collect()
-        expect( await cmd_auth_relogin( { flags: {} }, { output, env: {}, relogin: async ( { manual } ) => ( { ok: manual, mode: `token` } ) } ) ).toBe( 0 )
+        const proven = []
+        const prove = async outcome => proven.push( outcome ) && outcome
+        expect( await cmd_auth_relogin( { flags: {} }, { output, env: {}, prove, relogin: async ( { manual } ) => ( { ok: manual, mode: `token` } ) } ) ).toBe( 0 )
+        // By hand too, the new login is proven and Claude re-enrolled
+        expect( proven ).toEqual( [ { ok: true, mode: `token` } ] )
         expect( rendered() ).toContain( `Restart running Claude sessions` )
-        expect( await cmd_auth_relogin( { flags: {} }, { output, env: {}, relogin: async () => ( { ok: false, step: `captcha`, reason: `human check`, run_dir: `/r` } ) } ) ).toBe( 1 )
+        expect( await cmd_auth_relogin( { flags: {} }, { output, env: {}, prove, relogin: async () => ( { ok: false, step: `captcha`, reason: `human check`, run_dir: `/r` } ) } ) ).toBe( 1 )
         expect( rendered() ).toContain( `Re-login failed at captcha: human check (screenshot: /r in volume babysit-relogin)` )
     } )
 
@@ -231,8 +235,8 @@ describe( `babysit auth relogin`, () => {
         }
         const seen = []
         const spy = async options => seen.push( options.env.RELOGIN_SESSION_KEY ) && { ok: true, mode: `login` }
-        expect( await cmd_auth_relogin( { flags: { session_key: true } }, { input: paste( `not-a-key` ), output: collect().output, env: {}, relogin: spy } ) ).toBe( 1 )
-        expect( await cmd_auth_relogin( { flags: { session_key: true } }, { input: paste( `sk-ant-sid01-abc_DEF-1` ), output: collect().output, env: {}, relogin: spy } ) ).toBe( 0 )
+        expect( await cmd_auth_relogin( { flags: { session_key: true } }, { input: paste( `not-a-key` ), output: collect().output, env: {}, relogin: spy, prove: async outcome => outcome } ) ).toBe( 1 )
+        expect( await cmd_auth_relogin( { flags: { session_key: true } }, { input: paste( `sk-ant-sid01-abc_DEF-1` ), output: collect().output, env: {}, relogin: spy, prove: async outcome => outcome } ) ).toBe( 0 )
         expect( seen ).toEqual( [ `sk-ant-sid01-abc_DEF-1` ] )
     } )
 

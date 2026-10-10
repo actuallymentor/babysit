@@ -158,7 +158,9 @@ session gets a login email; only Gmail-DKIM-verified mail from Anthropic, sent a
 logout, ≤3/day, `BABYSIT_RELOGIN=0` disables. Setup once: forward Anthropic's login mail into that Gmail (set
 `CLAUDE_LOGIN_EMAIL` to the Claude account address when it differs) and seed the browser with
 `babysit auth relogin --session-key` (paste the `sessionKey` cookie from a private claude.ai window). Cloudflare's human
-check is never solved: the run stops and the alert says so; in testing, an automated email sign-in hit it.
+check is never solved: the run stops and the alert says so; in testing, an automated email sign-in hit it. Another
+Claude account is never authorized: with a known account (`CLAUDE_LOGIN_EMAIL` or the host's last `/login`), a browser
+whose identity can't be confirmed stops too. Every new login is proven with a container check, which re-enrols Claude.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
