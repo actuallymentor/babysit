@@ -304,6 +304,7 @@ describe( `auth check`, () => {
             record_host_auth_success( name, {
                 credential_fingerprint: identity?.fingerprint || `fingerprint`,
                 image_identity: IMAGE_IDENTITY,
+                credential_parts: [ { kind: `file` } ],
                 ...extra,
             }, { cache_path, now: Date.now() - age_ms } )
         }
@@ -372,7 +373,7 @@ describe( `auth check`, () => {
 
         } )
 
-        it( `defers a token-rotating host probe while a session runs, unless forced`, async () => {
+        it( `defers a token-rotating host probe while a session runs, even when forced`, async () => {
 
             enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
             const host = []
@@ -394,7 +395,39 @@ describe( `auth check`, () => {
 
             const forced = check( { ...options, agent_name: `codex`, force: true } )
             expect( await forced.exit_code ).toBe( 0 )
+            expect( host ).toEqual( [] )
+
+            // No session left to protect: the forced probe runs
+            const idle = check( { ...options, agent_name: `codex`, force: true, list_active_sessions: async () => [] } )
+            expect( await idle.exit_code ).toBe( 0 )
             expect( host ).toEqual( [ `codex` ] )
+
+        } )
+
+        it( `never host-probes a login that may have used a shell-only key`, async () => {
+
+            enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
+            const host = []
+
+            await check( { select_agents: () => [ get_agent( `codex` ) ], run_host_check: async agent => host.push( agent.name ) && null } ).exit_code
+            expect( host ).toEqual( [] )
+
+        } )
+
+        it( `treats a cache hit as recovery from an earlier logout`, async () => {
+
+            enrol( `codex`, 1_000, { credential_parts: null } )
+            const { logout_alerts, calls } = alerts()
+
+            await check( {
+                select_agents: () => [ get_agent( `codex` ) ],
+                env: ENV_PUSHOVER,
+                read_usage: async () => ( { agents: [] } ),
+                usage_alerts: async () => [],
+                logout_alerts,
+            } ).exit_code
+
+            expect( calls[0].recovered ).toEqual( [ `codex` ] )
 
         } )
 

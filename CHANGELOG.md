@@ -5,7 +5,7 @@
 ### Added
 - Faster logout alerts. The auth checker now runs every 10 minutes (rerun `babysit auth init` to pick up the new schedule) and checks in layers, cheapest first:
   - Offline, every run: a deleted credential file, or a Claude refresh token past its own expiry. Applies only when that file was the login's sole source, never for Keychain/Secret Service logins.
-  - Host CLI probe once the last proof is an hour old: one ~3s prompt through your own `claude`/`codex` with every customization off (`--safe-mode`, no MCP, no tools, no session record). It only detects logouts; the 6h container check still feeds the launch cache. While a Babysit session runs, it waits until the access token is fresh enough that the probe cannot rotate a token the session holds.
+  - Host CLI probe once the last proof is an hour old, for logins that use the credential file alone: one ~3s prompt through your own `claude`/`codex` with every customization off (`--safe-mode`, no MCP, no tools, no session record). It only detects logouts; the 6h container check still feeds the launch cache. While a Babysit session runs, it waits until the access token is fresh enough that the probe cannot rotate a token the session holds; `--force` waits too.
   - Session monitors watch the pane: when the agent prints its own logged-out message, they run `babysit auth check <agent> --force` (at most every 15 min while it is still visible). The probe, not the pane, decides whether to alert.
 - `babysit auth check [agent] [--force]` checks one agent right away.
 
