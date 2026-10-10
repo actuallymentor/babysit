@@ -162,6 +162,7 @@ RUN mkdir -p \
         /home/node/.config/opencode/plugins \
         /home/node/.local/share/opencode \
         /home/node/.agents \
+        /home/node/relogin \
         /workspace \
     && chown -R node:node /home/node /workspace \
     && echo "node ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/node \
@@ -178,6 +179,9 @@ COPY antigravity-auth.py /usr/local/bin/antigravity-auth.py
 COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
 COPY usage/ /opt/usage/
+# Automated Claude re-login driver; its browser profile volume mounts at
+# /home/node/relogin, pre-created so Docker seeds it node-owned
+COPY relogin/ /opt/relogin/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
     && ln -s /opt/babysit-effort /opt/effort \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit

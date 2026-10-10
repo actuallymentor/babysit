@@ -1,6 +1,11 @@
 # Automated Claude re-login — parked design (options B and D)
 
-Status 2026-10-10: **not built.** The user chose option A first: `claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` in `~/.babysitrc`, minted by `babysit auth init` (1.34.0). Build B, then D, only if A falls short.
+Status 2026-10-10: **B built in 1.36.0** on user request (A stays the primary path; B replaces whichever login died). D not built. As built, it differs from the plan below:
+- No separate image. The babysit image already ships Chrome, puppeteer, xvfb, tmux, python3, and claude; the driver is `/opt/relogin`.
+- No pane scraping of URLs and no pasted codes. `$BROWSER` gets the authorize URL with a `localhost:PORT/callback` redirect, so Chrome in the same container finishes the CLI's own OAuth. `claude auth login --claudeai --email` exists (2.1.296) for login mode. Token mode reads the `sk-ant-oat` token from the tmux pane (`capture-pane -J`, 500 columns).
+- The auth lease is released before re-login (a browser login can take minutes; the lease timeout is 8 min). Its own lock is `~/.babysit/relogin.lock`.
+- **Cloudflare finding (live, 2026-10-10):** with puppeteer-default Chrome under xvfb on this host, submitting the email on claude.ai/login leads to `/api/challenge_redirect` ("Verify you are human"); it did not clear in 60s. Not solved and not evaded (no stealth flags), per the rule below. So the email path likely fails here, and the practical path is a seeded claude.ai session (`babysit auth relogin --session-key`, a pasted `sessionKey` cookie), where only "Authorize" is clicked. Whether the consent page itself gets challenged is **untested** (no session available to test with).
+- The `/login` account email is the host `~/.claude.json` `oauthAccount.emailAddress` by default (the user's Claude account is not the Gmail address; mail must be forwarded into Gmail).
 
 ## Build B when any of these holds
 - A setup-token login gets revoked or logged out in practice (alert names it).

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.36.0 — 2026-10-10
+
+### Added
+- Automated Claude re-login. With `GMAIL_USER` and `GMAIL_APP_PASSWORD` in `~/.babysitrc`, a confirmed Claude logout makes the checker log back in through a throwaway browser container before alerting. It mints a new setup-token or `/login` and installs it. It runs once per logout, at most 3 times a day, and `BABYSIT_RELOGIN=0` turns it off.
+- `babysit auth relogin [--session-key]` runs it by hand. `--session-key` first seeds the browser with a pasted claude.ai session.
+
 ## 1.35.0 — 2026-10-10
 
 ### Added

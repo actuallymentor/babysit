@@ -23,8 +23,8 @@ const KNOWN_FLAGS = [
     `config`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
-const AUTH_VERBS = [ `status`, `check`, `init` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token`, `session-key` ]
+const AUTH_VERBS = [ `status`, `check`, `init`, `relogin` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
@@ -115,6 +115,8 @@ export const parse_args = ( argv ) => {
         linger: verb === `auth` && args.linger !== false,
         // Unset: offer the token when missing. --claude-token re-mints, --no-claude-token skips.
         claude_token: verb === `auth` && typeof args[ `claude-token` ] === `boolean` ? args[ `claude-token` ] : undefined,
+        // `auth relogin --session-key` seeds the re-login browser first
+        session_key: verb === `auth` && Boolean( args[ `session-key` ] ),
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),
@@ -193,14 +195,14 @@ export const parse_args = ( argv ) => {
         return { verb: `prune`, agent: null, flags, passthrough: [] }
     }
 
-    // babysit auth [status|check|init [--remove]] — cache inspection and the
-    // scheduled host-level checker that keeps launches on the warm path.
+    // babysit auth [status|check|init [--remove]|relogin] — cache inspection,
+    // the scheduled host-level checker, and the automated Claude re-login.
     if( verb === `auth` ) {
         const auth_verb = positionals[1] || `status`
         if( !AUTH_VERBS.includes( auth_verb ) ) throw new Error( `Unknown auth command: ${ auth_verb }. Use ${ AUTH_VERBS.join( `, ` ) }.` )
         // `auth check <agent> --force` re-verifies one agent now; a session
         // monitor runs it when the agent's pane shows a lost login
-        const auth_agent = auth_verb === `check` ? positionals[2] || null : null
+        const auth_agent = [ `check`, `relogin` ].includes( auth_verb ) ? positionals[2] || null : null
         if( positionals.length > ( auth_agent ? 3 : 2 ) ) throw new Error( `Unknown auth argument: ${ positionals.at( -1 ) }` )
         if( auth_agent && !is_agent( auth_agent ) ) throw new Error( `Unknown agent: ${ auth_agent }` )
         return { verb: `auth`, auth_verb, agent: auth_agent, flags: { ...flags, force: Boolean( args.force ) }, passthrough: [] }

@@ -118,6 +118,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit auth [status]` | Cached authentication ages and whether the scheduled checker is installed |
 | `babysit auth check [agent] [--force]` | What the checker runs: offline checks, host CLI probe after 1h, container re-verify after 6h; `--force` probes one agent now |
 | `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
+| `babysit auth relogin [--session-key]` | Log Claude back in now through a browser container; `--session-key` first seeds it with a pasted claude.ai session |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image; show image version |
 
@@ -147,6 +148,17 @@ rotates, so sessions stop logging each other out. `--claude-token` mints a repla
 Restart running Claude sessions to switch. It only makes model requests (claude.ai connectors/Remote Control need
 `/login`). Env logins skip the offline and host CLI checks; the 6h container check and the pane trigger still alert, and
 the alert says to rerun `babysit auth init --claude-token`.
+
+**Automated Claude re-login** (`babysit auth relogin --help`). With `GMAIL_USER` and `GMAIL_APP_PASSWORD` (Gmail app
+password) in `~/.babysitrc`, a confirmed Claude logout makes `babysit auth check` log back in by itself before alerting:
+a throwaway babysit container runs `claude setup-token` (setup-token in use) or `claude auth login` (Linux `/login`
+file), and Chrome approves the sign-in with a claude.ai session kept in the `babysit-relogin` volume. The new token goes
+to `~/.babysitrc` (restart Claude sessions), the new `/login` to `~/.claude/.credentials.json`. An expired claude.ai
+session gets a login email; only Gmail-DKIM-verified mail from Anthropic, sent after the request, is used. Once per
+logout, ≤3/day, `BABYSIT_RELOGIN=0` disables. Setup once: forward Anthropic's login mail into that Gmail (set
+`CLAUDE_LOGIN_EMAIL` to the Claude account address when it differs) and seed the browser with
+`babysit auth relogin --session-key` (paste the `sessionKey` cookie from a private claude.ai window). Cloudflare's human
+check is never solved: the run stops and the alert says so; in testing, an automated email sign-in hit it.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
