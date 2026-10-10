@@ -20,10 +20,10 @@ Status 2026-10-10: **not built.** The user chose option A first: `claude setup-t
 1. Spawn `claude` in tmux inside the relogin container against a temp `CLAUDE_CONFIG_DIR`. Drive `/login` → "Claude account with subscription" and capture the authorize URL from the pane. Wait for `Paste code here if prompted`. (Verify first whether a non-interactive `claude auth login` exists in the installed version; prefer it.)
 2. Open the URL in the persistent Chromium profile (`~/.babysit/relogin/profile`, 0700, volume).
    - claude.ai session alive → consent page → click Authorize → the code page shows the code → extract it.
-   - Session expired → enter `CLAUDE_LOGIN_EMAIL` → "check your email" state → step 3.
-3. Mail: IMAP (IDLE, else poll every 5s, 10 min window) on the agent mailbox. Accept only messages that pass all of these:
+   - Session expired → enter `CLAUDE_LOGIN_EMAIL` (default `GMAIL_USER`) → "check your email" state → step 3.
+3. Mail: IMAP (IDLE, else poll every 5s, 10 min window) on the Gmail mailbox (`GMAIL_USER`). Accept only messages that pass all of these:
    - From an allowlisted sender (`@anthropic.com`, `@mail.anthropic.com`).
-   - Authenticated From: trust only the `Authentication-Results` header stamped by the agent mailbox's own `authserv-id` (RFC 8601 §1.6; ignore every other copy). Require `dkim=pass` with `header.d` aligned to the From domain. A forwarder that breaks DKIM must hand over a passing ARC chain sealed by the known forwarding provider, with the original `dkim=pass` aligned to the From domain inside it. A bare "pass" anywhere is not enough.
+   - Authenticated From: trust only the `Authentication-Results` header stamped by the receiving mailbox's own `authserv-id` (`mx.google.com` for Gmail; RFC 8601 §1.6; ignore every other copy). Require `dkim=pass` with `header.d` aligned to the From domain. A forwarder that breaks DKIM must hand over a passing ARC chain sealed by the known forwarding provider, with the original `dkim=pass` aligned to the From domain inside it. A bare "pass" anywhere is not enough.
    - `Date` ≥ login start − 1 min.
    - Link host in `{claude.ai, anthropic.com, *.anthropic.com}`.
 
@@ -33,7 +33,8 @@ Status 2026-10-10: **not built.** The user chose option A first: `claude setup-t
    **If A is in use, the dead credential is `CLAUDE_CODE_OAUTH_TOKEN`, not the file.** It outranks `/login`, so a fresh file changes nothing. Mint a replacement with `claude setup-token` (same browser authorize flow, the token prints to the pane) and rewrite the variable in its env file, or remove the variable so sessions fall back to `/login`.
 6. Pushover result: success, or the failing step name plus a screenshot path (`~/.babysit/relogin/runs/<ts>/`).
 
-**Config.** `CLAUDE_LOGIN_EMAIL`, `BABYSIT_RELOGIN_IMAP_HOST`, `_PORT` (993), `_USER`, `_PASSWORD` (app password), optional `_SENDERS` override. Lives in `~/.babysitrc` (user decision 2026-10-10: exposure to agent containers is accepted).
+**Config.** Gmail only: IMAP `imap.gmail.com:993` (TLS), login `GMAIL_USER` + `GMAIL_APP_PASSWORD` (16-letter app password; strip spaces before use). `CLAUDE_LOGIN_EMAIL` is optional and defaults to `GMAIL_USER`; set it only when Claude mail is forwarded in from another address. Optional `BABYSIT_RELOGIN_SENDERS` overrides the sender allowlist. All of it lives in `~/.babysitrc` as plain `KEY=value` (the host loader and entrypoint source with `set -a`). User decision 2026-10-10: exposure to agent containers is accepted. Validated 2026-10-10: both vars set, IMAP login OK, inbox opened read-only, IDLE advertised.
+Preflight: missing or empty var → skip the mail step and alert "set GMAIL_USER / GMAIL_APP_PASSWORD in ~/.babysitrc". IMAP `AUTHENTICATIONFAILED` → alert "Gmail app password rejected" and never retry in a loop.
 
 **Page states** are a pure classifier `(url, DOM snapshot) → consent | email_entry | check_email | code_shown | email_code_entry | success | error | captcha | unknown`, unit-tested on saved HTML fixtures. `captcha`/Cloudflare challenge → stop and alert; never solve it.
 
