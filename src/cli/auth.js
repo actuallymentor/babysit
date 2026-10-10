@@ -520,7 +520,23 @@ export const cmd_auth_check = async ( {
                 lease.release()
                 lease_handed = true
             }
-            const outcome = await relogin( { env, output, login: claude_logout.login } )
+            let outcome = await relogin( { env, output, login: claude_logout.login } )
+
+            // Prove the new login in a container, which also re-enrols Claude:
+            // the logout cleared its cache entry
+            if( outcome.ok ) {
+                const [ proof ] = await run_auth_diagnostics( [ get_agent( `claude` ) ], {
+                    ...diagnostics,
+                    output,
+                    input: { isTTY: false },
+                    acquire_lease: () => acquire_lease( { foreground: false } ),
+                    ttl_ms: 0,
+                    only_with_credentials: true,
+                    clear_on_failure: false,
+                } )
+                if( proof?.status !== `authenticated` ) outcome = { ok: false, step: `verify`, reason: `the new login did not pass a container check (${ proof?.reason || proof?.status || `no result` })` }
+            }
+
             if( outcome.ok ) {
                 logouts.splice( logouts.indexOf( claude_logout ), 1 )
                 recovered.push( `claude` )

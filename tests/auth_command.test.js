@@ -474,12 +474,21 @@ describe( `auth check`, () => {
                 return { run, calls }
             }
 
-            it( `logs Claude back in instead of alerting, with the lease already released`, async () => {
+            // The first container probe finds the logout, the second proves the new login
+            const probes_then = ( ...statuses ) => async agent => {
+                const status = statuses.shift()
+                return { name: agent.name, status, authenticated: status === `authenticated` }
+            }
+
+            it( `logs Claude back in, proves it, and re-enrols it instead of alerting`, async () => {
 
                 const attempts = []
                 const notices = []
+                let released_before = null
                 const { run, calls } = dead_claude( GMAIL, {
+                    run_auth_check: probes_then( `unauthenticated`, `authenticated` ),
                     relogin: async options => {
+                        released_before = run.lease.released
                         attempts.push( options.login )
                         return { ok: true, mode: `token` }
                     },
@@ -487,11 +496,28 @@ describe( `auth check`, () => {
                 } )
                 await run.exit_code
 
+                // A browser login can take minutes: launches must not wait on it
+                expect( released_before ).toBe( 1 )
                 expect( attempts ).toHaveLength( 1 )
                 expect( notices ).toEqual( [ { ok: true, mode: `token` } ] )
                 expect( calls[0].found ).toEqual( [] )
                 expect( calls[0].recovered ).toContain( `claude` )
-                expect( run.lease.released ).toBe( 1 )
+                expect( read_host_auth_cache( { cache_path } ).agents.claude ).toBeTruthy()
+
+            } )
+
+            it( `alerts when the new login does not pass its container check`, async () => {
+
+                const { run, calls } = dead_claude( GMAIL, {
+                    run_auth_check: probes_then( `unauthenticated`, `unauthenticated` ),
+                    relogin: async () => ( { ok: true, mode: `token` } ),
+                    relogin_notify: async () => {
+                        throw new Error( `no success note for an unproven login` )
+                    },
+                } )
+                await run.exit_code
+
+                expect( calls[0].found[0].fix ).toMatch( /^Auto re-login failed \(verify: the new login did not pass a container check/ )
 
             } )
 

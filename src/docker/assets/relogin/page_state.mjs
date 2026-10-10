@@ -34,14 +34,17 @@ export const classify_page = ( { url = ``, title = ``, text = ``, buttons = [], 
 
     if( !in_hosts( host ) ) return `foreign`
 
+    // A visible challenge wins over any button behind it
+    if( CAPTCHA.test( title ) || CAPTCHA.test( text.slice( 0, 500 ) ) ) return `captcha`
+
     if( buttons.some( label => CONSENT_BUTTON.test( label ) ) ) return `consent`
     if( code_input ) return `email_code_entry`
     if( CHECK_EMAIL.test( text ) ) return `check_email`
     if( email_input && buttons.some( label => EMAIL_BUTTON.test( label ) ) ) return `email_entry`
 
-    // Cloudflare keeps an invisible widget on normal pages; a challenge is
-    // only a challenge when nothing actionable is showing
-    if( captcha_frame || CAPTCHA.test( title ) || CAPTCHA.test( text.slice( 0, 500 ) ) ) return `captcha`
+    // Cloudflare keeps an invisible widget on normal pages; its iframe alone
+    // is a challenge only when nothing actionable is showing
+    if( captcha_frame ) return `captcha`
     return `unknown`
 
 }

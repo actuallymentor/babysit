@@ -2,7 +2,7 @@
 /*
  * Re-login driver, run inside a throwaway babysit container under xvfb:
  *
- *   xvfb-run -a node /opt/relogin/driver.mjs --mode token|login --email you@example.com
+ *   xvfb-run -a node /opt/relogin/driver.mjs --mode token|login --email you@example.com [--account you@example.com]
  *
  * 1. Starts `claude setup-token` (token mode) or `claude auth login` (login
  *    mode) in a private tmux pane with a temp CLAUDE_CONFIG_DIR. $BROWSER is a
@@ -13,8 +13,10 @@
  *    link from Gmail (mail.py), opened in the same profile. RELOGIN_SESSION_KEY
  *    seeds the profile with a pasted claude.ai `sessionKey` cookie first.
  *    A Cloudflare human check is never solved: the run stops and says so.
- * 3. Prints one `RESULT {json}` line on stdout: { ok, token } or
- *    { ok, credentials }, else { ok: false, step, reason, run_dir }.
+ *    With --account, a browser signed in as anyone else is never authorized.
+ * 3. Prints one `RESULT {json}` line on stdout: { ok, token, account } or
+ *    { ok, credentials, account }, else { ok: false, step, reason, run_dir }.
+ *    `account` is the address the CLI recorded, when it recorded one.
  *    Progress goes to stderr.
  */
 
@@ -31,6 +33,7 @@ import { classify_page, in_hosts, snapshot_page } from './page_state.mjs'
 const { values: args } = parseArgs( { options: {
     mode: { type: `string`, default: `token` },
     email: { type: `string`, default: `` },
+    account: { type: `string`, default: `` },
     home: { type: `string`, default: `/home/node/relogin` },
     'timeout-ms': { type: `string`, default: String( 12 * 60_000 ) },
 } } )
@@ -93,13 +96,20 @@ const start_cli = () => {
         // { token } or { credentials } once the CLI has its login, { exit } if it gave up
         outcome: () => {
             const screen = pane()
+            const account = () => {
+                try {
+                    return JSON.parse( readFileSync( join( config_dir, `.claude.json` ), `utf8` ) ).oauthAccount?.emailAddress || null
+                } catch {
+                    return null
+                }
+            }
             if( args.mode === `token` ) {
                 const token = screen.match( TOKEN_PATTERN )?.[0]
-                if( token ) return { token }
+                if( token ) return { token, account: account() }
             } else {
                 const file = join( config_dir, `.credentials.json` )
                 const credentials = existsSync( file ) && JSON.parse( readFileSync( file, `utf8` ) )
-                if( credentials?.claudeAiOauth?.accessToken ) return { credentials }
+                if( credentials?.claudeAiOauth?.accessToken ) return { credentials, account: account() }
             }
             const exit = screen.match( /RELOGIN_CLI_EXIT=(\d+)/ )?.[1]
             return exit === undefined ? null : { exit: Number( exit ), screen: screen.trim().split( `\n` ).slice( -5 ).join( ` | ` ) }
@@ -154,6 +164,23 @@ const click_label = async ( page, pattern ) => {
         }
     }
     return false
+}
+
+// The claude.ai account the browser is signed in as: the account API, else
+// addresses shown on the page. Null when neither tells.
+const signed_in_as = async page => {
+    const api = await page.evaluate( async () => {
+        try {
+            const response = await fetch( `/api/account`, { credentials: `include` } )
+            const body = response.ok ? await response.json() : {}
+            return body.email_address || body.account?.email_address || null
+        } catch {
+            return null
+        }
+    } ).catch( () => null )
+    if( api ) return [ api ]
+    const text = await page.evaluate( () => document.body?.innerText || `` ).catch( () => `` )
+    return text.match( /[\w.+-]+@[\w-]+(\.[\w-]+)+/g ) || null
 }
 
 const fill = async ( page, selector, value ) => {
@@ -237,8 +264,7 @@ const result = async () => {
         while( Date.now() < deadline ) {
 
             const outcome = cli.outcome()
-            if( outcome?.token ) return { ok: true, token: outcome.token }
-            if( outcome?.credentials ) return { ok: true, credentials: outcome.credentials }
+            if( outcome?.token || outcome?.credentials ) return { ok: true, ...outcome }
             if( outcome?.exit !== undefined ) return await fail( `cli`, `claude exited (${ outcome.exit }) without a login: ${ outcome.screen }`, page )
 
             const snapshot = await page.evaluate( snapshot_page ).catch( () => null )
@@ -261,6 +287,10 @@ const result = async () => {
             if( state === `foreign` ) return await fail( `browser`, `the sign-in flow left claude.ai (${ redact( snapshot.url ) })`, page )
 
             if( state === `consent` ) {
+                const shown = args.account && await signed_in_as( page )
+                if( shown && !shown.some( address => address.toLowerCase() === args.account.toLowerCase() ) ) {
+                    return await fail( `account`, `the browser is signed in as ${ shown[0] }, not ${ args.account }; re-seed it with babysit auth relogin --session-key`, page )
+                }
                 progress( `authorizing` )
                 await click_label( page, /^(authorize|allow|approve)$/i )
                 await sleep( 3000 )
