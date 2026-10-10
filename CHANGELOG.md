@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.34.0 — 2026-10-10
+
+### Added
+- `babysit auth init` sets up the one-year Claude token: runs `claude setup-token`, verifies the pasted token with one prompt, saves it to `~/.babysitrc`. `--claude-token` replaces it, `--no-claude-token` skips.
+- Claude usage keeps working on a setup-token: when the `/login` token cannot read usage, one 1-token Haiku request reads the session/weekly quotas from rate-limit headers, so 90% usage alerts keep firing.
+
+### Changed
+- A Claude logout alert under a setup-token says to rerun `babysit auth init --claude-token` (a fresh `/login` would not help).
+
 ## 1.33.0 — 2026-10-10
 
 ### Added

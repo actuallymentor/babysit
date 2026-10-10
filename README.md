@@ -140,13 +140,13 @@ limit window when any usage limit (session/daily/weekly/credit) reaches 90%; wit
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
 
-Claude logging out often? Run `claude setup-token` on the host and put `export CLAUDE_CODE_OAUTH_TOKEN=…` in
-`~/.babysitrc` (`chmod 600`). The one-year token outranks the `/login` file in every session and never rotates, so
-sessions cannot race for a one-use refresh token. It only makes model requests: `babysit usage` and 90% usage alerts
-read through the `/login` token, which nothing refreshes while sessions run on the setup-token, so Claude usage reads
-fail once it expires (hours) until `claude` runs on the host without the variable. claude.ai connectors/Remote Control
-also need `/login`. Env logins skip the offline and host CLI
-checks; the 6h container check and the pane trigger still alert.
+`babysit auth init` also offers a one-year Claude token when `CLAUDE_CODE_OAUTH_TOKEN` is unset (Claude installed, in a
+terminal): it runs `claude setup-token`, takes the pasted token, proves it with one prompt, and saves
+`export CLAUDE_CODE_OAUTH_TOKEN=…` to `~/.babysitrc` (0600). The token outranks `/login` in every session and never
+rotates, so sessions stop logging each other out. `--claude-token` mints a replacement, `--no-claude-token` skips.
+Restart running Claude sessions to switch. It only makes model requests (claude.ai connectors/Remote Control need
+`/login`). Env logins skip the offline and host CLI checks; the 6h container check and the pane trigger still alert, and
+the alert says to rerun `babysit auth init --claude-token`.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
@@ -314,7 +314,9 @@ with the local date dimmed. Colors follow `NO_COLOR`, `FORCE_COLOR`, and TTY det
 Internal provider endpoints are used where needed. Unsupported credentials/providers
 (including Antigravity quota retrieval) are labeled unavailable; other results remain
 visible. Exit 1 indicates unavailable usage or fetch errors. Missing authentication
-is reported separately. Usage reads do not start inference.
+is reported separately. Usage reads start no inference, with one exception: when the `/login` token cannot read Claude
+usage and a setup-token exists, one 1-output-token Haiku request reads the session/weekly quotas from its rate-limit
+headers (per-model weekly scopes are not in those headers).
 
 ## Supervision
 

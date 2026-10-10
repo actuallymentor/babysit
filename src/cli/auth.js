@@ -18,6 +18,7 @@ import { alert_high_usage, alert_logouts, pushover_configured } from '../utils/n
 import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
+import { CLAUDE_TOKEN_ENV, setup_claude_token } from './claude_token.js'
 
 // The checker ticks every ten minutes. Offline checks run every tick, host
 // CLI probes once the last proof is an hour old, and the container re-probe
@@ -510,7 +511,11 @@ export const cmd_auth_check = async ( {
         // Alert once per lost login, retrying undelivered ones; `failed`
         // (network blips) never alerts, and a re-verified agent clears its own
         if( notifying ) {
-            const sent = await logout_alerts( logouts, { recovered } )
+            // A dead setup-token outranks any fresh /login: name the fix that works
+            const fixed = logouts.map( logout => logout.agent === `claude` && env[ CLAUDE_TOKEN_ENV ]
+                ? { ...logout, fix: `Run babysit auth init --claude-token on the host.` }
+                : logout )
+            const sent = await logout_alerts( fixed, { recovered } )
             if( sent.length ) output.write( `Logout alerts sent: ${ sent.join( `, ` ) }\n` )
         }
 
@@ -540,6 +545,7 @@ export const cmd_auth_init = async ( cmd, {
     home = homedir(),
     write = writeFileSync,
     remove = path => rmSync( path, { force: true } ),
+    claude_token = setup_claude_token,
 } = {} ) => {
 
     if( !scheduler ) throw new Error( `babysit auth init supports Linux hosts running systemd and macOS; schedule babysit auth check yourself elsewhere` )
@@ -587,6 +593,8 @@ export const cmd_auth_init = async ( cmd, {
     }
 
     output.write( `Remove with: babysit auth init --remove\n` )
+
+    await claude_token( cmd, { output } )
     return 0
 
 }

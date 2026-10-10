@@ -38,6 +38,7 @@ Usage:
   babysit auth check [agent] [--force] Re-verify logins quietly (what the checker runs); --force probes now
   babysit auth init [--remove]         Install (or remove) the 10-minute host-level auth checker
                                        Linux: also enables user lingering; --no-linger opts out
+                                       Offers a one-year Claude token (claude setup-token) when none is set
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
 
 Agents: ${ agents }
@@ -60,6 +61,7 @@ Flags:
   --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
   --remove        With "babysit auth init", uninstall the scheduled checker
   --no-linger     With "babysit auth init", do not enable loginctl lingering (checks then stop at logout)
+  --claude-token  With "babysit auth init", mint a new Claude setup-token even if one is set (--no-claude-token skips)
   --all           With "list", show full details; with "resume [number]", use every workspace and show every row
   -n N            With "resume", show N history rows (default 10)
   --dry-run       With "recover", inspect without restarting
