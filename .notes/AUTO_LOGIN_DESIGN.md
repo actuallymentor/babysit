@@ -23,16 +23,17 @@ Status 2026-10-10: **not built.** The user chose option A first: `claude setup-t
    - Session expired → enter `CLAUDE_LOGIN_EMAIL` → "check your email" state → step 3.
 3. Mail: IMAP (IDLE, else poll every 5s, 10 min window) on the agent mailbox. Accept only messages that pass all of these:
    - From an allowlisted sender (`@anthropic.com`, `@mail.anthropic.com`).
-   - DKIM/ARC pass in `Authentication-Results`. Verify the forwarder preserves DKIM; otherwise rely on ARC from the forwarding provider.
+   - Authenticated From: trust only the `Authentication-Results` header stamped by the agent mailbox's own `authserv-id` (RFC 8601 §1.6; ignore every other copy). Require `dkim=pass` with `header.d` aligned to the From domain. A forwarder that breaks DKIM must hand over a passing ARC chain sealed by the known forwarding provider, with the original `dkim=pass` aligned to the From domain inside it. A bare "pass" anywhere is not enough.
    - `Date` ≥ login start − 1 min.
    - Link host in `{claude.ai, anthropic.com, *.anthropic.com}`.
 
    Open the link in the same profile; it may instead show a verification code to type into the email page, so support both. Delete or flag the message after use; never reuse it.
 4. Paste the code into the pane and wait for `Login successful`. Anything else is a failure.
-5. Install: atomic write (tmp in the same dir + rename, keep 0600) of the temp `.credentials.json` over host `~/.claude/.credentials.json`, under the lease. Running sessions receive it through the source-wins sync. Then `auth check claude --force` re-records the cache. Never touch Keychain; macOS Keychain logins are out of scope for v1.
+5. Install (the `/login` path): atomic write (tmp in the same dir + rename, keep 0600) of the temp `.credentials.json` over host `~/.claude/.credentials.json`, under the lease. Running sessions receive it through the source-wins sync. Then `auth check claude --force` re-records the cache. Never touch Keychain; macOS Keychain logins are out of scope for v1.
+   **If A is in use, the dead credential is `CLAUDE_CODE_OAUTH_TOKEN`, not the file.** It outranks `/login`, so a fresh file changes nothing. Mint a replacement with `claude setup-token` (same browser authorize flow, the token prints to the pane) and rewrite the variable in its env file, or remove the variable so sessions fall back to `/login`.
 6. Pushover result: success, or the failing step name plus a screenshot path (`~/.babysit/relogin/runs/<ts>/`).
 
-**Config (env, `~/.babysitrc`).** `CLAUDE_LOGIN_EMAIL`, `BABYSIT_RELOGIN_IMAP_HOST`, `_PORT` (993), `_USER`, `_PASSWORD` (app password), optional `_SENDERS` override. Mounted into the relogin container only.
+**Config.** `CLAUDE_LOGIN_EMAIL`, `BABYSIT_RELOGIN_IMAP_HOST`, `_PORT` (993), `_USER`, `_PASSWORD` (app password), optional `_SENDERS` override. Keep it in `~/.babysit/relogin/env` (0600), passed only to the relogin container. **Never put it in `~/.babysitrc`:** every agent container mounts and exports that file (`src/docker/run.js`).
 
 **Page states** are a pure classifier `(url, DOM snapshot) → consent | email_entry | check_email | code_shown | email_code_entry | success | error | captcha | unknown`, unit-tested on saved HTML fixtures. `captcha`/Cloudflare challenge → stop and alert; never solve it.
 
@@ -49,7 +50,7 @@ Only when the classifier returns `unknown`. Driver is Codex: Claude is the agent
 
 **Contract.**
 - **Input:** screenshot, accessibility tree (refs, roles, names), current URL, and goal ("reach the page that shows the login code").
-- **Never sent:** email bodies, terminal access, credentials.
+- **Never sent:** email bodies, terminal access, credentials. Redact before sending or logging: drop URL query strings and fragments (magic-link tokens, OAuth `code`/`state`), mask text inputs and any element that looks like a code, and take no screenshot once a known `code_shown` state is reached. Run logs stay 0600 and get pruned after 7 days.
 - **Output:** JSON validated against a schema: `{ action: click|type|wait|abort, ref?, text_source?: email|code }`. Typed text can only come from the named constants, never from free text.
 - **Executor:** the script performs the action, refuses navigation off allowlisted hosts, and stops after ≤8 steps.
 - **Logging:** every LLM decision and screenshot goes to the run dir. Recurring unknown states get promoted into deterministic handlers; the LLM path should shrink over time.
