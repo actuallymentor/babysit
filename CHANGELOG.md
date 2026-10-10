@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.31.0 — 2026-10-10
+
+### Added
+- Every host `babysit` command sources `~/.babysitrc` at boot (bash, `set -a`, output discarded), so the hourly auth checker reads `PUSHOVER_*` and other keys from it without re-running `babysit auth init`. Child babysit processes skip re-sourcing.
+
 ## 1.30.0 — 2026-10-09
 
 ### Added

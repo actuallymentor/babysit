@@ -166,3 +166,4 @@
 - 2026-10-09 — `--adb` flag + launch-menu toggle: shared `babysit-adb` key volume at `~/.android`, `host.docker.internal:host-gateway`. Image always ships adb/fastboot (backports) and Python uiautomator2/adbutils.
 - 2026-10-09 — Image base `node:24-slim` (bookworm) → `node:24-trixie-slim`. Pinned codename; adb 34 from stable, backports workaround dropped.
 - 2026-10-09 — Web sessions became stateless HMAC cookies (30d, sliding) instead of an in-memory Map that every restart wiped. Pushover alerts on the hourly auth checker: logout, and usage ≥90% once per window.
+- **2026-10-10**: Host CLI sources ~/.babysitrc at boot so the auth timer gets PUSHOVER_* without re-init (1.31.0).
