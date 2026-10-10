@@ -50,9 +50,20 @@ export const collect_usage = async ( {
     ) ), `OpenRouter API key` )
 
     query( `claude`, `anthropic`, () => {
+
         if( env.ANTHROPIC_API_KEY ) return unsupported()
-        const token = env.CLAUDE_CODE_OAUTH_TOKEN || auth.claude?.claudeAiOauth?.accessToken
+
+        // A `claude setup-token` token can only make model requests, so the
+        // /login token (which may read usage) goes first when both exist
+        const login = auth.claude?.claudeAiOauth?.accessToken
+        const long_lived = env.CLAUDE_CODE_OAUTH_TOKEN
+        // Both failing reports the /login error: that is the one to fix
+        if( login && long_lived && login !== long_lived ) return claude( login )
+            .catch( error => claude( long_lived ).catch( () => Promise.reject( error ) ) )
+
+        const token = login || long_lived
         return token ? claude( token ) : unauthenticated()
+
     } )
     query( `codex`, `openai`, async () => {
         const managed = env.BABYSIT_EFFORT_AGENT === `codex` && env.BABYSIT_EFFORT_ENDPOINT

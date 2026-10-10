@@ -124,6 +124,11 @@ describe( `credential coverage`, () => {
         expect( codex.credentials.darwin.env_key ).toBe( `CODEX_API_KEY` )
     } )
 
+    it( `claude accepts a setup-token login alongside its /login credentials`, () => {
+        expect( claude.credentials.linux.env_key ).toBe( `CLAUDE_CODE_OAUTH_TOKEN` )
+        expect( claude.credentials.darwin.env_key ).toBe( `CLAUDE_CODE_OAUTH_TOKEN` )
+    } )
+
     it( `antigravity declares the OAuth creds file in addition to GEMINI_API_KEY`, () => {
         expect( antigravity.credentials.darwin.fallback_file ).toBe( `~/.gemini/antigravity-cli/antigravity-oauth-token` )
         expect( antigravity.credentials.linux.file ).toBe( `~/.gemini/antigravity-cli/antigravity-oauth-token` )

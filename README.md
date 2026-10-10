@@ -139,6 +139,13 @@ project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `
 limit window when any usage limit (session/daily/weekly/credit) reaches 90%; without them it's a no-op. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
+
+Claude logging out often? Run `claude setup-token` on the host and put `export CLAUDE_CODE_OAUTH_TOKEN=…` in
+`~/.babysitrc` (`chmod 600`). The one-year token outranks the `/login` file in every session and never rotates, so
+sessions cannot race for a one-use refresh token. It only makes model requests, so keep the `/login` login too:
+`babysit usage` reads through it (refreshed when a launch runs `claude --version`), and claude.ai connectors/Remote
+Control need it. Env logins skip the offline and host CLI
+checks; the 6h container check and the pane trigger still alert.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation. `prune --list` only lists clones. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
