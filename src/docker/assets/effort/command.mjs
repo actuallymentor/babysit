@@ -11,7 +11,12 @@ export const effort_help = `Usage: babysit effort [level]
 Run inside a managed agent session. Omit level to list supported values.
 Changes are session-only. Native terminal controls queue for up to 60s when unsafe.
 Use --status <request-id> to inspect a queued result.
-OpenCode: 'default' restores the TUI's variant; overrides do not update its footer.`
+OpenCode: 'default' restores the TUI's variant; overrides do not update its footer.
+
+Examples:
+  babysit effort
+  babysit effort high
+  babysit effort --status <request-id>`
 
 export const model_help = `Usage: babysit model [model-name]
 List models or switch within the current managed agent session.
@@ -19,7 +24,12 @@ With no arguments, append the top 30 benchmarks, sorted by coding; missing metri
 Preserves compatible effort, otherwise uses the new model's default.
 Terminal controls queue for up to 60s; --status <request-id> reads the result.
 
-${ benchmarks_help }`
+${ benchmarks_help }
+
+Examples:
+  babysit model
+  babysit model sonnet
+  babysit model --benchmarks --sort cost --limit 10`
 
 const parse_control = ( args, help ) => {
     if( args.length === 1 && [ `--help`, `-h` ].includes( args[0] ) ) return { help }
@@ -31,12 +41,19 @@ const parse_control = ( args, help ) => {
 /** Run the same command from the host CLI and the small container executable. */
 export const exit_help = `Usage: babysit exit [--yes] [--status <request-id>]
 Ends this session gracefully: the agent quits after its current turn and Babysit cleans up.
-Asks for confirmation first; --yes skips the prompt once the user has explicitly asked you to exit.`
+Asks for confirmation first; --yes skips the prompt once the user has explicitly asked you to exit.
+
+Examples:
+  babysit exit
+  babysit exit --yes`
 
 export const EXIT_CONFIRMATION = `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n `
 
 export const stuck_help = `Usage: babysit stuck [--status <request-id>]
-Marks this session "stuck" in babysit list until the user types into it.`
+Marks this session "stuck" in babysit list until the user types into it.
+
+Example:
+  babysit stuck`
 
 // Session-level requests the host monitor applies itself; no agent dialog involved.
 const session_request = ( operation, help, args = [] ) => {
@@ -84,7 +101,10 @@ export const run_exit = async ( args, { confirm = ask, request = session_request
 export const run_stuck = args => session_request( `stuck`, stuck_help, args )
 
 export const loop_help = `Usage: babysit loop [--status <request-id>]
-Toggles --loop for this session: when idle, Babysit types LOOP.md (or "Keep going").`
+Toggles --loop for this session: when idle, Babysit types LOOP.md (or "Keep going").
+
+Example:
+  babysit loop`
 
 /** Toggle looping on this session. */
 export const run_loop = args => session_request( `loop`, loop_help, args )

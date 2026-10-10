@@ -122,11 +122,20 @@ export const collect_usage = async ( {
 
 }
 
+export const usage_help = `Usage: babysit usage [--json]
+Show account limits for authenticated agents: Claude/Codex quota windows with resets,
+OpenRouter budgets. Exit 1 means some usage is unavailable. Starts no inference, except
+one 1-token Claude request when only a setup-token can read Claude's limits.
+
+Examples:
+  babysit usage
+  babysit usage --json`
+
 /** Run the same command on host and in the image; return a partial-failure exit code. */
 export const run_usage = async ( args = [], { output = process.stdout, ...options } = {} ) => {
 
     if( args.includes( `--help` ) || args.includes( `-h` ) ) {
-        output.write( `Usage: babysit usage [--json]\nShow account limits for authenticated agents. Exit 1 means some usage is unavailable.\n` )
+        output.write( `${ usage_help }\n` )
         return 0
     }
     if( args.some( argument => argument !== `--json` ) ) throw new Error( `Usage: babysit usage [--json]` )

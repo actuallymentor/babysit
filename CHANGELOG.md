@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.35.0 — 2026-10-10
+
+### Added
+- Every command and subcommand has its own help page, with what it does and examples: `babysit auth --help`, `babysit auth init --help`, `babysit claude resume --help`, or `babysit help <command> [sub]`. Inside a session, `babysit help [command]` covers effort, model, exit, stuck, loop, and usage.
+
+### Fixed
+- `auth init` no longer edits your own `CLAUDE_CODE_OAUTH_TOKEN` lines in `~/.babysitrc`. It replaces only the block it wrote earlier and appends the new one last, so it wins.
+
 ## 1.34.0 — 2026-10-10
 
 ### Added

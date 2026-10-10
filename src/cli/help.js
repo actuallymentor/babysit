@@ -1,9 +1,14 @@
 import { SUPPORTED_AGENTS } from '../agents/index.js'
+import { help_topic } from './help_topics.js'
 
 /**
- * Print the help message
+ * Print help: the command's own page when argv names one, else the overview
+ * @param {string[]} [argv=[]] - process.argv.slice(2)
  */
-export const show_help = () => {
+export const show_help = ( argv = [] ) => {
+
+    const topic = help_topic( argv )
+    if( topic ) return console.log( topic )
 
     const agents = SUPPORTED_AGENTS.join( `, ` )
 
@@ -81,6 +86,9 @@ Session numbers:
   Numbers follow the current listing; use IDs for durable references.
 
 Any unrecognised flags are passed through to the coding agent CLI.
+
+Every command explains itself, with examples: babysit <command> [subcommand] --help
+(or babysit help <command>), e.g. babysit auth --help, babysit auth init --help, babysit claude --help.
 
 Examples:
   babysit claude --yolo
