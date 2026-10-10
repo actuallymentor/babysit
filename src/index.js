@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// Host commands share the container's ~/.babysitrc setup (Pushover keys, API keys)
+import './boot_babysitrc.js'
+
 // JSON import attribute embeds at build time; runtime fs reads resolve to /$bunfs in compiled binaries
 import pkg from '../package.json' with { type: 'json' }
 

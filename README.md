@@ -134,8 +134,8 @@ installed agents still receive credentials but are checked by `doctor --auth`.
 Run `babysit auth init` once so an hourly host-level checker keeps verified logins warm (a launch that had to probe reminds you, and `babysit config` shows the checker state);
 launches then skip the "Checking authentication" probe. The checker only refreshes agents a
 launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
-project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` set when you run
-`babysit auth init`, the checker also pushes an alert when a verified agent logs out, and once per
+project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`
+(or exported when you run `babysit auth init`), the checker also pushes an alert when a verified agent logs out, and once per
 limit window when any usage limit (session/daily/weekly/credit) reaches 90%; without them it's a no-op. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
@@ -273,7 +273,7 @@ across Babysit containers on the same Docker daemon. TTL `0` bypasses caching;
 invalid/negative TTLs fail. Failed refreshes use stale data with a stderr warning.
 Cache failures fall back to a live fetch; hosts without `flock` use atomic writes
 without refresh locking. JSON stays valid. Host invocations
-use the host cache/environment; `.babysitrc` is sourced on container launch only.
+use the host cache and environment, with `~/.babysitrc` sourced first.
 
 Provider filtering happens on every invocation using installed CLIs and local
 native credentials (Codex, Claude, Antigravity, and recognized direct OpenCode
@@ -391,7 +391,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 | `BABYSIT_WEB_BRIDGE_DIR` | Override bridge path; match Compose environment |
 | Docker volumes | Persistent agent state; isolated `node_modules` / `.venv` |
 | `config.isolate_dependencies: false` | Disable dependency volumes |
-| `~/.babysitrc` | Shell setup before agent launch; skipped by `--ignore-host-agents-md` |
+| `~/.babysitrc` | Shell setup sourced by every host `babysit` command (auth timer included) and before agent launch; container sourcing skipped by `--ignore-host-agents-md` |
 
 - `BABYSIT_HOME`: unset/empty → default; relative paths/literal `~` rejected. No automatic migration.
 - Set storage on host, not in container rc. Export matching settings for Compose; rerun `recover init` after changes.

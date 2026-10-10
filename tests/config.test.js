@@ -105,6 +105,7 @@ describe( `babysit config`, () => {
             BABYSIT_DOCKER_IMAGE: `example/babysit:test`,
         }
         delete env.BABYSIT_HOST_BABYSITRC
+        delete env.BABYSIT_RC_LOADED
 
         try {
             const run_config = () => execFileSync( process.execPath, [ `src/index.js`, `config` ], { env, encoding: `utf8` } )
@@ -115,7 +116,8 @@ describe( `babysit config`, () => {
             expect( output ).not.toContain( secret )
             expect( existsSync( state ) ).toBe( false )
             expect( existsSync( web ) ).toBe( false )
-            expect( existsSync( marker ) ).toBe( false )
+            // The CLI sources ~/.babysitrc on every run, but never prints its values
+            expect( existsSync( marker ) ).toBe( true )
 
             mkdirSync( state )
             writeFileSync( join( state, `launch-defaults.json` ), JSON.stringify( { global: { agent: `antigravity`, mode: `mudbox`, yolo: true } } ) )
