@@ -313,7 +313,9 @@ session (Docker volume babysit-relogin). The result replaces the dead login:
 If the claude.ai session has expired, it requests a login email and opens the
 link from Gmail: only mail from anthropic.com, claude.ai or claude.com that
 Gmail verified (DKIM), sent after the request, is used. A Cloudflare human
-check is never solved; the run stops and alerts.
+check is never solved; the run stops and alerts. The browser must be signed in
+as the expected account (CLAUDE_LOGIN_EMAIL, else the host's last /login), or
+nothing is authorized. Each new login is proven with one container check.
 
 babysit auth check runs this automatically on a confirmed Claude logout when
 GMAIL_USER and GMAIL_APP_PASSWORD are set: once per logout, at most 3 times a

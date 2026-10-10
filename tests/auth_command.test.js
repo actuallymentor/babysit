@@ -521,6 +521,19 @@ describe( `auth check`, () => {
 
             } )
 
+            it( `keeps an installed login when its proof yields or blips`, async () => {
+
+                const { run, calls } = dead_claude( GMAIL, {
+                    run_auth_check: probes_then( `unauthenticated`, `failed` ),
+                    relogin: async () => ( { ok: true, mode: `token` } ),
+                    relogin_notify: async () => {},
+                } )
+                await run.exit_code
+
+                expect( calls[0].found ).toEqual( [] )
+
+            } )
+
             it( `names a failed re-login in the logout alert`, async () => {
 
                 const { run, calls } = dead_claude( GMAIL, {

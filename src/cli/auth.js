@@ -19,7 +19,7 @@ import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
 import { CLAUDE_TOKEN_ENV, setup_claude_token } from './claude_token.js'
-import { cmd_auth_relogin, notify_relogin, relogin_claude, relogin_enabled } from './relogin.js'
+import { cmd_auth_relogin, notify_relogin, prove_relogin, relogin_claude, relogin_enabled } from './relogin.js'
 
 // The checker ticks every ten minutes. Offline checks run every tick, host
 // CLI probes once the last proof is an hour old, and the container re-probe
@@ -520,22 +520,13 @@ export const cmd_auth_check = async ( {
                 lease.release()
                 lease_handed = true
             }
-            let outcome = await relogin( { env, output, login: claude_logout.login } )
-
-            // Prove the new login in a container, which also re-enrols Claude:
-            // the logout cleared its cache entry
-            if( outcome.ok ) {
-                const [ proof ] = await run_auth_diagnostics( [ get_agent( `claude` ) ], {
-                    ...diagnostics,
-                    output,
-                    input: { isTTY: false },
-                    acquire_lease: () => acquire_lease( { foreground: false } ),
-                    ttl_ms: 0,
-                    only_with_credentials: true,
-                    clear_on_failure: false,
-                } )
-                if( proof?.status !== `authenticated` ) outcome = { ok: false, step: `verify`, reason: `the new login did not pass a container check (${ proof?.reason || proof?.status || `no result` })` }
-            }
+            // The proof yields to a launch like every other probe here
+            const outcome = await prove_relogin( await relogin( { env, output, login: claude_logout.login } ), {
+                ...diagnostics,
+                output,
+                acquire_lease: () => acquire_lease( { foreground: false } ),
+                signal: controller.signal,
+            } )
 
             if( outcome.ok ) {
                 logouts.splice( logouts.indexOf( claude_logout ), 1 )

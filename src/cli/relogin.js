@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { createInterface } from 'node:readline'
 
 import { get_agent } from '../agents/index.js'
+import { run_auth_diagnostics } from './doctor.js'
 import { host_credential_file } from '../agents/host_probe.js'
 import { create_chrome_seccomp_profile } from '../docker/chrome-seccomp.js'
 import { docker_command_prefix, WATCHTOWER_DISABLE_LABEL } from '../docker/run.js'
@@ -270,6 +271,30 @@ export const relogin_claude = async ( {
 }
 
 /**
+ * Prove a freshly installed login with one container probe, which also
+ * re-enrols Claude in the auth cache (the logout cleared its entry). Only a
+ * definite `unauthenticated` fails it: a yield or network blip leaves the
+ * installed login for the next launch to prove.
+ * @param {Object} outcome - relogin_claude result
+ * @param {Object} [options] - Output and run_auth_diagnostics options/seams
+ * @returns {Promise<Object>} The outcome, or a `verify` failure
+ */
+export const prove_relogin = async ( outcome, { output = process.stdout, ...diagnostics } = {} ) => {
+    if( !outcome.ok ) return outcome
+    const [ proof ] = await run_auth_diagnostics( [ get_agent( `claude` ) ], {
+        output,
+        input: { isTTY: false },
+        ttl_ms: 0,
+        only_with_credentials: true,
+        clear_on_failure: false,
+        ...diagnostics,
+    } )
+    return proof?.status === `unauthenticated`
+        ? { ok: false, mode: outcome.mode, step: `verify`, reason: `the new login did not pass a container check${ proof.reason ? ` (${ proof.reason })` : `` }` }
+        : outcome
+}
+
+/**
  * Pushover line for a finished automatic attempt.
  * @param {Object} result - relogin_claude result
  * @param {Object} [options] - Notifier seam
@@ -308,6 +333,7 @@ export const cmd_auth_relogin = async ( cmd, {
     output = process.stdout,
     env = process.env,
     relogin = relogin_claude,
+    prove = prove_relogin,
 } = {} ) => {
 
     if( cmd.agent && cmd.agent !== `claude` ) throw new Error( `babysit auth relogin supports claude only` )
@@ -328,7 +354,7 @@ export const cmd_auth_relogin = async ( cmd, {
         run_env = { ...env, RELOGIN_SESSION_KEY: key }
     }
 
-    const result = await relogin( { env: run_env, output, manual: true } )
+    const result = await prove( await relogin( { env: run_env, output, manual: true } ), { output } )
     if( result.ok ) {
         output.write( `Claude is logged in again.${ result.mode === `token` ? ` Restart running Claude sessions to use the new token.` : `` }\n` )
         return 0
