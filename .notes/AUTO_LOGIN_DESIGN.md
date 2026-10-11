@@ -1,6 +1,6 @@
 # Automated Claude re-login — parked design (options B and D)
 
-Status 2026-10-10: **B built in 1.36.0** on user request (A stays the primary path; B replaces whichever login died). D not built. As built, it differs from the plan below:
+Status 2026-10-11: **B removed in 1.37.0** (built in 1.36.0; code in git at d3349e9). User decision: the automated email sign-in is Cloudflare-challenged on this host, so it needs a human anyway; rely on the one-year setup-token (A). Rebuild only if tokens die often. Original 2026-10-10 note: B built on user request (A stays the primary path; B replaces whichever login died). D not built. As built, it differs from the plan below:
 - No separate image. The babysit image already ships Chrome, puppeteer, xvfb, tmux, python3, and claude; the driver is `/opt/relogin`.
 - No pane scraping of URLs and no pasted codes. `$BROWSER` gets the authorize URL with a `localhost:PORT/callback` redirect, so Chrome in the same container finishes the CLI's own OAuth. `claude auth login --claudeai --email` exists (2.1.296) for login mode. Token mode reads the `sk-ant-oat` token from the tmux pane (`capture-pane -J`, 500 columns).
 - The auth lease is released before re-login (a browser login can take minutes; the lease timeout is 8 min). Its own lock is `~/.babysit/relogin.lock`.
