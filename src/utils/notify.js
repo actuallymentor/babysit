@@ -73,25 +73,34 @@ const write_alerts = ( path, alerts ) => {
     renameSync( temporary_path, path )
 }
 
+// Claude stamps every read with a fresh resets_at (sub-second drift, which can
+// cross a second boundary), so windows match within a slack, not exactly
+const WINDOW_SLACK_MS = 15 * 60_000
+
+const same_window = ( a, b ) => a === b
+    || Math.abs( Date.parse( a ) - Date.parse( b ) ) < WINDOW_SLACK_MS
+
 /**
- * Notify once per limit window when usage crosses USAGE_ALERT_PERCENT.
- * A limit is remembered by its reset time while it stays high; dropping
- * back below the threshold or a new window (new resets_at) re-arms it.
- * Providers that failed to report keep their state, so a fetch error
- * cannot cause a repeat alert once they recover.
+ * Notify once per limit window when usage crosses USAGE_ALERT_PERCENT, with
+ * one push per run however many limits crossed. A dated window is remembered
+ * until it resets, so readings that dip and recover stay silent; an open one
+ * (no reset time) re-arms once it drops below the threshold. Providers that
+ * failed to report keep their state, so a fetch error cannot cause a repeat.
  * @param {Object} usage - collect_usage() result
- * @param {Object} [options] - State path and notifier seams
+ * @param {Object} [options] - State path, notifier, and clock seams
  * @returns {Promise<string[]>} Keys of limits that were notified
  */
-export const alert_high_usage = async ( usage, { alerts_path = ALERTS_PATH, notify = notify_pushover } = {} ) => {
+export const alert_high_usage = async ( usage, { alerts_path = ALERTS_PATH, notify = notify_pushover, now = Date.now() } = {} ) => {
 
     const alerts = read_alerts( alerts_path )
-    const reported = new Set( ( usage?.agents || [] )
+    const reported = ( usage?.agents || [] )
         .filter( entry => entry.status === `ok` )
-        .map( entry => `${ entry.agent }/${ entry.provider }/` ) )
-    const next = Object.fromEntries( Object.entries( alerts.usage )
-        .filter( ( [ key ] ) => ![ ...reported ].some( prefix => key.startsWith( prefix ) ) ) )
-    const sent = []
+        .map( entry => `${ entry.agent }/${ entry.provider }/` )
+    const live = ( key, window ) => window === `open`
+        ? !reported.some( prefix => key.startsWith( prefix ) )
+        : !( Date.parse( window ) < now - WINDOW_SLACK_MS )
+    const next = Object.fromEntries( Object.entries( alerts.usage ).filter( ( [ key, window ] ) => live( key, window ) ) )
+    const crossed = []
 
     for( const entry of usage?.agents || [] ) {
         if( entry.status !== `ok` ) continue
@@ -103,27 +112,27 @@ export const alert_high_usage = async ( usage, { alerts_path = ALERTS_PATH, noti
 
             const key = `${ entry.agent }/${ entry.provider }/${ limit.name }`
             const window = limit.resets_at || `open`
-            if( alerts.usage[ key ] === window ) {
-                next[ key ] = window
+            if( alerts.usage[ key ] && same_window( alerts.usage[ key ], window ) ) {
+                next[ key ] = alerts.usage[ key ]
                 continue
             }
-
-            const resets = limit.resets_at ? `, resets ${ limit.resets_at }` : ``
-            const delivered = await notify( {
-                title: `Babysit: ${ entry.agent } usage at ${ Math.round( used ) }%`,
-                message: `${ entry.provider } limit "${ limit.name }" is ${ Math.round( used ) }% used${ resets }.`,
-            } )
-            // Only remember delivered alerts, so an outage retries next run
-            if( delivered ) {
-                next[ key ] = window
-                sent.push( key )
-            }
+            crossed.push( { key, window, agent: entry.agent, used, line: `${ entry.provider } limit "${ limit.name }" is ${ Math.round( used ) }% used${ limit.resets_at ? `, resets ${ limit.resets_at }` : `` }.` } )
 
         }
     }
 
+    // One push for the whole run, titled by the fullest limit
+    const top = crossed.reduce( ( max, limit ) => limit.used > ( max?.used ?? -1 ) ? limit : max, null )
+    const agents = new Set( crossed.map( limit => limit.agent ) )
+    const delivered = top && await notify( {
+        title: `Babysit: ${ agents.size === 1 ? `${ top.agent } ` : `` }usage at ${ Math.round( top.used ) }%`,
+        message: crossed.map( limit => limit.line ).join( `\n` ),
+    } )
+    // Only remember delivered alerts, so an outage retries next run
+    if( delivered ) crossed.forEach( ( { key, window } ) => next[ key ] = window )
+
     write_alerts( alerts_path, { ...read_alerts( alerts_path ), usage: next } )
-    return sent
+    return delivered ? crossed.map( limit => limit.key ) : []
 
 }
 
