@@ -95,10 +95,47 @@ describe( `usage alerts`, () => {
         // New window: alerts again
         expect( ( await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [ `claude/anthropic/weekly` ] )
 
-        // Dropping below the threshold forgets it, so the next crossing alerts
+        // A dip below the threshold in the same window stays silent
         await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z`, used_percent: 10 } ] )
+        expect( ( await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [] )
+
+        // An open window (no reset time) re-arms once it drops below
+        const credits = { name: `credits`, used_percent: 95 }
+        expect( ( await run( [ credits ] ) ).keys ).toEqual( [ `claude/anthropic/credits` ] )
+        await run( [ { ...credits, used_percent: 10 } ] )
+        expect( ( await run( [ credits ] ) ).keys ).toEqual( [ `claude/anthropic/credits` ] )
+
+    } )
+
+    it( `treats Claude's drifting reset stamps as one window`, async () => {
+
+        // Real consecutive reads: the stamp drifts across a second boundary
+        const session = { name: `session`, used_percent: 100, resets_at: `2026-10-11T11:39:59.582961+00:00` }
+        expect( ( await run( [ session ] ) ).keys ).toEqual( [ `claude/anthropic/session` ] )
+        expect( ( await run( [ { ...session, resets_at: `2026-10-11T11:40:00.381124+00:00` } ] ) ).keys ).toEqual( [] )
+        // The next five-hour window does alert
+        expect( ( await run( [ { ...session, resets_at: `2026-10-11T16:40:00.1+00:00` } ] ) ).keys ).toEqual( [ `claude/anthropic/session` ] )
+
+    } )
+
+    it( `sends one push per run however many limits crossed`, async () => {
+
+        const { keys, sent } = await run( [
+            { name: `session`, used_percent: 100, resets_at: `2026-10-11T11:40:00Z` },
+            { name: `weekly_all`, used_percent: 93, resets_at: `2026-10-12T16:00:00Z` },
+        ] )
+        expect( keys ).toEqual( [ `claude/anthropic/session`, `claude/anthropic/weekly_all` ] )
+        expect( sent ).toHaveLength( 1 )
+        expect( sent[0].title ).toBe( `Babysit: claude usage at 100%` )
+        expect( sent[0].message.split( `\n` ) ).toHaveLength( 2 )
+
+    } )
+
+    it( `forgets a window once it has reset`, async () => {
+
+        await alert_high_usage( usage( [ { name: `session`, used_percent: 95, resets_at: `2026-10-11T11:40:00Z` } ] ), { alerts_path, notify: async () => true, now: Date.parse( `2026-10-11T10:00:00Z` ) } )
+        await alert_high_usage( usage( [] ), { alerts_path, notify: async () => true, now: Date.parse( `2026-10-11T12:00:00Z` ) } )
         expect( JSON.parse( readFileSync( alerts_path, `utf8` ) ).usage ).toEqual( {} )
-        expect( ( await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [ `claude/anthropic/weekly` ] )
 
     } )
 

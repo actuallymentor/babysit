@@ -19,7 +19,6 @@ import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
 import { CLAUDE_TOKEN_ENV, setup_claude_token } from './claude_token.js'
-import { cmd_auth_relogin, notify_relogin, prove_relogin, relogin_claude, relogin_enabled } from './relogin.js'
 
 // The checker ticks every ten minutes. Offline checks run every tick, host
 // CLI probes once the last proof is an hour old, and the container re-probe
@@ -374,8 +373,6 @@ export const cmd_auth_check = async ( {
     now = Date.now(),
     usage_alerts = alert_high_usage,
     logout_alerts = alert_logouts,
-    relogin = relogin_claude,
-    relogin_notify = notify_relogin,
     read_usage = () => collect_usage( { allow_native_refresh: true } ),
     read_credential = read_host_credential,
     run_host_check = run_host_cli_auth_check,
@@ -511,40 +508,12 @@ export const cmd_auth_check = async ( {
             .sort( ( left, right ) => order.indexOf( left.name ) - order.indexOf( right.name ) )
             .forEach( result => output.write( `${ format_auth_result_line( result ) }\n` ) )
 
-        // Automated re-login once Gmail is configured. A browser login can take
-        // minutes, so the lease goes first: launches need not wait on it.
-        const claude_logout = logouts.find( logout => logout.agent === `claude` )
-        let relogin_failure = null
-        if( claude_logout && relogin_enabled( env ) ) {
-            if( !lease_handed ) {
-                lease.release()
-                lease_handed = true
-            }
-            // The proof yields to a launch like every other probe here
-            const outcome = await prove_relogin( await relogin( { env, output, login: claude_logout.login } ), {
-                ...diagnostics,
-                output,
-                acquire_lease: () => acquire_lease( { foreground: false } ),
-                signal: controller.signal,
-            } )
-
-            if( outcome.ok ) {
-                logouts.splice( logouts.indexOf( claude_logout ), 1 )
-                recovered.push( `claude` )
-                await relogin_notify( outcome )
-            } else if( !outcome.skipped ) {
-                relogin_failure = `Auto re-login failed (${ outcome.step }: ${ outcome.reason }).`
-            }
-            output.write( `Re-login: ${ outcome.ok ? `done` : outcome.reason }\n` )
-        }
-
         // Alert once per lost login, retrying undelivered ones; `failed`
         // (network blips) never alerts, and a re-verified agent clears its own
         if( notifying ) {
             // A dead setup-token outranks any fresh /login: name the fix that works
-            const claude_fix = env[ CLAUDE_TOKEN_ENV ] ? `Run babysit auth init --claude-token on the host.` : `Log in again on the host.`
-            const fixed = logouts.map( logout => logout.agent === `claude` && ( env[ CLAUDE_TOKEN_ENV ] || relogin_failure )
-                ? { ...logout, fix: [ relogin_failure, claude_fix ].filter( Boolean ).join( ` ` ) }
+            const fixed = logouts.map( logout => logout.agent === `claude` && env[ CLAUDE_TOKEN_ENV ]
+                ? { ...logout, fix: `Run babysit auth init --claude-token on the host.` }
                 : logout )
             const sent = await logout_alerts( fixed, { recovered } )
             if( sent.length ) output.write( `Logout alerts sent: ${ sent.join( `, ` ) }\n` )
@@ -631,7 +600,7 @@ export const cmd_auth_init = async ( cmd, {
 }
 
 /**
- * Dispatch `babysit auth <status|check|init|relogin>`.
+ * Dispatch `babysit auth <status|check|init>`.
  * @param {Object} cmd - Parsed command
  * @param {Object} [dependencies] - Test seams forwarded to the subcommand
  * @returns {Promise<number>} Exit code
@@ -640,7 +609,6 @@ export const cmd_auth = async ( cmd, dependencies = {} ) => {
 
     if( cmd.auth_verb === `check` ) return cmd_auth_check( { agent_name: cmd.agent, force: Boolean( cmd.flags?.force ), ...dependencies } )
     if( cmd.auth_verb === `init` ) return cmd_auth_init( cmd, dependencies )
-    if( cmd.auth_verb === `relogin` ) return cmd_auth_relogin( cmd, dependencies )
     return cmd_auth_status( dependencies )
 
 }
