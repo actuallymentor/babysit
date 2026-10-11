@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.38.0 — 2026-10-11
+
+### Added
+- `--adb` sessions remember devices. `babysit adb pair HOST:PORT CODE` pairs a phone once and records it in the shared `babysit-adb` volume (`devices/devices.json`). Every later `--adb` session reconnects it in the background at launch.
+- Reconnect order: port 5555 → last Wireless debugging port → a scan of Android's dynamic range (37000–50000, about 2 s on a LAN). After a Wireless debugging connect, babysit runs `adb tcpip 5555` so later sessions connect directly until the phone reboots (`--no-tcpip` opts a device out).
+- In-session `babysit adb [up|list|add|pair|forget]`. Launch log: `/tmp/babysit-adb-up.log`.
+
 ## 1.37.0 — 2026-10-11
 
 ### Removed

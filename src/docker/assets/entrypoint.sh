@@ -96,6 +96,15 @@ if [ "${BABYSIT_ADB:-0}" = "1" ] && [ -d "$ADB_KEYS" ]; then
     chown -R "$HOST_UID:$HOST_GID" /home/node/.android
     chmod 700 /home/node/.android
     chmod 600 /home/node/.android/adbkey 2>/dev/null || true
+
+    # Device registry: plain JSON (hosts and ports, no secrets) that every
+    # session uid can rewrite, so a phone added once is known to all sessions.
+    mkdir -p "$ADB_KEYS/devices" && chmod 777 "$ADB_KEYS/devices"
+
+    # Reconnect recorded devices in the background as the session user, so the
+    # adb server and its key belong to them. Never delays the agent launch.
+    gosu node env HOME=/home/node setsid sh -c \
+        'babysit adb up --quiet > /tmp/babysit-adb-up.log 2>&1' < /dev/null > /dev/null 2>&1 &
 fi
 
 # Materialize the credential-only GitHub profile uploaded into the stopped

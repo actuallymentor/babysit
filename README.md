@@ -56,7 +56,7 @@ Use explicit commands in scripts.
 | `--mudbox` | Read-only workspace mount |
 | `--clone` | Durable workspace clone + `/original`; explicit merge-back |
 | `--docker` | Host Docker daemon access |
-| `--adb` | `adb` + shared key (`babysit-adb` volume, copied into `~/.android`): authorise a device once for every session. Network devices only (`adb pair` / `adb connect`), host at `host.docker.internal` |
+| `--adb` | `adb` + shared key and device registry (`babysit-adb` volume): pair a phone once with `babysit adb pair HOST:PORT CODE`, every session reconnects it at launch (pins port 5555 until reboot). Network devices only, host at `host.docker.internal` |
 | `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
@@ -288,6 +288,22 @@ native credentials (Codex, Claude, Antigravity, and recognized direct OpenCode
 providers). Credentials are read without refreshing tokens or sending inference.
 This does not verify expired credentials or imply every listed variant is
 selectable in your CLI. Router credentials alone do not enable every creator.
+
+## Android devices (`--adb`)
+
+```bash
+babysit adb pair 192.168.2.114:38775 758418 --name dev-phone   # once, from any --adb session
+babysit adb                   # reconnect recorded devices (also runs at launch)
+babysit adb list              # registry + connection state
+babysit adb add HOST[:PORT]   # record an already-paired device; scans if no port
+babysit adb forget HOST
+```
+
+Registry: `/opt/babysit-adb/devices/devices.json` on the shared volume. Reconnect
+order: `host:5555` → last Wireless debugging port → scan 37000–50000. After a
+Wireless debugging connect, `adb tcpip 5555` pins the fixed port until reboot
+(`--no-tcpip` opts out per device). Phone side: static IP, Developer options →
+*Disable adb authorization timeout*. Launch log: `/tmp/babysit-adb-up.log`.
 
 ## Account usage
 

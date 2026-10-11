@@ -139,6 +139,7 @@ describe( `build_system_prompt`, () => {
 
     it( `appends adb guidance only when mode.adb is set`, () => {
         expect( build_system_prompt( { adb: true } ) ).toContain( `ADB enabled` )
+        expect( build_system_prompt( { adb: true } ) ).toContain( `babysit adb pair HOST:PAIRPORT CODE` )
         expect( build_system_prompt( {} ) ).not.toContain( `ADB enabled` )
     } )
 
