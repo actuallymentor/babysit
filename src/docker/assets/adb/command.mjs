@@ -119,9 +119,10 @@ export const save_device = async ( device, path = REGISTRY ) => {
 
 /** Patch the current record, not a stale snapshot; a forgotten device stays gone. */
 export const update_device = async ( host, patch, path = REGISTRY ) => {
-    const current = ( await load_devices( path ) ).find( device => device.host === host )
-    if( current ) await save_device( { ...current, ...patch }, path )
-    return Boolean( current )
+    const devices = await load_devices( path )
+    if( !devices.some( device => device.host === host ) ) return false
+    await write_devices( path, devices.map( device => device.host === host ? { ...device, ...patch } : device ) )
+    return true
 }
 
 export const forget_device = async ( host, path = REGISTRY ) => {
