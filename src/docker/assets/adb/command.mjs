@@ -13,6 +13,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { Socket } from 'node:net'
 import { readFile, writeFile, rename, chmod } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 
 const exec_file = promisify( execFile )
 
@@ -89,7 +90,9 @@ const default_sleep = ms => new Promise( resolve => setTimeout( resolve, ms ) )
 
 // ---------------------------------------------------------------------------
 // Registry: one JSON file, read-merge-written and atomically renamed so
-// sessions of any uid can update it (the entrypoint makes the dir 0777)
+// sessions of any uid can update it (the entrypoint makes the dir 0777).
+// No cross-container lock: two sessions adding different phones in the same
+// instant can drop one record. Rare enough not to justify a lock.
 
 export const load_devices = async ( path = REGISTRY ) => {
     try {
@@ -101,7 +104,8 @@ export const load_devices = async ( path = REGISTRY ) => {
 }
 
 const write_devices = async ( path, devices ) => {
-    const temporary = `${ path }.${ process.pid }.tmp`
+    // PIDs repeat across containers; a UUID keeps concurrent writers apart
+    const temporary = `${ path }.${ randomUUID() }.tmp`
     await writeFile( temporary, `${ JSON.stringify( { devices }, null, 2 ) }\n` )
     // umask would otherwise lock other uids out of the next merge
     await chmod( temporary, 0o666 )
@@ -111,6 +115,13 @@ const write_devices = async ( path, devices ) => {
 export const save_device = async ( device, path = REGISTRY ) => {
     const others = ( await load_devices( path ) ).filter( ( { host } ) => host !== device.host )
     await write_devices( path, [ ...others, device ] )
+}
+
+/** Patch the current record, not a stale snapshot; a forgotten device stays gone. */
+export const update_device = async ( host, patch, path = REGISTRY ) => {
+    const current = ( await load_devices( path ) ).find( device => device.host === host )
+    if( current ) await save_device( { ...current, ...patch }, path )
+    return Boolean( current )
 }
 
 export const forget_device = async ( host, path = REGISTRY ) => {
@@ -142,9 +153,13 @@ const connect = async ( adb, host, port ) => {
     return echo === `ready`
 }
 
-/** Restart adbd on the fixed port, then swap the TLS connection for it. */
+/**
+ * Restart adbd on the fixed port, then swap the TLS connection for it.
+ * Returns the serial that works afterwards, or null when neither does.
+ */
 const pin_fixed_port = async ( { adb, sleep }, host, port ) => {
 
+    // The reply is unreliable (often empty), so judge by which link survives
     await adb( [ `-s`, `${ host }:${ port }`, `tcpip`, String( FIXED_PORT ) ] )
 
     // The TLS serial dies with the adbd restart. Drop it first: disconnecting
@@ -157,7 +172,10 @@ const pin_fixed_port = async ( { adb, sleep }, host, port ) => {
         await sleep( streak ? 1_500 : 500 )
         streak = await connect( adb, host, FIXED_PORT ) ? streak + 1 : 0
     }
-    return streak === 2
+    if( streak === 2 ) return `${ host }:${ FIXED_PORT }`
+
+    // 5555 never came up: if adbd refused to restart, the TLS port still works
+    return await connect( adb, host, port ) ? `${ host }:${ port }` : null
 
 }
 
@@ -191,9 +209,10 @@ export const bring_up = async ( device, { adb, scan, sleep } ) => {
 
     if( !tcpip ) return { serial: `${ host }:${ found }`, port: found }
 
-    // A failed pin already restarted adbd and moved the TLS port: report it
-    // unreachable so the next `babysit adb` rescans
-    return await pin_fixed_port( { adb, sleep }, host, found ) ? { serial: `${ host }:${ FIXED_PORT }`, port: found } : null
+    // Null means adbd restarted, 5555 never settled and the TLS port moved:
+    // report it unreachable so the next `babysit adb` rescans
+    const serial = await pin_fixed_port( { adb, sleep }, host, found )
+    return serial ? { serial, port: found } : null
 
 }
 
@@ -231,7 +250,7 @@ const up = async ( { quiet }, io ) => {
             io.say( `${ label }: unreachable (${ device.host }). Is Wireless debugging on?` )
             continue
         }
-        await save_device( { ...device, port: result.port, last_seen: io.now() }, io.registry )
+        await update_device( device.host, { port: result.port, last_seen: io.now() }, io.registry )
         if( !quiet ) io.say( `${ label }: connected as ${ result.serial }` )
     }
 

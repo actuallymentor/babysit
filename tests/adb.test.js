@@ -3,13 +3,13 @@ import { mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { run_adb, load_devices, save_device } from '../src/docker/assets/adb/command.mjs'
+import { run_adb, load_devices, save_device, forget_device } from '../src/docker/assets/adb/command.mjs'
 
 const HOST = `10.0.0.2`
 
 // A phone on the LAN: Wireless debugging on a dynamic TLS port, and port 5555
 // open only after `adb tcpip` (until "reboot"). `adb tcpip` moves the TLS port.
-const fake_phone = ( { tls_port = 39_051, fixed = false, reachable = true } = {} ) => {
+const fake_phone = ( { tls_port = 39_051, fixed = false, reachable = true, tcpip_refused = false, on_connect = async () => {} } = {} ) => {
 
     const phone = { tls_port, fixed, calls: [] }
     const serial_open = serial => {
@@ -20,11 +20,15 @@ const fake_phone = ( { tls_port = 39_051, fixed = false, reachable = true } = {}
     phone.adb = async args => {
         phone.calls.push( args.join( ` ` ) )
         const [ command, serial, sub ] = args
-        if( command === `connect` ) return serial_open( serial ) ? `connected to ${ serial }` : `failed to connect to '${ serial }': Connection refused`
+        if( command === `connect` ) {
+            await on_connect()
+            return serial_open( serial ) ? `connected to ${ serial }` : `failed to connect to '${ serial }': Connection refused`
+        }
         if( command === `pair` ) return `Successfully paired to ${ serial } [guid=adb-test]`
         if( command === `disconnect` ) return `disconnected ${ serial }`
         if( command === `devices` ) return `List of devices attached\n${ phone.fixed ? `${ HOST }:5555\tdevice` : `` }`
         if( sub === `shell` ) return args.includes( `echo` ) ? `ready` : `CPH2465`
+        if( sub === `tcpip` && tcpip_refused ) return `error: closed`
         if( sub === `tcpip` ) {
             phone.fixed = true
             phone.tls_port = 41_234
@@ -39,9 +43,9 @@ const fake_phone = ( { tls_port = 39_051, fixed = false, reachable = true } = {}
 
 }
 
-const setup = phone_options => {
+const setup = ( phone_options = {} ) => {
     const registry = join( mkdtempSync( join( tmpdir(), `babysit-adb-` ) ), `devices.json` )
-    const phone = fake_phone( phone_options )
+    const phone = fake_phone( { ...phone_options, on_connect: () => phone_options.on_connect?.( registry ) } )
     const lines = []
     const run = args => run_adb( args, {
         adb: phone.adb,
@@ -102,6 +106,27 @@ describe( `babysit adb`, () => {
         expect( phone.calls.filter( call => call.includes( `tcpip` ) ) ).toEqual( [] )
         expect( ( await load_devices( registry ) )[0] ).toMatchObject( { tcpip: false, name: `CPH2465` } )
         expect( lines.at( -1 ) ).toContain( `connected as ${ HOST }:39051` )
+
+    } )
+
+    it( `keeps the verified TLS link when tcpip is refused`, async () => {
+
+        const { registry, phone, lines, run } = setup( { tcpip_refused: true } )
+        expect( await run( [ `add`, HOST ] ) ).toBe( 0 )
+
+        expect( phone.calls.filter( call => call === `connect ${ HOST }:39051` ) ).toHaveLength( 2 )
+        expect( lines.at( -1 ) ).toContain( `connected as ${ HOST }:39051` )
+        expect( await load_devices( registry ) ).toHaveLength( 1 )
+
+    } )
+
+    it( `does not resurrect a device forgotten while it reconnects`, async () => {
+
+        const { registry, run } = setup( { fixed: true, on_connect: path => forget_device( HOST, path ) } )
+        await save_device( { host: HOST, port: 39_051, name: `dev-phone` }, registry )
+
+        expect( await run( [ `up`, `--quiet` ] ) ).toBe( 0 )
+        expect( await load_devices( registry ) ).toEqual( [] )
 
     } )
 
