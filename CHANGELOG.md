@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.37.0 — 2026-10-11
+
+### Removed
+- Automated Claude re-login (`babysit auth relogin`, the browser driver, and the `GMAIL_USER`/`GMAIL_APP_PASSWORD` mail path). Cloudflare challenges the automated email sign-in, so it needed a human anyway; the one-year setup-token from `babysit auth init` covers it. Leftovers you can remove: the `babysit-relogin` Docker volume, `~/.babysit/relogin.json`, and the Gmail vars in `~/.babysitrc`.
+
+### Fixed
+- Usage alerts no longer repeat every 10 minutes once a limit is high. Claude's reset time drifts by a fraction of a second on every read, which counted as a new window each check. A window is now remembered until it resets, and each check sends at most one push listing every limit that crossed 90%.
+
 ## 1.36.0 — 2026-10-10
 
 ### Added

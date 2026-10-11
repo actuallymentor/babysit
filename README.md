@@ -136,7 +136,7 @@ launches then skip the "Checking authentication" probe. The checker only refresh
 launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
 project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`
 (or exported when you run `babysit auth init`), the checker also pushes an alert when a verified agent logs out (deleted or expired credentials offline, an hourly ~3s host CLI probe, or a running session's pane showing the agent's logged-out message), and once per
-limit window when any usage limit (session/daily/weekly/credit) reaches 90%; without them it's a no-op. Running sessions re-stamp the cache
+limit window when any usage limit (session/daily/weekly/credit) reaches 90% (one push per check, however many limits crossed); without them it's a no-op. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
 
