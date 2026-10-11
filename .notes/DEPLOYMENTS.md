@@ -23,3 +23,4 @@
 - 2026-10-09: Published [v1.29.0](https://github.com/actuallymentor/babysit/releases/tag/v1.29.0) from `30f304c` via release run 37924370357. Claude default model `best` → `default`.
 - 2026-10-09: Published [v1.30.0](https://github.com/actuallymentor/babysit/releases/tag/v1.30.0) from `46269a9` (release run 37996052338, docker run 37996051798). --adb, trixie base, persistent web sessions, Pushover alerts. Image `actuallymentor/babysit:1.30.0` amd64+arm64.
 - 1.31.0 released 2026-10-10 (35f087f): Build & Release 38040579786 green, 8 assets; Docker image not rebuilt (no image changes).
+- 2026-10-11: Published [v1.37.0](https://github.com/actuallymentor/babysit/releases/tag/v1.37.0) from `f57d804` via release run 38128366969 (Docker 38128366788, regression 38128366753 green). Linux x64 binary `--version` smoke-tested; `actuallymentor/babysit:1.37.0` manifest present. Removes automated re-login, fixes usage alert repeats.
