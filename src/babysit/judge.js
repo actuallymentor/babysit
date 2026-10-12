@@ -14,6 +14,8 @@ const MAX_SCREEN_CHARS = 24_000
 // `docker exec` starts from the container's creation environment, which lacks
 // what the entrypoint added (~/.babysitrc, staged credentials, CLAUDE_CONFIG_DIR).
 // Borrow the running agent's environment instead: the oldest `node` process.
+// The entrypoint execs into the agent, so that one process predates anything
+// it forks (adb workers, shells) and carries the full environment.
 const AGENT_ENV = `agent=$(pgrep -o -u node)
 if [ -n "$agent" ]; then
     while IFS= read -r -d '' variable; do export "$variable"; done < /proc/$agent/environ

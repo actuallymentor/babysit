@@ -37,7 +37,7 @@ export const agent_activity = ( output, agent_name ) => {
         // "1 background terminal running · /ps to view · /stop to close"
         const composer = lines.findLastIndex( line => /^\s*›/.test( line ) )
         const above = lines.slice( 0, Math.max( composer, 0 ) ).findLast( line => line.trim() )
-        if( /^\s*[1-9]\d* background terminals? running\b/.test( above || `` ) ) return `waiting`
+        if( /^\s*[1-9]\d* background terminals? running · \/ps to view\b/.test( above || `` ) ) return `waiting`
         if( /^\s*›\s*(?:Ask Codex to do anything|Ask a follow-up question)\s*$/m.test( footer )
             || /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
