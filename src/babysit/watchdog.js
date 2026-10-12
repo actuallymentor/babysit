@@ -40,37 +40,51 @@ export const create_watchdog = ( {
     let nudge = false
 
     const limit_s = status => status === `waiting` ? waiting_s : idle_s
+    const excluded = status => is_stuck() || status === `idle` && skips_idle()
+
+    const restart = () => {
+        stretch++
+        quiet_since = null
+        judged = false
+        nudge = false
+    }
 
     const check = async status => {
 
         const current = stretch
+        const stale = () => current !== stretch
         checking = true
+
+        // The user typing counts as activity: they are handling this session
+        const typed_since_quiet = async () => {
+            const typed = await typed_at()
+            if( stale() || !typed || typed <= quiet_since ) return stale()
+            quiet_since = typed
+            return true
+        }
 
         try {
 
-            // The user typing counts as activity: they are handling this session
-            const typed = await typed_at()
-            if( current !== stretch ) return
-            if( typed && typed > quiet_since ) {
-                quiet_since = typed
-                return
-            }
+            if( await typed_since_quiet() ) return
 
             const quiet_minutes = Math.round( ( now() - quiet_since ) / 60_000 )
             const verdict = await judge( { status, quiet_minutes } )
-            if( current !== stretch ) return
+            if( stale() ) return
+            if( !verdict ) throw new Error( `no judge answered` )
 
-            // No judge answered: try again after another full threshold
-            if( !verdict ) {
-                log.warn( `Watchdog could not judge ${ session_name }; retrying later` )
-                quiet_since = now()
-                return
-            }
+            // Judging takes a while; a draft typed meanwhile must not get our text appended
+            if( await typed_since_quiet() ) return
 
             const { nudge: stalled, reason, judge: judged_by } = verdict
             judged = true
             nudge = stalled
             log.info( `Watchdog ${ stalled ? `nudging` : `leaving` } ${ status } ${ session_name } after ${ quiet_minutes }m (${ judged_by }): ${ reason }` )
+
+        } catch ( error ) {
+
+            // Try again after another full threshold, never on the next tick
+            log.warn( `Watchdog could not judge ${ session_name }, retrying later: ${ error.message }` )
+            if( !stale() ) quiet_since = now()
 
         } finally {
             checking = false
@@ -86,33 +100,33 @@ export const create_watchdog = ( {
          */
         observe( status ) {
 
-            if( status === `running` ) {
-                stretch++
-                quiet_since = null
-                judged = false
-                nudge = false
-                return
-            }
+            if( status === `running` ) return restart()
 
             quiet_since ??= now()
 
             const limit = limit_s( status )
-            if( checking || judged || !limit || is_stuck() ) return
-            if( status === `idle` && skips_idle() ) return
+            if( checking || judged || !limit || excluded( status ) ) return
             if( now() - quiet_since < limit * 1_000 ) return
 
-            check( status ).catch( error => log.warn( `Watchdog check failed for ${ session_name }: ${ error.message }` ) )
+            check( status )
 
         },
 
         /**
-         * Claim a queued nudge, once.
+         * Input from outside tmux (the web companion) starts a fresh stretch.
+         */
+        restart,
+
+        /**
+         * Claim a queued nudge, once. Exclusions that arose while the judge
+         * thought (stuck, an idle rule taking over) cancel it.
+         * @param {'idle'|'running'|'waiting'} status - Current activity
          * @returns {boolean} True when the monitor should send WATCHDOG_NUDGE
          */
-        take() {
+        take( status ) {
             if( !nudge ) return false
             nudge = false
-            return true
+            return !excluded( status )
         },
 
     }

@@ -149,7 +149,8 @@ describe( `usage alerts`, () => {
 
     it( `keeps a failed provider's windows so its recovery does not repeat the alert`, async () => {
 
-        const weekly = { name: `weekly`, used_percent: 95, resets_at: `2026-10-12T15:59:00Z` }
+        // Reset a day out: a fixed stamp turns into a reset window once that time passes
+        const weekly = { name: `weekly`, used_percent: 95, resets_at: new Date( Date.now() + 86_400_000 ).toISOString() }
         await run( [ weekly ] )
 
         const failed = { agents: [ { agent: `claude`, provider: `anthropic`, status: `error`, limits: [] } ] }

@@ -42,8 +42,8 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         expect( calls ).toEqual( [ { status: `idle`, quiet_minutes: 30 } ] )
-        expect( watchdog.take() ).toBe( true )
-        expect( watchdog.take() ).toBe( false )
+        expect( watchdog.take( `idle` ) ).toBe( true )
+        expect( watchdog.take( `idle` ) ).toBe( false )
 
         // Judged once per stretch, however long it stays quiet
         clock.now = 99_000_000
@@ -75,7 +75,7 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         watchdog.observe( `running` )
-        expect( watchdog.take() ).toBe( false )
+        expect( watchdog.take( `idle` ) ).toBe( false )
 
         watchdog.observe( `idle` )
         clock.now = 3_599_000
@@ -95,7 +95,7 @@ describe( `watchdog`, () => {
         clock.now = 1_800_000
         watchdog.observe( `idle` )
         await settle()
-        expect( watchdog.take() ).toBe( false )
+        expect( watchdog.take( `idle` ) ).toBe( false )
     } )
 
     it( `skips stuck sessions, disabled thresholds, and idle agents an idle rule already nudges`, async () => {
@@ -156,7 +156,77 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         expect( calls ).toHaveLength( 2 )
-        expect( watchdog.take() ).toBe( true )
+        expect( watchdog.take( `idle` ) ).toBe( true )
+    } )
+
+    it( `drops a verdict when the user typed while the judge was thinking`, async () => {
+        let typed = null
+        const { watchdog, clock, calls } = make_watchdog( {
+            typed_at: async () => typed,
+            judge: async input => {
+                calls.push( input )
+                if( calls.length === 1 ) typed = clock.now + 1
+                return { nudge: true, reason: `stalled`, judge: `claude` }
+            },
+        } )
+
+        watchdog.observe( `idle` )
+        clock.now = 1_800_000
+        watchdog.observe( `idle` )
+        await settle()
+        expect( calls ).toHaveLength( 1 )
+        expect( watchdog.take( `idle` ) ).toBe( false )
+
+        // The stretch restarted at the keypress, so it is judged again later
+        typed = null
+        clock.now = 3_600_001
+        watchdog.observe( `idle` )
+        await settle()
+        expect( calls ).toHaveLength( 2 )
+        expect( watchdog.take( `idle` ) ).toBe( true )
+    } )
+
+    it( `cancels a queued nudge when the session became stuck or covered by an idle rule`, async () => {
+        for( const late of [ { stuck: true }, { idle_rule: true } ] ) {
+            const state = { stuck: false, idle_rule: false }
+            const { watchdog, clock } = make_watchdog( { is_stuck: () => state.stuck, skips_idle: () => state.idle_rule } )
+            watchdog.observe( `waiting` )
+            clock.now = 3_600_000
+            watchdog.observe( `waiting` )
+            await settle()
+            Object.assign( state, late )
+            expect( watchdog.take( `idle` ) ).toBe( false )
+        }
+    } )
+
+    it( `waits a full threshold after a judge throws`, async () => {
+        const { watchdog, clock, calls } = make_watchdog( {
+            judge: async input => {
+                calls.push( input )
+                throw new Error( `tmux capture failed` )
+            },
+        } )
+
+        watchdog.observe( `idle` )
+        clock.now = 1_800_000
+        for( let tick = 0; tick < 3; tick++ ) {
+            watchdog.observe( `idle` )
+            await settle()
+            clock.now += 1_000
+        }
+        expect( calls ).toHaveLength( 1 )
+    } )
+
+    it( `restarts on web companion input`, async () => {
+        const { watchdog, clock, calls } = make_watchdog()
+        watchdog.observe( `idle` )
+        clock.now = 1_799_000
+        watchdog.restart()
+        watchdog.observe( `idle` )
+        clock.now = 1_800_000
+        watchdog.observe( `idle` )
+        await settle()
+        expect( calls ).toHaveLength( 0 )
     } )
 
 } )
@@ -189,7 +259,12 @@ describe( `judge`, () => {
         } )
 
         expect( verdict ).toEqual( { nudge: false, reason: `finished`, judge: `codex` } )
-        expect( commands[ 0 ].slice( 0, 7 ) ).toEqual( [ `exec`, `--user`, `node`, `--workdir`, `/tmp`, `abc123`, `claude` ] )
+        expect( commands[ 0 ].slice( 0, 8 ) ).toEqual( [ `exec`, `--user`, `node`, `--workdir`, `/tmp`, `abc123`, `bash`, `-c` ] )
+
+        // Borrows the agent's environment and kills the judge itself on timeout
+        expect( commands[ 0 ][ 8 ] ).toContain( `/proc/$agent/environ` )
+        expect( commands[ 0 ][ 8 ] ).toContain( `exec timeout -k 5 110 "$@"` )
+        expect( commands[ 0 ].slice( 9, 11 ) ).toEqual( [ `judge`, `claude` ] )
         expect( commands[ 0 ] ).toContain( `haiku` )
         expect( commands[ 0 ].at( -1 ) ).toBe( `` )
         expect( commands[ 1 ] ).toContain( `codex` )
