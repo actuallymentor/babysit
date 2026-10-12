@@ -13,6 +13,10 @@ import { apply_loop } from '../modes/loop.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
+import { create_watchdog } from '../babysit/watchdog.js'
+import { judge_session } from '../babysit/judge.js'
+import { strip_ansi } from '../babysit/matcher.js'
+import { capture_history } from '../tmux/capture.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
 import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
 import { start_usage_sampler } from '../docker/stats.js'
@@ -394,6 +398,23 @@ export const cmd_monitor = async ( cmd ) => {
             load_rules: () => load_monitor_config( session ).rules,
         } )
 
+        // Nudge agents that went quiet mid-task. Judging runs in the session
+        // container, so containerless sessions are left alone.
+        const tmux_target = session.pane_id || session.tmux_session
+        const watchdog = session.container_id ? create_watchdog( {
+            session_name: session.tmux_session,
+            idle_s: config.watchdog_idle_s,
+            waiting_s: config.watchdog_waiting_s,
+            is_stuck: () => stuck_controller.stuck,
+            skips_idle: () => rules.some( rule => rule.on.type === `idle` ),
+            judge: async ( { status, quiet_minutes } ) => judge_session( {
+                container_id: session.container_id,
+                screen: strip_ansi( await capture_history( tmux_target, 150 ) ),
+                status,
+                quiet_minutes,
+            } ),
+        } ) : null
+
         await start_monitor( {
             session_name: session.tmux_session,
             config,
@@ -410,9 +431,10 @@ export const cmd_monitor = async ( cmd ) => {
                 await stuck_controller.tick()
             },
             on_user_input: () => stuck_controller.clear(),
+            watchdog,
             on_logout_screen: request_auth_check,
             approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
-            tmux_target: session.pane_id || session.tmux_session,
+            tmux_target,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_tick: () => {
                 const identity = identity_reader.read()

@@ -137,4 +137,42 @@ describe( `agent activity controls`, () => {
         expect( agent_status( `Authentication required`, `codex`, 2 ) ).toBe( `idle` )
     } )
 
+    it( `keeps Claude waiting while background subagents run, captured from a live pane`, () => {
+        const screen = [
+            `● Agent "Research Cloudflare email + platform" finished · 3m 16s`,
+            `────`, `❯ `, `────`,
+            `  yolo·docker·adb org/repo ⎇ main`,
+            `  ⏵⏵ bypass permissions on (shift+tab to cycle) · /tasks to see subagents · ← for agents · 1 feedback draft`,
+            `  ● main`,
+            `  ◯ general-purpose  Checking wgt default MTU and qdisc          2m 59s · ↓ 35.6k tokens`,
+        ].join( `\n` )
+        expect( agent_status( screen, `claude`, 300 ) ).toBe( `waiting` )
+
+        // Main alone is the thread list, not background work.
+        const main_only = screen.split( `\n` ).slice( 0, -1 ).join( `\n` )
+        expect( agent_status( main_only, `claude`, 300 ) ).toBe( `idle` )
+    } )
+
+    it( `reads Claude shell counts followed by extra footer segments`, () => {
+        const screen = `❯ \n────\n  ⏵⏵ bypass permissions on · 1 shell · ← for agents · 1 feedback draft`
+        expect( agent_status( screen, `claude`, 300 ) ).toBe( `waiting` )
+        expect( agent_status( screen.replace( `1 shell`, `0 shells` ), `claude`, 300 ) ).toBe( `idle` )
+    } )
+
+    it( `keeps Codex waiting while a background terminal outlives the turn`, () => {
+        const screen = [
+            `• started`, `  Worked for 6s • 3:21 PM`,
+            `  1 background terminal running · /ps to view · /stop to close`,
+            `› Ask Codex to do anything`,
+            `  GPT-6-Luna medium · ~/project · Main [default]`,
+            `  ? for shortcuts`,
+        ].join( `\n` )
+        expect( agent_status( screen, `codex`, 300 ) ).toBe( `waiting` )
+        expect( agent_status( screen.replace( `1 background terminal`, `2 background terminals` ), `codex`, 300 ) ).toBe( `waiting` )
+
+        // A finished subagent leaves only transcript lines: idle, for the watchdog to judge.
+        const finished = screen.replace( /\n.*background terminal.*/, `\n• Completed \`/root/sleep_task\`` )
+        expect( agent_status( finished, `codex`, 300 ) ).toBe( `idle` )
+    } )
+
 } )

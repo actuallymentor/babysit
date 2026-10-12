@@ -25,6 +25,12 @@ ${ comment_block( initial_prompt ) }
 #     # Seconds without new output before the agent counts as idle (on: idle, --loop).
 #     idle_timeout_s: 300
 #
+#     # Seconds an agent may sit idle, or waiting on background work, before a cheap
+#     # LLM reads its screen and types "Status report" if it stalled mid-task.
+#     # Judged once per quiet stretch; typing into the session restarts it. 0 disables.
+#     watchdog_idle_s: 1800
+#     watchdog_waiting_s: 3600
+#
 #     # YOLO only: answer Claude's bypass-immune "Dangerous rm operation" prompt with Yes.
 #     # false lets Claude auto-deny it.
 #     yolo_approve_dangerous_commands: true
@@ -78,6 +84,8 @@ ${ comment_block( initial_prompt ) }
 const DEFAULT_CONFIG = {
     initial_prompt: null,
     idle_timeout_s: 300,
+    watchdog_idle_s: 1_800,
+    watchdog_waiting_s: 3_600,
     yolo_approve_dangerous_commands: true,
     commands: {},
     isolate_dependencies: true,
@@ -185,6 +193,13 @@ export const load_config = ( dir = process.cwd(), {
     const config = { ...DEFAULT_CONFIG, ...raw_config }
     if( !Object.hasOwn( raw_config, `initial_prompt` ) ) {
         config.initial_prompt = default_initial_prompt
+    }
+
+    // Watchdog thresholds are seconds; 0 turns that check off
+    for( const key of [ `watchdog_idle_s`, `watchdog_waiting_s` ] ) {
+        if( Number.isFinite( config[ key ] ) && config[ key ] >= 0 ) continue
+        log.warn( `config.${ key } must be a number of seconds (0 disables); using ${ DEFAULT_CONFIG[ key ] }` )
+        config[ key ] = DEFAULT_CONFIG[ key ]
     }
 
     // Markdown actions live next to the file that names them, so `./FILE.md`
