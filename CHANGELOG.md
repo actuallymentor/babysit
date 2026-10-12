@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.39.0 — 2026-10-12
+
+### Added
+- Stall watchdog, on by default. Agents sometimes say they'll wait for a subagent, then never resume once it finishes. After 30 min idle (`watchdog_idle_s`) or 60 min waiting (`watchdog_waiting_s`), Claude Haiku reads the last 150 terminal lines inside the session container (Codex as fallback). If the agent stalled mid-task, babysit types `Status report`. One judgment per quiet stretch, so a session left alone for days gets one cheap check and no message unless it stalled. Skipped while `stuck`, and for idle when an idle rule or `--loop` already nudges; typing restarts the clock. `0` disables either threshold.
+
+### Fixed
+- Claude sessions with running background subagents show `waiting` instead of `idle`, so `--loop` no longer nudges while subagents work.
+- Claude background shells stay `waiting` when the footer carries extra segments such as `· 1 feedback draft`.
+- Codex sessions with a background terminal running show `waiting`.
+
 ## 1.38.0 — 2026-10-11
 
 ### Added

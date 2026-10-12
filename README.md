@@ -98,7 +98,7 @@ Absolute-linked worktrees are locked against Git pruning across mount paths; man
 
 ## Sessions
 
-Status: `running` for foreground work, `waiting` for Claude background shells, `idle` when ready.
+Status: `running` for foreground work, `waiting` for background shells, terminals, or Claude subagents, `idle` when ready.
 Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
@@ -122,7 +122,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit update` | Update Babysit, agent tools, image; show image version |
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
-input/interrupt controls → idle/running; Claude background shells → waiting; otherwise output stability; unreadable → unknown.
+input/interrupt controls → idle/running; background shells/terminals or Claude subagent rows → waiting; otherwise output stability; unreadable → unknown.
 Status is grey when idle, green when running, orange when waiting, red when the agent ran `babysit stuck`
 (cleared by typing into that tmux session or sending input from the web companion). CPU/MEM come from a cache each session's
 monitor refreshes every 30s from `docker stats` (CPU: 100% = one core; MEM: used, whole MiB); `-` when no sample
@@ -341,6 +341,8 @@ headers (per-model weekly scopes are not in those headers).
 ```yaml
 config:
     idle_timeout_s: 300
+    watchdog_idle_s: 1800    # stall watchdog, see below; 0 disables
+    watchdog_waiting_s: 3600
     yolo_approve_dangerous_commands: true # false: let Claude auto-deny its rm safety prompt
 
 babysit:
@@ -363,6 +365,13 @@ babysit:
 | `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going`. A `--config FILE` with its own idle rule keeps that rule |
 
 `--ignore-host-agents-md` skips the host `LOOP.md`.
+
+**Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes.
+After `watchdog_idle_s` idle (30 min) or `watchdog_waiting_s` waiting (60 min), Claude Haiku reads the last 150 terminal lines
+inside the session container (Codex as fallback) and decides: parked on purpose (finished, asked you something, real work still running)
+or stalled. Stalled → types `Status report`. One judgment per quiet stretch, so a session left alone for days gets one cheap check
+and no message unless it stalled. Skipped while `stuck`, and for idle when an idle rule or `--loop` already nudges. Typing restarts the stretch.
+Verdicts are in the monitor log.
 
 ## Mobile web companion
 

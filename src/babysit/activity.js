@@ -32,20 +32,28 @@ export const agent_activity = ( output, agent_name ) => {
 
     switch ( agent_name ) {
     case `codex`:
+        // A turn can end while a shell it started keeps running:
+        // "1 background terminal running · /ps to view · /stop to close"
+        if( /^\s*[1-9]\d* background terminals? running\b/m.test( footer ) ) return `waiting`
         if( /^\s*›\s*(?:Ask Codex to do anything|Ask a follow-up question)\s*$/m.test( footer )
             || /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
 
     case `claude`: {
         // A completed foreground reply can leave background shells or
-        // monitors alive: "2 shells, 2 monitors · ← for agents". Only read the
+        // monitors alive: "2 shells, 2 monitors · ← for agents", sometimes
+        // followed by more segments ("· 1 feedback draft"). Only read the
         // native footer below the composer (❯, or › in newer builds), never
         // transcript prose. The expanded agent list can push that footer well
         // above the last 8 rows, so search the whole pane but require the composer.
         const composer = screen.findLastIndex( line => /^\s*[❯›]/.test( line ) )
         const controls = composer < 0 ? `` : screen.slice( composer + 1 ).join( `\n` )
-        const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*$/m )
+        const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*(?:[·•].*)?$/m )
         if( counts && /\b[1-9]\d* [a-z]+/.test( counts[ 1 ] ) ) return `waiting`
+
+        // Background subagents carry no count; each one gets a row under
+        // "● main": "◯ general-purpose  Checking MTU   2m 59s · ↓ 35.6k tokens"
+        if( /^\s*[○◯◉●]\s+(?!main\s*$)\S/m.test( controls ) ) return `waiting`
         if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
         break
     }

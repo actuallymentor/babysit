@@ -8,6 +8,7 @@ import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { agent_status as detect_agent_status } from './activity.js'
+import { WATCHDOG_NUDGE } from './watchdog.js'
 
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
@@ -120,6 +121,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.on_logout_screen] - Callback with the agent name when the pane shows a lost login
  * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
+ * @param {Object|null} [options.watchdog] - Stall watchdog from create_watchdog
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
  */
@@ -138,6 +140,7 @@ export const start_monitor = async ( {
     on_tick,
     on_status = null,
     on_user_input = null,
+    watchdog = null,
     input_allowed = () => true,
     on_exit,
     agent_exit_sentinel = null,
@@ -189,6 +192,9 @@ export const start_monitor = async ( {
 
     // Find the idle rule once — used to publish the countdown for the statusline
     const idle_rule = rules.find( r => r.on.type === `idle` )
+
+    // The watchdog's nudge runs as a regular action so it owns tmux input the same way
+    const watchdog_rule = { on: { type: `watchdog` }, do: WATCHDOG_NUDGE, last_fired_at: 0 }
 
     log.info( `Monitoring session: ${ session_name }` )
     log.debug( `${ rules.length } rules loaded, polling every ${ POLL_INTERVAL_MS }ms` )
@@ -247,6 +253,7 @@ export const start_monitor = async ( {
             // is static. Restart the idle timer once their footer disappears.
             if( agent_status === `waiting` ) idle_tracker.reset()
             if( on_status ) await on_status( agent_status )
+            watchdog?.observe( agent_status )
 
             // Store activity with the tmux session itself. Only transitions issue
             // a command, keeping the one-second monitor poll cheap. Failed writes
@@ -363,6 +370,14 @@ export const start_monitor = async ( {
 
             // Evaluate rules in order — first match wins
             const now = Date.now()
+
+            // A stalled verdict outranks rules: the stretch it judged is still quiet
+            if( watchdog?.take() ) {
+                begin_action( watchdog_rule, now )
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
+            }
+
             const context = { output: clean_output, idle_seconds, config }
 
             for( const rule of rules ) {

@@ -222,3 +222,16 @@ Source: strings in the native binary (`~/.local/share/claude/versions/2.1.283`).
 ## Android/adb tooling — 2026-10-09
 - adb versions: bookworm 29.0.6 (no pair); bookworm-backports/trixie 34.0.5; Google platform-tools r37.0.1 (x86_64 only on Linux).
 - Agent phone control options: mobile-mcp (mobile-next, most adopted), Maestro + `maestro mcp` (YAML flows, JRE), uiautomator2 MCP servers (community, so audit them first). Raw adb is enough for basics: `input tap/swipe/text`, `exec-out screencap -p`, `uiautomator dump`.
+
+## Claude footer: background shells vs subagents (2026-10-12, live panes, Claude 2.1.28x)
+- Shell: `⏵⏵ bypass permissions on · 1 shell · ← for agents` (single footer line; current `waiting` regex matches).
+- Subagents: no count in footer. Footer gains `· /tasks to see subagents`, then rows below it: `● main` / `◯ general-purpose  <task>   2m 59s · ↓ 35.6k tokens` (one row per agent).
+- Footer can end with extra segments, e.g. `· ← for agents · 1 feedback draft`; anything anchored on `← for agents$` misses it.
+- Render a container's live pane without host tmux: `docker exec <c> stty size < /dev/pts/0`, then replay `docker logs --tail 20000` into a local `tmux new-session -x W -y H` and `capture-pane`.
+
+## Codex 0.162 background work (2026-10-12, live TUI, gpt-6-luna)
+- Background terminal: line above composer `1 background terminal running · /ps to view · /stop to close`; disappears when the shell exits. Composer still shows `Ask Codex to do anything`, so babysit reads `idle`.
+- Subagents: no running indicator. Transcript shows `• Started \`/root/<name>\``; status line gains `· Main [default]` (thread label, stays after completion).
+- In-turn `wait` shows `• Waiting for agents` + `Working (… esc to interrupt)` → `running`.
+- Non-awaited subagent finishing prints `• Completed \`/root/<name>\`` and the parent does NOT start a turn: the stall pattern. A typed `Status report` makes it collect the result.
+- Codex `gpt-6.1-sol` returned "Selected model is at capacity" mid-test; Luna worked.
