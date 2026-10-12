@@ -38,6 +38,7 @@ export const create_watchdog = ( {
     let judged = false
     let checking = false
     let nudge = false
+    let judged_at = null
 
     const limit_s = status => status === `waiting` ? waiting_s : idle_s
     const excluded = status => is_stuck() || status === `idle` && skips_idle()
@@ -77,6 +78,7 @@ export const create_watchdog = ( {
 
             const { nudge: stalled, reason, judge: judged_by } = verdict
             judged = true
+            judged_at = now()
             nudge = stalled
             log.info( `Watchdog ${ stalled ? `nudging` : `leaving` } ${ status } ${ session_name } after ${ quiet_minutes }m (${ judged_by }): ${ reason }` )
 
@@ -121,12 +123,23 @@ export const create_watchdog = ( {
          * Claim a queued nudge, once. Exclusions that arose while the judge
          * thought (stuck, an idle rule taking over) cancel it.
          * @param {'idle'|'running'|'waiting'} status - Current activity
-         * @returns {boolean} True when the monitor should send WATCHDOG_NUDGE
+         * @returns {Promise<boolean>} True when the monitor should send WATCHDOG_NUDGE
          */
-        take( status ) {
+        async take( status ) {
+
             if( !nudge ) return false
             nudge = false
-            return !excluded( status )
+            if( excluded( status ) ) return false
+
+            // Delivery can wait behind other input owners; a draft started since stays untouched
+            const typed = await typed_at()
+            if( typed && typed > judged_at ) {
+                restart()
+                return false
+            }
+
+            return true
+
         },
 
     }

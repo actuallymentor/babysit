@@ -177,6 +177,8 @@ describe( `agent activity controls`, () => {
         // Tool output quoting the indicator is transcript, not the native line
         const quoted = screen.replace( `  1 background terminal running · /ps to view · /stop to close`, `  └ 1 background terminal running\n• Done.` )
         expect( agent_status( quoted, `codex`, 300 ) ).toBe( `idle` )
+        const reply = screen.replace( `  1 background terminal running · /ps to view · /stop to close`, `• 1 background terminal running` )
+        expect( agent_status( reply, `codex`, 300 ) ).toBe( `idle` )
     } )
 
 } )

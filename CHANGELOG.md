@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.39.2 — 2026-10-12
+
+### Fixed
+- Watchdog: a nudge waiting behind other input is dropped if you started typing after the verdict.
+- Codex `waiting` requires the full native `N background terminal(s) running · /ps to view` line, so a reply quoting it stays `idle`.
+
 ## 1.39.1 — 2026-10-12
 
 ### Fixed
