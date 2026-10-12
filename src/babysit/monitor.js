@@ -346,6 +346,7 @@ export const start_monitor = async ( {
 
             if( bridge_sent ) {
                 on_user_input?.()
+                watchdog?.restart()
                 idle_tracker.reset()
                 await wait_fn( POLL_INTERVAL_MS )
                 continue
@@ -372,7 +373,7 @@ export const start_monitor = async ( {
             const now = Date.now()
 
             // A stalled verdict outranks rules: the stretch it judged is still quiet
-            if( watchdog?.take() ) {
+            if( watchdog?.take( agent_status ) ) {
                 begin_action( watchdog_rule, now )
                 await wait_fn( POLL_INTERVAL_MS )
                 continue

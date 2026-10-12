@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.39.1 — 2026-10-12
+
+### Fixed
+- Watchdog review fixes:
+  - A nudge is dropped if you typed while the judge was thinking, or if the session became `stuck` or got an idle rule meanwhile.
+  - Web companion input restarts the quiet stretch.
+  - A judge that errors retries after a full threshold, not every second.
+- The judge runs with the agent's own environment (`~/.babysitrc`, staged credentials, `CLAUDE_CONFIG_DIR`), so token-only logins work. Its timeout now kills the judge inside the container too.
+- Codex `waiting` only reads the background-terminal line directly above the composer, not tool output quoting it.
+
 ## 1.39.0 — 2026-10-12
 
 ### Added

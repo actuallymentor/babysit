@@ -2,11 +2,23 @@ import { docker_command_prefix } from '../docker/run.js'
 import { run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 
-const JUDGE_TIMEOUT_MS = 120_000
+// The in-container deadline kills the judge itself; killing the local
+// `docker exec` client alone would leave it running
+const JUDGE_TIMEOUT_S = 110
+const EXEC_TIMEOUT_MS = 120_000
 
 // Enough scrollback for the last reply and any "subagent finished" lines
 // below it, small enough to stay a cheap prompt.
 const MAX_SCREEN_CHARS = 24_000
+
+// `docker exec` starts from the container's creation environment, which lacks
+// what the entrypoint added (~/.babysitrc, staged credentials, CLAUDE_CONFIG_DIR).
+// Borrow the running agent's environment instead: the oldest `node` process.
+const AGENT_ENV = `agent=$(pgrep -o -u node)
+if [ -n "$agent" ]; then
+    while IFS= read -r -d '' variable; do export "$variable"; done < /proc/$agent/environ
+fi
+exec timeout -k 5 ${ JUDGE_TIMEOUT_S } "$@"`
 
 /*
  * Headless judges, run inside the session's own container: every image ships
@@ -97,8 +109,9 @@ export const judge_session = async ( { container_id, screen, status, quiet_minut
 
             // /tmp keeps the workspace's agent instructions out of the judge
             const output = await run_command( command, [
-                ...prefix, `exec`, `--user`, `node`, `--workdir`, `/tmp`, container_id, ...judge_command( prompt ),
-            ], {}, JUDGE_TIMEOUT_MS )
+                ...prefix, `exec`, `--user`, `node`, `--workdir`, `/tmp`, container_id,
+                `bash`, `-c`, AGENT_ENV, `judge`, ...judge_command( prompt ),
+            ], {}, EXEC_TIMEOUT_MS )
 
             const verdict = parse_verdict( output )
             if( verdict ) return { ...verdict, judge: name }

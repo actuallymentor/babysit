@@ -173,6 +173,10 @@ describe( `agent activity controls`, () => {
         // A finished subagent leaves only transcript lines: idle, for the watchdog to judge.
         const finished = screen.replace( /\n.*background terminal.*/, `\n• Completed \`/root/sleep_task\`` )
         expect( agent_status( finished, `codex`, 300 ) ).toBe( `idle` )
+
+        // Tool output quoting the indicator is transcript, not the native line
+        const quoted = screen.replace( `  1 background terminal running · /ps to view · /stop to close`, `  └ 1 background terminal running\n• Done.` )
+        expect( agent_status( quoted, `codex`, 300 ) ).toBe( `idle` )
     } )
 
 } )
