@@ -378,6 +378,8 @@ test( `status aggregates containers and account usage`, async () => {
     writeFileSync( join( state_dir, `one.json` ), JSON.stringify( session_document( { container: container( 10, 1_000 ), epoch: `e1`, session_id: `one` } ) ) )
     writeFileSync( join( state_dir, `two.json` ), JSON.stringify( session_document( { container: container( 5.5, 500 ), epoch: `e2`, session_id: `two` } ) ) )
     writeFileSync( join( state_dir, `three.json` ), JSON.stringify( session_document( { container: { cpu_percent: `hot` }, epoch: `e3`, session_id: `three` } ) ) )
+    // No host core count: memory counts, CPU stays out of the host-share total
+    writeFileSync( join( state_dir, `four.json` ), JSON.stringify( session_document( { container: { ...container( null, 250 ), host_cpus: null }, epoch: `e4`, session_id: `four` } ) ) )
     writeFileSync( join( state_dir, `account-usage.json` ), JSON.stringify( {
         agents: [ { agent: `claude`, limits: [ { name: `session / 5h`, resets_at: `2026-10-13T15:00:00Z`, token: `x`, used_percent: 42 } ], provider: `anthropic`, status: `ok` } ],
         fetched_at: `2026-10-13T12:00:00Z`,
@@ -408,9 +410,9 @@ test( `status aggregates containers and account usage`, async () => {
         const login = await api_request( origin, `/api/login`, { body: { token: `status key` }, method: `POST` } )
         const status = await api_request( origin, `/api/status`, { cookie: login.cookie } )
         assert.equal( status.status, 200 )
-        assert.deepEqual( status.body.sessions.map( session => session.session_id ).sort(), [ `one`, `three`, `two` ] )
+        assert.deepEqual( status.body.sessions.map( session => session.session_id ).sort(), [ `four`, `one`, `three`, `two` ] )
         assert.equal( status.body.sessions.find( session => session.session_id === `three` ).container, null )
-        assert.deepEqual( status.body.containers, { cpu_percent: 15.5, host_cpus: 8, host_memory_bytes: 16_000, memory_bytes: 1_500, sampled: 2, sessions: 3 } )
+        assert.deepEqual( status.body.containers, { cpu_percent: 15.5, host_cpus: 8, host_memory_bytes: 16_000, memory_bytes: 1_750, sampled: 3, sessions: 4 } )
         assert.equal( status.body.usage.stale, false )
         assert.equal( status.body.usage.agents[ 0 ].limits[ 0 ].used_percent, 42 )
         assert.equal( `token` in status.body.usage.agents[ 0 ].limits[ 0 ], false )

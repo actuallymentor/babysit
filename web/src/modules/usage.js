@@ -17,7 +17,7 @@ export const load_level = ratio => ratio < 0.5 ? `calm` : ratio < 0.7 ? `warning
 
 /** Compact CPU · MEM line for one container sample. */
 export const container_label = container => container
-    ? `${ format_percent( container.cpu_percent ) } CPU · ${ format_memory( container.memory_bytes ) }`
+    ? [ container.cpu_percent !== null && `${ format_percent( container.cpu_percent ) } CPU`, format_memory( container.memory_bytes ) ].filter( Boolean ).join( ` · ` )
     : `Container usage pending`
 
 /** Time until a reset as the two largest units: `2d 4h`, `3h 12m`, `45m`. */
@@ -33,8 +33,14 @@ export const reset_label = ( resets_at, now=Date.now() ) => {
     return `Resets in ${ parts.filter( Boolean ).join( ` ` ) }`
 }
 
-/** Percent used, derived from remaining when only that is reported. */
-export const used_percent = limit => limit.used_percent ?? ( limit.remaining_percent === null ? null : 100 - limit.remaining_percent )
+/** Percent used, derived from remaining or numeric amounts (OpenRouter budgets) when not reported. */
+export const used_percent = limit => {
+    if( limit.used_percent !== null ) return limit.used_percent
+    if( limit.remaining_percent !== null ) return 100 - limit.remaining_percent
+    const used = Number( limit.used )
+    const cap = Number( limit.limit )
+    return limit.used !== null && limit.limit !== null && Number.isFinite( used ) && cap > 0 ? used / cap * 100 : null
+}
 
 /** Secondary amount text such as `12 / 50 credits`. */
 export const amount_label = limit => {
