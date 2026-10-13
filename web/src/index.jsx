@@ -18,6 +18,8 @@ const dark_colors = `
     --soft: #293e4c;
     --danger: #ffb8ac;
     --danger-bg: #492b2b;
+    --warning: #f0c040;
+    --critical: #e07c5a;
     --code-bg: #101820;
     --code-text: #edf3f7;
 `
@@ -38,6 +40,8 @@ const GlobalStyle = createGlobalStyle`
         --soft: #e5f1f5;
         --danger: #922e24;
         --danger-bg: #fcebe7;
+        --warning: #c7951a;
+        --critical: #d0603c;
         --code-bg: #182733;
         --code-text: #edf3f7;
         background: var(--background);

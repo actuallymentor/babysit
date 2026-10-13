@@ -1,6 +1,5 @@
-import { randomBytes, randomUUID } from 'crypto'
+import { randomBytes } from 'crypto'
 import {
-    chmodSync,
     closeSync,
     constants,
     existsSync,
@@ -12,7 +11,6 @@ import {
     readSync,
     renameSync,
     rmSync,
-    writeFileSync,
 } from 'fs'
 import { join } from 'path'
 import { stripVTControlCharacters } from 'util'
@@ -22,6 +20,10 @@ import { send_text } from '../tmux/send.js'
 import { get_session_attachment, get_session_pane } from '../tmux/session.js'
 import { WEB_BRIDGE_DIR, WEB_BRIDGE_PROTOCOL, web_bridge_paths } from './paths.js'
 import { create_completion_reader } from './completion.js'
+import { write_atomic_json } from './files.js'
+import { refresh_account_usage } from './account_usage.js'
+import { load_session } from '../sessions/store.js'
+import { cached_usage, host_cpu_percent } from '../docker/stats.js'
 
 const MAX_TEXT_BYTES = 16 * 1_024
 const MAX_REQUEST_BYTES = 24 * 1_024
@@ -31,6 +33,8 @@ const MAX_DIRECTORY_ENTRIES_PER_TICK = 32
 const REQUEST_TTL_MS = 20_000
 const MAX_FUTURE_SKEW_MS = 30_000
 const MAX_RESULTS = 20
+const CONTAINER_REFRESH_MS = 15_000
+const ACCOUNT_USAGE_CHECK_MS = 60_000
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/
 const TOKEN_HASH = /^[a-f0-9]{64}$/
 const UNSAFE_INPUT_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u
@@ -101,20 +105,6 @@ export const web_bridge_initialized = ( directory = WEB_BRIDGE_DIR ) => {
             && [ `read`, `write` ].includes( access.role )
     } catch {
         return false
-    }
-
-}
-
-const write_atomic_json = ( path, value ) => {
-
-    const pending_path = `${ path }.pending-${ process.pid }-${ randomUUID() }`
-
-    try {
-        writeFileSync( pending_path, `${ JSON.stringify( value ) }\n`, { mode: 0o600 } )
-        chmodSync( pending_path, 0o600 )
-        renameSync( pending_path, path )
-    } finally {
-        rmSync( pending_path, { force: true } )
     }
 
 }
@@ -210,6 +200,8 @@ const validate_request = ( request, expected ) => {
  * @param {Function} [options.attachment_fn=get_session_attachment] - Attachment reader seam
  * @param {Function} [options.now_fn=Date.now] - Clock seam
  * @param {Object} [options.completion_reader] - Launch-bound completed reply reader
+ * @param {Function} [options.load_session_fn=load_session] - Session record reader for cached container usage
+ * @param {Function} [options.refresh_usage_fn=refresh_account_usage] - Shared account usage refresher
  * @returns {Object} Monitor bridge controller
  */
 export const create_web_bridge = ( {
@@ -221,6 +213,8 @@ export const create_web_bridge = ( {
     attachment_fn = get_session_attachment,
     now_fn = Date.now,
     completion_reader = create_completion_reader( session ),
+    load_session_fn = load_session,
+    refresh_usage_fn = refresh_account_usage,
 } ) => {
 
     const session_id = session?.babysit_id
@@ -239,6 +233,37 @@ export const create_web_bridge = ( {
     let revision = 0
     let current_activity = `running`
     let request_directory = null
+    let container = null
+    let container_read_at = -Infinity
+    let usage_checked_at = -Infinity
+
+    // The monitor's sampler caches docker stats on the session record; reuse it.
+    const read_container = () => {
+        if( now_fn() - container_read_at < CONTAINER_REFRESH_MS ) return
+        container_read_at = now_fn()
+
+        try {
+            const usage = cached_usage( load_session_fn( session_id ), now_fn() )
+            container = usage && {
+                cpu_percent: host_cpu_percent( usage ),
+                memory_bytes: usage.memory_bytes,
+                host_cpus: usage.host_cpus ?? null,
+                host_memory_bytes: usage.host_memory_bytes ?? null,
+                sampled_at: usage.sampled_at,
+            }
+        } catch {
+            container = null
+        }
+    }
+
+    // Fire and forget: provider calls must never delay pane publishing.
+    const offer_account_usage = () => {
+        if( now_fn() - usage_checked_at < ACCOUNT_USAGE_CHECK_MS ) return
+        usage_checked_at = now_fn()
+        Promise.resolve()
+            .then( () => refresh_usage_fn( { directory } ) )
+            .catch( error => log.debug( `Web account usage refresh failed: ${ error.message }` ) )
+    }
 
     const state_value = busy => ( {
         protocol: WEB_BRIDGE_PROTOCOL,
@@ -253,6 +278,7 @@ export const create_web_bridge = ( {
             ? session.modifiers.filter( value => typeof value === `string` ).slice( 0, 16 ).map( sanitize_display_text )
             : [],
         directory: compact_directory( session.original_pwd || session.pwd ),
+        container,
         last_message,
         raw_screen,
         revision,
@@ -300,6 +326,8 @@ export const create_web_bridge = ( {
                 revision += 1
             }
             current_activity = [ `idle`, `waiting` ].includes( activity ) ? activity : `running`
+            read_container()
+            offer_account_usage()
 
             try {
                 attachment = await attachment_fn( session.tmux_session )

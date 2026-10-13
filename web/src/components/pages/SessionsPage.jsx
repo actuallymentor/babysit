@@ -3,8 +3,10 @@ import styled from 'styled-components'
 import { Heartbeat } from '../atoms/Heartbeat.jsx'
 import { Status } from '../atoms/Status.jsx'
 import { Notice } from '../atoms/Notice.jsx'
+import { Overview } from '../molecules/Overview.jsx'
 import { api } from '../../modules/api.js'
 import { use_poll } from '../../hooks/use_poll.js'
+import { container_label } from '../../modules/usage.js'
 
 const Heading = styled.div`
     margin-bottom: 1.5rem;
@@ -21,6 +23,7 @@ const Grid = styled.div`
 const Card = styled( Link )`
     background: var(--surface);
     border: 1px solid var(--border);
+    align-content: start;
     border-radius: 0.35rem;
     color: inherit;
     display: grid;
@@ -52,9 +55,9 @@ const Metadata = styled.div`
     span { overflow-wrap: anywhere; }
 `
 
-/** Lists only active bridge sessions. */
+/** Host overview plus active bridge sessions, from one status poll. */
 export function SessionsPage( { role } ) {
-    const { data, error, is_loading } = use_poll( () => api( `/api/sessions` ) )
+    const { data, error, is_loading } = use_poll( () => api( `/api/status` ) )
     const sessions = data?.sessions || []
 
     return <>
@@ -67,6 +70,8 @@ export function SessionsPage( { role } ) {
         { is_loading && <Notice>Loading sessions…</Notice> }
         { !is_loading && !error && sessions.length === 0 && <Notice>No live sessions.</Notice> }
 
+        { data && <Overview status={ data } /> }
+
         <Grid>
             { sessions.map( session => <Card key={ session.session_id } to={ `/sessions/${ session.session_id }` }>
                 <CardHeader>
@@ -76,6 +81,7 @@ export function SessionsPage( { role } ) {
                 <Metadata>
                     <span>{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</span>
                     <span>{ session.directory || `Directory unavailable` }</span>
+                    <span>{ container_label( session.container ) }</span>
                     <span>{ session.attachment } · <Heartbeat updated_at={ session.updated_at } /></span>
                 </Metadata>
             </Card> ) }

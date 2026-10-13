@@ -364,3 +364,63 @@ test( `sessions survive restarts, renew on use, and die with logout or token rot
         rmSync( fixture, { force: true, recursive: true } )
     }
 } )
+
+test( `status aggregates containers and account usage`, async () => {
+    const fixture = mkdtempSync( join( tmpdir(), `babysit-web-status-` ) )
+    const state_dir = join( fixture, `state` )
+    const request_dir = join( fixture, `requests` )
+    const access_file = join( fixture, `access.json` )
+    mkdirSync( state_dir )
+    mkdirSync( request_dir )
+    writeFileSync( access_file, access_document( `status key` ) )
+
+    const container = ( cpu_percent, memory_bytes ) => ( { cpu_percent, host_cpus: 8, host_memory_bytes: 16_000, memory_bytes, sampled_at: new Date().toISOString() } )
+    writeFileSync( join( state_dir, `one.json` ), JSON.stringify( session_document( { container: container( 10, 1_000 ), epoch: `e1`, session_id: `one` } ) ) )
+    writeFileSync( join( state_dir, `two.json` ), JSON.stringify( session_document( { container: container( 5.5, 500 ), epoch: `e2`, session_id: `two` } ) ) )
+    writeFileSync( join( state_dir, `three.json` ), JSON.stringify( session_document( { container: { cpu_percent: `hot` }, epoch: `e3`, session_id: `three` } ) ) )
+    writeFileSync( join( state_dir, `account-usage.json` ), JSON.stringify( {
+        agents: [ { agent: `claude`, limits: [ { name: `session / 5h`, resets_at: `2026-10-13T15:00:00Z`, token: `x`, used_percent: 42 } ], provider: `anthropic`, status: `ok` } ],
+        fetched_at: `2026-10-13T12:00:00Z`,
+        kind: `account_usage`,
+        protocol: 1,
+    } ) )
+
+    const server = create_app( {
+        access_file,
+        allow_insecure_http: true,
+        heartbeat_ttl_ms: 5_000,
+        login_limit: 5,
+        login_window_ms: 60_000,
+        public_origin: null,
+        request_dir,
+        request_ttl_ms: 500,
+        session_ttl_ms: 60_000,
+        state_dir,
+        static_dir: join( fixture, `static` ),
+        trust_proxy: false,
+    } )
+    await new Promise( resolve_listen => server.listen( 0, `127.0.0.1`, resolve_listen ) )
+    const origin = `http://127.0.0.1:${ server.address().port }`
+
+    try {
+        assert.equal( ( await api_request( origin, `/api/status` ) ).status, 401 )
+
+        const login = await api_request( origin, `/api/login`, { body: { token: `status key` }, method: `POST` } )
+        const status = await api_request( origin, `/api/status`, { cookie: login.cookie } )
+        assert.equal( status.status, 200 )
+        assert.deepEqual( status.body.sessions.map( session => session.session_id ).sort(), [ `one`, `three`, `two` ] )
+        assert.equal( status.body.sessions.find( session => session.session_id === `three` ).container, null )
+        assert.deepEqual( status.body.containers, { cpu_percent: 15.5, host_cpus: 8, host_memory_bytes: 16_000, memory_bytes: 1_500, sampled: 2, sessions: 3 } )
+        assert.equal( status.body.usage.stale, false )
+        assert.equal( status.body.usage.agents[ 0 ].limits[ 0 ].used_percent, 42 )
+        assert.equal( `token` in status.body.usage.agents[ 0 ].limits[ 0 ], false )
+        assert.ok( Date.parse( status.body.generated_at ) )
+
+        // A day-old usage file is dropped; sessions still report
+        utimesSync( join( state_dir, `account-usage.json` ), new Date( 0 ), new Date( 0 ) )
+        assert.equal( ( await api_request( origin, `/api/status`, { cookie: login.cookie } ) ).body.usage, null )
+    } finally {
+        await new Promise( resolve_close => server.close( resolve_close ) )
+        rmSync( fixture, { force: true, recursive: true } )
+    }
+} )
