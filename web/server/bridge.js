@@ -9,12 +9,80 @@ const TEMPORARY_FILE_PATTERN = /^\.babysit-web-[0-9a-f-]+\.tmp$/
 const MAX_STATE_BYTES = 1_048_576
 const MAX_MESSAGE_BYTES = 16_384
 const MAX_QUEUED_REQUESTS = 64
+const ACCOUNT_USAGE_FILE = `account-usage.json`
+// Monitors refresh every 5 minutes; older figures are flagged, a day-old file is dropped.
+const ACCOUNT_USAGE_STALE_MS = 15 * 60_000
+const ACCOUNT_USAGE_MAX_AGE_MS = 24 * 60 * 60_000
+const USAGE_STATUSES = [ `ok`, `unavailable`, `unauthenticated`, `error` ]
+
+const finite = value => typeof value === `number` && Number.isFinite( value ) ? value : null
+const short_text = value => typeof value === `string` ? value.slice( 0, 200 ) : null
+const amount = value => finite( value ) ?? short_text( value )
+
+const normalize_container = container => {
+    if( !container || finite( container.cpu_percent ) === null || finite( container.memory_bytes ) === null ) return null
+
+    return {
+        cpu_percent: container.cpu_percent,
+        host_cpus: finite( container.host_cpus ),
+        host_memory_bytes: finite( container.host_memory_bytes ),
+        memory_bytes: container.memory_bytes,
+        sampled_at: short_text( container.sampled_at ),
+    }
+}
+
+const normalize_limit = limit => ( {
+    limit: amount( limit?.limit ),
+    name: short_text( limit?.name ) || `limit`,
+    remaining: amount( limit?.remaining ),
+    remaining_percent: finite( limit?.remaining_percent ),
+    resets_at: short_text( limit?.resets_at ),
+    unit: short_text( limit?.unit ),
+    unlimited: limit?.unlimited === true,
+    used: amount( limit?.used ),
+    used_percent: finite( limit?.used_percent ),
+} )
+
+const normalize_account_usage = ( parsed, age_ms ) => {
+    if( parsed?.protocol !== 1 || parsed.kind !== `account_usage` || !Array.isArray( parsed.agents ) ) return null
+
+    return {
+        agents: parsed.agents.slice( 0, 16 ).map( agent => ( {
+            agent: short_text( agent?.agent ) || `agent`,
+            limits: Array.isArray( agent?.limits ) ? agent.limits.slice( 0, 12 ).map( normalize_limit ) : [],
+            message: short_text( agent?.message ),
+            provider: short_text( agent?.provider ),
+            status: USAGE_STATUSES.includes( agent?.status ) ? agent.status : `error`,
+        } ) ),
+        fetched_at: short_text( parsed.fetched_at ),
+        stale: age_ms > ACCOUNT_USAGE_STALE_MS,
+    }
+}
+
+/**
+ * Sum container samples into one host-relative total.
+ * @param {Object[]} sessions - Normalized sessions
+ * @returns {Object} Container totals
+ */
+const container_totals = sessions => {
+    const samples = sessions.map( session => session.container ).filter( Boolean )
+
+    return {
+        cpu_percent: samples.length ? samples.reduce( ( total, sample ) => total + sample.cpu_percent, 0 ) : null,
+        host_cpus: Math.max( 0, ...samples.map( sample => sample.host_cpus || 0 ) ) || null,
+        host_memory_bytes: Math.max( 0, ...samples.map( sample => sample.host_memory_bytes || 0 ) ) || null,
+        memory_bytes: samples.length ? samples.reduce( ( total, sample ) => total + sample.memory_bytes, 0 ) : null,
+        sampled: samples.length,
+        sessions: sessions.length,
+    }
+}
 
 const state_summary = state => ( {
     activity: state.activity,
     agent: state.agent,
     attachment: state.attachment,
     busy: state.busy,
+    container: state.container,
     directory: state.directory,
     epoch: state.epoch,
     modifiers: state.modifiers,
@@ -32,6 +100,7 @@ const normalize_state = parsed => {
         agent: typeof parsed.agent === `string` ? parsed.agent : `agent`,
         attachment: [ `attached`, `detached`, `unknown` ].includes( parsed.attachment ) ? parsed.attachment : `unknown`,
         busy: parsed.busy === true,
+        container: normalize_container( parsed.container ),
         directory: typeof parsed.directory === `string` ? parsed.directory : ``,
         epoch: parsed.epoch,
         last_message: typeof parsed.last_message === `string` ? parsed.last_message : ``,
@@ -96,7 +165,7 @@ export class BridgeStore {
 
     sessions() {
         const states = readdirSync( this.state_dir, { withFileTypes: true } )
-            .filter( entry => entry.isFile() && entry.name.endsWith( `.json` ) )
+            .filter( entry => entry.isFile() && entry.name.endsWith( `.json` ) && entry.name !== ACCOUNT_USAGE_FILE )
             .flatMap( entry => {
                 try {
                     const state = this.read_state_file( entry.name )
@@ -116,6 +185,30 @@ export class BridgeStore {
 
     summaries() {
         return this.sessions().map( state_summary )
+    }
+
+    account_usage() {
+        try {
+            const path = join( this.state_dir, ACCOUNT_USAGE_FILE )
+            const details = lstatSync( path )
+            const age_ms = Date.now() - details.mtimeMs
+            if( !details.isFile() || details.size > MAX_STATE_BYTES || age_ms > ACCOUNT_USAGE_MAX_AGE_MS ) return null
+
+            return normalize_account_usage( JSON.parse( readFileSync( path, `utf8` ) ), age_ms )
+        } catch {
+            return null
+        }
+    }
+
+    status() {
+        const sessions = this.summaries()
+
+        return {
+            containers: container_totals( sessions ),
+            generated_at: new Date().toISOString(),
+            sessions,
+            usage: this.account_usage(),
+        }
     }
 
     session( session_id ) {

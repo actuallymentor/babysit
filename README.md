@@ -401,6 +401,17 @@ docker compose -f examples/compose.web.yml up -d
 - Login lasts 30 days, renewed on use (`BABYSIT_WEB_SESSION_TTL_MS`). Sessions are HMAC-signed against the token hash, so restarts/redeploys keep you logged in; `web init` (token rotation) and logout end them.
 - Running sessions discover newly initialized bridges. After upgrades, exit/resume old sessions to load updated monitor/capture helpers; first new reply fills the view.
 
+Sessions page opens with a host overview: container CPU/MEM totals (share of the Docker host) and account limits per signed-in agent, with reset times. Each card shows its container's CPU · MEM.
+
+| JSON API (cookie auth) | Returns |
+|---|---|
+| `GET /api/status` | `{ generated_at, sessions[], containers: { sessions, sampled, cpu_percent, memory_bytes, host_cpus, host_memory_bytes }, usage: { fetched_at, stale, agents[]: { agent, provider, status, message, limits[] } } \| null }` |
+| `GET /api/sessions` | `{ sessions[] }`, each with `container: { cpu_percent, memory_bytes, … } \| null` |
+| `GET /api/sessions/:id` | `{ session, pending }` |
+
+- Container figures come from each monitor's 30s `docker stats` cache; `cpu_percent` is a share of the whole host.
+- Account limits: a host monitor refreshes `state/account-usage.json` every 5 min (one fetch across sessions, read-only credentials; `stale` after 15 min, dropped after a day). Claude setup-token-only logins spend one output token per refresh. Codex without an OAuth token reports an error here; use `babysit usage`.
+
 | Control / indicator | Meaning |
 |---|---|
 | Message view | Latest completed reply; retained while busy |

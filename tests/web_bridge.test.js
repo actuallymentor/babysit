@@ -121,6 +121,8 @@ describe( `per-session web bridge`, () => {
             epoch: `launch-epoch`,
             attachment_fn: async () => `detached`,
             send_text_fn: async ( ...args ) => sent.push( args ),
+            load_session_fn: () => null,
+            refresh_usage_fn: async () => false,
             ...options,
         } )
         return { bridge, directory, sent }
@@ -136,7 +138,7 @@ describe( `per-session web bridge`, () => {
         const state = JSON.parse( readFileSync( state_path, `utf8` ) )
 
         expect( Object.keys( state ).sort() ).toEqual( [
-            `activity`, `agent`, `attachment`, `busy`, `directory`, `epoch`, `last_message`,
+            `activity`, `agent`, `attachment`, `busy`, `container`, `directory`, `epoch`, `last_message`,
             `modifiers`, `name`, `protocol`, `raw_screen`, `results`, `revision`, `session_id`, `updated_at`,
         ].sort() )
         expect( state ).toMatchObject( {
@@ -159,6 +161,42 @@ describe( `per-session web bridge`, () => {
         bridge.close()
         expect( lstatSync( join( directory, `state` ) ).isDirectory() ).toBe( true )
         expect( readdirSync( join( directory, `state` ) ) ).toEqual( [] )
+    } )
+
+    it( `publishes cached container usage and offers one account refresh per minute`, async () => {
+        let clock = Date.parse( `2026-10-13T12:00:00Z` )
+        const refreshes = []
+        const { bridge, directory } = setup( {
+            now_fn: () => clock,
+            load_session_fn: () => ( { usage: {
+                cpu_percent: 200,
+                memory_bytes: 512 * 1024 ** 2,
+                host_cpus: 8,
+                host_memory_bytes: 16 * 1024 ** 3,
+                sampled_at: new Date( clock ).toISOString(),
+            } } ),
+            refresh_usage_fn: async options => refreshes.push( options ),
+        } )
+        const read_state = () => JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
+
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+        await Promise.resolve()
+
+        expect( read_state().container ).toEqual( {
+            cpu_percent: 25,
+            memory_bytes: 512 * 1024 ** 2,
+            host_cpus: 8,
+            host_memory_bytes: 16 * 1024 ** 3,
+            sampled_at: new Date( clock ).toISOString(),
+        } )
+        expect( refreshes ).toEqual( [ { directory } ] )
+
+        clock += 61_000
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+        await Promise.resolve()
+        expect( refreshes ).toHaveLength( 2 )
+        bridge.close()
     } )
 
     it( `publishes completed replies independently of screen activity and retains them during work`, async () => {

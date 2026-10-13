@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.40.0 — 2026-10-13
+
+### Added
+- Web companion `GET /api/status`: one JSON document with live sessions, container CPU/MEM totals against the Docker host, and account limits per signed-in agent. `/api/sessions` entries gain `container`.
+- Sessions page overview: Containers (running, CPU, memory with load meters) and Account usage (per-limit meters, reset times, read errors); each card shows its container's CPU · MEM.
+- Monitors publish cached container usage into the bridge and refresh account limits every 5 min, once across all sessions.
+
 ## 1.39.2 — 2026-10-12
 
 ### Fixed

@@ -175,6 +175,7 @@ const api_route = async ( request, response, pathname, stores, config ) => {
     }
 
     if( request.method === `GET` && pathname === `/api/sessions` ) return json( response, 200, { sessions: bridge.summaries() } )
+    if( request.method === `GET` && pathname === `/api/status` ) return json( response, 200, bridge.status() )
 
     const session_match = pathname.match( /^\/api\/sessions\/([A-Za-z0-9-]+)$/ )
     if( request.method === `GET` && session_match ) {
