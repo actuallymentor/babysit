@@ -91,12 +91,14 @@ export const refresh_account_usage = async ( {
 
     // The owner token lets release skip a lock some other monitor took over.
     const owner = randomUUID()
+    let descriptor = null
     try {
-        const descriptor = openSync( lock_path, `wx`, 0o600 )
+        descriptor = openSync( lock_path, `wx`, 0o600 )
         writeSync( descriptor, owner )
-        closeSync( descriptor )
     } catch {
         return false
+    } finally {
+        if( descriptor !== null ) closeSync( descriptor )
     }
 
     const release = () => {
