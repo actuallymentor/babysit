@@ -20,10 +20,10 @@ const short_text = value => typeof value === `string` ? value.slice( 0, 200 ) : 
 const amount = value => finite( value ) ?? short_text( value )
 
 const normalize_container = container => {
-    if( !container || finite( container.cpu_percent ) === null || finite( container.memory_bytes ) === null ) return null
+    if( !container || finite( container.memory_bytes ) === null ) return null
 
     return {
-        cpu_percent: container.cpu_percent,
+        cpu_percent: finite( container.cpu_percent ),
         host_cpus: finite( container.host_cpus ),
         host_memory_bytes: finite( container.host_memory_bytes ),
         memory_bytes: container.memory_bytes,
@@ -66,9 +66,10 @@ const normalize_account_usage = ( parsed, age_ms ) => {
  */
 const container_totals = sessions => {
     const samples = sessions.map( session => session.container ).filter( Boolean )
+    const cpu_samples = samples.filter( sample => sample.cpu_percent !== null )
 
     return {
-        cpu_percent: samples.length ? samples.reduce( ( total, sample ) => total + sample.cpu_percent, 0 ) : null,
+        cpu_percent: cpu_samples.length ? cpu_samples.reduce( ( total, sample ) => total + sample.cpu_percent, 0 ) : null,
         host_cpus: Math.max( 0, ...samples.map( sample => sample.host_cpus || 0 ) ) || null,
         host_memory_bytes: Math.max( 0, ...samples.map( sample => sample.host_memory_bytes || 0 ) ) || null,
         memory_bytes: samples.length ? samples.reduce( ( total, sample ) => total + sample.memory_bytes, 0 ) : null,

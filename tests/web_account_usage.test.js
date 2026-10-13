@@ -68,7 +68,7 @@ describe( `web account usage`, () => {
                 } ],
             } ],
         } )
-        await expect( options.codex_read() ).rejects.toThrow( `babysit usage` )
+        expect( await options.codex_read() ).toBeNull()
         expect( existsSync( `${ path }.lock` ) ).toBe( false )
     } )
 
@@ -97,10 +97,27 @@ describe( `web account usage`, () => {
         await refresh_account_usage( { directory, collect: async () => report } )
         utimesSync( path, new Date( 0 ), new Date( 0 ) )
 
-        expect( await refresh_account_usage( { directory, collect: async () => {
+        const failing = async () => {
             throw new Error( `offline` )
-        } } ) ).toBe( false )
+        }
+        expect( await refresh_account_usage( { directory, collect: failing } ) ).toBe( false )
         expect( JSON.parse( readFileSync( path, `utf8` ) ).agents[0].agent ).toBe( `claude` )
+
+        // The failed attempt's lock is the retry cooldown until it goes stale
+        expect( existsSync( `${ path }.lock` ) ).toBe( true )
+        expect( await refresh_account_usage( { directory, collect: async () => report } ) ).toBe( false )
+        utimesSync( `${ path }.lock`, new Date( 0 ), new Date( 0 ) )
+        expect( await refresh_account_usage( { directory, collect: async () => report } ) ).toBe( true )
+    } )
+
+    it( `never releases a lock another monitor took over`, async () => {
+        const { directory, path } = make_bridge()
+        await refresh_account_usage( { directory, collect: async () => {
+            writeFileSync( `${ path }.lock`, `someone-else` )
+            return report
+        } } )
+
+        expect( readFileSync( `${ path }.lock`, `utf8` ) ).toBe( `someone-else` )
     } )
 
 } )

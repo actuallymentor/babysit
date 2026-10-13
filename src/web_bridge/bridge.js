@@ -245,7 +245,8 @@ export const create_web_bridge = ( {
         try {
             const usage = cached_usage( load_session_fn( session_id ), now_fn() )
             container = usage && {
-                cpu_percent: host_cpu_percent( usage ),
+                // Raw docker CPU is per core; without a core count it cannot sum with host shares.
+                cpu_percent: usage.host_cpus > 0 ? host_cpu_percent( usage ) : null,
                 memory_bytes: usage.memory_bytes,
                 host_cpus: usage.host_cpus ?? null,
                 host_memory_bytes: usage.host_memory_bytes ?? null,

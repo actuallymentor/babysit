@@ -1,4 +1,5 @@
-import { closeSync, lstatSync, openSync, rmSync } from 'fs'
+import { randomUUID } from 'crypto'
+import { closeSync, existsSync, lstatSync, openSync, readFileSync, rmSync, writeSync } from 'fs'
 import { join } from 'path'
 
 import { log } from '../utils/log.js'
@@ -66,7 +67,7 @@ const age_ms = ( path, now ) => {
  * Refresh the shared account usage file when it is older than one window.
  * Monitors run on the host with read-only credential access; Codex's
  * app-server fallback is skipped because it may rotate tokens without the
- * host authentication lease.
+ * host authentication lease. A failed refresh holds the lock until stale.
  * @param {Object} [options]
  * @param {string} [options.directory=WEB_BRIDGE_DIR] - Bridge root
  * @param {Function} [options.collect=collect_usage] - Usage collector seam
@@ -85,33 +86,44 @@ export const refresh_account_usage = async ( {
 
     if( age_ms( path, now() ) < ACCOUNT_USAGE_REFRESH_MS ) return false
 
-    // A crashed monitor must not freeze usage forever.
-    if( age_ms( lock_path, now() ) > LOCK_STALE_MS ) rmSync( lock_path, { force: true } )
+    // A crashed monitor must not freeze usage forever. A missing lock is not stale.
+    if( existsSync( lock_path ) && age_ms( lock_path, now() ) > LOCK_STALE_MS ) rmSync( lock_path, { force: true } )
 
-    let lock
+    // The owner token lets release skip a lock some other monitor took over.
+    const owner = randomUUID()
     try {
-        lock = openSync( lock_path, `wx`, 0o600 )
+        const descriptor = openSync( lock_path, `wx`, 0o600 )
+        writeSync( descriptor, owner )
+        closeSync( descriptor )
     } catch {
         return false
     }
 
-    try {
-        // Another monitor may have refreshed between our age check and the lock.
-        if( age_ms( path, now() ) < ACCOUNT_USAGE_REFRESH_MS ) return false
+    const release = () => {
+        try {
+            if( readFileSync( lock_path, `utf8` ) === owner ) rmSync( lock_path, { force: true } )
+        } catch {
+            // Already reclaimed or removed.
+        }
+    }
 
-        const report = await collect( {
-            codex_read: async () => {
-                throw new Error( `Run babysit usage on the host for Codex app-server limits` )
-            },
-        } )
+    // Another monitor may have refreshed between our age check and the lock.
+    if( age_ms( path, now() ) < ACCOUNT_USAGE_REFRESH_MS ) {
+        release()
+        return false
+    }
+
+    try {
+        // Collection reaches Codex's app-server only without an OAuth token;
+        // report that as signed out rather than spawning a token-rotating CLI.
+        const report = await collect( { codex_read: async () => null } )
         write_atomic_json( path, account_usage_document( report ) )
+        release()
         return true
     } catch ( error ) {
+        // Keep the lock: it expires after LOCK_STALE_MS, so failures retry on a cooldown.
         log.debug( `Could not refresh web account usage: ${ error.message }` )
         return false
-    } finally {
-        closeSync( lock )
-        rmSync( lock_path, { force: true } )
     }
 
 }
