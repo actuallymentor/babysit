@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.42.0 — 2026-10-14
+
+### Added
+- `babysit watch`: live dashboard, redrawn every 2s. The `list` tree without archived sessions (numbers unchanged) plus account usage: one row per limit window with meter, % used, time to reset; signed-out agents fold into one line. Usage refreshes every 5 min in the background, read-only (no Codex app-server).
+
+### Removed
+- `babysit list --watch`: now exits 1 pointing at `babysit watch`.
+- Session list after detaching from or exiting a session (`babysit <agent>`, `babysit open`); only the re-attach or resume hint prints.
+
 ## 1.41.1 — 2026-10-14
 
 ### Fixed

@@ -78,7 +78,7 @@ import { cmd_resume, resolve_numbered_resume } from './resume.js'
 import { cmd_open } from './open.js'
 import { cmd_monitor } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
-import { cmd_list, format_session_status_label } from './list.js'
+import { format_session_status_label } from './list.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
 import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
 import { create_identity_reader } from '../sessions/identity.js'
@@ -1841,16 +1841,13 @@ async function start_session( cmd ) {
     // agent up from session metadata, so we don't need to pre-pend the agent
     // name.
     if( await has_session( session_name ) ) {
-        console.log( `\nDetached.` )
-        await cmd_list()
-        console.log( `Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
+        console.log( `\nDetached. Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
     } else {
         // Prefer the agent's own session id when the daemon captured it —
         // that's what the agent's CLI accepts for its native --resume flag,
         // and load_session knows how to resolve either form back to the record.
         const final = load_session( babysit_id ) || session_data
         const resume_id = final.agent_session_id || babysit_id
-        await cmd_list()
         console.log( `\nTo resume this session, run:\nbabysit resume ${ resume_id }` )
     }
 

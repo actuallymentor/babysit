@@ -475,65 +475,20 @@ describe( `list version notice`, () => {
 
 describe( `list --watch`, () => {
 
-    it( `redraws in place, clearing only right before each frame`, async () => {
-        const events = []
-        const output = await capture_console( () => cmd_list( {
-            version_check_fn: () => ( { latest: null, refresh: null } ),
-            flags: { watch: true },
-            watch_rounds: 2,
-            list_sessions_fn: async () => [ { name: `babysit_a`, attached: false, agent_status: `idle` } ],
-            list_stored_sessions_fn: () => [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` } ],
-            observe_activity_fn: async sessions => {
-                events.push( `observe` )
-                return sessions
-            },
-            write_fn: text => events.push( text ),
-            wait_fn: async ms => events.push( `wait ${ ms }` ),
-        } ) )
-
-        expect( events ).toEqual( [ `observe`, `\x1b[H\x1b[J`, `wait 2000`, `observe`, `\x1b[H\x1b[J`, `wait 2000` ] )
-        expect( output.match( /Active babysit sessions/g ) ).toHaveLength( 2 )
-        expect( output ).toContain( `Ctrl+C to stop` )
-    } )
-
-    it( `hides archived sessions but keeps global numbers`, async () => {
-        const output = await capture_console( () => cmd_list( {
-            version_check_fn: () => ( { latest: null, refresh: null } ),
-            flags: { watch: true },
-            watch_rounds: 1,
-            list_sessions_fn: async () => [
-                { name: `babysit_a`, attached: false, agent_status: `idle` },
-                { name: `babysit_old`, attached: false, agent_status: `idle` },
-                { name: `babysit_b`, attached: false, agent_status: `idle` },
-            ],
-            list_stored_sessions_fn: () => [
-                { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w` },
-                { tmux_session: `babysit_old`, name: `old`, agent: `codex`, babysit_id: `old`, pwd: `/w`, archived_at: `2026-01-01T00:00:00.000Z` },
-                { tmux_session: `babysit_b`, name: `b`, agent: `codex`, babysit_id: `b`, pwd: `/other` },
-            ],
-            observe_activity_fn: async sessions => sessions,
-            write_fn: () => {},
-            wait_fn: async () => {},
-        } ) )
-
-        expect( output ).not.toContain( `old` )
-        expect( output ).toMatch( /1\s+a\s/ )
-        expect( output ).toMatch( /3\s+b\s/ )
-    } )
-
-    it( `points at plain list when every active session is archived`, async () => {
-        const output = await capture_console( () => cmd_list( {
-            version_check_fn: () => ( { latest: null, refresh: null } ),
-            flags: { watch: true },
-            watch_rounds: 1,
-            list_sessions_fn: async () => [ { name: `babysit_old`, attached: false, agent_status: `idle` } ],
-            list_stored_sessions_fn: () => [ { tmux_session: `babysit_old`, name: `old`, agent: `codex`, babysit_id: `old`, pwd: `/w`, archived_at: `2026-01-01T00:00:00.000Z` } ],
-            observe_activity_fn: async sessions => sessions,
-            write_fn: () => {},
-            wait_fn: async () => {},
-        } ) )
-
-        expect( output ).toContain( `No unarchived babysit sessions. Run babysit list to see archived ones.` )
+    it( `is retired in favor of babysit watch`, async () => {
+        const original_error = console.error
+        const errors = []
+        console.error = line => errors.push( line )
+        try {
+            await cmd_list( { flags: { watch: true }, list_sessions_fn: async () => {
+                throw new Error( `listed` ) 
+            } } )
+        } finally {
+            console.error = original_error
+        }
+        expect( errors ).toEqual( [ `babysit list --watch is gone; run babysit watch` ] )
+        expect( process.exitCode ).toBe( 1 )
+        process.exitCode = 0
     } )
 
 } )

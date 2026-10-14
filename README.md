@@ -104,7 +104,8 @@ Idle rules do not start while waiting; manual input remains available.
 | Command | Effect |
 |---|---|
 | `babysit init [file.yaml]` | Write a commented default config; asks for the file name when none is given |
-| `babysit list [--all] [--watch]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names; `--watch` redraws every 2s with full colors and hides archived sessions, numbers unchanged (external `watch` drops 256-color codes) |
+| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
+| `babysit watch [--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged) plus account usage, one row per limit window (meter, % used, time to reset); usage refreshes every 5 min. Replaces `list --watch` |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
 | `babysit resume <id\|number> [flags]` | Restore saved session |

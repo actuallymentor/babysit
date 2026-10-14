@@ -92,7 +92,7 @@ Examples:
   babysit init review.yaml
   babysit codex --config review.yaml`,
 
-    list: () => `Usage: babysit list [--all] [--watch]
+    list: () => `Usage: babysit list [--all]
 
 Active sessions as a tree: workspace trunks with numbered leaves, colored status
 (idle grey, running green, waiting orange, stuck red), container CPU/MEM, and a
@@ -100,12 +100,25 @@ totals row. Numbers are what open, close, archive, and restart accept.
 
 Options:
   --all      Add tmux attachment, session IDs, and tmux names
-  --watch    Redraw every 2s; hides archived sessions, numbering unchanged
+
+For a live view with account usage, run babysit watch.
 
 Examples:
   babysit list
-  babysit list --all
-  babysit list --watch`,
+  babysit list --all`,
+
+    watch: () => `Usage: babysit watch [--all]
+
+Live dashboard, redrawn every 2s: the babysit list tree without archived
+sessions (numbers unchanged) plus account usage per agent, one row per limit
+window with a meter, % used and time to reset. Usage refreshes every 5 min.
+
+Options:
+  --all      Add tmux attachment, session IDs, and tmux names
+
+Examples:
+  babysit watch
+  babysit watch --all`,
 
     open: () => `Usage: babysit open [id|name|number]
 

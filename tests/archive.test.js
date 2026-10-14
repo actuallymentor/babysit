@@ -98,7 +98,6 @@ describe( `archived sessions`, () => {
             attach_session_fn: name => {
                 attached = name
             },
-            list_after_attach_fn: async () => {},
             update_session_fn: ( id, changes ) => updates.push( [ id, changes ] ),
             exit_fn: code => {
                 throw new Error( `Unexpected exit ${ code }` )
