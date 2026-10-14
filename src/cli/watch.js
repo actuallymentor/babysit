@@ -52,7 +52,7 @@ export const usage_bar = percent => {
 
 /**
  * One aligned row per limit, agent named on its first row only.
- * Signed-out agents fold into one dim line; problems keep a short reason.
+ * Credential-less agents fold into one dim line; problems keep a short reason.
  * @param {Object|null} report - collect_usage result, null while loading
  * @param {Object} [options]
  * @param {number} [options.now=Date.now()] - Epoch ms for reset countdowns and age
@@ -89,10 +89,13 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
             const percent = is_number( limit.used_percent ) ? limit.used_percent
                 : is_number( limit.remaining_percent ) ? 100 - limit.remaining_percent
                     : null
-            const amount = given( limit.used )
-                ? `${ decimals( limit.used ) }${ given( limit.limit ) ? ` / ${ decimals( limit.limit ) }` : `` }${ unit }`
-                : given( limit.remaining ) ? `${ decimals( limit.remaining ) }${ unit } left`
-                    : limit.unlimited ? `unlimited` : ``
+            // Unlimited rides along: `0 credits left` alone would read as exhausted.
+            const amount = [
+                given( limit.used )
+                    ? `${ decimals( limit.used ) }${ given( limit.limit ) ? ` / ${ decimals( limit.limit ) }` : `` }${ unit }`
+                    : given( limit.remaining ) ? `${ decimals( limit.remaining ) }${ unit } left` : null,
+                limit.unlimited ? `unlimited` : null,
+            ].filter( Boolean ).join( ` · ` )
 
             // A limit with nothing to show is noise on a dashboard.
             if( percent === null && !amount ) return
@@ -123,7 +126,8 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
         title,
         ...lines,
         ...notes.map( note => `  ${ note }` ),
-        ...signed_out.length ? [ paint( `  signed out: ${ signed_out.join( `, ` ) }`, `dim` ) ] : [],
+        // Keyring-only Codex logins land here too: their reader would rotate tokens.
+        ...signed_out.length ? [ paint( `  no credentials: ${ signed_out.join( `, ` ) }`, `dim` ) ] : [],
         ...failure,
     ]
 

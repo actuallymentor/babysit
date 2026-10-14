@@ -30,6 +30,7 @@ const report = {
             { name: `nothing reported` },
             { name: `codex / 300 min`, used_percent: 12, resets_at: `2026-10-14T16:00:00Z` },
             { name: `codex / 10080 min`, used_percent: 40, resets_at: null },
+            { name: `credit balance`, unit: `credits`, remaining: `0`, unlimited: true },
         ] },
         { agent: `opencode`, provider: `openrouter`, status: `error`, message: `HTTP 5\x0700`, limits: [] },
         { agent: `antigravity`, provider: `google`, status: `unauthenticated`, limits: [] },
@@ -66,8 +67,9 @@ describe( `format_usage_panel`, () => {
         expect( lines[3] ).toMatch( /extra usage\s+3\.46 \/ 20 USD$/ )
         expect( lines[4] ).toMatch( /^ {2}codex\s+5h\s+▰/ )
         expect( lines[5] ).toMatch( /7d\s+▰▰▰▰▱▱▱▱▱▱\s+40%$/ )
+        expect( lines[6] ).toMatch( /credit balance\s+0 credits left · unlimited$/ )
         expect( lines ).toContain( `  opencode/openrouter error HTTP 500` )
-        expect( lines ).toContain( `  signed out: antigravity` )
+        expect( lines ).toContain( `  no credentials: antigravity` )
         // Columns line up across agents.
         expect( lines[1].indexOf( `▰` ) ).toBe( lines[4].indexOf( `▰` ) )
     } )

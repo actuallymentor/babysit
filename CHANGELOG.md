@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.42.1 — 2026-10-14
+
+### Fixed
+- `babysit watch`: unlimited balances show `unlimited` next to the amount (`0 credits left` alone read as exhausted). The fold-up line reads `no credentials:`, not `signed out:`: keyring-only Codex logins land there because their reader can rotate tokens.
+
 ## 1.42.0 — 2026-10-14
 
 ### Added
