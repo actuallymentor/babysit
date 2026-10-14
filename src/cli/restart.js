@@ -4,7 +4,7 @@ import { cmd_resume } from './resume.js'
 import { agent_activity } from '../babysit/activity.js'
 import { capture_pane } from '../tmux/capture.js'
 import { list_sessions } from '../tmux/session.js'
-import { inspect_stored_sessions } from '../sessions/store.js'
+import { inspect_stored_sessions, load_session } from '../sessions/store.js'
 import { get_image_name } from '../docker/update.js'
 import { docker_command_prefix } from '../docker/run.js'
 import { run } from '../utils/exec.js'
@@ -102,6 +102,9 @@ const restart_session = async ( session, { force = false, detach = false }, {
         await resume( {
             verb: `resume`, agent: null, session_id: session.babysit_id,
             flags: {}, passthrough: session.launch_spec?.args || [], detached: detach,
+        } ).catch( error => {
+            // Past the close the session is down; say so, and how to get it back
+            throw Object.assign( new Error( `${ session.babysit_id } closed but did not resume (${ error.message }); run babysit resume ${ session.babysit_id }` ), { closed: true } )
         } )
     } finally {
         restore_environment()
@@ -120,7 +123,7 @@ const restart_session = async ( session, { force = false, detach = false }, {
  * @param {Object} cmd - Parsed command { session_id, flags: { force, detach } }
  * @param {Object} [options] - Injectable seams
  */
-export const cmd_restart = async ( cmd, { select = select_stored_session, select_all = unarchived_sessions, ...seams } = {} ) => {
+export const cmd_restart = async ( cmd, { select = select_stored_session, select_all = unarchived_sessions, load = load_session, ...seams } = {} ) => {
 
     const flags = cmd.flags || {}
     if( cmd.session_id !== `all` ) return restart_session( await select( cmd.session_id ), flags, seams )
@@ -129,15 +132,18 @@ export const cmd_restart = async ( cmd, { select = select_stored_session, select
     const print = seams.print || console.log
     if( !sessions.length ) return print( `No unarchived sessions to restart.` )
 
-    // One refusal (busy, sandbox) must not strand the rest. Attaching to many
-    // sessions makes no sense, so the batch is always detached.
+    // One refusal (busy, sandbox) must not strand the rest, but a failed
+    // resume might be the image, so stop before closing more sessions.
+    // Attaching to many sessions makes no sense: the batch is always detached.
     const failed = []
     for( const session of sessions ) {
         try {
-            await restart_session( session, { ...flags, detach: true }, seams )
+            // Reload: earlier restarts take minutes and stuck flags move meanwhile
+            await restart_session( load( session.babysit_id ) || session, { ...flags, detach: true }, seams )
         } catch ( error ) {
+            if( error.closed ) throw error
             failed.push( session.babysit_id )
-            log.warn( `Skipped ${ session.babysit_id }: ${ error.message }` )
+            print( `Skipped ${ session.babysit_id }: ${ error.message }` )
         }
     }
 

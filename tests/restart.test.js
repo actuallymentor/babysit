@@ -86,10 +86,25 @@ describe( `babysit restart`, () => {
     it( `restarts every unarchived session detached, skipping and reporting refusals`, async () => {
         const { events, seams } = harness()
         const sessions = [ session, { ...session, babysit_id: `s2`, modifiers: [ `sandbox` ] }, { ...session, babysit_id: `s3` } ]
-        await expect( cmd_restart( { session_id: `all`, flags: {} }, { ...seams, select_all: async () => sessions } ) )
+        await expect( cmd_restart( { session_id: `all`, flags: {} }, { ...seams, select_all: async () => sessions, load: () => null } ) )
             .rejects.toThrow( `1 of 3 sessions not restarted: s2` )
+        expect( events ).toContain( `Skipped s2: Sandbox sessions keep their conversation only inside the container; restarting would discard it.` )
         expect( events.filter( event => event.startsWith( `resume` ) ).map( event => event.split( ` ` ).slice( 0, 3 ).join( ` ` ) ) )
             .toEqual( [ `resume s1 detached=true`, `resume s3 detached=true` ] )
+
+        // A failed resume leaves that session closed: stop before closing the next one
+        const broken = harness()
+        broken.seams.resume = async () => {
+            throw new Error( `pull failed` ) 
+        }
+        await expect( cmd_restart( { session_id: `all`, flags: {} }, { ...broken.seams, select_all: async () => sessions, load: () => null } ) )
+            .rejects.toThrow( `s1 closed but did not resume (pull failed); run babysit resume s1` )
+        expect( broken.events.filter( event => event.startsWith( `close` ) ) ).toHaveLength( 1 )
+
+        // Fresh metadata wins: a session that turned stuck mid-batch is refused
+        const stale = harness()
+        await expect( cmd_restart( { session_id: `all`, flags: {} }, { ...stale.seams, select_all: async () => [ session ], load: () => ( { ...session, stuck_at: `now` } ) } ) )
+            .rejects.toThrow( `1 of 1 sessions not restarted` )
 
         const empty = harness()
         await cmd_restart( { session_id: `all`, flags: {} }, { ...empty.seams, select_all: async () => [] } )
