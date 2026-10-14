@@ -39,6 +39,22 @@ export const short_limit_name = ( name, agent ) => String( name )
     .trim()
 
 /**
+ * Share of a limit used: the provider's own percentage, else used ÷ limit.
+ * @param {Object} limit - Provider limit
+ * @returns {number|null} 0–100, or null when the limit is not metered
+ */
+export const limit_percent = limit => {
+
+    if( is_number( limit.used_percent ) ) return limit.used_percent
+    if( is_number( limit.remaining_percent ) ) return 100 - limit.remaining_percent
+
+    const used = Number( limit.used )
+    const cap = Number( limit.limit )
+    return given( limit.used ) && given( limit.limit ) && Number.isFinite( used ) && cap > 0 ? used / cap * 100 : null
+
+}
+
+/**
  * Ten-cell meter colored like `babysit usage`: calm, warning, red.
  * @param {number} percent - Used share, 0–100
  * @returns {string}
@@ -51,8 +67,8 @@ export const usage_bar = percent => {
 }
 
 /**
- * One aligned row per limit, agent named on its first row only.
- * Credential-less agents fold into one dim line; problems keep a short reason.
+ * One metered row per limit, agent named on its first row only.
+ * Credential-less agents are skipped; problems keep a short reason.
  * @param {Object|null} report - collect_usage result, null while loading
  * @param {Object} [options]
  * @param {number} [options.now=Date.now()] - Epoch ms for reset countdowns and age
@@ -69,7 +85,6 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
 
     const rows = []
     const notes = []
-    const signed_out = []
 
     report.agents.forEach( result => {
 
@@ -77,7 +92,8 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
         const label = safe_text( result.agent === `opencode` && result.provider ? `opencode/${ result.provider }` : result.agent )
         const first_row = rows.length
 
-        if( result.status === `unauthenticated` ) return signed_out.push( label )
+        // Agents without credentials are noise here; `babysit usage` lists them.
+        if( result.status === `unauthenticated` ) return
         if( result.status !== `ok` ) {
             const status = paint( result.status, result.status === `error` ? `red` : `yellow` )
             return notes.push( `${ label } ${ status } ${ paint( safe_text( result.message ), `dim` ) }` )
@@ -85,34 +101,21 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
 
         result.limits.forEach( limit => {
 
+            // Only metered limits make the dashboard: balances and lifetime spend stay in `babysit usage`.
+            const percent = limit_percent( limit )
+            if( percent === null ) return
+
             const unit = limit.unit ? ` ${ safe_text( limit.unit ) }` : ``
-            const percent = is_number( limit.used_percent ) ? limit.used_percent
-                : is_number( limit.remaining_percent ) ? 100 - limit.remaining_percent
-                    : null
-            // Unlimited rides along: `0 credits left` alone would read as exhausted.
-            const amount = [
-                given( limit.used )
-                    ? `${ decimals( limit.used ) }${ given( limit.limit ) ? ` / ${ decimals( limit.limit ) }` : `` }${ unit }`
-                    : given( limit.remaining ) ? `${ decimals( limit.remaining ) }${ unit } left` : null,
-                limit.unlimited ? `unlimited` : null,
-            ].filter( Boolean ).join( ` · ` )
-
-            // A limit with nothing to show is noise on a dashboard.
-            if( percent === null && !amount ) return
-
-            // Metered rows lead with the reset; amount-only rows make the amount the headline.
+            const amount = given( limit.used ) && given( limit.limit ) ? `${ decimals( limit.used ) } / ${ decimals( limit.limit ) }${ unit }` : null
             const reset = limit.resets_at ? relative_time( limit.resets_at, now ) : null
-            const tail = [
-                reset && paint( `↻ ${ reset.replace( /^in /, `` ) }`, `dim` ),
-                amount && paint( amount, percent === null ? null : `dim` ),
-            ].filter( Boolean ).join( `  ` )
+            const tail = [ reset && `↻ ${ reset.replace( /^in /, `` ) }`, amount ].filter( Boolean ).join( `  ` )
 
             rows.push( [
                 rows.length === first_row ? label : ``,
                 short_limit_name( safe_text( limit.name ), result.agent ),
-                percent === null ? `` : usage_bar( percent ),
-                percent === null ? `` : paint( `${ Math.round( percent ) }%`.padStart( 4 ), usage_color( percent ) ),
-                tail,
+                usage_bar( percent ),
+                paint( `${ Math.round( percent ) }%`.padStart( 4 ), usage_color( percent ) ),
+                paint( tail, `dim` ),
             ] )
 
         } )
@@ -126,8 +129,6 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
         title,
         ...lines,
         ...notes.map( note => `  ${ note }` ),
-        // Keyring-only Codex logins land here too: their reader would rotate tokens.
-        ...signed_out.length ? [ paint( `  no credentials: ${ signed_out.join( `, ` ) }`, `dim` ) ] : [],
         ...failure,
     ]
 
@@ -183,6 +184,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         await render_sessions_fn( {
             all: flags.all,
             hide_archived: true,
+            open_hint: false,
             before_print: () => write_fn( `\x1b[H\x1b[J` ),
         } )
         format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )

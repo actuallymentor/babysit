@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.42.2 — 2026-10-14
+
+### Changed
+- `babysit watch` usage shows metered limits only, each with a meter: OpenRouter daily budget and free-model requests now get bars from used ÷ limit. Credit balances, lifetime spend, the `no credentials` line and the `babysit open` hint are gone from the dashboard; `babysit usage` keeps the full detail.
+
 ## 1.42.1 — 2026-10-14
 
 ### Fixed

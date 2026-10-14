@@ -110,8 +110,9 @@ Examples:
     watch: () => `Usage: babysit watch [--all]
 
 Live dashboard, redrawn every 2s: the babysit list tree without archived
-sessions (numbers unchanged) plus account usage per agent, one row per limit
-window with a meter, % used and time to reset. Usage refreshes every 5 min.
+sessions (numbers unchanged) plus account usage per agent: one row per metered
+limit with a bar, % used and time to reset. Balances and lifetime spend stay in
+babysit usage. Usage refreshes every 5 min.
 
 Options:
   --all      Add tmux attachment, session IDs, and tmux names
