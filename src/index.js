@@ -14,6 +14,7 @@ import { launch_menu } from './cli/launcher.js'
 import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
+import { cmd_watch } from './cli/watch.js'
 import { cmd_init } from './cli/init.js'
 import { cmd_archive } from './cli/archive.js'
 import { cmd_open } from './cli/open.js'
@@ -37,7 +38,7 @@ import { run_usage } from './cli/usage.js'
 // are pure metadata reads, `__monitor` is a background daemon that inherits
 // the foreground's already-checked environment, and `update` runs its own
 // dep check inside `cmd_update`.
-const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `open`, `doctor`, `auth` ] )
+const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `watch`, `open`, `doctor`, `auth` ] )
 
 /**
  * Main entry point
@@ -152,6 +153,10 @@ const main = async () => {
 
     case `list`:
         await cmd_list( cmd )
+        break
+
+    case `watch`:
+        await cmd_watch( cmd )
         break
 
     case `init`:

@@ -237,8 +237,7 @@ export const attach_session = ( session_name, { exec_command = execSync } = {} )
             stdio: `inherit`,
         } )
     } catch ( error ) {
-        // Tmux can exit non-zero after a normal detach. Still return control
-        // so the caller can show the remaining sessions.
+        // Tmux can exit non-zero after a normal detach; that is not a failure.
         log.debug( `tmux attach exited: ${ error.message }` )
     }
 

@@ -94,9 +94,10 @@ export const parse_args = ( argv ) => {
         ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
         // Command-scoped: list and resume history/number selectors consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
-        all: ( verb === `list` || uses_resume_history ) && ( args.all || false ),
+        all: ( verb === `list` || verb === `watch` || uses_resume_history ) && ( args.all || false ),
         // `-n N` caps the resume history listing; numbered resumes ignore it.
         limit: resume_listing ? normalise_limit( args.n ) : null,
+        // `list --watch` is retired in favor of `babysit watch`; kept to explain the move.
         watch: verb === `list` && ( args.watch || false ),
         list: verb === `prune` && ( args.list || false ),
         name: normalise_session_name( args.name ),
@@ -133,6 +134,9 @@ export const parse_args = ( argv ) => {
     // Determine what the user wants to do
     // babysit list
     if( verb === `list` ) return { verb: `list`, agent: null, flags, passthrough: [] }
+
+    // babysit watch — live sessions + account usage
+    if( verb === `watch` ) return { verb: `watch`, agent: null, flags, passthrough: [] }
 
     // babysit init [file.yaml] — write the commented default config
     if( verb === `init` ) return { verb: `init`, agent: null, session_id: positionals[1] || null, flags, passthrough: [] }

@@ -387,79 +387,76 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
 }
 
 /**
- * List all active babysit sessions
- * @param {Object} [deps]
- * @param {Object} [deps.flags] - Parsed list display flags
- * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
- * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
- * @param {Function} [deps.observe_activity_fn] - Fresh pane activity observer
- * @param {Function} [deps.version_check_fn] - Newer-release lookup
- * @param {Function} [deps.wait_fn] - Delay between --watch redraws
- * @param {Function} [deps.write_fn] - Raw terminal writer for --watch
- * @param {number} [deps.watch_rounds] - Redraw count for --watch; endless by default
+ * Render the active-session tree once. Shared by `list` and `watch`.
+ * @param {Object} [options]
+ * @param {boolean} [options.all=false] - Diagnostic columns
+ * @param {boolean} [options.hide_archived=false] - Drop archived rows; numbers stay global
+ * @param {Function} [options.before_print] - Runs after sampling, right before output
+ * @param {Function} [options.list_sessions_fn] - Active tmux session loader
+ * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
+ * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
+ * @param {Function} [options.version_check_fn] - Newer-release lookup
  */
-export const cmd_list = async ( {
-    flags = {},
+export const render_active_sessions = async ( {
+    all = false,
+    hide_archived = false,
+    before_print = () => {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     observe_activity_fn = observe_session_activity,
     version_check_fn = newer_version_available,
-    wait_fn = delay,
-    write_fn = text => process.stdout.write( text ),
-    watch_rounds = Infinity,
 } = {} ) => {
 
+    const stored_sessions = list_stored_sessions_fn()
+    const ordered_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
+
+    // Numbers stay global so `babysit open <n>` means the same thing everywhere.
+    const is_archived = tmux => Boolean( stored_sessions.find( session => session.tmux_session === tmux.name )?.archived_at )
+    const tmux_sessions = hide_archived ? ordered_sessions.filter( tmux => !is_archived( tmux ) ) : ordered_sessions
+    const numbers = tmux_sessions.map( tmux => ordered_sessions.indexOf( tmux ) + 1 )
+
+    if( tmux_sessions.length === 0 ) {
+        before_print()
+        // Archived sessions still run; tell the watcher where they went.
+        console.log( ordered_sessions.length
+            ? `No unarchived babysit sessions. Run babysit list to see archived ones.`
+            : `No active babysit sessions.` )
+        return
+    }
+
+    const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
+    before_print()
+
     // CPU/MEM come from the cache each session's monitor keeps; no Docker call here.
-    const print_sessions = ( observed_sessions, stored_sessions, numbers ) => print_active_sessions_table( observed_sessions, stored_sessions, {
+    print_active_sessions_table( observed_sessions, stored_sessions, {
         numbered: true,
         numbers,
         show_flags: true,
         show_usage: true,
-        all: flags.all,
+        all,
     } )
 
     // Cached lookup: never a network wait in front of the table.
-    const print_version_notice = () => {
-        const { latest } = version_check_fn()
-        if( latest ) console.log( paint( `New babysit version available: ${ latest } (run babysit update)`, `orange` ) + `\n` )
+    const { latest } = version_check_fn()
+    if( latest ) console.log( paint( `New babysit version available: ${ latest } (run babysit update)`, `orange` ) + `\n` )
+
+}
+
+/**
+ * List all active babysit sessions
+ * @param {Object} [cmd] - Parsed command
+ * @param {Object} [cmd.flags] - Parsed list display flags
+ * @param {Object} [deps] - render_active_sessions seams, flattened into cmd for tests
+ */
+export const cmd_list = async ( { flags = {}, ...deps } = {} ) => {
+
+    // The live view moved to `babysit watch`.
+    if( flags.watch ) {
+        console.error( `babysit list --watch is gone; run babysit watch` )
+        process.exitCode = 1
+        return
     }
 
-    const render = async ( { before_print = () => {} } = {} ) => {
-
-        const stored_sessions = list_stored_sessions_fn()
-        const ordered_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
-
-        // --watch is a live dashboard: archived sessions are noise there. Numbers
-        // stay global so `babysit open <n>` means the same thing as in a plain list.
-        const is_archived = tmux => Boolean( stored_sessions.find( session => session.tmux_session === tmux.name )?.archived_at )
-        const tmux_sessions = flags.watch ? ordered_sessions.filter( tmux => !is_archived( tmux ) ) : ordered_sessions
-        const numbers = tmux_sessions.map( tmux => ordered_sessions.indexOf( tmux ) + 1 )
-
-        if( tmux_sessions.length === 0 ) {
-            before_print()
-            // Archived sessions still run; tell the watcher where they went.
-            console.log( ordered_sessions.length
-                ? `No unarchived babysit sessions. Run babysit list to see archived ones.`
-                : `No active babysit sessions.` )
-            return
-        }
-
-        const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
-        before_print()
-        print_sessions( observed_sessions, stored_sessions, numbers )
-        print_version_notice()
-
-    }
-
-    if( !flags.watch ) return render()
-
-    // --watch redraws in place on the real terminal, so every color survives;
-    // external `watch` pipes the output and older versions drop 256-color codes.
-    // Clearing only right before printing keeps the old frame up while sampling.
-    for( let round = 0; round < watch_rounds; round++ ) {
-        await render( { before_print: () => write_fn( `\x1b[H\x1b[J` ) } )
-        console.log( `Refreshing every 2s; Ctrl+C to stop.` )
-        await wait_fn( 2_000 )
-    }
+    return render_active_sessions( { ...deps, all: flags.all } )
 
 }

@@ -1,7 +1,7 @@
 import { log } from '../utils/log.js'
 import { has_session, list_sessions, attach_session } from '../tmux/session.js'
 import { list_stored_sessions, update_session } from '../sessions/store.js'
-import { cmd_list, order_active_sessions, print_active_sessions_table } from './list.js'
+import { order_active_sessions, print_active_sessions_table } from './list.js'
 
 /**
  * Find active tmux sessions whose stored Babysit metadata points at a working directory.
@@ -31,21 +31,11 @@ export const active_sessions_for_pwd = ( pwd, tmux_sessions, stored_sessions ) =
  * @param {string} session_name - Tmux session name
  * @param {Object} deps - Attach dependencies
  * @param {Function} deps.attach_session_fn - Tmux attach helper
- * @param {Function} deps.list_after_attach_fn - Active session list command
  */
-const attach = async ( session_name, {
-    attach_session_fn,
-    list_after_attach_fn,
-} ) => {
+const attach = async ( session_name, { attach_session_fn } ) => {
 
     log.info( `Attaching to session: ${ session_name }` )
-    const client_exited = await attach_session_fn( session_name )
-
-    // The production attach helper returns true after the foreground tmux
-    // client exits, whether the user detached or the agent ended.
-    if( client_exited === true ) {
-        await list_after_attach_fn()
-    }
+    await attach_session_fn( session_name )
 
 }
 
@@ -106,7 +96,6 @@ const open_current_directory_session = async ( {
  * @param {Function} [deps.list_sessions_fn] - Active tmux session loader
  * @param {Function} [deps.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [deps.attach_session_fn] - Tmux attach helper
- * @param {Function} [deps.list_after_attach_fn] - Active session list command
  * @param {Function} [deps.update_session_fn] - Session record writer, used to unarchive
  * @param {Function} [deps.exit_fn] - Process exit helper
  * @param {string} [deps.cwd] - Directory used for zero-arg matching
@@ -116,7 +105,6 @@ export const cmd_open = async ( cmd, {
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     attach_session_fn = attach_session,
-    list_after_attach_fn = cmd_list,
     update_session_fn = update_session,
     exit_fn = process.exit,
     cwd = process.cwd(),
@@ -128,7 +116,7 @@ export const cmd_open = async ( cmd, {
     const attach_selected_session = ( session_name, stored = [] ) => {
         const archived = stored.find( session => session.tmux_session === session_name && session.archived_at )
         if( archived ) update_session_fn( archived.babysit_id, { archived_at: null } )
-        return attach( session_name, { attach_session_fn, list_after_attach_fn } )
+        return attach( session_name, { attach_session_fn } )
     }
 
     if( !session_id ) {

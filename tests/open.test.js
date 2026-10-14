@@ -211,11 +211,12 @@ describe( `cmd_open without a session id`, () => {
 
 describe( `cmd_open with a session id`, () => {
 
-    it( `runs the list command after the user detaches`, async () => {
+    it( `returns to the shell without printing the session list`, async () => {
 
         const events = []
-        let list_arguments = null
-
+        const logged = []
+        const original_log = console.log
+        console.log = line => logged.push( line )
         await cmd_open( { session_id: `babysit_direct_codex_1` }, {
             has_session_fn: async () => {
                 events.push( `live` )
@@ -225,29 +226,10 @@ describe( `cmd_open with a session id`, () => {
                 events.push( `attach` )
                 return true
             },
-            list_after_attach_fn: async ( ...args ) => {
-                events.push( `list` )
-                list_arguments = args
-            },
-        } )
+        } ).finally( () => console.log = original_log )
 
-        expect( events ).toEqual( [ `live`, `attach`, `list` ] )
-        expect( list_arguments ).toEqual( [] )
-
-    } )
-
-    it( `lists remaining sessions when the attached session ended`, async () => {
-
-        const live_results = [ true, false ]
-        let list_calls = 0
-
-        await cmd_open( { session_id: `babysit_direct_codex_1` }, {
-            has_session_fn: async () => live_results.shift(),
-            attach_session_fn: () => true,
-            list_after_attach_fn: async () => list_calls++,
-        } )
-
-        expect( list_calls ).toBe( 1 )
+        expect( events ).toEqual( [ `live`, `attach` ] )
+        expect( logged ).toEqual( [] )
 
     } )
 
