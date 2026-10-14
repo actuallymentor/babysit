@@ -1,7 +1,10 @@
 import { close_session, select_stored_session, use_launch_environment } from './recover.js'
+import { order_active_sessions } from './list.js'
 import { cmd_resume } from './resume.js'
 import { agent_activity } from '../babysit/activity.js'
 import { capture_pane } from '../tmux/capture.js'
+import { list_sessions } from '../tmux/session.js'
+import { inspect_stored_sessions } from '../sessions/store.js'
 import { get_image_name } from '../docker/update.js'
 import { docker_command_prefix } from '../docker/run.js'
 import { run } from '../utils/exec.js'
@@ -40,15 +43,26 @@ export const restart_blocker = session => {
 const short_id = id => String( id || `` ).replace( /^sha256:/, `` ).slice( 0, 12 ) || `unknown`
 
 /**
- * Restart a running session on the current image without losing the
- * conversation: close it gracefully (monitor stops, credentials flush back to
- * the host, container removed), then resume it by its native agent id.
- * The agent must show an idle or waiting control; `--force` overrides.
- * @param {Object} cmd - Parsed command { session_id, flags: { force, detach } }
+ * Stored sessions behind every live, unarchived tmux session, in list order.
+ * @param {Object} [options] - Injectable seams
+ * @returns {Promise<Object[]>}
+ */
+export const unarchived_sessions = async ( { inspect_records = inspect_stored_sessions, sessions = list_sessions } = {} ) => {
+
+    const stored = inspect_records().records.map( record => record.session )
+    return order_active_sessions( await sessions( { strict: true } ), stored )
+        .map( tmux => stored.find( session => session.tmux_session === tmux.name ) )
+        .filter( session => session && !session.archived_at )
+
+}
+
+/**
+ * Close and resume one stored session on the current image.
+ * @param {Object} session - Stored session
+ * @param {Object} flags - { force, detach }
  * @param {Object} [options] - Injectable seams
  */
-export const cmd_restart = async ( cmd, {
-    select = select_stored_session,
+const restart_session = async ( session, { force = false, detach = false }, {
     capture = capture_pane,
     activity = agent_activity,
     close = close_session,
@@ -57,9 +71,6 @@ export const cmd_restart = async ( cmd, {
     launch_environment = use_launch_environment,
     print = console.log,
 } = {} ) => {
-
-    const session = await select( cmd.session_id )
-    const { force = false, detach = false } = cmd.flags || {}
 
     // Sandbox loss is unconditional; the rest is the user's call with --force.
     const blocker = restart_blocker( session )
@@ -97,5 +108,39 @@ export const cmd_restart = async ( cmd, {
     }
 
     print( `Restarted ${ session.babysit_id } on ${ image_note }.` )
+
+}
+
+/**
+ * Restart a running session on the current image without losing the
+ * conversation: close it gracefully (monitor stops, credentials flush back to
+ * the host, container removed), then resume it by its native agent id.
+ * The agent must show an idle or waiting control; `--force` overrides.
+ * `all` restarts every unarchived session detached, skipping refusals.
+ * @param {Object} cmd - Parsed command { session_id, flags: { force, detach } }
+ * @param {Object} [options] - Injectable seams
+ */
+export const cmd_restart = async ( cmd, { select = select_stored_session, select_all = unarchived_sessions, ...seams } = {} ) => {
+
+    const flags = cmd.flags || {}
+    if( cmd.session_id !== `all` ) return restart_session( await select( cmd.session_id ), flags, seams )
+
+    const sessions = await select_all()
+    const print = seams.print || console.log
+    if( !sessions.length ) return print( `No unarchived sessions to restart.` )
+
+    // One refusal (busy, sandbox) must not strand the rest. Attaching to many
+    // sessions makes no sense, so the batch is always detached.
+    const failed = []
+    for( const session of sessions ) {
+        try {
+            await restart_session( session, { ...flags, detach: true }, seams )
+        } catch ( error ) {
+            failed.push( session.babysit_id )
+            log.warn( `Skipped ${ session.babysit_id }: ${ error.message }` )
+        }
+    }
+
+    if( failed.length ) throw new Error( `${ failed.length } of ${ sessions.length } sessions not restarted: ${ failed.join( `, ` ) }` )
 
 }

@@ -1,9 +1,10 @@
 import { last_client_activity } from '../control/stuck.js'
 import { log } from '../utils/log.js'
 
-// Short on purpose: an agent that is fine answers with a summary, a stalled
-// one usually picks its work back up.
-export const WATCHDOG_NUDGE = `Status report`
+// Asks for action, not a summary: a stalled agent collects finished work and
+// resumes, one that is fine answers with a single word.
+export const WATCHDOG_NUDGE = `You look stalled. Check for background agents/shells that already finished: collect their results and clean up. `
+    + `If you stopped for no good reason, resume without asking me. If you're genuinely done or waiting on me, reply "idle" and nothing else.`
 
 /**
  * Watch for agents that went quiet without reason. A quiet stretch starts at
