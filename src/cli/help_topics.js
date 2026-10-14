@@ -127,12 +127,13 @@ Examples:
   babysit close 2
   babysit close abc-123`,
 
-    restart: () => `Usage: babysit restart <number|session_id> [--force] [--detach]
+    restart: () => `Usage: babysit restart <number|session_id|all> [--force] [--detach]
 
 Closes the session gracefully and resumes it on the current image, continuing
 the agent's own conversation id. Use it after babysit update. Refuses unless
 the agent is idle or waiting and its native session id was captured.
-Sandbox sessions cannot be restarted.
+Sandbox sessions cannot be restarted. "all" restarts every unarchived active
+session detached, skipping (and reporting) any that refuse.
 
 Options:
   --force    Restart even when busy or without a captured id
@@ -141,6 +142,7 @@ Options:
 Examples:
   babysit restart 1
   babysit restart 1 --detach
+  babysit restart all
   babysit restart abc-123 --force`,
 
     archive: () => `Usage: babysit archive <number|session_id|name>

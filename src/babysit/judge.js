@@ -57,6 +57,7 @@ Parked on purpose (do not nudge):
 - it finished its task and reported the result
 - it asked the human a question, or needs a decision, approval, credentials, or other input only the human can give
 - it is deliberately waiting on long-running work that is visibly still in progress
+- its latest reply is just "idle", answering an earlier nudge
 
 Stalled (nudge):
 - it said it would wait for subagents, background tasks, or tools that have since finished (e.g. "Completed", "finished", no running indicators left)

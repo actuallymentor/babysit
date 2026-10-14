@@ -257,6 +257,9 @@ describe( `judge`, () => {
         expect( prompt ).toContain( `no work for 61 minutes` )
         expect( prompt ).toContain( `still lists background` )
         expect( prompt ).toContain( `last line\n</terminal>` )
+        // The nudge's opt-out reply must read as parked, or idle agents get nudged every stretch
+        expect( WATCHDOG_NUDGE ).toContain( `reply "idle"` )
+        expect( prompt ).toContain( `just "idle", answering an earlier nudge` )
         expect( prompt.length ).toBeLessThan( 26_000 )
     } )
 

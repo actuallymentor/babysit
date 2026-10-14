@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { cmd_restart, local_image_id, restart_blocker } from '../src/cli/restart.js'
+import { cmd_restart, local_image_id, restart_blocker, unarchived_sessions } from '../src/cli/restart.js'
 import { parse_args } from '../src/cli/parse.js'
 import { clipboard_command } from '../src/tmux/session.js'
 
@@ -83,6 +83,32 @@ describe( `babysit restart`, () => {
         await cmd_restart( { session_id: `1`, flags: { force: true } }, harness( { overrides: { agent_session_id: null } } ).seams )
     } )
 
+    it( `restarts every unarchived session detached, skipping and reporting refusals`, async () => {
+        const { events, seams } = harness()
+        const sessions = [ session, { ...session, babysit_id: `s2`, modifiers: [ `sandbox` ] }, { ...session, babysit_id: `s3` } ]
+        await expect( cmd_restart( { session_id: `all`, flags: {} }, { ...seams, select_all: async () => sessions } ) )
+            .rejects.toThrow( `1 of 3 sessions not restarted: s2` )
+        expect( events.filter( event => event.startsWith( `resume` ) ).map( event => event.split( ` ` ).slice( 0, 3 ).join( ` ` ) ) )
+            .toEqual( [ `resume s1 detached=true`, `resume s3 detached=true` ] )
+
+        const empty = harness()
+        await cmd_restart( { session_id: `all`, flags: {} }, { ...empty.seams, select_all: async () => [] } )
+        expect( empty.events ).toEqual( [ `No unarchived sessions to restart.` ] )
+    } )
+
+    it( `selects live, unarchived stored sessions only`, async () => {
+        const stored = [
+            { babysit_id: `a`, tmux_session: `babysit_a`, pwd: `/w` },
+            { babysit_id: `b`, tmux_session: `babysit_b`, pwd: `/w`, archived_at: `2026-10-01` },
+            { babysit_id: `c`, tmux_session: `babysit_c`, pwd: `/w` },
+        ]
+        const selected = await unarchived_sessions( {
+            inspect_records: () => ( { records: stored.map( session => ( { session } ) ) } ),
+            sessions: async () => [ { name: `babysit_a` }, { name: `babysit_b` }, { name: `babysit_x` } ],
+        } )
+        expect( selected.map( session => session.babysit_id ) ).toEqual( [ `a` ] )
+    } )
+
     it( `reads the local image id and tolerates a missing image`, async () => {
         expect( await local_image_id( { run_command: async () => `sha256:abc\n` } ) ).toBe( `sha256:abc` )
         expect( await local_image_id( { run_command: async () => {
@@ -94,6 +120,7 @@ describe( `babysit restart`, () => {
         expect( parse_args( [ `restart`, `3`, `--force` ] ) ).toMatchObject( { verb: `restart`, session_id: `3`, flags: { force: true, detach: false } } )
         expect( parse_args( [ `restart`, `--force`, `3` ] ) ).toMatchObject( { session_id: `3`, flags: { force: true } } )
         expect( parse_args( [ `restart`, `--detach`, `s1` ] ) ).toMatchObject( { session_id: `s1`, flags: { detach: true } } )
+        expect( parse_args( [ `restart`, `all`, `--force` ] ) ).toMatchObject( { session_id: `all`, flags: { force: true } } )
         expect( () => parse_args( [ `restart` ] ) ).toThrow( `Usage: babysit restart` )
         expect( () => parse_args( [ `restart`, `3`, `--yolo` ] ) ).toThrow( `Unknown restart argument: --yolo` )
     } )

@@ -110,7 +110,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
 | `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
-| `babysit restart <number or id> [--force] [--detach]` | Close gracefully and resume on the current image, continuing the agent by its native id. Refuses unless the agent shows an idle or waiting control and a native session id was captured; `--force` overrides both, `--detach` returns instead of attaching. Sandbox sessions cannot be restarted |
+| `babysit restart <number, id, or all> [--force] [--detach]` | Close gracefully and resume on the current image, continuing the agent by its native id. Refuses unless the agent shows an idle or waiting control and a native session id was captured; `--force` overrides both, `--detach` returns instead of attaching. Sandbox sessions cannot be restarted. `all` restarts every unarchived active session detached, skipping and reporting refusals |
 | `babysit archive <number, id or name>` | Dim the session and sink it to the bottom of its workspace; a workspace whose sessions are all archived sinks to the bottom of the list. `babysit open` un-archives |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Interactively prune unused Docker data and managed clones |
@@ -369,7 +369,7 @@ babysit:
 **Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes.
 After `watchdog_idle_s` idle (30 min) or `watchdog_waiting_s` waiting (60 min), Claude Haiku reads the last 150 terminal lines
 inside the session container (Codex as fallback) and decides: parked on purpose (finished, asked you something, real work still running)
-or stalled. Stalled → types `Status report`. One judgment per quiet stretch, so a session left alone for days gets one cheap check
+or stalled. Stalled → types a nudge: collect finished background work, resume, or reply `idle`. One judgment per quiet stretch, so a session left alone for days gets one cheap check
 and no message unless it stalled. Skipped while `stuck`, and for idle when an idle rule or `--loop` already nudges. Typing restarts the stretch.
 Verdicts are in the monitor log.
 

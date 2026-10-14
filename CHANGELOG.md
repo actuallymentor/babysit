@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.41.0 — 2026-10-14
+
+### Added
+- `babysit restart all`: restarts every unarchived active session, detached. Refusals (busy, sandbox, no native id) are skipped and listed; `--force` applies to all.
+
+### Changed
+- Watchdog nudge asks for action instead of `Status report`: collect finished background agents/shells and clean up, resume without asking, or reply `idle`. Fewer long summaries from healthy agents; the judge treats an `idle` reply as parked.
+
 ## 1.40.0 — 2026-10-13
 
 ### Added

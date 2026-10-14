@@ -26,7 +26,7 @@ ${ comment_block( initial_prompt ) }
 #     idle_timeout_s: 300
 #
 #     # Seconds an agent may sit idle, or waiting on background work, before a cheap
-#     # LLM reads its screen and types "Status report" if it stalled mid-task.
+#     # LLM reads its screen and nudges it to resume if it stalled mid-task.
 #     # Judged once per quiet stretch; typing into the session restarts it. 0 disables.
 #     watchdog_idle_s: 1800
 #     watchdog_waiting_s: 3600
