@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { cmd_watch, format_usage_panel, short_limit_name, USAGE_REFRESH_MS } from '../src/cli/watch.js'
+import { cmd_watch, format_usage_panel, limit_percent, short_limit_name, USAGE_REFRESH_MS } from '../src/cli/watch.js'
 import { render_active_sessions } from '../src/cli/list.js'
 
 const capture_console = async fn => {
@@ -59,19 +59,34 @@ describe( `format_usage_panel`, () => {
         expect( format_usage_panel( null, { now: NOW } ) ).toEqual( [ `Account usage · loading…` ] )
     } )
 
-    it( `renders one aligned row per limit with meters and resets`, () => {
+    it( `renders one metered row per limit, dropping balances and signed-out agents`, () => {
         const lines = format_usage_panel( report, { now: NOW } )
         expect( lines[0] ).toBe( `Account usage · 2m ago` )
         expect( lines[1] ).toMatch( /^ {2}claude\s+5h\s+▰▰▰▱▱▱▱▱▱▱\s+34%\s+↻ 2h 10m$/ )
         expect( lines[2] ).toMatch( /^ {2}\s+7d opus\s+▰▰▰▰▰▰▰▰▱▱\s+81%\s+↻ 3d 4h$/ )
-        expect( lines[3] ).toMatch( /extra usage\s+3\.46 \/ 20 USD$/ )
+        // No provider percentage: used ÷ limit drives the meter.
+        expect( lines[3] ).toMatch( /extra usage\s+▰▰▱▱▱▱▱▱▱▱\s+17%\s+3\.46 \/ 20 USD$/ )
         expect( lines[4] ).toMatch( /^ {2}codex\s+5h\s+▰/ )
         expect( lines[5] ).toMatch( /7d\s+▰▰▰▰▱▱▱▱▱▱\s+40%$/ )
-        expect( lines[6] ).toMatch( /credit balance\s+0 credits left · unlimited$/ )
-        expect( lines ).toContain( `  opencode/openrouter error HTTP 500` )
-        expect( lines ).toContain( `  no credentials: antigravity` )
+        expect( lines[6] ).toBe( `  opencode/openrouter error HTTP 500` )
+        expect( lines ).toHaveLength( 7 )
+        expect( lines.join( `\n` ) ).not.toMatch( /credit|antigravity|lifetime/ )
         // Columns line up across agents.
         expect( lines[1].indexOf( `▰` ) ).toBe( lines[4].indexOf( `▰` ) )
+    } )
+
+} )
+
+describe( `limit_percent`, () => {
+
+    it( `prefers provider percentages, then used over limit`, () => {
+        expect( limit_percent( { used_percent: 12 } ) ).toBe( 12 )
+        expect( limit_percent( { remaining_percent: 70 } ) ).toBe( 30 )
+        expect( limit_percent( { used: 0, limit: 20 } ) ).toBe( 0 )
+        expect( limit_percent( { used: 250, limit: `1000` } ) ).toBe( 25 )
+        expect( limit_percent( { used: 26.39 } ) ).toBeNull()
+        expect( limit_percent( { remaining: `242`, unlimited: true } ) ).toBeNull()
+        expect( limit_percent( { used: 5, limit: 0 } ) ).toBeNull()
     } )
 
 } )
@@ -90,8 +105,8 @@ describe( `cmd_watch`, () => {
                 expect( await options.codex_read() ).toBeNull()
                 return report
             },
-            render_sessions_fn: async ( { hide_archived, before_print } ) => {
-                events.push( `render ${ hide_archived }` )
+            render_sessions_fn: async ( { hide_archived, open_hint, before_print } ) => {
+                events.push( `render ${ hide_archived } ${ open_hint }` )
                 before_print()
             },
             write_fn: text => events.push( JSON.stringify( text ) ),
@@ -102,7 +117,7 @@ describe( `cmd_watch`, () => {
         } ) )
 
         expect( events.filter( event => event === `collect` ) ).toHaveLength( 2 )
-        expect( events.filter( event => event === `render true` ) ).toHaveLength( 3 )
+        expect( events.filter( event => event === `render true false` ) ).toHaveLength( 3 )
         expect( events ).toContain( JSON.stringify( `\x1b[H\x1b[J` ) )
         expect( output ).toContain( `claude` )
         expect( output ).toContain( `Ctrl+C to stop` )

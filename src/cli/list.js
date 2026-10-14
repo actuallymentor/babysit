@@ -302,6 +302,7 @@ export const usage_totals_row = ( headers, usages ) => {
  * @param {Object} [options]
  * @param {string} [options.title] - Tree title
  * @param {boolean} [options.numbered=false] - Show active-list selectors
+ * @param {boolean} [options.open_hint=numbered] - Print the `babysit open` hint under numbered trees
  * @param {number[]} [options.numbers] - Global selectors for a filtered tree
  * @param {boolean} [options.show_flags=false] - Show stored launch modifiers
  * @param {boolean} [options.show_usage=false] - Show cached container CPU/MEM and a totals row
@@ -311,6 +312,7 @@ export const usage_totals_row = ( headers, usages ) => {
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     title = `Active babysit sessions:`,
     numbered = false,
+    open_hint = numbered,
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
     show_flags = false,
     show_usage = false,
@@ -382,7 +384,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     }
 
     console.log( `` )
-    if( numbered ) console.log( `Open one with: babysit open <number>\n` )
+    if( open_hint ) console.log( `Open one with: babysit open <number>\n` )
 
 }
 
@@ -391,6 +393,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Object} [options]
  * @param {boolean} [options.all=false] - Diagnostic columns
  * @param {boolean} [options.hide_archived=false] - Drop archived rows; numbers stay global
+ * @param {boolean} [options.open_hint=true] - Print the `babysit open` hint
  * @param {Function} [options.before_print] - Runs after sampling, right before output
  * @param {Function} [options.list_sessions_fn] - Active tmux session loader
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
@@ -400,6 +403,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
 export const render_active_sessions = async ( {
     all = false,
     hide_archived = false,
+    open_hint = true,
     before_print = () => {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
@@ -433,6 +437,7 @@ export const render_active_sessions = async ( {
         numbers,
         show_flags: true,
         show_usage: true,
+        open_hint,
         all,
     } )
 
