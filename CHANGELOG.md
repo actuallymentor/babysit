@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.41.1 — 2026-10-14
+
+### Fixed
+- `babysit restart all` stops at the first session that closed but failed to resume (e.g. a broken image) instead of closing the rest, and names the `babysit resume` command to recover it. Skip reasons now print at the default log level; each session's metadata is reloaded right before its turn.
+
 ## 1.41.0 — 2026-10-14
 
 ### Added
