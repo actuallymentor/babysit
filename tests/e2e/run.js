@@ -631,8 +631,8 @@ babysit:
         `tmux status bar has the wrong session identity: ${ status_label.trim() }`
     )
     ensure( status_position.trim() === `bottom`, `tmux status bar is not at the bottom` )
-    ensure( session.launch_stdout.includes( `Active babysit sessions:` ), `detach did not run babysit list` )
-    ensure( session.launch_stdout.includes( `feature 1` ), `detach list omitted the current session` )
+    ensure( !session.launch_stdout.includes( `Active babysit sessions:` ), `detach printed babysit list` )
+    ensure( session.launch_stdout.includes( `Detached. Re-attach with:` ), `detach omitted the re-attach hint` )
 
     await wait_until( `initial prompt marker`, () => existsSync( join( workspace, `e2e-initial-prompt.txt` ) ) )
     await wait_until( `monitor command marker`, () => existsSync( join( workspace, `e2e-monitor-command.txt` ) ) )
