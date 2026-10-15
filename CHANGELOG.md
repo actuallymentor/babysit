@@ -4,6 +4,7 @@
 
 ### Fixed
 - YOLO: also answer Claude 2.1.296's bypass-immune `This shell -c script runs rm and could not be checked` prompt, including from subagents (`Bash command · from the <agent>` header, boxed command). It has no auto-deny countdown, so it blocked sessions until answered. Prompts caused by a person's deny rule stay manual.
+- YOLO approval reads the dialog strictly from the pane bottom: question, Yes, No and footer must be the last four lines, and the reason must sit below the command box. Earlier versions could be tricked by an older dialog still visible above, or by warning text inside the command.
 
 ## 1.42.2 — 2026-10-14
 
