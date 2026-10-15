@@ -31,8 +31,8 @@ ${ comment_block( initial_prompt ) }
 #     watchdog_idle_s: 1800
 #     watchdog_waiting_s: 3600
 #
-#     # YOLO only: answer Claude's bypass-immune "Dangerous rm operation" prompt with Yes.
-#     # false lets Claude auto-deny it.
+#     # YOLO only: answer Claude's bypass-immune rm prompts ("Dangerous rm operation", unchecked shell -c scripts) with Yes.
+#     # false leaves them to a person.
 #     yolo_approve_dangerous_commands: true
 #
 #     # Mount Docker volumes over dependency folders (node_modules and friends) so the

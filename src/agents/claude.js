@@ -57,14 +57,29 @@ const is_initial_prompt_ready = output => {
 //      2. No
 //    Esc to cancel · Tab to amend
 //
+// 2.1.296 adds a sibling for `sh -c` scripts it cannot parse. It has no
+// auto-deny countdown, so it blocks until answered. Subagent calls suffix the
+// header and box the command below its description:
+//
+//    Bash command · from the general-purpose agent
+//    <description>
+//    ╌╌╌╌
+//     │ <command>
+//    ╌╌╌╌
+//    This shell -c script runs rm and could not be checked
+//
+// The "A permission rule denies a command in this shell -c script" variant
+// stays manual: it means a person's deny rule matched.
+//
 // tests/e2e/claude-dangerous-dialog.js reports when this layout drifts.
 export const DANGEROUS_DIALOG = {
-    reason: /^\s*│?\s*(Dangerous rm(?:dir)? operation\b.*?)\s*$/,
+    reason: /^\s*│?\s*(Dangerous rm(?:dir)? operation\b.*?|This shell -c script runs rm(?:dir)? and could not be checked)\s*$/,
     question: /^\s*Do you want to proceed\?\s*$/,
     approve: /^\s*❯\s*1\.\s+Yes\s*$/,
     deny: /^\s*2\.\s+No\s*$/,
     footer: /^\s*Esc to cancel\b/,
-    header: /^\s*Bash command\s*$/,
+    header: /^\s*Bash command\b/,
+    box: /^\s*╌+\s*$/,
 }
 
 /**
@@ -90,7 +105,11 @@ export const find_dangerous_command_dialog = screen => {
     if( reason_index < 0 ) return null
 
     const header = lines.findLastIndex( ( line, index ) => index < reason_index && DANGEROUS_DIALOG.header.test( line ) )
-    const command = header < 0 ? `` : lines[ header + 1 ].trim().replace( /^│\s*/, `` )
+
+    // Boxed layout: command opens the box; plain layout: command follows the header
+    const box = lines.findIndex( ( line, index ) => index > header && index < reason_index && DANGEROUS_DIALOG.box.test( line ) )
+    const command_line = box >= 0 ? box + 1 : header + 1
+    const command = header < 0 ? `` : lines[ command_line ].trim().replace( /^│\s*/, `` )
 
     return { command, reason: lines[ reason_index ].match( DANGEROUS_DIALOG.reason )[ 1 ] }
 

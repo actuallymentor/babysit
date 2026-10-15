@@ -7,6 +7,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 
 export const CLAUDE_DIALOG_BINARY_CONTRACT = [
     { label: `reason template "Dangerous \${…} operation"`, pattern: /Dangerous \$\{\w+\} operation/, required: true },
+    { label: `shell -c reason "This shell -c script runs rm and could not be checked"`, pattern: /This shell -c script runs rm and could not be checked/, required: false },
     { label: `question "Do you want to proceed?"`, pattern: /Do you want to proceed\?/, required: true },
     { label: `footer "Esc to cancel · Tab to amend"`, pattern: /Esc to cancel/, required: true },
     { label: `dangerousRemoval is bypass-immune (why YOLO sees the prompt)`, pattern: /dangerousRemoval:\{bypassImmune:(?:!0|true)/, required: false },

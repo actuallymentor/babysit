@@ -9,6 +9,8 @@ import { check_claude_binary, find_claude_binary } from './e2e/assets/claude-dia
 const fixture = name => readFileSync( new URL( `./fixtures/claude/${ name }`, import.meta.url ), `utf8` )
 const glob = fixture( `dangerous-rm-glob.txt` )
 const substitution = fixture( `dangerous-rm-substitution.txt` )
+// Claude Code 2.1.296, subagent Bash call, unparseable `sh -c` script (live layout, command anonymised)
+const shell_c = fixture( `dangerous-rm-shell-c-subagent.txt` )
 const composer = `────\n❯ \n────\n  yolo·docker\n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
 
 describe( `Claude dangerous-command dialog`, () => {
@@ -23,6 +25,17 @@ describe( `Claude dangerous-command dialog`, () => {
             reason: `Dangerous rm operation on statically-unresolvable target: command substitution output`,
         } )
         expect( claude.dangerous_command_dialog ).toBe( find_dangerous_command_dialog )
+    } )
+
+    test( `recognises the unchecked shell -c variant from a subagent`, () => {
+        const dialog = find_dangerous_command_dialog( shell_c )
+        expect( dialog.reason ).toBe( `This shell -c script runs rm and could not be checked` )
+        expect( dialog.command ).toStartWith( `cd /workspace/project/scratch && C=scratch-repro` )
+    } )
+
+    test( `leaves a shell -c script a permission rule denies`, () => {
+        const denied = shell_c.replace( `This shell -c script runs rm and could not be checked`, `A permission rule denies a command in this shell -c script` )
+        expect( find_dangerous_command_dialog( denied ) ).toBeNull()
     } )
 
     test( `ignores the dialog once it is only transcript history`, () => {

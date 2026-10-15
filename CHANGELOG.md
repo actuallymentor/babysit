@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.42.3 — 2026-10-15
+
+### Fixed
+- YOLO: also answer Claude 2.1.296's bypass-immune `This shell -c script runs rm and could not be checked` prompt, including from subagents (`Bash command · from the <agent>` header, boxed command). It has no auto-deny countdown, so it blocked sessions until answered. Prompts caused by a person's deny rule stay manual.
+
 ## 1.42.2 — 2026-10-14
 
 ### Changed
