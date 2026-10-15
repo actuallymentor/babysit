@@ -80,6 +80,7 @@ export const DANGEROUS_DIALOG = {
     footer: /^\s*Esc to cancel\b/,
     header: /^\s*Bash command\b/,
     box: /^\s*╌+\s*$/,
+    denied: /A permission rule denies a command/,
 }
 
 /**
@@ -92,24 +93,29 @@ export const DANGEROUS_DIALOG = {
 export const find_dangerous_command_dialog = screen => {
 
     const lines = screen.split( `\n` ).filter( line => line.trim() ).slice( -20 )
-    const at = ( pattern, from = 0 ) => lines.findIndex( ( line, index ) => index >= from && pattern.test( line ) )
 
-    // The dialog replaces the composer, so its footer is the last line.
+    // The dialog replaces the composer: question, Yes, No and footer close the pane.
+    // Anchoring on the last four lines keeps history from supplying any of them.
+    const question = lines.length - 4
     if( !DANGEROUS_DIALOG.footer.test( lines.at( -1 ) || `` ) ) return null
+    if( !DANGEROUS_DIALOG.question.test( lines[ question ] || `` ) ) return null
+    if( !DANGEROUS_DIALOG.approve.test( lines[ question + 1 ] ) || !DANGEROUS_DIALOG.deny.test( lines[ question + 2 ] ) ) return null
 
-    const question = at( DANGEROUS_DIALOG.question )
-    if( question < 0 || !DANGEROUS_DIALOG.approve.test( lines[ question + 1 ] || `` ) ) return null
-    if( !DANGEROUS_DIALOG.deny.test( lines[ question + 2 ] || `` ) ) return null
+    const header = lines.findLastIndex( ( line, index ) => index < question && DANGEROUS_DIALOG.header.test( line ) )
+    const body = ( from, to ) => lines.map( ( line, index ) => ( { line, index } ) ).filter( ( { index } ) => index > from && index < to )
 
-    const reason_index = lines.findLastIndex( ( line, index ) => index < question && DANGEROUS_DIALOG.reason.test( line ) )
+    // A person's deny rule matched: never approve on their behalf
+    if( body( header, question ).some( ( { line } ) => DANGEROUS_DIALOG.denied.test( line ) ) ) return null
+
+    // Boxed layout: the reason sits below the box, so command text can never pose as one
+    const boxes = body( header, question ).filter( ( { line } ) => DANGEROUS_DIALOG.box.test( line ) ).map( ( { index } ) => index )
+    const reason_index = lines.findLastIndex( ( line, index ) => index > ( boxes.at( -1 ) ?? header ) && index < question && DANGEROUS_DIALOG.reason.test( line ) )
     if( reason_index < 0 ) return null
 
-    const header = lines.findLastIndex( ( line, index ) => index < reason_index && DANGEROUS_DIALOG.header.test( line ) )
-
-    // Boxed layout: command opens the box; plain layout: command follows the header
-    const box = lines.findIndex( ( line, index ) => index > header && index < reason_index && DANGEROUS_DIALOG.box.test( line ) )
-    const command_line = box >= 0 ? box + 1 : header + 1
-    const command = header < 0 ? `` : lines[ command_line ].trim().replace( /^│\s*/, `` )
+    // Boxed: every row inside the box; plain: the line after the header
+    const command = boxes.length >= 2
+        ? body( boxes[ 0 ], boxes[ 1 ] ).map( ( { line } ) => line.trim().replace( /^│\s*/, `` ) ).join( ` ` )
+        : header < 0 ? `` : lines[ header + 1 ].trim().replace( /^│\s*/, `` )
 
     return { command, reason: lines[ reason_index ].match( DANGEROUS_DIALOG.reason )[ 1 ] }
 
