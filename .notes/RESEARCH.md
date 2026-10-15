@@ -219,6 +219,11 @@ Source: strings in the native binary (`~/.local/share/claude/versions/2.1.283`).
 - Env: `CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT` drops only the `$(…)` variant. `CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT` removes the auto-deny window, so the dialog would block indefinitely (worse for unattended runs). Empty-variable check is server-gated (`tengu_bright_lake`).
 - "Allow reads outside the working directories?" is an auto-mode-only one-time question (`auto_mode_outside_reads`), not a bypass-mode dialog.
 
+## Claude Code 2.1.296 shell -c rm prompts (2026-10-15)
+- New strings (`inline_shell_unchecked`): `This shell -c script runs rm and could not be checked` and `A permission rule denies a command in this shell -c script`. Also `Dangerous rm operation in a shell -c script, on a target built from a value known only when it runs`.
+- Live capture showed no auto-deny countdown on the unchecked variant; it blocked a YOLO session's subagent.
+- Find a running session's live screen from inside a Babysit container: `docker exec babysit-web cat /bridge/state/<babysit_id>.json` → `name`, `raw_screen`.
+
 ## Android/adb tooling — 2026-10-09
 - adb versions: bookworm 29.0.6 (no pair); bookworm-backports/trixie 34.0.5; Google platform-tools r37.0.1 (x86_64 only on Linux).
 - Agent phone control options: mobile-mcp (mobile-next, most adopted), Maestro + `maestro mcp` (YAML flows, JRE), uiautomator2 MCP servers (community, so audit them first). Raw adb is enough for basics: `input tap/swipe/text`, `exec-out screencap -p`, `uiautomator dump`.

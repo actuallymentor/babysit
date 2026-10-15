@@ -51,7 +51,7 @@ Use explicit commands in scripts.
 | Flag | Effect |
 |---|---|
 | _(none)_ | Read-write workspace mount |
-| `--yolo` | Maximum autonomy; skip agent permissions (Claude: also answers the bypass-immune "Dangerous rm operation" prompt) |
+| `--yolo` | Maximum autonomy; skip agent permissions (Claude: also answers the bypass-immune rm prompts: "Dangerous rm operation" and unchecked `sh -c` scripts) |
 | `--sandbox` | No workspace mount; ephemeral |
 | `--mudbox` | Read-only workspace mount |
 | `--clone` | Durable workspace clone + `/original`; explicit merge-back |
