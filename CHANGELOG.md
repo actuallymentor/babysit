@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.42.4 — 2026-10-16
+
+### Fixed
+- A single failed tmux liveness check no longer ends the monitor. One hiccup ended every monitor at once while their agents kept running unwatched: no YOLO approvals, no nudges, and the session listed as exited. The monitor now confirms over ~5s before it treats a session as gone. Repair already orphaned sessions with `babysit recover`.
+
 ## 1.42.3 — 2026-10-15
 
 ### Fixed

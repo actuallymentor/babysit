@@ -180,3 +180,4 @@
 - **2026-10-14**: 1.41.0. Watchdog nudge `Status report` → action prompt (collect finished background work, resume, or reply `idle`): `Status report` invited long summaries from healthy agents. `babysit restart all`: unarchived live sessions, always detached, refusals skipped then reported as a non-zero exit.
 - 2026-10-14: `babysit watch` (sessions + account usage) supersedes `list --watch` (now exits 1); session list no longer prints after detach/exit. v1.42.0.
 - 2026-10-15: YOLO approval extended to Claude 2.1.296's "This shell -c script runs rm and could not be checked" prompt (seen blocking a subagent); deny-rule sibling stays manual.
+- 2026-10-16: 1.42.4. Monitor ends only after 5 consecutive has-session misses. Root cause of "YOLO still blocks on dangerous dialogs" in Auto Optimiser: its monitor had died on 10-14, not a matcher gap. Repaired via host `babysit recover`.
