@@ -655,6 +655,63 @@ babysit:
 
 }
 
+const run_directory_launch = async () => {
+    const launch = ( agent, extra = `` ) => `launch:
+    agent: ${ agent }
+${ extra }    mode: regular
+    yolo: true
+    docker: false
+    adb: false
+    clone: false
+    loop: false
+    ignore_host_agents_md: false
+    ports: []
+    log: false
+    args: []
+config:
+    initial_prompt: "BABYSIT_E2E_INITIAL_PROMPT"
+`
+    const workspace = make_workspace( `directory`, ``, {
+        'sessions/alpha.yaml': launch( `codex` ),
+        'sessions/beta.yml': launch( `claude`, `    name: beta session\n` ),
+        'sessions/README.md': `not a config`,
+    } )
+    const sessions_dir = join( workspace, `sessions` )
+    const live = () => readdirSync( join( babysit_home, `sessions` ) )
+        .filter( file => file.endsWith( `.json` ) )
+        .map( file => JSON.parse( readFileSync( join( babysit_home, `sessions`, file ), `utf8` ) ) )
+        .filter( session => session.config_path?.startsWith( sessions_dir ) )
+    const up = () => run( compiled_cli, [ `--config`, `sessions/`, `--yes` ], { cwd: workspace, env: e2e_env(), timeout_ms: 360_000 } )
+
+    const first = await up()
+    ensure( /start\s+alpha\.yaml\s+alpha\s+codex\s+--yolo/.test( first.stdout ), `overview is missing alpha:\n${ first.stdout }` )
+    ensure( /start\s+beta\.yml\s+beta session\s+claude/.test( first.stdout ), `overview is missing beta:\n${ first.stdout }` )
+    const started = live()
+    ensure( started.length === 2, `directory launch started ${ started.length } sessions` )
+    ensure( started.map( session => session.name ).sort().join( `,` ) === `alpha,beta session`, `directory launch names: ${ started.map( session => session.name ) }` )
+    for( const session of started ) {
+        await wait_until( `agent composer ${ session.name }`, async () => ( await capture( session ) ).includes( `FAKE_AGENT_READY` ) )
+    }
+
+    // Compose-style: a second run starts nothing while both are live
+    const again = await up()
+    ensure( again.stdout.includes( `Every session is already running.` ), `rerun did not report running sessions:\n${ again.stdout }` )
+    ensure( live().length === 2, `rerun started a duplicate session` )
+
+    // Stopping one lets only that file start again
+    const alpha = started.find( session => session.name === `alpha` )
+    await stop_session( alpha )
+    const third = await up()
+    ensure( /running\s+beta\.yml/.test( third.stdout ) && /start\s+alpha\.yaml/.test( third.stdout ), `restart overview is wrong:\n${ third.stdout }` )
+    const restarted = live().filter( session => session.name === `alpha` && session.babysit_id !== alpha.babysit_id )
+    ensure( restarted.length === 1, `stopped yaml was not started again` )
+
+    for( const session of [ ...restarted, started.find( session => session.name === `beta session` ) ] ) {
+        await wait_until( `agent composer ${ session.name }`, async () => ( await capture( session ) ).includes( `FAKE_AGENT_READY` ) )
+        await stop_session( session )
+    }
+}
+
 const run_resume_session = async () => {
     const workspace = make_workspace( `resume`, `config:
     initial_prompt: "BABYSIT_E2E_INITIAL_PROMPT"
@@ -876,6 +933,7 @@ try {
 
     await run_submit_parity_sessions()
     await run_default_session()
+    await run_directory_launch()
     await run_resume_session()
     if( process.env.BABYSIT_DOCKER === `1` || process.env.BABYSIT_HOST_WORKSPACE ) {
         console.log( `Skipping clone E2E inside a Docker-enabled Babysit session` )

@@ -1221,7 +1221,8 @@ async function start_session( cmd ) {
     // not been confirmed safe, before credentials or session state are created.
     time_phase_sync( `watchtower inspection`, warn_if_unrecognized_watchtower_is_running )
 
-    if( should_confirm_docker_restricted_mode( mode ) && !cmd.recovering ) {
+    // A directory launch already showed this warning in its overview and was confirmed.
+    if( should_confirm_docker_restricted_mode( mode ) && !cmd.recovering && !cmd.batch ) {
         const confirmed = await confirm_docker_restricted_mode( mode )
         if( !confirmed ) {
             log.error( `Aborted --docker ${ mode.sandbox ? `--sandbox` : `--mudbox` } session.` )
@@ -1492,7 +1493,8 @@ async function start_session( cmd ) {
             .filter( result => [ `unauthenticated`, `failed` ].includes( result.status ) )
             .forEach( result => log.debug( `Auth check failed for ${ result.name }: ${ result.reason || `unknown reason` }` ) )
 
-        const should_continue = !cmd.recovering && await confirm_continue_with_unauthenticated_agents( unauthenticated_agents, {
+        // Recovery and directory launches cannot stop to ask, so they skip the session.
+        const should_continue = !cmd.recovering && !cmd.batch && await confirm_continue_with_unauthenticated_agents( unauthenticated_agents, {
             failed_names: failed_agents,
         } )
 

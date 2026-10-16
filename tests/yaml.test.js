@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { parse } from 'yaml'
 import { load_config, get_default_yaml, write_default_config } from '../src/babysit/yaml.js'
+import { default_launch, validate_launch } from '../src/babysit/launch_config.js'
 import { base } from '../src/system_prompt/index.js'
 
 describe( `babysit.yaml`, () => {
@@ -179,10 +180,10 @@ babysit:
         expect( rules[0].on.value ).toBe( `test string` )
     } )
 
-    it( `returns a default yaml that is all comments and documents every setting`, () => {
+    it( `returns a default yaml with only launch: live, documenting every setting`, () => {
         const yaml = get_default_yaml()
-        expect( yaml.split( `\n` ).every( line => !line.trim() || line.startsWith( `#` ) ) ).toBe( true )
-        expect( parse( yaml ) ).toBeNull()
+        expect( parse( yaml ) ).toEqual( { launch: default_launch() } )
+        expect( validate_launch( parse( yaml ).launch, { strict: true } ).errors ).toEqual( [] )
         for( const key of [ `initial_prompt`, `idle_timeout_s`, `yolo_approve_dangerous_commands`, `isolate_dependencies`, `clone:`, `commands:`, `on: idle`, `===`, `--loop` ] ) {
             expect( yaml ).toContain( key )
         }

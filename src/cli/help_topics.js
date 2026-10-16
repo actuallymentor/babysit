@@ -79,8 +79,17 @@ Examples:
 
     init: () => `Usage: babysit init [file.yaml]
 
-Writes a commented default supervision config. Without a file name it asks for
-one (default babysit.yaml). Rules run top-down; the first match wins:
+Writes a default config. Without a file name it asks for one (default
+babysit.yaml), then opens the launch menu: its choice becomes the live launch:
+section (agent, name, mode, yolo, docker, adb, clone, loop,
+ignore_host_agents_md, ports, log, args). Everything else is commented out.
+
+launch: drives \`babysit --config DIR/\`, which starts one detached session per
+DIR/*.yaml (every key but name required; name defaults to the file name),
+shows an overview, asks y/N (--yes skips), and skips files whose session is
+still running. \`babysit --config FILE\` opens the menu with its values.
+
+Rules run top-down; the first match wins:
   on:      idle | literal text | /regex/flags (matched against the last 10 pane lines)
   do:      enter | a config.commands name | text | ./FILE.md (=== separates steps)
   timeout: idle rules only, SS | MM:SS | HH:MM:SS
@@ -90,7 +99,8 @@ Use a non-default name with --config FILE on launch.
 Examples:
   babysit init
   babysit init review.yaml
-  babysit codex --config review.yaml`,
+  babysit codex --config review.yaml
+  babysit --config sessions/`,
 
     list: () => `Usage: babysit list [--all]
 

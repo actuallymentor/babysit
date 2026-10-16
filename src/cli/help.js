@@ -19,7 +19,8 @@ Usage:
   babysit ["session name"]           Open the interactive launch menu
   babysit <agent> [flags]              Start a new session
   babysit <agent> resume <id|number>  Resume a previous session
-  babysit init [file.yaml]             Write a commented default config; asks for the file name
+  babysit init [file.yaml]             Write a default config; asks for the file name and launch settings
+  babysit --config DIR/ [--yes]        Start one detached session per DIR/*.yaml, skipping running ones
   babysit list [--all]                 List active sessions and launch flags
   babysit watch [--all]                Live sessions + account usage, redrawn every 2s
   babysit open [id|name|number]        Attach to an active session
@@ -56,11 +57,12 @@ Flags:
   --clone         Work in a copy while mounting the original at /original
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
   --adb           Android Debug Bridge access with adb keys shared across sessions
-  --yes           Skip clone safety confirmation prompts
+  --yes           Skip clone safety and --config DIR/ confirmation prompts
   --ignore-host-agents-md
                   Keep host agent instructions, skills, and preferences out of the container
   --name NAME     Give the session a human-readable name
   --config FILE   Use FILE instead of ./babysit.yaml for this session (kept on resume)
+  --config DIR/   Start every DIR/*.yaml from its launch: section, after a y/N overview
   --port PORT     Publish host PORT to the same container port
   --port H:C      Publish host port H to container port C
   --auth          With "babysit doctor", make real model-backed auth checks

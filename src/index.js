@@ -6,11 +6,14 @@ import './boot_babysitrc.js'
 // JSON import attribute embeds at build time; runtime fs reads resolve to /$bunfs in compiled binaries
 import pkg from '../package.json' with { type: 'json' }
 
+import { statSync } from 'fs'
+
 import { log } from './utils/log.js'
 import { parse_args } from './cli/parse.js'
 import { show_help } from './cli/help.js'
 import { wants_help } from './cli/help_topics.js'
-import { launch_menu } from './cli/launcher.js'
+import { launch_from_menu } from './cli/launcher.js'
+import { cmd_launch_dir } from './cli/compose.js'
 import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
@@ -34,11 +37,19 @@ import { time_phase_sync } from './utils/timing.js'
 import { run_effort, run_model, run_exit, run_stuck, run_loop } from './docker/assets/effort/command.mjs'
 import { run_usage } from './cli/usage.js'
 
+const is_directory = path => {
+    try {
+        return statSync( path ).isDirectory()
+    } catch {
+        return false
+    }
+}
+
 // Subcommands that need a dep check before they run. `help` and `--version`
 // are pure metadata reads, `__monitor` is a background daemon that inherits
 // the foreground's already-checked environment, and `update` runs its own
 // dep check inside `cmd_update`.
-const DEP_CHECK_VERBS = new Set( [ `start`, `resume`, `list`, `watch`, `open`, `doctor`, `auth` ] )
+const DEP_CHECK_VERBS = new Set( [ `start`, `launch_dir`, `resume`, `list`, `watch`, `open`, `doctor`, `auth` ] )
 
 /**
  * Main entry point
@@ -92,12 +103,17 @@ const main = async () => {
         process.exit( 0 )
     }
 
+    // `--config DIR/` starts every yaml in DIR; launch flags live in the files.
+    if( cmd.flags.config && is_directory( cmd.flags.config ) ) {
+        if( cmd.verb !== `launch` || cmd.flags.name ) {
+            throw new Error( `babysit --config DIR/ takes no agent, name, or flags besides --yes; declare them in each yaml's launch: section` )
+        }
+        cmd = { ...cmd, verb: `launch_dir` }
+    }
+
     if( cmd.verb === `launch` ) {
-        const { config } = cmd.flags
-        cmd = await launch_menu( { name: cmd.flags.name || `` } )
+        cmd = await launch_from_menu( { name: cmd.flags.name || ``, config: cmd.flags.config } )
         if( !cmd ) return
-        // The menu builds its own flags; keep the config file the user named.
-        if( config ) cmd.flags.config = config
         try {
             save_launch_defaults( cmd )
         } catch ( error ) {
@@ -124,6 +140,10 @@ const main = async () => {
 
     case `start`:
         await cmd_start( cmd )
+        break
+
+    case `launch_dir`:
+        await cmd_launch_dir( cmd )
         break
 
     case `recover`:
