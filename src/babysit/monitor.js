@@ -12,6 +12,11 @@ import { WATCHDOG_NUDGE } from './watchdog.js'
 
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
+
+// A failed has-session is not proof the session ended: a busy tmux server or a
+// failed spawn looks the same. Ending on one miss orphans a live agent with no
+// monitor (no YOLO approvals, no nudges), so confirm across this many checks.
+const SESSION_GONE_CHECKS = 5
 export const AGENT_EXIT_SENTINEL = `__BABYSIT_AGENT_EXIT__`
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
@@ -196,6 +201,15 @@ export const start_monitor = async ( {
     // The watchdog's nudge runs as a regular action so it owns tmux input the same way
     const watchdog_rule = { on: { type: `watchdog` }, do: WATCHDOG_NUDGE, last_fired_at: 0 }
 
+    // Gone only when every check over ~SESSION_GONE_CHECKS seconds misses
+    const session_gone = async () => {
+        for( let check = 1; check <= SESSION_GONE_CHECKS; check++ ) {
+            if( await has_session_fn( session_name ) ) return false
+            if( check < SESSION_GONE_CHECKS ) await wait_fn( POLL_INTERVAL_MS )
+        }
+        return true
+    }
+
     log.info( `Monitoring session: ${ session_name }` )
     log.debug( `${ rules.length } rules loaded, polling every ${ POLL_INTERVAL_MS }ms` )
 
@@ -216,8 +230,7 @@ export const start_monitor = async ( {
             }
 
             // Check if session is still alive
-            const alive = await has_session_fn( session_name )
-            if( !alive ) {
+            if( await session_gone() ) {
                 log.info( `Session ended: ${ session_name }` )
                 write_loop_deadline_fn( `idle` )
                 await finish_action()
