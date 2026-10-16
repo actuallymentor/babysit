@@ -1,23 +1,33 @@
-import { readdirSync } from 'fs'
+import { readdirSync, statSync } from 'fs'
 import { createInterface } from 'readline/promises'
 import { join, relative } from 'path'
 
 import { launch_flags, launch_to_command, read_launch_section, validate_launch } from '../babysit/launch_config.js'
-import { list_stored_sessions } from '../sessions/store.js'
+import { list_stored_sessions, session_original_workspace } from '../sessions/store.js'
 import { list_sessions } from '../tmux/session.js'
 import { canonical_workspace, cmd_start, should_confirm_docker_restricted_mode } from './start.js'
 
 /**
  * Read every yaml in a directory (not recursive) into a launch plan.
- * Names default to the file's path relative to the directory, minus extension.
+ * Names default to the file's path relative to the directory, minus extension
+ * unless that leaves only digits (reserved for `babysit open N`).
  * @param {string} dir - Absolute directory
  * @returns {{ files: string[], entries: Object[], errors: string[] }} Yaml paths, one entry per valid file, and every problem found
  */
 export const read_launch_dir = dir => {
 
-    const files = readdirSync( dir, { withFileTypes: true } )
-        .filter( entry => entry.isFile() && /\.ya?ml$/i.test( entry.name ) )
-        .map( entry => join( dir, entry.name ) )
+    // statSync follows symlinks, so linked configs count as files
+    const is_file = path => {
+        try {
+            return statSync( path ).isFile()
+        } catch {
+            return false
+        }
+    }
+    const files = readdirSync( dir )
+        .filter( name => /\.ya?ml$/i.test( name ) )
+        .map( name => join( dir, name ) )
+        .filter( is_file )
         .sort()
 
     const entries = []
@@ -33,7 +43,8 @@ export const read_launch_dir = dir => {
                 continue
             }
 
-            const cmd = launch_to_command( launch, { config_path: path, name: file.replace( /\.ya?ml$/i, `` ) } )
+            const stem = file.replace( /\.ya?ml$/i, `` )
+            const cmd = launch_to_command( launch, { config_path: path, name: /^\d+$/.test( stem ) ? file : stem } )
             entries.push( { path, file, launch, cmd } )
         } catch ( error ) {
             errors.push( `${ file }: ${ error.message }` )
@@ -54,12 +65,17 @@ export const read_launch_dir = dir => {
  */
 export const match_running = ( entries, tmux_sessions, stored_sessions ) => {
 
+    // Sessions without --config read their workspace's babysit.yaml
     const live = new Set( tmux_sessions.map( session => session.name ) )
-    const running = stored_sessions.filter( session => session.config_path && live.has( session.tmux_session ) )
+    const config_of = session => session.config_path
+        || session_original_workspace( session ) && join( session_original_workspace( session ), `babysit.yaml` )
+    const running = stored_sessions
+        .filter( session => live.has( session.tmux_session ) && config_of( session ) )
+        .map( session => ( { session, config: canonical_workspace( config_of( session ) ) } ) )
 
     return entries.map( entry => ( {
         ...entry,
-        running: running.find( session => canonical_workspace( session.config_path ) === canonical_workspace( entry.path ) ) || null,
+        running: running.find( ( { config } ) => config === canonical_workspace( entry.path ) )?.session || null,
     } ) )
 
 }
@@ -114,7 +130,8 @@ const ask_yes_no = async question => {
  */
 export const cmd_launch_dir = async ( cmd, {
     start = cmd_start,
-    tmux_sessions = list_sessions,
+    // Strict: a failed lookup must abort, not read as "nothing running"
+    tmux_sessions = () => list_sessions( { strict: true } ),
     stored_sessions = list_stored_sessions,
     ask = ask_yes_no,
     interactive = process.stdin.isTTY && process.stdout.isTTY,
@@ -150,8 +167,15 @@ export const cmd_launch_dir = async ( cmd, {
     const workspace = process.cwd()
     const started = []
     const failed = []
-    for( const { file, cmd: launch } of pending ) {
+    for( const entry of pending ) {
+        const { file, cmd: launch } = entry
         try {
+            // Re-check right before starting: another terminal may have started it during the prompt
+            const [ { running } ] = match_running( [ entry ], await tmux_sessions(), stored_sessions() )
+            if( running ) {
+                print( `Skipped ${ file }: already running as ${ running.babysit_id }` )
+                continue
+            }
             process.chdir( workspace )
             const session = await start( { ...launch, detached: true, batch: true, flags: { ...launch.flags, yes: true } } )
             started.push( { file, id: session?.babysit_id } )

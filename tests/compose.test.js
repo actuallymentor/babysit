@@ -23,7 +23,7 @@ afterEach( () => {
 
 const write = ( file, launch = default_launch() ) => writeFileSync( join( dir, file ), build_launch_yaml( launch ) )
 
-const run = async ( { yes = false, answer = true, running = [], interactive = true, fail = [] } = {} ) => {
+const run = async ( { yes = false, answer = true, running = [], interactive = true, fail = [], records = null } = {} ) => {
 
     const lines = []
     const started = []
@@ -39,8 +39,13 @@ const run = async ( { yes = false, answer = true, running = [], interactive = tr
             return { babysit_id: `id-${ cmd.flags.name }` }
         },
         tmux_sessions: async () => running.map( ( _, index ) => ( { name: `tmux-${ index }` } ) ),
-        stored_sessions: () => running.map( ( config_path, index ) => ( { babysit_id: `live-${ index }`, config_path, tmux_session: `tmux-${ index }` } ) ),
-        ask: async question => ( asked.push( question ), answer ),
+        stored_sessions: () => records || running.map( ( config_path, index ) => ( { babysit_id: `live-${ index }`, config_path, tmux_session: `tmux-${ index }` } ) ),
+        ask: async question => {
+            asked.push( question )
+            // Another terminal starts a session while the prompt is open
+            if( typeof answer === `function` ) return answer()
+            return answer
+        },
         interactive,
         print: line => lines.push( line ),
     } )
@@ -119,12 +124,46 @@ describe( `babysit --config DIR/`, () => {
     it( `refuses the whole directory when any yaml is incomplete`, async () => {
         write( `api.yaml` )
         writeFileSync( join( dir, `bad.yaml` ), `launch:\n    agent: claude\n    yolo:\n` )
-        writeFileSync( join( dir, `01.yaml` ), build_launch_yaml( default_launch() ) )
+        writeFileSync( join( dir, `worse.yaml` ), `launch: [` )
 
         const { outcome, started } = await run()
-        await expect( outcome ).rejects.toThrow( /01\.yaml: --name cannot contain only digits[\s\S]*bad\.yaml: launch\.yolo is required/ )
+        await expect( outcome ).rejects.toThrow( /bad\.yaml: launch\.yolo is required[\s\S]*worse\.yaml: / )
         expect( started ).toEqual( [] )
         expect( read_launch_dir( dir ).errors.length ).toBeGreaterThan( 2 )
+    } )
+
+    it( `keeps the extension when a file name is all digits, and follows symlinked yaml`, () => {
+        write( `01.yaml` )
+        const outside = `${ dir }-outside.yaml`
+        writeFileSync( outside, build_launch_yaml( default_launch() ) )
+        symlinkSync( outside, join( dir, `linked.yaml` ) )
+        try {
+            const { entries, errors } = read_launch_dir( dir )
+            expect( errors ).toEqual( [] )
+            expect( entries.map( entry => entry.cmd.flags.name ) ).toEqual( [ `01.yaml`, `linked` ] )
+        } finally {
+            rmSync( outside )
+        }
+    } )
+
+    it( `treats a live session without --config as running its workspace babysit.yaml`, async () => {
+        write( `babysit.yaml` )
+        write( `web.yaml` )
+        const records = [ { babysit_id: `plain`, config_path: null, original_pwd: dir, tmux_session: `tmux-0` } ]
+        const { outcome, started, lines } = await run( { running: [ `x` ], records } )
+        await outcome
+        expect( lines.join( `\n` ) ).toMatch( /running\s+babysit\.yaml.*already plain/ )
+        expect( started.map( cmd => cmd.flags.name ) ).toEqual( [ `web` ] )
+    } )
+
+    it( `re-checks each file right before starting it`, async () => {
+        write( `api.yaml` )
+        write( `web.yaml` )
+        const running = []
+        const { outcome, started, lines } = await run( { running, answer: () => ( running.push( join( dir, `api.yaml` ) ), true ) } )
+        await outcome
+        expect( started.map( cmd => cmd.flags.name ) ).toEqual( [ `web` ] )
+        expect( lines ).toContain( `Skipped api.yaml: already running as live-0` )
     } )
 
     it( `keeps going past a failed start, in the launch directory, and reports it`, async () => {

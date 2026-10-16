@@ -5,6 +5,7 @@
 ### Added
 - `launch:` yaml section: agent, name, mode, yolo, docker, adb, clone, loop, ignore_host_agents_md, ports, log, args.
 - `babysit --config DIR/`: compose-style start of every `DIR/*.yaml`, detached, after an overview and `[y/N]` (`--yes` skips). Every key but `name` required; name defaults to the file name. Files whose session is still live are skipped, never duplicated. Runs in the current directory.
+- Directory launches follow symlinked yaml, count sessions using an implicit `./babysit.yaml`, re-check right before each start, and name all-digit files by their full file name (`01.yaml`).
 - `babysit --config FILE` opens the launch menu prefilled from `launch:`; ports, log, args and ignore_host_agents_md carry through.
 
 ### Changed

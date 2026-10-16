@@ -376,7 +376,7 @@ babysit:
 ```yaml
 launch:
     agent: claude            # claude | codex | antigravity | opencode
-    name: api reviewer       # optional; default: file name without extension
+    name: api reviewer       # optional; default: file name without extension (with it if all digits)
     mode: regular            # regular | sandbox | mudbox
     yolo: true
     docker: false
@@ -394,7 +394,7 @@ launch:
 - Workspace: the current directory, for every session
 - Strict: every key except `name` must be present and non-null; `[]` is fine. One bad file aborts the whole run
 - Overview of each file (start/running, name, agent, flags), then `Start N sessions? [y/N]`; `--yes` skips, non-TTY requires it
-- Never duplicates: a file whose session (matched by yaml realpath) is still live is skipped; stopped or dead ones start fresh
+- Never duplicates: a file whose session (matched by yaml realpath, incl. sessions using an implicit `./babysit.yaml`) is still live is skipped, re-checked right before each start; stopped or dead ones start fresh. Symlinked yaml counts
 - Sessions start one at a time, detached; a failure skips that file only. In-launch prompts are answered by the overview, and an unauthenticated agent fails its file instead of asking
 - No agent, name or other flags on the command line: they live in the yaml
 
