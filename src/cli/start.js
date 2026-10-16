@@ -1447,7 +1447,8 @@ async function start_session( cmd ) {
             agent_args: passthrough,
             scope: `active`,
             before_probes: startup_status.pause,
-            ... cmd.recovering ? { input: { isTTY: false } } : {} ,
+            // Unattended launches must not offer Enter-to-skip on the checks
+            ... cmd.recovering || cmd.batch ? { input: { isTTY: false } } : {} ,
         } ) )
         startup_status.pause()
     } catch ( error ) {
