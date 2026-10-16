@@ -13,11 +13,11 @@ describe( `babysit init and --config`, () => {
     it( `init asks for a name when none is given and validates the extension`, async () => {
         const writes = []
         const messages = []
-        await cmd_init( { session_id: null }, { ask: async () => `team.yaml`, write: ( cwd, options ) => writes.push( options.file ) && `/w/team.yaml`, print: m => messages.push( m ), cwd: `/w` } )
+        await cmd_init( { session_id: null }, { ask: async () => `team.yaml`, choose: async () => ( {} ), write: ( cwd, options ) => writes.push( options.file ) && `/w/team.yaml`, print: m => messages.push( m ), cwd: `/w` } )
         expect( writes ).toEqual( [ `team.yaml` ] )
         expect( messages[1] ).toContain( `--config team.yaml` )
 
-        await cmd_init( { session_id: `babysit.yaml` }, { ask: async () => {
+        await cmd_init( { session_id: `babysit.yaml` }, { choose: async () => ( {} ), ask: async () => {
             throw new Error( `must not ask` )
         }, write: () => `/w/babysit.yaml`, print: m => messages.push( m ), cwd: `/w` } )
         expect( messages.at( -1 ) ).toBe( `Wrote /w/babysit.yaml` )

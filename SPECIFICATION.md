@@ -22,6 +22,21 @@ The generated `babysit.yaml` has the following shape. The full mode-aware launch
 ```yaml
 # babysit.yaml
 
+# How the session starts; written uncommented from the launch menu by `babysit init`.
+launch:
+    agent: claude
+    # name: my session
+    mode: regular
+    yolo: false
+    docker: false
+    adb: false
+    clone: false
+    loop: false
+    ignore_host_agents_md: false
+    ports: []
+    log: false
+    args: []
+
 # Babysit configuration
 config:
     initial_prompt: |-
@@ -58,6 +73,8 @@ babysit:
     #   do: notify_command
     #   timeout: 05:00
 ```
+
+`babysit --config DIR/` starts one detached session per `DIR/*.yaml` / `*.yml` (non-recursive) in the current directory, like `docker compose up`. Each file must declare every `launch:` key except `name` with a non-null value (lists may be empty); `name` defaults to the file's path relative to DIR without its extension. Any invalid file aborts before anything starts. Babysit prints an overview (status, file, name, agent, flags) and asks `Start N sessions? [y/N]` (`--yes` skips; required without a TTY). A file whose session is still live (matched on the realpath of the stored `config_path`) is skipped, never started twice. Agents, names and modifiers are never chosen interactively in this mode. A single `--config FILE` launch opens the menu prefilled from its `launch:` section.
 
 ## Coding agent configuration
 

@@ -2,6 +2,8 @@ import { emitKeypressEvents } from 'readline'
 
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { read_launch_defaults } from '../babysit/launch_defaults.js'
+import { command_to_launch, launch_to_command, read_launch_section, validate_launch } from '../babysit/launch_config.js'
+import { log } from '../utils/log.js'
 import { parse_args } from './parse.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -18,18 +20,21 @@ const cycle = ( choices, value, direction ) =>
 
 /**
  * Select a launch using arrow keys, editable name, and Space toggles.
- * @param {Object} [options] - Initial name, terminal streams, and defaults location
+ * @param {Object} [options] - Initial name and values, terminal streams, and defaults location
+ * @param {Object} [options.initial] - Menu values that override the remembered defaults
+ * @param {string} [options.submit] - What Enter does, for the key hint
  * @returns {Promise<Object|null>} Parsed launch, or null when cancelled
  */
 export const launch_menu = async ( {
-    name = ``, input = process.stdin, output = process.stdout, ...defaults_options
+    name = ``, initial = {}, submit = `launch`, input = process.stdin, output = process.stdout, ...defaults_options
 } = {} ) => {
 
     if( !input.isTTY || !output.isTTY || typeof input.setRawMode !== `function` ) {
         throw new Error( `The launch menu requires an interactive terminal. Use babysit <agent> [flags], or babysit --help.` )
     }
 
-    const state = { ...read_launch_defaults( defaults_options ), name }
+    const state = { ...read_launch_defaults( defaults_options ), ...initial, name }
+    if( state.mode !== `regular` ) state.clone = false
     let row = 0
     let cursor = Array.from( name ).length
     let error = ``
@@ -51,7 +56,7 @@ export const launch_menu = async ( {
         const lines = [
             ...rows.map( ( text, index ) => `${ index === row ? `›` : ` ` } ${ text }` ),
             ``,
-            `↑/↓ move · ←/→ choose · Space toggle · Enter launch · Esc cancel`,
+            `↑/↓ move · ←/→ choose · Space toggle · Enter ${ submit } · Esc cancel`,
             error,
         ]
         // Redraw the alternate screen; truncate rows to avoid terminal wrapping.
@@ -140,5 +145,41 @@ export const launch_menu = async ( {
             output.write( `\x1b[?25h\x1b[?1049l` )
         }
     }
+
+}
+
+// Valid `launch:` keys a config file sets; problems warn and fall back to the menu
+const read_declared_launch = config => {
+    try {
+        const { declared, errors } = validate_launch( read_launch_section( config ) )
+        errors.forEach( error => log.warn( `${ config }: ${ error }; using the menu default` ) )
+        return declared
+    } catch {
+        // A missing or unparsable file is reported by load_config at launch
+        return {}
+    }
+}
+
+/**
+ * Open the launch menu prefilled from a config file's `launch:` section.
+ * Keys the menu has no row for (ports, log, args, ignore_host_agents_md)
+ * are carried into the launch unchanged.
+ * @param {Object} [options]
+ * @param {string} [options.name] - Name typed on the command line; wins over the file
+ * @param {string|false} [options.config] - Absolute --config file
+ * @param {Function} [options.menu] - Menu seam
+ * @returns {Promise<Object|null>} Parsed start command, or null when cancelled
+ */
+export const launch_from_menu = async ( { name = ``, config = false, menu = launch_menu } = {} ) => {
+
+    const declared = config ? read_declared_launch( config ) : {}
+    const pick = keys => Object.fromEntries( keys.filter( key => Object.hasOwn( declared, key ) ).map( key => [ key, declared[ key ] ] ) )
+
+    const chosen = await menu( { name: name || declared.name || ``, initial: pick( [ `agent`, `mode`, ...TOGGLES ] ) } )
+    if( !chosen ) return null
+
+    // The menu's choice wins for its rows; the rest come from the file as-is
+    const carried = pick( [ `ports`, `log`, `args`, `ignore_host_agents_md` ] )
+    return launch_to_command( { ...command_to_launch( chosen ), ...carried }, { config_path: config || null } )
 
 }

@@ -61,7 +61,8 @@ Use explicit commands in scripts.
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
 | `--log[=PATH]` | Append raw tmux output to file |
-| `--config FILE` | Use FILE instead of `./babysit.yaml`; relative `do: ./X.md` paths resolve beside FILE. The session keeps it on resume and in clones. Works with the launch menu too: `babysit --config FILE` |
+| `--config FILE` | Use FILE instead of `./babysit.yaml`; relative `do: ./X.md` paths resolve beside FILE. The session keeps it on resume and in clones. Works with the launch menu too: `babysit --config FILE` opens it prefilled from the file's `launch:` |
+| `--config DIR/` | Start one detached session per `DIR/*.yaml` (see [Directory launch](#directory-launch)) |
 
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
@@ -103,7 +104,8 @@ Idle rules do not start while waiting; manual input remains available.
 
 | Command | Effect |
 |---|---|
-| `babysit init [file.yaml]` | Write a commented default config; asks for the file name when none is given |
+| `babysit init [file.yaml]` | Write a default config; asks for the file name when none is given, then opens the launch menu to fill `launch:` |
+| `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached, compose-style; see [Directory launch](#directory-launch) |
 | `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
 | `babysit watch [--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged) plus account usage, one metered row per limit (bar, % used, reset or used / limit); balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. Replaces `list --watch` |
 | `babysit open [id\|name\|number]` | Attach |
@@ -366,6 +368,39 @@ babysit:
 | `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going`. A `--config FILE` with its own idle rule keeps that rule |
 
 `--ignore-host-agents-md` skips the host `LOOP.md`.
+
+### Directory launch
+
+`launch:` declares how a session starts. `babysit init` writes it uncommented from the launch menu.
+
+```yaml
+launch:
+    agent: claude            # claude | codex | antigravity | opencode
+    name: api reviewer       # optional; default: file name without extension
+    mode: regular            # regular | sandbox | mudbox
+    yolo: true
+    docker: false
+    adb: false
+    clone: true
+    loop: false
+    ignore_host_agents_md: false
+    ports: []                # PORT or HOST:CONTAINER
+    log: false               # false | true (default path) | path
+    args: ["--model", "opus"] # agent CLI passthrough
+```
+
+`babysit --config DIR/` runs every `DIR/*.yaml` / `*.yml` (not recursive), compose-style:
+
+- Workspace: the current directory, for every session
+- Strict: every key except `name` must be present and non-null; `[]` is fine. One bad file aborts the whole run
+- Overview of each file (start/running, name, agent, flags), then `Start N sessions? [y/N]`; `--yes` skips, non-TTY requires it
+- Never duplicates: a file whose session (matched by yaml realpath) is still live is skipped; stopped or dead ones start fresh
+- Sessions start one at a time, detached; a failure skips that file only. In-launch prompts are answered by the overview, and an unauthenticated agent fails its file instead of asking
+- No agent, name or other flags on the command line: they live in the yaml
+
+`babysit --config FILE` (single file) opens the launch menu prefilled from `launch:` (partial sections are fine);
+keys without a menu row (`ports`, `log`, `args`, `ignore_host_agents_md`) are carried into the launch.
+`babysit <agent> --config FILE` ignores `launch:`.
 
 **Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes.
 After `watchdog_idle_s` idle (30 min) or `watchdog_waiting_s` waiting (60 min), Claude Haiku reads the last 150 terminal lines

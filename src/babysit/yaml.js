@@ -4,6 +4,7 @@ import { parse } from 'yaml'
 import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
 import { build_system_prompt } from '../modes/prompt.js'
+import { build_launch_yaml, default_launch } from './launch_config.js'
 
 // Every line of the generated file is a comment: defaults apply until a line
 // is uncommented, and the file documents what can be changed.
@@ -11,12 +12,13 @@ const comment_block = ( text, indent = `        ` ) => String( text ).split( `\n
     .map( line => `#${ indent }${ line }` )
     .join( `\n` )
 
-const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ) } = {} ) => `# babysit.yaml
+const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ), launch = default_launch() } = {} ) => `# babysit.yaml
 #
-# Babysit configuration. Everything here is commented out; the values shown are
-# the defaults. Uncomment a line to change it. Delete this file to go back to
-# the defaults entirely.
+# Babysit configuration. Below launch:, everything is commented out; the values
+# shown are the defaults. Uncomment a line to change it. Delete this file to go
+# back to the defaults entirely.
 
+${ build_launch_yaml( launch ) }
 # config:
 #     # Prompt typed into the agent once it is ready. null or "" sends nothing.
 #     initial_prompt: |-
@@ -154,13 +156,14 @@ export const load_clone_config = ( dir = process.cwd(), { config_path = null } =
  * @param {Object} [options]
  * @param {string} [options.initial_prompt] - Prompt to embed
  * @param {string} [options.file] - File name or path, relative to dir
+ * @param {Object} [options.launch] - Launch section to write uncommented
  * @returns {string} Path written
  */
-export const write_default_config = ( dir = process.cwd(), { initial_prompt = build_system_prompt( {} ), file = `babysit.yaml` } = {} ) => {
+export const write_default_config = ( dir = process.cwd(), { initial_prompt = build_system_prompt( {} ), file = `babysit.yaml`, launch } = {} ) => {
 
     const config_path = resolve( dir, file )
     if( existsSync( config_path ) ) throw new Error( `${ config_path } already exists; edit it or remove it first` )
-    writeFileSync( config_path, build_default_yaml( { initial_prompt } ), `utf-8` )
+    writeFileSync( config_path, build_default_yaml( { initial_prompt, launch } ), `utf-8` )
     return config_path
 
 }
