@@ -138,6 +138,9 @@ export const parse_args = ( argv ) => {
     // babysit watch — live sessions + account usage
     if( verb === `watch` ) return { verb: `watch`, agent: null, flags, passthrough: [] }
 
+    // babysit audit --config FILE|DIR/ [--yes] — fix yaml for directory launches
+    if( verb === `audit` ) return { verb: `audit`, agent: null, flags, passthrough: [] }
+
     // babysit init [file.yaml] — write the commented default config
     if( verb === `init` ) return { verb: `init`, agent: null, session_id: positionals[1] || null, flags, passthrough: [] }
 

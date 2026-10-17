@@ -83,7 +83,7 @@ ${ comment_block( initial_prompt ) }
 /**
  * Default configuration values
  */
-const DEFAULT_CONFIG = {
+export const DEFAULT_CONFIG = {
     initial_prompt: null,
     idle_timeout_s: 300,
     watchdog_idle_s: 1_800,

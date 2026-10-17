@@ -19,6 +19,7 @@ import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_watch } from './cli/watch.js'
 import { cmd_init } from './cli/init.js'
+import { cmd_audit } from './cli/audit.js'
 import { cmd_archive } from './cli/archive.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume, is_resume_listing } from './cli/resume.js'
@@ -104,7 +105,8 @@ const main = async () => {
     }
 
     // `--config DIR/` starts every yaml in DIR; launch flags live in the files.
-    if( cmd.flags.config && is_directory( cmd.flags.config ) ) {
+    // `babysit audit --config DIR/` reads the same files without starting anything.
+    if( cmd.verb !== `audit` && cmd.flags.config && is_directory( cmd.flags.config ) ) {
         if( cmd.verb !== `launch` || cmd.flags.name ) {
             throw new Error( `babysit --config DIR/ takes no agent, name, or flags besides --yes; declare them in each yaml's launch: section` )
         }
@@ -181,6 +183,10 @@ const main = async () => {
 
     case `init`:
         await cmd_init( cmd )
+        break
+
+    case `audit`:
+        process.exitCode = await cmd_audit( cmd )
         break
 
     case `open`:

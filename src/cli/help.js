@@ -21,6 +21,7 @@ Usage:
   babysit <agent> resume <id|number>  Resume a previous session
   babysit init [file.yaml]             Write a default config; asks for the file name and launch settings
   babysit --config DIR/ [--yes]        Start one detached session per DIR/*.yaml, skipping running ones
+  babysit audit --config FILE|DIR/     Fix yaml files so babysit --config DIR/ accepts them; --yes, comments kept
   babysit list [--all]                 List active sessions and launch flags
   babysit watch [--all]                Live sessions with usage headroom + account usage, redrawn every 2s
   babysit open [id|name|number]        Attach to an active session
@@ -57,7 +58,7 @@ Flags:
   --clone         Work in a copy while mounting the original at /original
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
   --adb           Android Debug Bridge access with adb keys shared across sessions
-  --yes           Skip clone safety and --config DIR/ confirmation prompts
+  --yes           Skip clone safety and --config DIR/ confirmation prompts; with "audit", apply required fixes
   --ignore-host-agents-md
                   Keep host agent instructions, skills, and preferences out of the container
   --name NAME     Give the session a human-readable name
