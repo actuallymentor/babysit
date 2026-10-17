@@ -14,6 +14,7 @@ const EPHEMERAL_CREDENTIAL_PREFIXES = [
     `babysit-gh-hosts.yml-`,
     `babysit-gh-credentials.env-`,
     `babysit-credentials-env-`,
+    `babysit-claude-account-env-`,
     `babysit-creds-`,
     `babysit-opencode-`,
 ]

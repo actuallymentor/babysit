@@ -139,6 +139,19 @@ describe( `session_usage_limits`, () => {
         expect( session_usage_limits( null, { agent: `claude` } ) ).toEqual( [] )
     } )
 
+    it( `counts only the session's own Claude account`, () => {
+
+        const window = used_percent => ( { name: `five_hour`, kind: `window`, used_percent } )
+        const accounts = { agents: [
+            { agent: `claude`, account: `default`, status: `ok`, limits: [ window( 10 ) ] },
+            { agent: `claude`, account: `work`, status: `ok`, limits: [ window( 99 ) ] },
+        ] }
+
+        expect( session_usage_limits( accounts, { agent: `claude`, claude_account: `work` } ) ).toEqual( [ window( 99 ) ] )
+        expect( session_usage_limits( accounts, { agent: `claude` } ) ).toEqual( [ window( 10 ) ] )
+
+    } )
+
 } )
 
 describe( `usage_cell`, () => {

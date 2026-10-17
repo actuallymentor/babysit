@@ -105,7 +105,9 @@ const ask_yes = ( { input, output }, question ) => new Promise( resolve => {
 } )
 
 /**
- * The `babysit auth init` step for Claude's long-lived token.
+ * The `babysit auth init` step for Claude's long-lived token. With
+ * `flags.name` (`--name work`) the token becomes a named account in the
+ * registry instead of the ~/.babysitrc default.
  * @param {Object} cmd - Parsed command; `flags.claude_token` true forces, false skips
  * @param {Object} [options] - Streams, environment, and process seams
  * @returns {Promise<'saved'|'present'|'skipped'|'failed'>} Outcome
@@ -120,9 +122,13 @@ export const setup_claude_token = async ( cmd, {
     confirm = ask_yes,
     verify = token => run_host_cli_auth_check( get_agent( `claude` ), { env: token_probe_env( env, token ) } ),
     save = save_claude_token,
+    // Lazy: the registry module imports this one
+    save_named = async ( name, token ) => ( await import( './claude_accounts.js' ) ).save_account( name, token ),
 } = {} ) => {
 
-    const wanted = cmd.flags?.claude_token
+    // `default` is the rc token, so `--name default` is the plain flow
+    const account = cmd.flags?.name && cmd.flags.name !== `default` ? cmd.flags.name : null
+    const wanted = account ? true : cmd.flags?.claude_token
     if( wanted === false ) return `skipped`
 
     const bin = resolve_bin( `claude`, env )
@@ -160,6 +166,12 @@ export const setup_claude_token = async ( cmd, {
     if( !result?.authenticated ) {
         output.write( `Could not prove the token (${ result?.reason || result?.status || `no host probe` }); nothing saved.\n` )
         return `failed`
+    }
+
+    if( account ) {
+        const path = await save_named( account, token )
+        output.write( `Saved Claude account "${ account }" to ${ path } (0600). Launches pick the account with most headroom, or pass --account ${ account }.\n` )
+        return `saved`
     }
 
     const path = save( token )

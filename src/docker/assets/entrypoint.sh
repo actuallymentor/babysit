@@ -138,6 +138,17 @@ if [ -f "$CREDENTIAL_ENV_BOOTSTRAP" ]; then
     unset credential_line CREDENTIAL_ENV_BOOTSTRAP
 fi
 
+# A chosen Claude account (babysit --account, or picked by headroom) arrives
+# the same way. Keep it in the agent's home so a container restart still has
+# it; run_agent applies it after ~/.babysitrc, so it outranks the rc token.
+CLAUDE_ACCOUNT_BOOTSTRAP=/tmp/.babysit-claude-account.env
+if [ -f "$CLAUDE_ACCOUNT_BOOTSTRAP" ]; then
+    install -m 600 -o "$HOST_UID" -g "$HOST_GID" \
+        "$CLAUDE_ACCOUNT_BOOTSTRAP" /home/node/.babysit-claude-account.env
+    rm -f "$CLAUDE_ACCOUNT_BOOTSTRAP"
+fi
+unset CLAUDE_ACCOUNT_BOOTSTRAP
+
 # Bring claude into the cross-agent skills convention. Codex and OpenCode
 # already discover ~/.agents/skills/ natively; claude only looks at
 # ~/.claude/skills/, so symlink the cross-agent path into place when the
@@ -157,6 +168,14 @@ run_agent() {
             # shellcheck source=/dev/null
             source /home/node/.babysitrc || exit $?
             set +a
+        fi
+        # The Claude account chosen for this session wins over the rc.
+        # Literal KEY=value lines, never evaluated as shell.
+        if [ -f /home/node/.babysit-claude-account.env ]; then
+            while IFS= read -r account_line || [ -n "$account_line" ]; do
+                [ -n "$account_line" ] && export "${account_line?}"
+            done < /home/node/.babysit-claude-account.env
+            unset account_line
         fi
         # Secondary agy invocations need the same API route as the frontend.
         python3 /usr/local/bin/antigravity-auth.py "$@" || exit $?
