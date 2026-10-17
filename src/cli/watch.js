@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 
+import { opencode_model_flag } from '../agents/opencode.js'
 import { DEFAULT_ACCOUNT, collect_account_usage } from './claude_accounts.js'
 import { relative_time, usage_color } from '../docker/assets/usage/format.mjs'
 import { paint } from '../utils/color.js'
@@ -78,7 +79,8 @@ export const usage_level = limits => {
         .filter( limit => limit.kind === `window` )
         .map( limit_percent )
         .filter( is_number )
-        .map( used => 100 - used )
+        // Overspent windows report >100% used; headroom bottoms out at 0
+        .map( used => Math.max( 0, 100 - used ) )
     if( !remaining.length ) return null
 
     const worst = Math.min( ...remaining )
@@ -88,17 +90,36 @@ export const usage_level = limits => {
 }
 
 /**
+ * The provider an OpenCode session bills: the `provider/` half of the model
+ * its launch spec records (start.js fills in the default model when no flag
+ * names one).
+ * @param {Object|undefined} session - Stored session record
+ * @returns {string|null} Provider id, or null when the record names no model
+ */
+const opencode_provider = session => opencode_model_flag( session?.launch_spec?.args || [] )?.split( `/` )[0] || null
+
+/**
  * The limits that bound one session: every healthy report entry for its agent.
  * With several Claude accounts the report holds one entry per account, so a
  * session only counts the account it runs on (`default` when unrecorded).
+ * OpenCode spans providers, so a session only counts the provider its model
+ * runs on, and nothing when that is unknown rather than the worst of all.
  * @param {Object|null} report - collect_usage result
  * @param {Object|undefined} session - Stored session record
  * @returns {Object[]} Limits, empty when the report has nothing for the session
  */
-export const session_usage_limits = ( report, session ) => ( report?.agents || [] )
-    .filter( result => result.agent === session?.agent && result.status === `ok` )
-    .filter( result => !result.account || result.account === ( session?.claude_account || DEFAULT_ACCOUNT ) )
-    .flatMap( result => result.limits || [] )
+export const session_usage_limits = ( report, session ) => {
+
+    const provider = session?.agent === `opencode` ? opencode_provider( session ) : undefined
+    if( provider === null ) return []
+
+    return ( report?.agents || [] )
+        .filter( result => result.agent === session?.agent && result.status === `ok` )
+        .filter( result => !result.account || result.account === ( session?.claude_account || DEFAULT_ACCOUNT ) )
+        .filter( result => provider === undefined || result.provider === provider )
+        .flatMap( result => result.limits || [] )
+
+}
 
 /**
  * USAGE cell for one session row: level plus the floored remaining %, or a dim

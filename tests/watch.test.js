@@ -122,6 +122,10 @@ describe( `usage_level`, () => {
         expect( usage_level( limits.slice( 1 ) ) ).toBeNull()
     } )
 
+    it( `bottoms out at 0% left when a window is overspent`, () => {
+        expect( usage_level( [ { name: `five_hour`, kind: `window`, used_percent: 130 } ] ) ).toEqual( { label: `critical`, color: `red`, remaining: 0 } )
+    } )
+
     it( `is null without data`, () => {
         expect( usage_level( null ) ).toBeNull()
         expect( usage_level( [] ) ).toBeNull()
@@ -149,6 +153,23 @@ describe( `session_usage_limits`, () => {
 
         expect( session_usage_limits( accounts, { agent: `claude`, claude_account: `work` } ) ).toEqual( [ window( 99 ) ] )
         expect( session_usage_limits( accounts, { agent: `claude` } ) ).toEqual( [ window( 10 ) ] )
+
+    } )
+
+    it( `counts only the provider an OpenCode session's model runs on`, () => {
+
+        const window = used_percent => ( { name: `five_hour`, kind: `window`, used_percent } )
+        const providers = { agents: [
+            { agent: `opencode`, provider: `anthropic`, status: `ok`, limits: [ window( 10 ) ] },
+            { agent: `opencode`, provider: `openai`, status: `ok`, limits: [ window( 99 ) ] },
+        ] }
+        const session = args => ( { agent: `opencode`, launch_spec: { args } } )
+
+        expect( session_usage_limits( providers, session( [ `--model`, `openai/gpt-5` ] ) ) ).toEqual( [ window( 99 ) ] )
+        expect( session_usage_limits( providers, session( [ `-m=anthropic/claude-sonnet` ] ) ) ).toEqual( [ window( 10 ) ] )
+        // Unknown provider: nothing, not the worst of all
+        expect( session_usage_limits( providers, session( [] ) ) ).toEqual( [] )
+        expect( session_usage_limits( providers, { agent: `opencode` } ) ).toEqual( [] )
 
     } )
 
