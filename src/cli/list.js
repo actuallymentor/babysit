@@ -203,9 +203,12 @@ export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
         }
     } )
 
+    // Fork links between displayed rows only; a parent off the list makes a root
     const nodes = [ ...tmux_sessions, ...exited.values() ]
     const node_by_id = new Map( nodes.map( node => [ stored_for( node )?.babysit_id, node ] ).filter( ( [ id ] ) => id ) )
     const parent_node = node => node_by_id.get( fork_parent_of( stored_for( node ), by_id )?.babysit_id ) || null
+
+    // The seen set stops at a lineage cycle instead of looping forever
     const root_of = node => {
         const seen = new Set()
         let current = node
@@ -215,6 +218,7 @@ export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
         }
         return current
     }
+
     const children = new Map()
     nodes.forEach( node => {
         const parent = parent_node( node )
@@ -230,6 +234,7 @@ export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
     const trunk_of = node => stored_for( root_of( node ) )?.pwd || null
     const archived = node => Boolean( stored_for( node )?.archived_at )
 
+    // Workspaces sort by their first live row; fully archived ones sink
     const trunk_first_index = new Map()
     const trunk_all_archived = new Map()
     tmux_sessions.forEach( ( tmux, index ) => {
@@ -246,7 +251,7 @@ export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
     ]
 
     const compare = ( left, right ) => {
-        const index = left.findIndex( ( value, position ) => value !== right[ position ] )
+        const index = left.findIndex( ( value, column ) => value !== right[ column ] )
         return index === -1 ? 0 : left[ index ] - right[ index ]
     }
 
@@ -269,11 +274,11 @@ export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
 /**
  * Tree glyphs for the session list. Plain ASCII on dumb terminals.
  * @param {Object} [env=process.env] - Environment to inspect
- * @returns {{ branch: string, last: string }} Leaf prefixes
+ * @returns {{ branch: string, last: string, pipe: string }} Leaf prefixes and the ancestor rail
  */
 const tree_glyphs = ( env = process.env ) => env.TERM === `dumb`
-    ? { branch: `|- `, last: `\\- ` }
-    : { branch: `├─ `, last: `└─ ` }
+    ? { branch: `|- `, last: `\\- `, pipe: `|  ` }
+    : { branch: `├─ `, last: `└─ `, pipe: `│  ` }
 
 /**
  * Tree prefix for each row's NAME cell, from the fork parents present in
@@ -298,8 +303,8 @@ export const fork_tree_prefixes = ( rows, stored_sessions, env = process.env ) =
     } )
     const has_later_sibling = index => parents.some( ( parent, other ) => other > index && parent === parents[ index ] )
 
-    const { branch, last } = tree_glyphs( env )
-    const pipe = env.TERM === `dumb` ? `|  ` : `│  `
+    // Each ancestor with a later sibling draws a rail; the row itself a branch or last glyph
+    const { branch, last, pipe } = tree_glyphs( env )
     const prefix_for = index => {
         if( parents[ index ] === null ) return ``
         const own = has_later_sibling( index ) ? branch : last

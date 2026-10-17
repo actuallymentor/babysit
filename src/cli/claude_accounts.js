@@ -27,6 +27,7 @@ const ACCOUNT_NAME = /^[a-z0-9][a-z0-9_.-]{0,31}$/i
 const YEAR_MS = 365 * 24 * 3600_000
 const RC_STAMP = /^# Claude setup-token from babysit auth init, (\d{4}-\d{2}-\d{2}); expires ~(\d{4}-\d{2}-\d{2})/m
 
+// Missing or corrupt files read as null
 const read_json = path => {
     try {
         return JSON.parse( readFileSync( path, `utf8` ) )
@@ -269,12 +270,20 @@ export const account_credential_mounts = account => account && account.name !== 
 export const account_usage_report = async ( { max_age_ms = ACCOUNT_USAGE_TTL_MS, list = list_claude_accounts, probe = probe_accounts } = {} ) => {
 
     const readings = await probe( list(), { max_age_ms } )
+
+    // A dead named token is re-minted under its own name
+    const remint_hint = ( name, message ) => name === DEFAULT_ACCOUNT ? message : message.replace( `--claude-token`, `--claude-token --name ${ name }` )
+
     return {
         fetched_at: new Date().toISOString(),
         agents: readings.map( ( { name, status, limits, message, fetched_at } ) => ( {
-            agent: `claude`, provider: `anthropic`, account: name, fetched_at,
-            // A dead named token is re-minted under its own name
-            status, limits, ...message ? { message: name === DEFAULT_ACCOUNT ? message : message.replace( `--claude-token`, `--claude-token --name ${ name }` ) } : {},
+            agent: `claude`,
+            provider: `anthropic`,
+            account: name,
+            fetched_at,
+            status,
+            limits,
+            ...message ? { message: remint_hint( name, message ) } : {},
             ...status === `ok` ? { source: `Claude rate-limit headers (1-token request)` } : {},
         } ) ),
     }
@@ -287,9 +296,14 @@ export const account_usage_report = async ( { max_age_ms = ACCOUNT_USAGE_TTL_MS,
  * @param {Object} [options] - max_age_ms plus list/probe seams
  * @returns {Function} Async hook
  */
-export const claude_account_entries = ( { max_age_ms = ACCOUNT_USAGE_TTL_MS, list = list_claude_accounts, probe = probe_accounts } = {} ) => async () => list().length >= 2
-    ? ( await account_usage_report( { max_age_ms, list, probe } ) ).agents
-    : null
+export const claude_account_entries = ( { max_age_ms = ACCOUNT_USAGE_TTL_MS, list = list_claude_accounts, probe = probe_accounts } = {} ) => async () => {
+
+    if( list().length < 2 ) return null
+
+    const { agents } = await account_usage_report( { max_age_ms, list, probe } )
+    return agents
+
+}
 
 /**
  * collect_usage, with Claude split per account when two or more exist.
@@ -312,9 +326,12 @@ const day = value => value ? String( value ).slice( 0, 10 ) : `-`
  */
 export const format_accounts_table = ( accounts, usage, now = Date.now() ) => {
 
+    // Minutes under an hour, hours under two days, then days
     const age = fetched_at => {
         const minutes = Math.max( 0, Math.round( ( now - Date.parse( fetched_at ) ) / 60_000 ) )
-        return minutes < 60 ? `${ minutes }m` : minutes < 2_880 ? `${ Math.round( minutes / 60 ) }h` : `${ Math.round( minutes / 1_440 ) }d`
+        if( minutes < 60 ) return `${ minutes }m`
+        if( minutes < 2_880 ) return `${ Math.round( minutes / 60 ) }h`
+        return `${ Math.round( minutes / 1_440 ) }d`
     }
     const headroom = name => {
         const reading = usage[ name ]

@@ -174,6 +174,7 @@ export const default_fork_filesystem = ( { parent_live, parent_stuck, flags } ) 
 
 }
 
+// Read-only Git query; null on any failure so callers treat it as "unknown"
 const git = ( tree, args ) => {
 
     const result = spawnSync( `git`, [ `-C`, tree, `--no-optional-locks`, ...args ], { encoding: `utf8`, stdio: [ `ignore`, `pipe`, `ignore` ], timeout: 15_000 } )
@@ -223,6 +224,7 @@ export const format_parent_state = ( tree, parent_state ) => [
     `parent: ${ parent_state }`,
 ].join( ` · ` )
 
+// One terminal question; the readline closes again so stdin stays free for tmux
 const ask_line = async question => {
 
     const rl = createInterface( { input: process.stdin, output: process.stdout } )
@@ -269,7 +271,8 @@ export const choose_fork_filesystem = async ( {
     const question = fallback === `clone`
         ? `Filesystem: [c]lone a snapshot or [s]hare the parent's workspace? [C/s] `
         : `Filesystem: [s]hare the parent's workspace or [c]lone a snapshot? [S/c] `
-    const answer = ( await ( ask || ask_line )( question ) ).trim().toLowerCase()
+    const ask_user = ask || ask_line
+    const answer = ( await ask_user( question ) ).trim().toLowerCase()
     if( !answer ) return fallback
     if( [ `c`, `clone` ].includes( answer ) ) return `clone`
     if( [ `s`, `share` ].includes( answer ) ) return `share`
@@ -471,6 +474,8 @@ export const cmd_fork = async ( cmd, {
     const parent_state = !parent_live ? `exited` : parent.stuck_at ? `stuck` : `live`
     const label = `${ number ? `#${ number } ` : `` }${ parent.name || parent.babysit_id }`
 
+    const parent_sandbox = Boolean( parent.modifiers?.includes( `sandbox` ) )
+
     const agent = get_agent( cmd.agent || parent.agent )
     if( !agent ) throw new Error( `Unknown agent: ${ cmd.agent || parent.agent }` )
 
@@ -482,6 +487,7 @@ export const cmd_fork = async ( cmd, {
     // Only what was typed pre-agrees: a parent's inherited YOLO is no answer
     const typed = cmd.flags || {}
     const autonomous = Boolean( typed.yes || typed.yolo || env.AGENT_AUTONOMY_MODE === `yolo` )
+    const ask_user = ask || ask_line
 
     // Clone membership follows clone_id: a read-only fork of a clone has no
     // clone_path of its own, but its files (and prune's family) are that clone's
@@ -490,7 +496,7 @@ export const cmd_fork = async ( cmd, {
     const parent_tree = parent_clone || session_workspace( parent )
 
     // Show what is being forked before asking how
-    const tree = describe_parent_tree( parent.modifiers?.includes( `sandbox` ) ? null : parent_tree )
+    const tree = describe_parent_tree( parent_sandbox ? null : parent_tree )
     log.info( `Forking ${ label } (${ parent.agent } → ${ agent.name })` )
     log.info( `  ${ format_parent_state( tree, parent_state ) }` )
 
@@ -502,7 +508,7 @@ export const cmd_fork = async ( cmd, {
         input,
     } )
     const history = plan_fork_history( { parent, agent, flags } )
-    if( parent.modifiers?.includes( `sandbox` ) && history.kind !== `none` ) log.warn( `The parent ran in a sandbox: its conversation lives only in its container, so the fork gets a summary${ parent_live ? `` : ` without the transcript` }.` )
+    if( parent_sandbox && history.kind !== `none` ) log.warn( `The parent ran in a sandbox: its conversation lives only in its container, so the fork gets a summary${ parent_live ? `` : ` without the transcript` }.` )
     log.info( `  filesystem: ${ filesystem }, history: ${ history.kind } (${ history.reason })` )
 
     // Run from where the parent's files live; start.js derives /workspace from it.
@@ -510,10 +516,14 @@ export const cmd_fork = async ( cmd, {
     // even when the parent is a read-only fork that ran inside the clone.
     const clone_original = parent_clone && !parent.clone_path ? load_clone( parent_clone_id, { clones_dir } )?.original_workspace : null
     const original = clone_original || session_original_workspace( parent )
+
+    // Sharing a clone either looks into it (mudbox) or joins its family (writable)
     const read_only_clone = Boolean( filesystem === `share` && parent_clone && flags.mudbox )
     const joins_clone = Boolean( filesystem === `share` && parent_clone && !flags.mudbox )
     const needs_original = filesystem === `clone` || joins_clone
     if( needs_original && parent_clone && !parent.clone_path && !clone_original ) throw new Error( `Parent clone ${ parent_clone_id } no longer exists` )
+
+    // Refuse vanished trees before any Docker work starts
     const launch_dir = read_only_clone ? parent_clone : original
     if( filesystem === `clone` && !existsSync( parent_tree ) ) throw new Error( `Parent workspace no longer exists: ${ parent_tree }` )
     if( filesystem !== `none` && !existsSync( launch_dir ) ) throw new Error( `Parent workspace no longer exists: ${ launch_dir }` )
@@ -523,12 +533,16 @@ export const cmd_fork = async ( cmd, {
     const fork_dir = join( forks_dir, randomUUID() )
     const mounts = []
     if( history.kind === `handoff` ) {
+
         mkdirSync( fork_dir, { recursive: true, mode: 0o700 } )
         const transcript = await read_transcript( parent, { live: parent_live } )
+
+        // The raw transcript rides along so the fork can look up what the summary drops
         const exported = transcript?.transcript
             ? await export_transcript( parent, transcript.transcript, fork_dir, { live: parent_live } )
             : null
         const transcript_path = exported ? `${ TRANSCRIPT_CONTAINER_PREFIX }${ exported.split( `/` ).pop() }` : null
+
         const markdown = build_handoff_markdown( {
             parent,
             transcript,
@@ -541,6 +555,7 @@ export const cmd_fork = async ( cmd, {
         mounts.push( copy_mount( handoff_file, HANDOFF_CONTAINER_PATH ) )
         if( exported ) mounts.push( copy_mount( exported, transcript_path ) )
         if( !transcript ) log.warn( `Could not read the parent transcript; the handoff carries metadata and Git state only.` )
+
     }
 
     const fork = {
@@ -561,9 +576,12 @@ export const cmd_fork = async ( cmd, {
         },
         // Runs inside start once the fork's workspace exists
         prepare: async ( { workspace, clone_branch } ) => {
+
             const native = history.kind === `native`
+
             // Volumes are keyed by the workspace the parent ran in
             if( native ) await copy_volumes( agent, { from_workspace: session_workspace( parent ), to_workspace: workspace, live: parent_live } )
+
             const notes = fork_prompt_notes( {
                 filesystem,
                 history: history.kind,
@@ -577,6 +595,7 @@ export const cmd_fork = async ( cmd, {
                 // A native fork already carries the launch prompt in its history
                 prompt: base => [ native ? `` : base, ...notes ].filter( Boolean ).join( `\n\n` ),
             }
+
         },
     }
 
@@ -592,10 +611,10 @@ export const cmd_fork = async ( cmd, {
     } ).finally( () => rmSync( fork_dir, { recursive: true, force: true } ) )
     if( !session ) return
 
-    // The fork is up; the user may hand the work over completely
+    // The fork is up; the user may hand the work over completely (only asked when someone can answer)
     if( parent_live ) {
-        const takeover = flags.takeover || !autonomous && ( ask || input.isTTY )
-            && /^y(es)?$/i.test( ( await ( ask || ask_line )( `Close ${ label }? [y/N] ` ) ).trim() )
+        const can_ask = !autonomous && ( ask || input.isTTY )
+        const takeover = flags.takeover || can_ask && /^y(es)?$/i.test( ( await ask_user( `Close ${ label }? [y/N] ` ) ).trim() )
         if( takeover ) {
             await close( parent )
             log.info( `Closed ${ label }` )

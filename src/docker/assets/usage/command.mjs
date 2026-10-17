@@ -73,7 +73,9 @@ export const collect_usage = async ( {
         return login ? claude( login ) : unauthenticated()
 
     }
-    tasks.push( claude_accounts().catch( () => null ).then( results => results || attempt( `claude`, `anthropic`, claude_single ) ) )
+    // A failed account split falls back to the single entry rather than dropping Claude
+    const claude_entries = claude_accounts().catch( () => null ).then( results => results || attempt( `claude`, `anthropic`, claude_single ) )
+    tasks.push( claude_entries )
     query( `codex`, `openai`, async () => {
         const managed = env.BABYSIT_EFFORT_AGENT === `codex` && env.BABYSIT_EFFORT_ENDPOINT
         const token = auth.codex?.tokens?.access_token
