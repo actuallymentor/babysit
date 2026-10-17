@@ -51,6 +51,14 @@ const CHECKS = {
 }
 
 /**
+ * Problem with one `launch:` value, as validate_launch words it after the key.
+ * @param {string} key - Launch key
+ * @param {*} value - Raw value
+ * @returns {string|null} e.g. `must be true or false`; null when valid or the key is unknown
+ */
+export const launch_key_problem = ( key, value ) => CHECKS[ key ]?.( value ) ?? null
+
+/**
  * Validate a `launch:` section.
  *
  * Strict mode (directory launches) requires every key but `name`, each with a

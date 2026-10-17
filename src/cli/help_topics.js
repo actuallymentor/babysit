@@ -102,6 +102,29 @@ Examples:
   babysit codex --config review.yaml
   babysit --config sessions/`,
 
+    audit: () => `Usage: babysit audit --config FILE|DIR/ [--yes]
+
+Checks yaml files against what \`babysit --config DIR/\` requires (every launch:
+key but name, valid values) and fixes them in place, keeping comments and order.
+DIR/ means every DIR/*.yaml|yml, the same set a directory launch reads.
+
+Per file: lists problems, fills missing keys with defaults (asks for the agent,
+never assumes one), offers y/N per invalid value (reset to default) and unknown
+key (remove), then optional additions (y/N each): launch.name from the file
+name, config tuning keys, a config.clone: section when launch.clone is true,
+and empty commands/rules with example comments. Shows a diff, then Write? [Y/n].
+
+Without a terminal it only reports. Exit 1 while any file still fails.
+
+Options:
+  --yes      Apply missing defaults and every fix without asking; skip optional
+             additions. A missing agent still needs a terminal.
+
+Examples:
+  babysit audit --config review.yaml
+  babysit audit --config sessions/
+  babysit audit --config sessions/ --yes`,
+
     list: () => `Usage: babysit list [--all]
 
 Active sessions as a tree: workspace trunks with numbered leaves, colored status

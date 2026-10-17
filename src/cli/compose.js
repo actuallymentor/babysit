@@ -8,13 +8,12 @@ import { list_sessions } from '../tmux/session.js'
 import { canonical_workspace, cmd_start, should_confirm_docker_restricted_mode } from './start.js'
 
 /**
- * Read every yaml in a directory (not recursive) into a launch plan.
- * Names default to the file's path relative to the directory, minus extension
- * unless that leaves only digits (reserved for `babysit open N`).
+ * The yaml files a directory launch reads: `DIR/*.yaml|yml`, not recursive.
+ * Shared with `babysit audit` so both see the same set.
  * @param {string} dir - Absolute directory
- * @returns {{ files: string[], entries: Object[], errors: string[] }} Yaml paths, one entry per valid file, and every problem found
+ * @returns {string[]} Sorted absolute paths
  */
-export const read_launch_dir = dir => {
+export const launch_dir_files = dir => {
 
     // statSync follows symlinks, so linked configs count as files
     const is_file = path => {
@@ -24,11 +23,38 @@ export const read_launch_dir = dir => {
             return false
         }
     }
-    const files = readdirSync( dir )
+
+    return readdirSync( dir )
         .filter( name => /\.ya?ml$/i.test( name ) )
         .map( name => join( dir, name ) )
         .filter( is_file )
         .sort()
+
+}
+
+/**
+ * Session name a directory launch gives a yaml without `launch.name`: its path
+ * relative to the directory, minus extension unless that leaves only digits
+ * (reserved for `babysit open N`).
+ * @param {string} file - Path relative to the directory
+ * @returns {string}
+ */
+export const launch_name_for = file => {
+
+    const stem = file.replace( /\.ya?ml$/i, `` )
+    return /^\d+$/.test( stem ) ? file : stem
+
+}
+
+/**
+ * Read every yaml in a directory (not recursive) into a launch plan.
+ * Names default to launch_name_for the file.
+ * @param {string} dir - Absolute directory
+ * @returns {{ files: string[], entries: Object[], errors: string[] }} Yaml paths, one entry per valid file, and every problem found
+ */
+export const read_launch_dir = dir => {
+
+    const files = launch_dir_files( dir )
 
     const entries = []
     const errors = []
@@ -43,8 +69,7 @@ export const read_launch_dir = dir => {
                 continue
             }
 
-            const stem = file.replace( /\.ya?ml$/i, `` )
-            const cmd = launch_to_command( launch, { config_path: path, name: /^\d+$/.test( stem ) ? file : stem } )
+            const cmd = launch_to_command( launch, { config_path: path, name: launch_name_for( file ) } )
             entries.push( { path, file, launch, cmd } )
         } catch ( error ) {
             errors.push( `${ file }: ${ error.message }` )
