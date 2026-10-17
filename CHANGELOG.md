@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.44.0 — 2026-10-17
+
+### Added
+- `babysit fork <number|id> [agent] [flags]`: continue a session in a new one. Share the tree or take a full clone snapshot (uncommitted, untracked, unpushed; mid-merge/rebase falls back to copy), chosen interactively with state-aware defaults (`--share`/`--clone`). Same agent forks its native chat; another agent gets a transcript handoff (`--no-history` skips). Inherits modes, config, model/effort, Claude account; `--regular`, `--no-yolo|docker|adb|loop` drop inherited switches. `--takeover` closes the parent. Launcher: `f`.
+- `list`/`watch` nest forks under their parent at any depth; an exited parent stays as `exited` while a fork lives.
+- `babysit watch` USAGE column: worst remaining rate window per session as `critical` (<5%), `low` (<20%), `fine` (<40%) or `plenty`. Extra usage, spend caps and balances don't count.
+- `babysit audit --config FILE|DIR/`: fill missing `launch:` keys, fix bad values and unknown keys per item, offer optional defaults; diff before write, comments kept. Non-TTY reports only; `--yes` applies required fixes.
+- Claude accounts: `babysit auth init --claude-token --name NAME`, `babysit auth accounts [remove NAME]`, `--account NAME`. Launch picks the account with most headroom; a limit hit restarts the session on the next account with chat resumed. `claude_account_auto_switch: false` turns switching off. Named tokens reach their container as a private file, never `docker -e`. `usage`/`watch` show one row per account.
+
 ## 1.43.0 — 2026-10-16
 
 ### Added

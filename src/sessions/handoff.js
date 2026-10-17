@@ -196,7 +196,8 @@ const quote = text => text.split( `\n` ).map( line => `> ${ line }` ).join( `\n`
 /**
  * Build the handoff a fork reads as its first prompt: the parent's original
  * requests, its latest replies, the files it touched, and the tree state.
- * Older material is dropped first when the cap is reached.
+ * At the cap, middle requests and older replies go first; the first request
+ * (the task) and the latest exchange stay.
  * @param {Object} options
  * @param {Object} options.parent - Parent session record
  * @param {Object|null} options.transcript - read_parent_transcript result
@@ -242,16 +243,30 @@ export const build_handoff_markdown = ( {
         ... tree.unpushed ? [ ``, `Unpushed commits:`, ``, `\`\`\``, clip( tree.unpushed, 2_000 ), `\`\`\`` ] : [],
     ]
 
-    // Sections in priority order; the oldest prompts and replies go first when trimming
+    // The first request is the task and the latest is where it ended up, so
+    // trimming drops the requests in between, oldest first
+    const numbered_prompts = count => {
+
+        const entry = index => [ `${ index + 1 }.`, quote( prompts[ index ] ), `` ]
+        if( count >= prompts.length ) return prompts.flatMap( ( _, index ) => entry( index ) )
+
+        const tail = prompts.length - ( count - 1 )
+        return [
+            ...entry( 0 ),
+            `(${ tail - 1 } earlier requests omitted)`, ``,
+            ...prompts.slice( tail ).flatMap( ( _, offset ) => entry( tail + offset ) ),
+        ]
+
+    }
+
+    // Sections in priority order; the oldest replies go first when trimming
     const render = ( prompt_count, reply_count ) => [
         ...header,
         ``,
         `## Original user requests`,
         ``,
-        ... prompts.length ? [
-            ... prompt_count < prompts.length ? [ `(${ prompts.length - prompt_count } earlier requests omitted)`, `` ] : [],
-            ...prompts.slice( prompts.length - prompt_count ).flatMap( ( text, index ) => [ `${ prompts.length - prompt_count + index + 1 }.`, quote( text ), `` ] ),
-        ] : [ `(none found)`, `` ],
+        ... prompts.length ? numbered_prompts( prompt_count ) : [],
+        ... prompts.length ? [] : [ `(none found)`, `` ],
         `## Latest assistant messages`,
         ``,
         ... replies.length ? replies.slice( replies.length - reply_count ).flatMap( text => [ quote( text ), `` ] ) : [ `(none found)`, `` ],
@@ -263,10 +278,11 @@ export const build_handoff_markdown = ( {
     let reply_count = replies.length
     let markdown = render( prompt_count, reply_count )
 
-    // Drop from the longer list, oldest first; the latest request and the last
+    // Drop from the longer list; the first and latest requests and the last
     // reply (where the parent stopped) are never dropped
-    while( markdown.length > max_chars && ( prompt_count > 1 || reply_count > 1 ) ) {
-        if( reply_count > 1 && ( reply_count >= prompt_count || prompt_count <= 1 ) ) reply_count--
+    const min_prompts = Math.min( 2, prompts.length )
+    while( markdown.length > max_chars && ( prompt_count > min_prompts || reply_count > 1 ) ) {
+        if( reply_count > 1 && ( reply_count >= prompt_count || prompt_count <= min_prompts ) ) reply_count--
         else prompt_count--
         markdown = render( prompt_count, reply_count )
     }
