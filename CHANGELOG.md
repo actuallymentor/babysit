@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.44.1 — 2026-10-17
+
+### Fixed
+- `babysit watch` USAGE column showed the `default` account's headroom for a session on a newly added Claude account until the next 5-min refresh. Watch now refreshes as soon as accounts are added or removed, and a single-account reading never counts for a session on a named account (dash instead).
+
 ## 1.44.0 — 2026-10-17
 
 ### Added

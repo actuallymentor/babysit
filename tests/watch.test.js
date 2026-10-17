@@ -156,6 +156,16 @@ describe( `session_usage_limits`, () => {
 
     } )
 
+    it( `never lends a single-account entry to a session on a named account`, () => {
+
+        const window = used_percent => ( { name: `weekly_all`, kind: `window`, used_percent } )
+        const single = { agents: [ { agent: `claude`, status: `ok`, limits: [ window( 96 ) ] } ] }
+
+        expect( session_usage_limits( single, { agent: `claude`, claude_account: `OliviaSub` } ) ).toEqual( [] )
+        expect( session_usage_limits( single, { agent: `claude` } ) ).toEqual( [ window( 96 ) ] )
+
+    } )
+
     it( `counts only the provider an OpenCode session's model runs on`, () => {
 
         const window = used_percent => ( { name: `five_hour`, kind: `window`, used_percent } )
@@ -257,12 +267,37 @@ describe( `cmd_watch`, () => {
         expect( frame ).toMatch( /c\s.*—/ )
     } )
 
+    it( `refreshes usage at once when the Claude accounts change`, async () => {
+
+        let accounts = `default`
+        let calls = 0
+        await capture_console( () => cmd_watch( {}, {
+            rounds: 3,
+            collect_fn: async () => {
+                calls++
+                return { agents: [] }
+            },
+            accounts_fn: () => accounts,
+            render_sessions_fn: async () => {
+                accounts = `default,OliviaSub`
+            },
+            write_fn: () => {},
+            wait_fn: tick,
+            now_fn: () => 0,
+        } ) )
+
+        // First frame, then the account added mid-frame; no third call within 5 min
+        expect( calls ).toBe( 2 )
+
+    } )
+
     it( `keeps drawing when a usage refresh fails`, async () => {
         const output = await capture_console( () => cmd_watch( {}, {
             rounds: 2,
             collect_fn: async () => {
                 throw new Error( `offline` )
             },
+            accounts_fn: () => ``,
             render_sessions_fn: async () => {},
             write_fn: () => {},
             wait_fn: tick,

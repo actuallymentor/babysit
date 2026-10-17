@@ -1,7 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 
 import { opencode_model_flag } from '../agents/opencode.js'
-import { DEFAULT_ACCOUNT, collect_account_usage } from './claude_accounts.js'
+import { DEFAULT_ACCOUNT, collect_account_usage, list_claude_accounts } from './claude_accounts.js'
 import { relative_time, usage_color } from '../docker/assets/usage/format.mjs'
 import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
@@ -101,7 +101,9 @@ const opencode_provider = session => opencode_model_flag( session?.launch_spec?.
 /**
  * The limits that bound one session: every healthy report entry for its agent.
  * With several Claude accounts the report holds one entry per account, so a
- * session only counts the account it runs on (`default` when unrecorded).
+ * session only counts the account it runs on (`default` when unrecorded). A
+ * single-account entry carries no name and stands for `default`: it must not
+ * lend its numbers to a session on a named account.
  * OpenCode spans providers, so a session only counts the provider its model
  * runs on, and nothing when that is unknown rather than the worst of all.
  * @param {Object|null} report - collect_usage result
@@ -115,7 +117,7 @@ export const session_usage_limits = ( report, session ) => {
 
     return ( report?.agents || [] )
         .filter( result => result.agent === session?.agent && result.status === `ok` )
-        .filter( result => !result.account || result.account === ( session?.claude_account || DEFAULT_ACCOUNT ) )
+        .filter( result => ( result.account || DEFAULT_ACCOUNT ) === ( session?.claude_account || DEFAULT_ACCOUNT ) )
         .filter( result => provider === undefined || result.provider === provider )
         .flatMap( result => result.limits || [] )
 
@@ -226,6 +228,7 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
  * @param {Object} [cmd] - Parsed command
  * @param {Object} [deps]
  * @param {Function} [deps.collect_fn] - Usage collector seam
+ * @param {Function} [deps.accounts_fn] - Registered Claude account names, as one comparable string
  * @param {Function} [deps.render_sessions_fn] - Session tree renderer
  * @param {Function} [deps.wait_fn] - Delay between redraws
  * @param {Function} [deps.write_fn] - Raw terminal writer
@@ -234,6 +237,7 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
  */
 export const cmd_watch = async ( { flags = {} } = {}, {
     collect_fn = collect_account_usage,
+    accounts_fn = () => list_claude_accounts().map( ( { name } ) => name ).join( `,` ),
     render_sessions_fn = render_active_sessions,
     wait_fn = delay,
     write_fn = text => process.stdout.write( text ),
@@ -245,9 +249,15 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     let error = null
     let refreshed_at = -Infinity
     let pending = null
+    let accounts_seen = null
 
+    // Refresh on the 5-min cadence, or at once when Claude accounts are added
+    // or removed: the old report has no row for a new account's sessions
     const refresh_usage = () => {
-        if( pending || now_fn() - refreshed_at < USAGE_REFRESH_MS ) return
+        const accounts = accounts_fn()
+        const stale = now_fn() - refreshed_at >= USAGE_REFRESH_MS || accounts !== accounts_seen
+        if( pending || !stale ) return
+        accounts_seen = accounts
         refreshed_at = now_fn()
         pending = Promise.resolve()
             .then( () => collect_fn( { codex_read: async () => null } ) )
