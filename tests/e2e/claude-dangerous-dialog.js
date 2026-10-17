@@ -21,7 +21,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
-import { DANGEROUS_DIALOG, claude, find_dangerous_command_dialog } from '../../src/agents/claude.js'
+import { YOLO_DIALOG, claude, find_yolo_dialog } from '../../src/agents/claude.js'
 import { start_monitor } from '../../src/babysit/monitor.js'
 import { check_claude_binary, find_claude_binary } from './assets/claude-dialog-contract.js'
 
@@ -53,13 +53,12 @@ const until = async ( label, predicate, timeout_ms ) => {
 
 // Everything the approver and monitor depend on, checked one by one so a
 // report says exactly which assumption broke.
+const option_rows = lines => lines.slice( 0, -1 ).filter( line => YOLO_DIALOG.option.test( line ) )
 const DIALOG_EXPECTATIONS = [
-    [ `footer is the last line (dialog owns the bottom)`, lines => DANGEROUS_DIALOG.footer.test( lines.at( -1 ) || `` ), `DANGEROUS_DIALOG.footer` ],
-    [ `question line "Do you want to proceed?"`, lines => lines.some( line => DANGEROUS_DIALOG.question.test( line ) ), `DANGEROUS_DIALOG.question` ],
-    [ `cursor row "❯ 1. Yes" right below the question`, lines => DANGEROUS_DIALOG.approve.test( lines[ lines.findIndex( line => DANGEROUS_DIALOG.question.test( line ) ) + 1 ] || `` ), `DANGEROUS_DIALOG.approve` ],
-    [ `row "2. No" below "Yes"`, lines => DANGEROUS_DIALOG.deny.test( lines[ lines.findIndex( line => DANGEROUS_DIALOG.question.test( line ) ) + 2 ] || `` ), `DANGEROUS_DIALOG.deny` ],
-    [ `reason line "Dangerous rm operation …" above the question`, lines => lines.some( line => DANGEROUS_DIALOG.reason.test( line ) ), `DANGEROUS_DIALOG.reason` ],
-    [ `"Bash command" header naming the command`, lines => lines.some( line => DANGEROUS_DIALOG.header.test( line ) ), `DANGEROUS_DIALOG.header` ],
+    [ `footer "Esc to cancel" is the last line (dialog owns the bottom)`, lines => YOLO_DIALOG.footer.test( lines.at( -1 ) || `` ), `YOLO_DIALOG.footer` ],
+    [ `numbered option rows stacked on the footer`, lines => YOLO_DIALOG.option.test( lines.at( -2 ) || `` ) && YOLO_DIALOG.option.test( lines.at( -3 ) || `` ), `YOLO_DIALOG.option` ],
+    [ `question ending in "?" directly above the options`, lines => YOLO_DIALOG.question.test( lines[ lines.length - 2 - option_rows( lines ).length ] || `` ), `YOLO_DIALOG.question` ],
+    [ `default cursor "❯" on an approving answer`, lines => option_rows( lines ).some( line => /❯/.test( line ) && YOLO_DIALOG.approve.test( line.match( YOLO_DIALOG.option )[ 3 ] ) ), `YOLO_DIALOG.approve` ],
 ]
 
 const report = screen => {
@@ -73,7 +72,7 @@ const report = screen => {
         writeFileSync( saved, redact( screen ) )
         console.error( `\nCaptured pane bottom (full capture saved to ${ saved }):\n${ redact( bottom( screen ) ) }` )
     }
-    console.error( `\nUpdate DANGEROUS_DIALOG / find_dangerous_command_dialog in src/agents/claude.js,` )
+    console.error( `\nUpdate YOLO_DIALOG / find_yolo_dialog in src/agents/claude.js,` )
     console.error( `refresh tests/fixtures/claude/dangerous-rm-*.txt from the capture, and rerun this test.` )
     console.error( `=========================================================================\n` )
 }
@@ -124,7 +123,7 @@ const approve_with_monitor = async () => {
     let alive = true
     const monitor = start_monitor( {
         session_name: pane, config: { idle_timeout_s: 300 }, rules: [],
-        agent: claude, approve_dangerous_commands: true,
+        agent: claude, approve_dialogs: true,
         has_session_fn: async () => alive,
         capture_pane_fn: capture,
         send_keys_fn: ( target, ...keys ) => tmux( [ `send-keys`, `-t`, target, ...keys ] ),
@@ -159,9 +158,9 @@ const main = async () => {
         else drift.push( `live: ${ label } — adjust ${ fix }` )
     }
     if( !/will automatically deny this request in/.test( screen ) ) notes.push( `live: no auto-deny countdown; unattended fallback timing changed` )
-    const match = find_dangerous_command_dialog( screen )
-    if( match ) console.log( `PASS live: matcher read command "${ match.command }" (${ match.reason })` )
-    else drift.push( `live: find_dangerous_command_dialog() returned null for the real dialog` )
+    const match = find_yolo_dialog( screen )
+    if( match ) console.log( `PASS live: matcher would answer "${ match.answer }" to "${ match.question }" (${ match.title })` )
+    else drift.push( `live: find_yolo_dialog() returned null for the real dialog` )
     if( drift.length ) {
         report( screen )
         return 1

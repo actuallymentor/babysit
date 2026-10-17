@@ -51,7 +51,7 @@ Use explicit commands in scripts.
 | Flag | Effect |
 |---|---|
 | _(none)_ | Read-write workspace mount |
-| `--yolo` | Maximum autonomy; skip agent permissions (Claude: also answers the bypass-immune rm prompts: "Dangerous rm operation" and unchecked `sh -c` scripts) |
+| `--yolo` | Maximum autonomy; skip agent permissions (Claude: also accepts prompts that still block, such as rm safety checks, when their default is yes; never model swaps or billing) |
 | `--sandbox` | No workspace mount; ephemeral |
 | `--mudbox` | Read-only workspace mount |
 | `--clone` | Durable workspace clone + `/original`; explicit merge-back |
@@ -344,7 +344,7 @@ config:
     idle_timeout_s: 300
     watchdog_idle_s: 1800    # stall watchdog, see below; 0 disables
     watchdog_waiting_s: 3600
-    yolo_approve_dangerous_commands: true # false: let Claude auto-deny its rm safety prompt
+    yolo_approve_dangerous_commands: true # YOLO accepts blocking prompts whose default is yes (not model swaps/billing); false: leave them to a person
 
 babysit:
     # Uncomment wanted rules.
