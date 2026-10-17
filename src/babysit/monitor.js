@@ -120,7 +120,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Object} options.agent - Agent adapter
  * @param {Object|null} [options.web_bridge] - Optional filesystem bridge controller
  * @param {Function|null} [options.open_web_bridge_fn] - Retry bridge initialization until enabled
- * @param {boolean} [options.approve_dangerous_commands=false] - YOLO: answer the agent's bypass-immune dangerous-command prompt with Yes
+ * @param {boolean} [options.approve_dialogs=false] - YOLO: accept the agent's blocking prompts whose default is yes
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_logout_screen] - Callback with the agent name when the pane shows a lost login
@@ -138,7 +138,7 @@ export const start_monitor = async ( {
     web_bridge = null,
     open_web_bridge_fn = null,
     control_bridge = null,
-    approve_dangerous_commands = false,
+    approve_dialogs = false,
     tmux_target = session_name,
     on_session_id,
     on_logout_screen = null,
@@ -321,12 +321,11 @@ export const start_monitor = async ( {
                 break
             }
 
-            // YOLO: answer Claude's bypass-immune dangerous-command prompt the
-            // way a person would. Babysit's own input owners finish first; the
-            // prompt waits two minutes before Claude denies it on its own.
-            const dangerous = approve_dangerous_commands && agent?.dangerous_command_dialog?.( clean_output )
-            if( dangerous && !action_busy && !control_bridge?.busy && input_allowed() && Date.now() >= approval_ready_at ) {
-                log.info( `YOLO approved Claude's dangerous command prompt (${ dangerous.reason }): ${ dangerous.command.slice( 0, 200 ) }` )
+            // YOLO: accept prompts that still stop the agent, the way a person
+            // would. Babysit's own input owners finish first.
+            const dialog = approve_dialogs && agent?.yolo_dialog?.( clean_output )
+            if( dialog && !action_busy && !control_bridge?.busy && input_allowed() && Date.now() >= approval_ready_at ) {
+                log.info( `YOLO answered "${ dialog.answer }" to "${ dialog.question }"${ dialog.title ? ` (${ dialog.title.slice( 0, 120 ) })` : `` }` )
                 await send_keys_fn( agent_target, `Enter` )
                 approval_ready_at = Date.now() + APPROVAL_COOLDOWN_MS
                 idle_tracker.reset()

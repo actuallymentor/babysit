@@ -43,81 +43,63 @@ const is_initial_prompt_ready = output => {
 
 }
 
-// Claude Code 2.1.283 keeps its "Dangerous rm operation" check active under
-// --dangerously-skip-permissions (the check is bypass-immune) and auto-denies
-// it after two minutes. Captured shape, bottom of the pane:
+// YOLO answers any Claude prompt that still stops a --dangerously-skip-permissions
+// session (bypass-immune rm checks, unchecked shell -c scripts, folder trust, …)
+// by accepting its default, when that default is a plain yes. Matched by shape,
+// not wording, so new prompt variants need no code change:
 //
-//    Bash command
-//      <command>
-//      <description>
-//    │ Dangerous rm operation on <reason>
-//    ⚠ Claude Code will automatically deny this request in 1:58, …
-//    Do you want to proceed?
-//    ❯ 1. Yes
+//    <question ending in ?>
+//    ❯ 1. Yes                 ← cursor already on an approving answer
 //      2. No
-//    Esc to cancel · Tab to amend
+//    Esc to cancel · …        ← last line: the dialog owns the pane bottom
 //
-// 2.1.296 adds a sibling for `sh -c` scripts it cannot parse. It has no
-// auto-deny countdown, so it blocks until answered. Subagent calls suffix the
-// header and box the command below its description:
-//
-//    Bash command · from the general-purpose agent
-//    <description>
-//    ╌╌╌╌
-//     │ <command>
-//    ╌╌╌╌
-//    This shell -c script runs rm and could not be checked
-//
-// The "A permission rule denies a command in this shell -c script" variant
-// stays manual: it means a person's deny rule matched.
+// Never answered for the user: model swaps (fallback/usage-limit offers),
+// billing, and prompts raised by a person's own deny rule.
 //
 // tests/e2e/claude-dangerous-dialog.js reports when this layout drifts.
-export const DANGEROUS_DIALOG = {
-    reason: /^\s*│?\s*(Dangerous rm(?:dir)? operation\b.*?|This shell -c script runs rm(?:dir)? and could not be checked)\s*$/,
-    question: /^\s*Do you want to proceed\?\s*$/,
-    approve: /^\s*❯\s*1\.\s+Yes\s*$/,
-    deny: /^\s*2\.\s+No\s*$/,
-    footer: /^\s*Esc to cancel\b/,
-    header: /^\s*Bash command\b/,
-    box: /^\s*╌+\s*$/,
-    denied: /A permission rule denies a command/,
+export const YOLO_DIALOG = {
+    footer: /\bEsc to (?:cancel|exit)\b/,
+    option: /^\s*(❯\s*)?(\d+)\.\s+(\S.*?)\s*$/,
+    question: /\?\s*$/,
+    approve: /^(?:Yes|Continue|Accept|Allow|Approve|Proceed|Confirm|OK|Trust)\b/i,
+    veto: /\b(?:models?|fallback|opus|sonnet|haiku|fable|downgrade|api key|billing|credits?|extra usage|purchase|upgrade|subscribe|pay)\b/i,
+    denied: /A permission rule denies/,
+    rule: /^\s*─{4,}\s*$/,
 }
 
 /**
- * Find Claude's live dangerous-command dialog with its cursor on "Yes".
- * Only the pane's bottom counts: the same words in transcript history or a
- * cursor a person moved to "No" never match.
+ * Find a live Claude dialog YOLO may accept: its default answer is a plain yes.
+ * Only the pane's bottom counts: the same words in transcript history, or a
+ * cursor a person moved elsewhere, never match.
  * @param {string} screen - ANSI-free pane capture
- * @returns {{ command: string, reason: string } | null} Dialog details
+ * @returns {{ title: string, question: string, answer: string } | null} Dialog details
  */
-export const find_dangerous_command_dialog = screen => {
+export const find_yolo_dialog = screen => {
 
-    const lines = screen.split( `\n` ).filter( line => line.trim() ).slice( -20 )
+    const lines = screen.split( `\n` ).filter( line => line.trim() ).slice( -40 )
+    if( !YOLO_DIALOG.footer.test( lines.at( -1 ) || `` ) ) return null
 
-    // The dialog replaces the composer: question, Yes, No and footer close the pane.
-    // Anchoring on the last four lines keeps history from supplying any of them.
-    const question = lines.length - 4
-    if( !DANGEROUS_DIALOG.footer.test( lines.at( -1 ) || `` ) ) return null
-    if( !DANGEROUS_DIALOG.question.test( lines[ question ] || `` ) ) return null
-    if( !DANGEROUS_DIALOG.approve.test( lines[ question + 1 ] ) || !DANGEROUS_DIALOG.deny.test( lines[ question + 2 ] ) ) return null
+    // Options stack directly on the footer; the question sits directly on them.
+    // Anchoring on the bottom keeps history from supplying any of them.
+    let top = lines.length - 1
+    while( top > 0 && YOLO_DIALOG.option.test( lines[ top - 1 ] ) ) top--
+    const options = lines.slice( top, -1 ).map( line => line.match( YOLO_DIALOG.option ) )
+    const question = lines[ top - 1 ]?.trim() || ``
+    if( options.length < 2 || !YOLO_DIALOG.question.test( question ) ) return null
+    if( options.some( ( option, index ) => Number( option[ 2 ] ) !== index + 1 ) ) return null
 
-    const header = lines.findLastIndex( ( line, index ) => index < question && DANGEROUS_DIALOG.header.test( line ) )
-    const body = ( from, to ) => lines.map( ( line, index ) => ( { line, index } ) ).filter( ( { index } ) => index > from && index < to )
+    // The default must already approve, and nothing may hand over a model or money
+    const selected = options.filter( option => option[ 1 ] )
+    const answer = selected[ 0 ]?.[ 3 ] || ``
+    if( selected.length !== 1 || !YOLO_DIALOG.approve.test( answer ) ) return null
+    if( [ question, ...options.map( option => option[ 3 ] ) ].some( text => YOLO_DIALOG.veto.test( text ) ) ) return null
 
     // A person's deny rule matched: never approve on their behalf
-    if( body( header, question ).some( ( { line } ) => DANGEROUS_DIALOG.denied.test( line ) ) ) return null
+    const opened = lines.findLastIndex( ( line, index ) => index < top && YOLO_DIALOG.rule.test( line ) )
+    const body = lines.slice( opened + 1, top - 1 )
+    if( body.some( line => YOLO_DIALOG.denied.test( line ) ) ) return null
 
-    // Boxed layout: the reason sits below the box, so command text can never pose as one
-    const boxes = body( header, question ).filter( ( { line } ) => DANGEROUS_DIALOG.box.test( line ) ).map( ( { index } ) => index )
-    const reason_index = lines.findLastIndex( ( line, index ) => index > ( boxes.at( -1 ) ?? header ) && index < question && DANGEROUS_DIALOG.reason.test( line ) )
-    if( reason_index < 0 ) return null
-
-    // Boxed: every row inside the box; plain: the line after the header
-    const command = boxes.length >= 2
-        ? body( boxes[ 0 ], boxes[ 1 ] ).map( ( { line } ) => line.trim().replace( /^│\s*/, `` ) ).join( ` ` )
-        : header < 0 ? `` : lines[ header + 1 ].trim().replace( /^│\s*/, `` )
-
-    return { command, reason: lines[ reason_index ].match( DANGEROUS_DIALOG.reason )[ 1 ] }
+    return { title: body[ 0 ]?.trim() || ``, question, answer }
 
 }
 
@@ -215,7 +197,7 @@ export const claude = {
     initial_prompt_ready: is_initial_prompt_ready,
 
     // YOLO monitors answer this bypass-immune prompt with Enter on "Yes".
-    dangerous_command_dialog: find_dangerous_command_dialog,
+    yolo_dialog: find_yolo_dialog,
 
     /**
      * Get extra environment variables for this agent

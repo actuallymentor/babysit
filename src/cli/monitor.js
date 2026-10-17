@@ -433,7 +433,7 @@ export const cmd_monitor = async ( cmd ) => {
             on_user_input: () => stuck_controller.clear(),
             watchdog,
             on_logout_screen: request_auth_check,
-            approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
+            approve_dialogs: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_tick: () => {

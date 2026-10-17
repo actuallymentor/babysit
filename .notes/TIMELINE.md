@@ -181,3 +181,4 @@
 - 2026-10-14: `babysit watch` (sessions + account usage) supersedes `list --watch` (now exits 1); session list no longer prints after detach/exit. v1.42.0.
 - 2026-10-15: YOLO approval extended to Claude 2.1.296's "This shell -c script runs rm and could not be checked" prompt (seen blocking a subagent); deny-rule sibling stays manual.
 - 2026-10-16: 1.42.4. Monitor ends only after 5 consecutive has-session misses. Root cause of "YOLO still blocks on dangerous dialogs" in Auto Optimiser: its monitor had died on 10-14, not a matcher gap. Repaired via host `babysit recover`.
+- 2026-10-17: 1.43.0. YOLO approval generalised from two rm wordings to any bottom-anchored Claude prompt whose default is yes; user asked to veto model swaps ("continue with a lower-power model?"), so model/fallback/billing words in question/options stay manual.

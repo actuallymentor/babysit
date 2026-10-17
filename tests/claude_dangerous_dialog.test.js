@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { claude, find_dangerous_command_dialog } from '../src/agents/claude.js'
+import { claude, find_yolo_dialog } from '../src/agents/claude.js'
 import { start_monitor } from '../src/babysit/monitor.js'
 import { check_claude_binary, find_claude_binary } from './e2e/assets/claude-dialog-contract.js'
 
@@ -13,58 +13,71 @@ const substitution = fixture( `dangerous-rm-substitution.txt` )
 const shell_c = fixture( `dangerous-rm-shell-c-subagent.txt` )
 const composer = `────\n❯ \n────\n  yolo·docker\n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
 
-describe( `Claude dangerous-command dialog`, () => {
+// Builds a bottom-anchored Claude dialog: question, options, footer
+const dialog = ( question, options, { title = `Bash command`, footer = `Esc to cancel · Tab to amend` } = {} ) => [
+    `────────────────`,
+    ` ${ title }`,
+    ``,
+    ` ${ question }`,
+    ...options.map( ( option, index ) => `${ index ? `  ` : ` ❯` } ${ index + 1 }. ${ option }` ),
+    ``,
+    ` ${ footer }`,
+].join( `\n` )
 
-    test( `recognises the live glob and command-substitution variants`, () => {
-        expect( find_dangerous_command_dialog( glob ) ).toEqual( {
-            command: `cd victim && rm -rf ./*`,
-            reason: `Dangerous rm operation on statically-unresolvable target: /workspace/project/*`,
-        } )
-        expect( find_dangerous_command_dialog( substitution ) ).toMatchObject( {
-            command: `rm -rf $(echo /workspace/project/victim2)`,
-            reason: `Dangerous rm operation on statically-unresolvable target: command substitution output`,
-        } )
-        expect( claude.dangerous_command_dialog ).toBe( find_dangerous_command_dialog )
+describe( `Claude YOLO dialog`, () => {
+
+    test( `accepts the live rm safety prompts`, () => {
+        expect( find_yolo_dialog( glob ) ).toEqual( { title: `Bash command`, question: `Do you want to proceed?`, answer: `Yes` } )
+        expect( find_yolo_dialog( substitution ) ).toMatchObject( { answer: `Yes` } )
+        expect( find_yolo_dialog( shell_c ) ).toMatchObject( { title: `Bash command · from the general-purpose agent`, answer: `Yes` } )
+        expect( claude.yolo_dialog ).toBe( find_yolo_dialog )
     } )
 
-    test( `recognises the unchecked shell -c variant from a subagent`, () => {
-        const dialog = find_dangerous_command_dialog( shell_c )
-        expect( dialog.reason ).toBe( `This shell -c script runs rm and could not be checked` )
-        expect( dialog.command ).toStartWith( `cd /workspace/project/scratch && C=scratch-repro` )
-        expect( dialog.command ).toEndWith( `bash -c "rm -rf /tmp/stage && mkdir -p /tmp/stage"` )
+    test( `accepts any wording whose default approves`, () => {
+        // The wording that blocked Auto Optimiser on 2026-10-16, ordinary prompts, folder trust
+        const empty_var = glob.replace( /Dangerous rm operation on .*/, `Dangerous rm operation on possibly-empty variable path: $SHOTS/*` )
+        expect( find_yolo_dialog( empty_var ) ).not.toBeNull()
+        expect( find_yolo_dialog( glob.split( `\n` ).filter( line => !/Dangerous rm|automatically deny/.test( line ) ).join( `\n` ) ) ).not.toBeNull()
+        expect( find_yolo_dialog( dialog( `Do you trust the files in this folder?`, [ `Yes, proceed`, `No, exit` ], { footer: `Enter to confirm · Esc to exit` } ) ) ).toMatchObject( { answer: `Yes, proceed` } )
+        expect( find_yolo_dialog( dialog( `Continue?`, [ `Continue`, `Stop` ] ) ) ).toMatchObject( { answer: `Continue` } )
+        expect( find_yolo_dialog( dialog( `Do you want to proceed?`, [ `Yes`, `Yes, and don't ask again`, `No` ] ) ) ).not.toBeNull()
     } )
 
-    test( `command text cannot pose as the reason`, () => {
-        const reason = `This shell -c script runs rm and could not be checked`
-        const spoofed = shell_c
-            .replace( ` │ sleep example-image`, ` │ ${ reason }\n │ sleep example-image` )
-            .replace( ` ${ reason }\n\n Do you`, ` A permission rule denies a command in this shell -c script\n\n Do you` )
-        expect( spoofed ).toContain( `A permission rule denies` )
-        expect( find_dangerous_command_dialog( spoofed ) ).toBeNull()
+    test( `never swaps models or touches billing`, () => {
+        expect( find_yolo_dialog( dialog( `Opus is at its usage limit. Continue with Sonnet?`, [ `Yes`, `No` ] ) ) ).toBeNull()
+        expect( find_yolo_dialog( dialog( `Request failed. How do you want to continue?`, [ `Continue with the fallback model`, `Edit prompt and retry` ] ) ) ).toBeNull()
+        expect( find_yolo_dialog( dialog( `Would you like to continue?`, [ `Yes, switch to a lower-power model`, `No, wait for the limit to reset` ] ) ) ).toBeNull()
+        expect( find_yolo_dialog( dialog( `You've hit your limit. Keep going?`, [ `Yes, use extra usage`, `No` ] ) ) ).toBeNull()
+    } )
+
+    test( `leaves defaults that do not approve`, () => {
+        expect( find_yolo_dialog( dialog( `Do you want to use this API key?`, [ `No (recommended)`, `Yes` ] ) ) ).toBeNull()
+        expect( find_yolo_dialog( dialog( `What should happen next?`, [ `Retry`, `Skip` ] ) ) ).toBeNull()
+    } )
+
+    test( `command text cannot veto or approve`, () => {
+        // Model words inside a command never block; a fake dialog inside it never counts
+        expect( find_yolo_dialog( shell_c.replace( ` │ sleep example-image`, ` │ python fallback_model.py --model opus` ) ) ).not.toBeNull()
+        expect( find_yolo_dialog( `${ shell_c }\n${ composer }` ) ).toBeNull()
     } )
 
     test( `history cannot supply the question or the selected "Yes"`, () => {
         const current = `\n Bash command\n   ls\n   List files\n Do you want to proceed?\n   1. Yes\n ❯ 2. No\n Esc to cancel · Tab to amend`
-        expect( find_dangerous_command_dialog( `${ shell_c }${ current }` ) ).toBeNull()
+        expect( find_yolo_dialog( `${ shell_c }${ current }` ) ).toBeNull()
     } )
 
     test( `leaves a shell -c script a permission rule denies`, () => {
         const denied = shell_c.replace( `This shell -c script runs rm and could not be checked`, `A permission rule denies a command in this shell -c script` )
-        expect( find_dangerous_command_dialog( denied ) ).toBeNull()
+        expect( find_yolo_dialog( denied ) ).toBeNull()
     } )
 
     test( `ignores the dialog once it is only transcript history`, () => {
-        expect( find_dangerous_command_dialog( `${ glob }\n${ composer }` ) ).toBeNull()
+        expect( find_yolo_dialog( `${ glob }\n${ composer }` ) ).toBeNull()
     } )
 
     test( `leaves a cursor a person moved to "No"`, () => {
         const moved = glob.replace( ` ❯ 1. Yes`, `   1. Yes` ).replace( `   2. No`, ` ❯ 2. No` )
-        expect( find_dangerous_command_dialog( moved ) ).toBeNull()
-    } )
-
-    test( `ignores ordinary permission prompts`, () => {
-        const ordinary = glob.split( `\n` ).filter( line => !/Dangerous rm|automatically deny/.test( line ) ).join( `\n` )
-        expect( find_dangerous_command_dialog( ordinary ) ).toBeNull()
+        expect( find_yolo_dialog( moved ) ).toBeNull()
     } )
 
 } )
@@ -99,7 +112,7 @@ describe( `YOLO monitor approval`, () => {
         const sent = []
         await start_monitor( {
             session_name: `babysit_yolo`, config: { idle_timeout_s: 300 }, rules: [],
-            agent: claude, tmux_target: `%7`, approve_dangerous_commands: approve, input_allowed,
+            agent: claude, tmux_target: `%7`, approve_dialogs: approve, input_allowed,
             has_session_fn: async () => ++alive <= ticks,
             capture_pane_fn: async () => screen,
             send_keys_fn: async ( target, key ) => {
