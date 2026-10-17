@@ -1,11 +1,11 @@
 import { spawnSync } from 'child_process'
 import { randomUUID } from 'crypto'
-import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { createInterface } from 'readline/promises'
 
 import { log } from '../utils/log.js'
-import { BABYSIT_DIR } from '../utils/paths.js'
+import { BABYSIT_DIR, CLONES_DIR } from '../utils/paths.js'
 import { run } from '../utils/exec.js'
 import { get_agent } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
@@ -13,7 +13,9 @@ import { get_image_name } from '../docker/update.js'
 import { attach_session, list_sessions } from '../tmux/session.js'
 import { list_stored_sessions, session_original_workspace, session_workspace } from '../sessions/store.js'
 import { build_handoff_markdown, read_parent_transcript } from '../sessions/handoff.js'
-import { fork_parent_of, order_active_sessions } from './list.js'
+import { replayable_options } from '../sessions/recovery.js'
+import { load_managed_clone } from '../prune.js'
+import { fork_parent_of, order_active_sessions, stored_by_tmux } from './list.js'
 import { FORK_NEGATABLE_FLAGS } from './parse.js'
 import { merge_resume_flags } from './resume.js'
 import { cmd_start } from './start.js'
@@ -22,9 +24,6 @@ import { close_session } from './recover.js'
 // Container paths the fork reads its handoff and the parent's raw transcript from
 export const HANDOFF_CONTAINER_PATH = `/tmp/babysit-fork-handoff.md`
 const TRANSCRIPT_CONTAINER_PREFIX = `/tmp/babysit-fork-transcript-`
-
-// Agent options that replace their parent's value instead of stacking
-const SINGLE_VALUE_OPTIONS = new Set( [ `--model`, `-m`, `--effort`, `--variant` ] )
 
 /**
  * Resolve `babysit fork <selector>` to a stored parent record. Numbers are
@@ -37,7 +36,8 @@ const SINGLE_VALUE_OPTIONS = new Set( [ `--model`, `-m`, `--effort`, `--variant`
  */
 export const select_fork_parent = ( selector, ordered, stored ) => {
 
-    const stored_for = row => stored.find( session => session.tmux_session === row.name )
+    const by_tmux = stored_by_tmux( stored )
+    const stored_for = row => by_tmux.get( row.name )
     const number_of = session => {
         const index = ordered.findIndex( row => row.name === session.tmux_session )
         return index === -1 ? null : index + 1
@@ -70,14 +70,36 @@ export const select_fork_parent = ( selector, ordered, stored ) => {
 }
 
 /**
+ * Name for a fork: forks of forks do not stack (`x-fork-fork`), they count
+ * up instead (`x-fork-2`), skipping names already in use.
+ * @param {string|null} name - Parent name
+ * @param {string[]} [taken=[]] - Names already in use
+ * @returns {string|false} Fork name, or false for an unnamed parent
+ */
+export const fork_name = ( name, taken = [] ) => {
+
+    if( !name ) return false
+
+    const base = name.replace( /-fork(-\d+)?$/, `` )
+    const used = new Set( [ name, ...taken ] )
+    let number = 1
+    const candidate = () => number === 1 ? `${ base }-fork` : `${ base }-fork-${ number }`
+    while( used.has( candidate() ) ) number++
+
+    return candidate()
+
+}
+
+/**
  * Start from the parent's launch flags, then apply what the user typed.
  * Clone and ports are never inherited: the filesystem is chosen per fork,
  * and a live parent still holds its published ports.
  * @param {Object} parent - Parent session record
  * @param {Object} flags - Parsed fork flags (see parse.js)
+ * @param {string[]} [taken=[]] - Session names already in use
  * @returns {Object} Flags for cmd_start, clone still undecided
  */
-export const merge_fork_flags = ( parent, flags = {} ) => {
+export const merge_fork_flags = ( parent, flags = {}, taken = [] ) => {
 
     const inherited = merge_resume_flags( parent.modifiers, {}, parent )
     const unset = new Set( flags.unset || [] )
@@ -86,8 +108,10 @@ export const merge_fork_flags = ( parent, flags = {} ) => {
         unset.has( flag ) ? false : Boolean( flags[ flag ] || inherited[ flag ] ),
     ] ) )
 
-    // One mode at a time: an explicit mode replaces the inherited one
-    const explicit_mode = flags.regular ? `regular` : flags.sandbox ? `sandbox` : flags.mudbox ? `mudbox` : null
+    // One mode at a time: an explicit mode replaces the inherited one. A typed
+    // filesystem needs a writable workspace, so on its own it means regular.
+    const typed_mode = flags.regular ? `regular` : flags.sandbox ? `sandbox` : flags.mudbox ? `mudbox` : null
+    const explicit_mode = typed_mode || ( flags.share || flags.clone ? `regular` : null )
     const mode = explicit_mode || ( inherited.sandbox ? `sandbox` : inherited.mudbox ? `mudbox` : `regular` )
 
     return {
@@ -99,7 +123,7 @@ export const merge_fork_flags = ( parent, flags = {} ) => {
         clone: Boolean( flags.clone ),
         // Isolation from the host profile is sticky, like on resume
         ignore_host_agents_md: Boolean( flags.ignore_host_agents_md || inherited.ignore_host_agents_md ),
-        name: flags.name || ( parent.name ? `${ parent.name }-fork` : false ),
+        name: flags.name || fork_name( parent.name, taken ),
         config: flags.config || parent.config_path || false,
         ports: flags.ports || [],
     }
@@ -118,11 +142,14 @@ export const merge_fork_passthrough = ( parent, agent_name, passthrough = [] ) =
 
     if( parent.agent !== agent_name ) return passthrough
 
+    // Compare canonical names, so a typed `-m` replaces a saved `--model`
+    const options = replayable_options( { name: agent_name } )
+    const canonical = argument => options.get( argument.split( `=` )[0] )
     const saved = parent.launch_spec?.args || []
-    const typed = new Set( passthrough.map( argument => argument.split( `=` )[0] ).filter( name => SINGLE_VALUE_OPTIONS.has( name ) ) )
+    const typed = new Set( passthrough.map( canonical ).filter( Boolean ) )
     const kept = saved.flatMap( ( argument, index ) => {
         if( index % 2 ) return []
-        return typed.has( argument ) ? [] : [ argument, saved[ index + 1 ] ]
+        return typed.has( canonical( argument ) ) ? [] : [ argument, saved[ index + 1 ] ]
     } )
 
     return [ ...kept, ...passthrough ]
@@ -226,14 +253,10 @@ export const choose_fork_filesystem = async ( {
     input = process.stdin,
 } ) => {
 
-    if( flags.share && flags.clone ) throw new Error( `--share and --clone are mutually exclusive` )
-
-    // Sandbox has no workspace; mudbox only reads, so a copy would protect nothing
+    // parse.js already refuses --share with --clone, and --clone with a mudbox.
+    // Sandbox has no workspace; mudbox only reads, so a copy would protect nothing.
     if( flags.sandbox ) return `none`
-    if( flags.mudbox ) {
-        if( flags.clone ) throw new Error( `--clone cannot be combined with --mudbox` )
-        return `share`
-    }
+    if( flags.mudbox ) return `share`
 
     if( flags.share ) return `share`
     if( flags.clone ) return `clone`
@@ -277,6 +300,37 @@ export const plan_fork_history = ( { parent, agent, flags } ) => {
 
 }
 
+// Marker the copy script prints when a SQLite database was copied file by file
+const RAW_SQLITE_COPY = `babysit-raw-sqlite-copy`
+
+/**
+ * Copy one state volume into another. Files are copied as they are, then every
+ * SQLite database is redone with `.backup`: a raw copy of a database (and its
+ * -wal) that the parent is writing can be torn. `.backup` takes SQLite's own
+ * locks, so the source is mounted writable for its -shm, and opened -readonly
+ * so nothing in it changes. Images without sqlite3 keep the raw copy with its
+ * -wal/-shm and print RAW_SQLITE_COPY.
+ */
+export const COPY_STATE_SCRIPT = `
+cp -a /from/. /to/ || exit 1
+find /from -type f ! -name '*-wal' ! -name '*-shm' ! -name '*-journal' | while IFS= read -r db; do
+    [ "$(head -c 15 "$db" 2>/dev/null)" = "SQLite format 3" ] || continue
+    command -v sqlite3 >/dev/null 2>&1 || { echo ${ RAW_SQLITE_COPY }; continue; }
+    copy="/to/\${db#/from/}"
+    rm -f "$copy" "$copy-wal" "$copy-shm" "$copy-journal"
+    if sqlite3 -readonly "$db" ".backup '$copy'"; then
+        chown --reference="$db" "$copy"
+        chmod --reference="$db" "$copy"
+    else
+        for file in "$db" "$db-wal" "$db-shm" "$db-journal"; do
+            if [ -e "$file" ]; then cp -a "$file" "/to/\${file#/from/}"; fi
+        done
+        echo ${ RAW_SQLITE_COPY }
+    fi
+done
+exit 0
+`
+
 /**
  * Codex, OpenCode and Antigravity keep conversations in volumes keyed by
  * the workspace path. A fork in another workspace gets a copy of the
@@ -286,10 +340,11 @@ export const plan_fork_history = ( { parent, agent, flags } ) => {
  * @param {Object} options
  * @param {string} options.from_workspace - Parent workspace
  * @param {string} options.to_workspace - Fork workspace
+ * @param {boolean} [options.live=false] - Parent still runs (and may be writing)
  * @param {Function} [options.run_command=run] - Async command runner seam
  * @returns {Promise<number>} Volumes copied
  */
-export const copy_agent_state_volumes = async ( agent, { from_workspace, to_workspace, run_command = run } ) => {
+export const copy_agent_state_volumes = async ( agent, { from_workspace, to_workspace, live = false, run_command = run } ) => {
 
     if( resolve( from_workspace ) === resolve( to_workspace ) ) return 0
 
@@ -300,11 +355,14 @@ export const copy_agent_state_volumes = async ( agent, { from_workspace, to_work
     const [ command, ...prefix ] = docker_command_prefix()
 
     for( const [ source, target ] of pairs ) {
-        await run_command( command, [
+        const output = await run_command( command, [
             ...prefix, `run`, `--rm`, `--network`, `none`, `--user`, `0`,
-            `-v`, `${ source }:/from:ro`, `-v`, `${ target }:/to`,
-            `--entrypoint`, `sh`, get_image_name(), `-c`, `cp -a /from/. /to/`,
+            `-v`, `${ source }:/from`, `-v`, `${ target }:/to`,
+            `--entrypoint`, `sh`, get_image_name(), `-c`, COPY_STATE_SCRIPT,
         ], {}, 120_000 )
+        if( live && String( output || `` ).includes( RAW_SQLITE_COPY ) ) {
+            log.warn( `SQLite databases in ${ source } were copied file by file (no sqlite3 backup) while the parent runs; the fork's copy may be inconsistent.` )
+        }
     }
 
     return pairs.length
@@ -399,6 +457,8 @@ export const cmd_fork = async ( cmd, {
     copy_volumes = copy_agent_state_volumes,
     export_transcript = export_parent_transcript,
     forks_dir = join( BABYSIT_DIR, `forks` ),
+    clones_dir = CLONES_DIR,
+    load_clone = load_managed_clone,
     env = process.env,
 } = {} ) => {
 
@@ -414,12 +474,22 @@ export const cmd_fork = async ( cmd, {
     const agent = get_agent( cmd.agent || parent.agent )
     if( !agent ) throw new Error( `Unknown agent: ${ cmd.agent || parent.agent }` )
 
-    const flags = merge_fork_flags( parent, cmd.flags )
+    const by_tmux = stored_by_tmux( stored )
+    const taken = ordered.map( row => by_tmux.get( row.name )?.name ).filter( Boolean )
+    const flags = merge_fork_flags( parent, cmd.flags, taken )
     const passthrough = merge_fork_passthrough( parent, agent.name, cmd.passthrough )
-    const autonomous = flags.yes || flags.yolo || env.AGENT_AUTONOMY_MODE === `yolo`
+
+    // Only what was typed pre-agrees: a parent's inherited YOLO is no answer
+    const typed = cmd.flags || {}
+    const autonomous = Boolean( typed.yes || typed.yolo || env.AGENT_AUTONOMY_MODE === `yolo` )
+
+    // Clone membership follows clone_id: a read-only fork of a clone has no
+    // clone_path of its own, but its files (and prune's family) are that clone's
+    const parent_clone_id = parent.clone_id || null
+    const parent_clone = parent_clone_id ? parent.clone_path || join( clones_dir, parent_clone_id ) : null
+    const parent_tree = parent_clone || session_workspace( parent )
 
     // Show what is being forked before asking how
-    const parent_tree = session_workspace( parent )
     const tree = describe_parent_tree( parent.modifiers?.includes( `sandbox` ) ? null : parent_tree )
     log.info( `Forking ${ label } (${ parent.agent } → ${ agent.name })` )
     log.info( `  ${ format_parent_state( tree, parent_state ) }` )
@@ -435,10 +505,16 @@ export const cmd_fork = async ( cmd, {
     if( parent.modifiers?.includes( `sandbox` ) && history.kind !== `none` ) log.warn( `The parent ran in a sandbox: its conversation lives only in its container, so the fork gets a summary${ parent_live ? `` : ` without the transcript` }.` )
     log.info( `  filesystem: ${ filesystem }, history: ${ history.kind } (${ history.reason })` )
 
-    // Run from where the parent's files live; start.js derives /workspace from it
-    const parent_is_clone = Boolean( parent.clone_path )
-    const original = session_original_workspace( parent )
-    const launch_dir = filesystem === `share` && parent_is_clone && flags.mudbox ? parent.clone_path : original
+    // Run from where the parent's files live; start.js derives /workspace from it.
+    // Clone forks start from the clone's real original, so /original stays true
+    // even when the parent is a read-only fork that ran inside the clone.
+    const clone_original = parent_clone && !parent.clone_path ? load_clone( parent_clone_id, { clones_dir } )?.original_workspace : null
+    const original = clone_original || session_original_workspace( parent )
+    const read_only_clone = Boolean( filesystem === `share` && parent_clone && flags.mudbox )
+    const joins_clone = Boolean( filesystem === `share` && parent_clone && !flags.mudbox )
+    const needs_original = filesystem === `clone` || joins_clone
+    if( needs_original && parent_clone && !parent.clone_path && !clone_original ) throw new Error( `Parent clone ${ parent_clone_id } no longer exists` )
+    const launch_dir = read_only_clone ? parent_clone : original
     if( filesystem === `clone` && !existsSync( parent_tree ) ) throw new Error( `Parent workspace no longer exists: ${ parent_tree }` )
     if( filesystem !== `none` && !existsSync( launch_dir ) ) throw new Error( `Parent workspace no longer exists: ${ launch_dir }` )
     if( existsSync( launch_dir ) && statSync( launch_dir ).isDirectory() ) chdir( launch_dir )
@@ -471,21 +547,23 @@ export const cmd_fork = async ( cmd, {
         // --account wins in start; otherwise a Claude → Claude fork keeps the parent's
         claude_account: agent.name === `claude` && parent.agent === `claude` ? parent.claude_account || null : null,
         // A writable share of a clone joins its family so prune keeps it
-        join_clone_id: filesystem === `share` && parent_is_clone && !flags.mudbox ? parent.clone_id : null,
-        clone_options: filesystem === `clone` ? { snapshot: true, tree: parent_is_clone ? parent.clone_path : null } : null,
+        join_clone_id: joins_clone ? parent_clone_id : null,
+        clone_options: filesystem === `clone` ? { snapshot: true, tree: parent_clone } : null,
         record: {
             forked_from: parent.babysit_id,
             fork_filesystem: filesystem,
             fork_history: history.kind,
             fork_base: filesystem === `clone` ? tree.base || null : null,
-            fork_handoff: history.kind === `handoff` ? join( fork_dir, `handoff.md` ) : null,
+            // The host copy is removed once uploaded; the fork reads it here
+            fork_handoff: history.kind === `handoff` ? HANDOFF_CONTAINER_PATH : null,
             // A read-only look into a clone still counts as that clone's use
-            ... filesystem === `share` && parent_is_clone && flags.mudbox ? { clone_id: parent.clone_id } : {},
+            ... read_only_clone ? { clone_id: parent_clone_id } : {},
         },
         // Runs inside start once the fork's workspace exists
         prepare: async ( { workspace, clone_branch } ) => {
             const native = history.kind === `native`
-            if( native ) await copy_volumes( agent, { from_workspace: parent_tree, to_workspace: workspace } )
+            // Volumes are keyed by the workspace the parent ran in
+            if( native ) await copy_volumes( agent, { from_workspace: session_workspace( parent ), to_workspace: workspace, live: parent_live } )
             const notes = fork_prompt_notes( {
                 filesystem,
                 history: history.kind,
@@ -502,6 +580,7 @@ export const cmd_fork = async ( cmd, {
         },
     }
 
+    // Copy mounts are uploaded before start returns, so the host copy can go
     const session = await start( {
         verb: `start`,
         agent: agent.name,
@@ -510,7 +589,7 @@ export const cmd_fork = async ( cmd, {
         passthrough,
         fork,
         detached: true,
-    } )
+    } ).finally( () => rmSync( fork_dir, { recursive: true, force: true } ) )
     if( !session ) return
 
     // The fork is up; the user may hand the work over completely

@@ -899,7 +899,7 @@ babysit: []
 
     // Cross agent: a handoff file is uploaded and named in the first prompt
     const handoff = await fork( [ `claude`, `--share`, `--name`, `fork-claude` ], `fork-claude` )
-    ensure( handoff.fork_history === `handoff` && existsSync( handoff.fork_handoff ), `cross-agent fork wrote no handoff` )
+    ensure( handoff.fork_history === `handoff` && handoff.fork_handoff === `/tmp/babysit-fork-handoff.md`, `cross-agent fork recorded no handoff` )
     await docker( [ `exec`, handoff.container_id, `test`, `-s`, `/tmp/babysit-fork-handoff.md` ] )
     await wait_until( `handoff prompt`, async () => ( await capture( handoff ) ).includes( `/tmp/babysit-fork-handoff.md` ) )
 

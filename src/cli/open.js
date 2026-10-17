@@ -1,7 +1,7 @@
 import { log } from '../utils/log.js'
 import { has_session, list_sessions, attach_session } from '../tmux/session.js'
 import { list_stored_sessions, update_session } from '../sessions/store.js'
-import { order_active_sessions, print_active_sessions_table } from './list.js'
+import { exited_session_message, order_active_sessions, print_active_sessions_table, stored_by_tmux } from './list.js'
 
 /**
  * Find active tmux sessions whose stored Babysit metadata points at a working directory.
@@ -149,8 +149,7 @@ export const cmd_open = async ( cmd, {
 
         // Exited fork parents keep their row (and number) but have nothing to attach to
         if( selected?.exited ) {
-            const parent = stored.find( session => session.tmux_session === selected.name )
-            log.error( `Session ${ session_id } has exited. Resume it with: babysit resume ${ parent?.babysit_id || selected.name }` )
+            log.error( exited_session_message( session_id, stored_by_tmux( stored ).get( selected.name ), selected ) )
             exit_fn( 1 )
             return
         }

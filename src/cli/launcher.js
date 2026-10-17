@@ -7,7 +7,7 @@ import { log } from '../utils/log.js'
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
 import { FORK_NEGATABLE_FLAGS, parse_args } from './parse.js'
-import { fork_tree_prefixes, order_active_sessions } from './list.js'
+import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './list.js'
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -254,8 +254,9 @@ export const fork_from_menu = async ( {
 
     const stored = list_stored_sessions_fn()
     const live = await list_sessions_fn()
+    const by_tmux = stored_by_tmux( stored )
     const rows = order_active_sessions( live, stored )
-        .map( ( row, index ) => ( { row, number: index + 1, parent: stored.find( session => session.tmux_session === row.name ) } ) )
+        .map( ( row, index ) => ( { row, number: index + 1, parent: by_tmux.get( row.name ) } ) )
         .filter( ( { parent } ) => parent )
     if( !rows.length ) throw new Error( `No sessions to fork. Start one with babysit <agent>.` )
 
@@ -268,7 +269,7 @@ export const fork_from_menu = async ( {
     if( index === null ) return null
 
     const { row, parent } = rows[ index ]
-    const inherited = merge_fork_flags( parent, {} )
+    const inherited = merge_fork_flags( parent, {}, rows.map( ( { parent: { name } } ) => name ).filter( Boolean ) )
     const mode = inherited.sandbox ? `sandbox` : inherited.mudbox ? `mudbox` : `regular`
     const filesystem = default_fork_filesystem( { parent_live: !row.exited, parent_stuck: Boolean( parent.stuck_at ), flags: inherited } )
 

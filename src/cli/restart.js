@@ -1,5 +1,5 @@
 import { close_session, select_stored_session, use_launch_environment } from './recover.js'
-import { order_active_sessions } from './list.js'
+import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
 import { agent_activity } from '../babysit/activity.js'
 import { capture_pane } from '../tmux/capture.js'
@@ -50,8 +50,12 @@ const short_id = id => String( id || `` ).replace( /^sha256:/, `` ).slice( 0, 12
 export const unarchived_sessions = async ( { inspect_records = inspect_stored_sessions, sessions = list_sessions } = {} ) => {
 
     const stored = inspect_records().records.map( record => record.session )
+    const by_tmux = stored_by_tmux( stored )
+
+    // Exited fork parents only keep the tree whole; there is nothing to restart
     return order_active_sessions( await sessions( { strict: true } ), stored )
-        .map( tmux => stored.find( session => session.tmux_session === tmux.name ) )
+        .filter( tmux => !tmux.exited )
+        .map( tmux => by_tmux.get( tmux.name ) )
         .filter( session => session && !session.archived_at )
 
 }

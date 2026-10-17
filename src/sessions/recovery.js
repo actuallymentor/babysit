@@ -44,12 +44,25 @@ export const container_image = async container => {
 }
 
 /**
+ * Agent options a launch replays, short aliases mapped to their long name.
+ * Claude has no `-m`; the other agents take it for `--model`.
+ * @param {Object} agent - Agent adapter
+ * @returns {Map<string, string>} Option name → canonical name
+ */
+export const replayable_options = agent => new Map( [
+    [ `--model`, `--model` ],
+    ... agent.name === `claude` ? [] : [ [ `-m`, `--model` ] ],
+    [ `--effort`, `--effort` ],
+    [ `--variant`, `--variant` ],
+] )
+
+/**
  * Preserve supported execution options; unknown flags block automatic replay.
  * Never save positional prompts or arbitrary flags that may contain secrets.
  */
 export const recovery_arguments = ( agent, args = [], mode = {} ) => {
 
-    const allowed = new Set( [ `--model`, ... agent.name === `claude` ? [] : [ `-m` ] , `--effort`, `--variant` ] )
+    const allowed = replayable_options( agent )
     const saved = []
     let unsupported = false
     for( let index = 0; index < args.length; index++ ) {
