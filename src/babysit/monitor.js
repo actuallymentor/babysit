@@ -28,6 +28,22 @@ export const APPROVAL_COOLDOWN_MS = 2_000
 export const LOGOUT_RECHECK_MS = 15 * 60_000
 const LOGOUT_SCREEN_LINES = 25
 
+// A limit message on screen asks for an account switch at most this often
+export const LIMIT_RECHECK_MS = 10 * 60_000
+const LIMIT_SCREEN_LINES = 15
+
+/**
+ * Whether the bottom of the pane shows the agent's subscription-limit message.
+ * A hint like shows_logout: the switcher re-reads the account's quota first.
+ * @param {string} screen - ANSI-free pane capture
+ * @param {Object} agent - Adapter with limit_pattern
+ * @returns {boolean} True when the latest lines match
+ */
+export const shows_limit = ( screen = ``, agent = null ) => {
+    const pattern = agent?.limit_pattern
+    return Boolean( pattern?.test( screen.trimEnd().split( `\n` ).slice( -LIMIT_SCREEN_LINES ).join( `\n` ) ) )
+}
+
 /**
  * Whether the bottom of the pane shows the agent's own logged-out message.
  * A hint, not a verdict: transcript text can quote the same words.
@@ -119,6 +135,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_logout_screen] - Callback with the agent name when the pane shows a lost login
+ * @param {Function} [options.on_limit_screen] - Callback when the pane shows a subscription limit
  * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
  * @param {Object|null} [options.watchdog] - Stall watchdog from create_watchdog
@@ -137,6 +154,7 @@ export const start_monitor = async ( {
     tmux_target = session_name,
     on_session_id,
     on_logout_screen = null,
+    on_limit_screen = null,
     on_tick,
     on_status = null,
     on_user_input = null,
@@ -165,6 +183,7 @@ export const start_monitor = async ( {
     let control_revision = control_bridge?.revision || 0
     let approval_ready_at = 0
     let logout_check_ready_at = 0
+    let limit_check_ready_at = 0
 
     const begin_action = ( rule, now ) => {
 
@@ -289,6 +308,13 @@ export const start_monitor = async ( {
                 log.info( `Pane shows a lost ${ agent.name } login; requesting an authentication check` )
                 logout_check_ready_at = Date.now() + LOGOUT_RECHECK_MS
                 on_logout_screen( agent.name )
+            }
+
+            // Not awaited: the handler probes accounts and may restart the session
+            if( on_limit_screen && Date.now() >= limit_check_ready_at && shows_limit( clean_output, agent ) ) {
+                log.info( `Pane shows a ${ agent.name } usage limit` )
+                limit_check_ready_at = Date.now() + LIMIT_RECHECK_MS
+                on_limit_screen( agent.name )
             }
 
             // The entrypoint knows when the coding agent exits before Docker's

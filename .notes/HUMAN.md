@@ -73,3 +73,9 @@
 - Auto-switch: monitor detects the limit-hit message → next account with headroom → restart with chat resume → continue prompt. At most 1 switch per reset window per session; no ping-pong between exhausted accounts.
 - Risks: turn lost mid-flight; restart during a tool call.
 - Open: Anthropic consumer terms on using several accounts to get around limits. User to verify.
+## 2026-10-17 — Multiple Claude subscriptions (built, needs review)
+- Open: Anthropic consumer terms on using several subscriptions to get around limits. User to verify before relying on auto-switch (`claude_account_auto_switch: false` disables it).
+- Not live-verified: minting a named token (needs a browser), auto-switch on a real limit (needs an exhausted account; limit wording taken from the 2.1.302 binary strings, fixture is reconstructed), restart onto a new account (needs a resumable non-sandbox session; skipped to spare the default account's 95%-used weekly quota).
+- Pre-existing: the rc default token reaches containers as `docker run -e CLAUDE_CODE_OAUTH_TOKEN=…` (inspectable). Named accounts never do. Moving the default to the staged file too is a one-line change in `account_credential_mounts` plus dropping the env mount; not done to keep single-token behaviour identical.
+- Auto-switch restarts the session detached: an attached terminal gets dropped; reopen with `babysit open`. A failed continuation leaves the session `blocked` like recovery does (`babysit recover <id> --no-continue` clears it).
+- `babysit watch` per-account rows are wired through `collect_account_usage`; the USAGE-column lane should key `session_usage_limits` on `session.claude_account` against `account_usage_report()` entries (`agent: claude, account: <name>`).

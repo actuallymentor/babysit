@@ -21,15 +21,16 @@ const KNOWN_FLAGS = [
     `port`,
     `auth-check-agents`,
     `config`,
+    `account`,
 ]
 
 const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
-const AUTH_VERBS = [ `status`, `check`, `init` ]
+const AUTH_VERBS = [ `status`, `check`, `init`, `accounts` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n` ] )
+const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n`, `account` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -65,7 +66,7 @@ export const parse_args = ( argv ) => {
     } )
     const parse = tokens => mri( tokens, {
         boolean: [ ...BOOLEAN_FLAGS ],
-        string: [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n` ],
+        string: [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n`, `account` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -109,6 +110,8 @@ export const parse_args = ( argv ) => {
         // clones, the monitor, and resume all read the same absolute path.
         config: typeof args.config === `string` && args.config ? resolve( args.config ) : false,
         auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
+        // Claude subscription for this launch (babysit auth accounts); false picks by headroom
+        account: normalise_account( args.account ),
         auth: verb === `doctor` && ( args.auth || false ),
         refresh: verb === `doctor` && ( args.refresh || false ),
         remove: verb === `auth` && ( args.remove || false ),
@@ -207,6 +210,14 @@ export const parse_args = ( argv ) => {
         if( !AUTH_VERBS.includes( auth_verb ) ) throw new Error( `Unknown auth command: ${ auth_verb }. Use ${ AUTH_VERBS.join( `, ` ) }.` )
         // `auth check <agent> --force` re-verifies one agent now; a session
         // monitor runs it when the agent's pane shows a lost login
+        // `auth accounts [remove <name>]` lists or drops named Claude tokens
+        if( auth_verb === `accounts` ) {
+            const [ , , account_verb = null, account_name = null ] = positionals
+            if( account_verb && account_verb !== `remove` ) throw new Error( `Unknown auth accounts command: ${ account_verb }. Use babysit auth accounts [remove <name>].` )
+            if( account_verb && !account_name ) throw new Error( `Usage: babysit auth accounts remove <name>` )
+            if( positionals.length > 4 ) throw new Error( `Unknown auth argument: ${ positionals.at( -1 ) }` )
+            return { verb: `auth`, auth_verb, account_verb, account_name, agent: null, flags, passthrough: [] }
+        }
         const auth_agent = auth_verb === `check` ? positionals[2] || null : null
         if( positionals.length > ( auth_agent ? 3 : 2 ) ) throw new Error( `Unknown auth argument: ${ positionals.at( -1 ) }` )
         if( auth_agent && !is_agent( auth_agent ) ) throw new Error( `Unknown agent: ${ auth_agent }` )
@@ -247,11 +258,14 @@ export const parse_args = ( argv ) => {
     // babysit restart <number|session_id|all> [--force] [--detach]
     if( verb === `restart` ) {
         const selector = positionals[1] || null
-        const allowed = new Set( [ `--help`, `-h`, `--force`, `--detach` ] )
-        const unexpected = prepared.slice( 1 ).filter( argument => argument !== selector && !allowed.has( argument ) )
+        const allowed = new Set( [ `--help`, `-h`, `--force`, `--detach`, `--continue` ] )
+        // `--account NAME` / `--account=NAME` switch the Claude subscription on the way
+        const account_value = prepared.findIndex( ( argument, index ) => index > 0 && prepared[ index - 1 ] === `--account` )
+        const unexpected = prepared.slice( 1 ).filter( ( argument, index ) => argument !== selector && !allowed.has( argument )
+            && argument !== `--account` && !argument.startsWith( `--account=` ) && index + 1 !== account_value )
         if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown restart argument: ${ unexpected[0] || positionals[2] }` )
-        if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all> [--force] [--detach]` )
-        return { verb: `restart`, agent: null, session_id: selector, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ) }, passthrough: [] }
+        if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account <name>]` )
+        return { verb: `restart`, agent: null, session_id: selector, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ), continue_prompt: Boolean( args.continue ) }, passthrough: [] }
     }
 
     // babysit resume <id> [--yolo] [extra flags…]
@@ -328,6 +342,21 @@ const normalise_session_name = ( value ) => {
     if( /[\u0000-\u001f\u007f]/.test( name ) ) throw new Error( `--name cannot contain control characters` )
 
     return name
+
+}
+
+/**
+ * Validate `--account NAME`; the registry checks that it exists at launch.
+ * @param {string|string[]|undefined} value - Parsed --account value
+ * @returns {string|false} Account name, or false when omitted
+ */
+const normalise_account = ( value ) => {
+
+    if( value === undefined ) return false
+    if( Array.isArray( value ) ) throw new Error( `--account may only be provided once` )
+    if( !value.trim() ) throw new Error( `--account requires an account name (babysit auth accounts)` )
+
+    return value.trim()
 
 }
 

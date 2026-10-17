@@ -97,7 +97,7 @@ export const credential_mounts_for_agent = ( agent, mounts = [] ) => {
 
     return mounts.filter( mount =>
         mount?.target === credential_target
-        ||  [ `env`, `secret_env` ].includes( mount?.type ) && environment_keys.has( mount.key )
+        ||  [ `env`, `secret_env`, `account_env` ].includes( mount?.type ) && environment_keys.has( mount.key )
     )
 
 }
@@ -183,7 +183,7 @@ export const fingerprint_agent_credentials = ( agent, mounts = [], {
             }
         }
 
-        if( [ `env`, `secret_env` ].includes( mount?.type )
+        if( [ `env`, `secret_env`, `account_env` ].includes( mount?.type )
             && typeof mount.value === `string` ) {
             parts.push( {
                 kind: `env`,

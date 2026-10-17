@@ -34,6 +34,8 @@ const BOOTSTRAP_GATE_FILE = `/run/babysit-bootstrap/ready`
 const DOCKER_CONTAINER_ID_PATTERN = /^[0-9a-f]{12,64}$/
 const LAUNCH_SIGNALS = [ `SIGHUP`, `SIGINT`, `SIGTERM` ]
 const SECRET_ENV_BOOTSTRAP_PATH = `/tmp/.babysit-credentials.env`
+// Sourced by the entrypoint AFTER ~/.babysitrc, so a chosen Claude account wins
+export const ACCOUNT_ENV_BOOTSTRAP_PATH = `/tmp/.babysit-claude-account.env`
 const NON_SECRET_CREDENTIAL_ENV = new Set( [ `GH_CONFIG_DIR`, `GH_HOST` ] )
 
 const copy_mounts_from = ( extra_mounts = [], credential_mounts = [] ) => [
@@ -94,7 +96,7 @@ const copy_source_from = path => {
 
 }
 
-const build_secret_env_copy = ( mounts, build_private_file ) => {
+const build_secret_env_copy = ( mounts, build_private_file, { target = SECRET_ENV_BOOTSTRAP_PATH, tag = `credentials` } = {} ) => {
 
     if( !mounts.length ) return null
 
@@ -106,13 +108,13 @@ const build_secret_env_copy = ( mounts, build_private_file ) => {
 
         return `${ mount.key }=${ value }`
     } )
-    const transport = build_private_file( `credentials`, `env`, `${ lines.join( `\n` ) }\n` )
+    const transport = build_private_file( tag, `env`, `${ lines.join( `\n` ) }\n` )
     if( !transport ) throw new Error( `Could not build the private credential environment transport` )
 
     return {
         type: `copy`,
         source: transport.file,
-        target: SECRET_ENV_BOOTSTRAP_PATH,
+        target,
         cleanup: transport.directory,
     }
 
@@ -167,17 +169,21 @@ export const build_docker_launch_plan = ( options, {
     const secret_env_mounts = mode.ignore_host_agents_md
         ? raw_credential_mounts.filter( is_secret_environment )
         : raw_credential_mounts.filter( mount => mount.type === `secret_env` )
-    const secret_env_set = new Set( secret_env_mounts )
+    const account_env_mounts = raw_credential_mounts.filter( mount => mount.type === `account_env` )
+    const secret_env_set = new Set( [ ...secret_env_mounts, ...account_env_mounts ] )
     const creds_mounts = raw_credential_mounts.filter( mount => !secret_env_set.has( mount ) )
-    let secret_env_copy
+    let secret_env_copies
     try {
-        secret_env_copy = build_secret_env_copy( secret_env_mounts, build_private_file )
+        secret_env_copies = [
+            build_secret_env_copy( secret_env_mounts, build_private_file ),
+            build_secret_env_copy( account_env_mounts, build_private_file, { target: ACCOUNT_ENV_BOOTSTRAP_PATH, tag: `claude-account` } ),
+        ]
     } catch ( error ) {
-        cleanup_ephemeral_credential_mounts( [ ...extra_mounts, ...raw_credential_mounts ] )
+        cleanup_ephemeral_credential_mounts( [ ...extra_mounts, ...raw_credential_mounts, ...secret_env_copies || [] ] )
         throw error
     }
 
-    if( secret_env_copy ) creds_mounts.push( secret_env_copy )
+    creds_mounts.push( ...secret_env_copies.filter( Boolean ) )
 
     return {
         ...options,

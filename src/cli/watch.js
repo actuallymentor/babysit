@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 
-import { collect_usage } from '../docker/assets/usage/command.mjs'
+import { DEFAULT_ACCOUNT, collect_account_usage } from './claude_accounts.js'
 import { relative_time, usage_color } from '../docker/assets/usage/format.mjs'
 import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
@@ -89,14 +89,15 @@ export const usage_level = limits => {
 
 /**
  * The limits that bound one session: every healthy report entry for its agent.
- * This is the seam for per-account usage: once sessions record
- * `session.claude_account`, match that account's entry here instead.
+ * With several Claude accounts the report holds one entry per account, so a
+ * session only counts the account it runs on (`default` when unrecorded).
  * @param {Object|null} report - collect_usage result
  * @param {Object|undefined} session - Stored session record
  * @returns {Object[]} Limits, empty when the report has nothing for the session
  */
 export const session_usage_limits = ( report, session ) => ( report?.agents || [] )
     .filter( result => result.agent === session?.agent && result.status === `ok` )
+    .filter( result => !result.account || result.account === ( session?.claude_account || DEFAULT_ACCOUNT ) )
     .flatMap( result => result.limits || [] )
 
 /**
@@ -150,7 +151,8 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
     report.agents.forEach( result => {
 
         // OpenCode spans providers; the others map one agent to one account.
-        const label = safe_text( result.agent === `opencode` && result.provider ? `opencode/${ result.provider }` : result.agent )
+        const label = safe_text( result.account ? `claude / ${ result.account }`
+            : result.agent === `opencode` && result.provider ? `opencode/${ result.provider }` : result.agent )
         const first_row = rows.length
 
         // Agents without credentials are noise here; `babysit usage` lists them.
@@ -210,7 +212,7 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
  * @param {number} [deps.rounds] - Redraw count; endless by default
  */
 export const cmd_watch = async ( { flags = {} } = {}, {
-    collect_fn = collect_usage,
+    collect_fn = collect_account_usage,
     render_sessions_fn = render_active_sessions,
     wait_fn = delay,
     write_fn = text => process.stdout.write( text ),

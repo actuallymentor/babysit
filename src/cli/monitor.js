@@ -14,6 +14,7 @@ import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
 import { start_monitor } from '../babysit/monitor.js'
 import { create_watchdog } from '../babysit/watchdog.js'
+import { create_account_switcher } from '../babysit/account_switch.js'
 import { judge_session } from '../babysit/judge.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { capture_history } from '../tmux/capture.js'
@@ -433,6 +434,9 @@ export const cmd_monitor = async ( cmd ) => {
             on_user_input: () => stuck_controller.clear(),
             watchdog,
             on_logout_screen: request_auth_check,
+            // Claude limit hit: move to another registered account with headroom
+            on_limit_screen: agent.name === `claude` && config.claude_account_auto_switch !== false
+                ? create_account_switcher( session ) : null,
             approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target,
             agent_exit_sentinel: session.agent_exit_sentinel,

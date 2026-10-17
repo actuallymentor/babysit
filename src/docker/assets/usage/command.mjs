@@ -16,13 +16,14 @@ export const collect_usage = async ( {
     fetch_fn = fetch,
     codex_read = read_codex_limits,
     allow_native_refresh = false,
+    claude_accounts = async () => null,
     now = () => new Date().toISOString(),
 } = {} ) => {
 
     const auth = credentials || await discover()
     const env = auth.env || {}
     const tasks = []
-    const query = ( agent, provider, task ) => tasks.push( ( async () => {
+    const attempt = async ( agent, provider, task ) => {
         try {
             const result = await task()
             return { agent, provider, fetched_at: now(), ...result }
@@ -34,7 +35,8 @@ export const collect_usage = async ( {
                 : error.message
             return { agent, provider, fetched_at: now(), status: `error`, message, limits: [] }
         }
-    } )() )
+    }
+    const query = ( ...args ) => tasks.push( attempt( ...args ) )
     const request = ( url, token, headers ) => provider_request( url, token, { headers, fetch_fn } )
     const successful = ( limits, source ) => limits.length
         ? { status: `ok`, source, limits }
@@ -53,7 +55,8 @@ export const collect_usage = async ( {
         await claude_header_request( token, { fetch_fn } ), `Claude rate-limit headers (1-token request)`
     )
 
-    query( `claude`, `anthropic`, () => {
+    // The host splits Claude per registered account (one entry each); null keeps the single entry
+    const claude_single = () => {
 
         if( env.ANTHROPIC_API_KEY ) return unsupported()
 
@@ -69,7 +72,8 @@ export const collect_usage = async ( {
 
         return login ? claude( login ) : unauthenticated()
 
-    } )
+    }
+    tasks.push( claude_accounts().catch( () => null ).then( results => results || attempt( `claude`, `anthropic`, claude_single ) ) )
     query( `codex`, `openai`, async () => {
         const managed = env.BABYSIT_EFFORT_AGENT === `codex` && env.BABYSIT_EFFORT_ENDPOINT
         const token = auth.codex?.tokens?.access_token
@@ -118,14 +122,15 @@ export const collect_usage = async ( {
         if( provider === `openai` && credential.type === `oauth` && credential.access ) return codex_oauth( credential.access, credential.accountId )
         return unsupported()
     } ) )
-    return { fetched_at: now(), agents: await Promise.all( tasks ) }
+    return { fetched_at: now(), agents: ( await Promise.all( tasks ) ).flat() }
 
 }
 
 export const usage_help = `Usage: babysit usage [--json]
 Show account limits for authenticated agents: Claude/Codex quota windows with resets,
 OpenRouter budgets. Exit 1 means some usage is unavailable. Starts no inference, except
-one 1-token Claude request when only a setup-token can read Claude's limits.
+one 1-token Claude request when only a setup-token can read Claude's limits. On the host
+with two or more Claude accounts (babysit auth accounts), one row set and request per account.
 
 Examples:
   babysit usage

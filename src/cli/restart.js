@@ -59,10 +59,10 @@ export const unarchived_sessions = async ( { inspect_records = inspect_stored_se
 /**
  * Close and resume one stored session on the current image.
  * @param {Object} session - Stored session
- * @param {Object} flags - { force, detach }
+ * @param {Object} flags - { force, detach, account, continue_prompt }
  * @param {Object} [options] - Injectable seams
  */
-const restart_session = async ( session, { force = false, detach = false }, {
+const restart_session = async ( session, { force = false, detach = false, account = false, continue_prompt = false }, {
     capture = capture_pane,
     activity = agent_activity,
     close = close_session,
@@ -101,7 +101,9 @@ const restart_session = async ( session, { force = false, detach = false }, {
         await close( session )
         await resume( {
             verb: `resume`, agent: null, session_id: session.babysit_id,
-            flags: {}, passthrough: session.launch_spec?.args || [], detached: detach,
+            // --account switches the Claude subscription; --continue nudges the agent once it is back
+            flags: { ...account && { account }, ...continue_prompt && { continue_prompt } },
+            passthrough: session.launch_spec?.args || [], detached: detach,
         } ).catch( error => {
             // Past the close the session is down; say so, and how to get it back
             throw Object.assign( new Error( `${ session.babysit_id } closed but did not resume (${ error.message }); run babysit resume ${ session.babysit_id }` ), { closed: true } )

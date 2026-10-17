@@ -19,6 +19,7 @@ import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
 import { CLAUDE_TOKEN_ENV, setup_claude_token } from './claude_token.js'
+import { cmd_auth_accounts, validate_account_name } from './claude_accounts.js'
 
 // The checker ticks every ten minutes. Offline checks run every tick, host
 // CLI probes once the last proof is an hour old, and the container re-probe
@@ -548,6 +549,12 @@ export const cmd_auth_init = async ( cmd, {
     claude_token = setup_claude_token,
 } = {} ) => {
 
+    // A named account only adds a token; the checker is already installed or not
+    if( cmd.flags.name ) {
+        validate_account_name( cmd.flags.name )
+        return await claude_token( cmd, { output } ) === `saved` ? 0 : 1
+    }
+
     if( !scheduler ) throw new Error( `babysit auth init supports Linux hosts running systemd and macOS; schedule babysit auth check yourself elsewhere` )
 
     if( cmd.flags.remove ) {
@@ -600,7 +607,7 @@ export const cmd_auth_init = async ( cmd, {
 }
 
 /**
- * Dispatch `babysit auth <status|check|init>`.
+ * Dispatch `babysit auth <status|check|init|accounts>`.
  * @param {Object} cmd - Parsed command
  * @param {Object} [dependencies] - Test seams forwarded to the subcommand
  * @returns {Promise<number>} Exit code
@@ -609,6 +616,7 @@ export const cmd_auth = async ( cmd, dependencies = {} ) => {
 
     if( cmd.auth_verb === `check` ) return cmd_auth_check( { agent_name: cmd.agent, force: Boolean( cmd.flags?.force ), ...dependencies } )
     if( cmd.auth_verb === `init` ) return cmd_auth_init( cmd, dependencies )
+    if( cmd.auth_verb === `accounts` ) return cmd_auth_accounts( cmd, dependencies )
     return cmd_auth_status( dependencies )
 
 }

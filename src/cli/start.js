@@ -16,6 +16,7 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
+import { account_credential_mounts, resolve_launch_account } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
     DEFAULT_DOCKER_SOCKET,
@@ -1230,6 +1231,16 @@ async function start_session( cmd ) {
         }
     }
 
+    // Claude subscription: --account, else the resumed session's, else the one
+    // with most headroom when several are registered. null keeps the rc token.
+    const { account: launch_account, reason: account_reason } = agent.name === `claude`
+        ? await time_phase( `claude account selection`, () => resolve_launch_account( {
+            requested: flags.account,
+            stored: stored_resume_session?.claude_account || null,
+        } ) )
+        : { account: null }
+    if( launch_account ) log.info( `Claude account: ${ launch_account.name } (${ account_reason })` )
+
     const launch_cwd = canonical_workspace( process.cwd() )
     const stored_original = session_original_workspace( stored_resume_session )
     const original_workspace = canonical_workspace( stored_original || launch_cwd )
@@ -1390,7 +1401,10 @@ async function start_session( cmd ) {
             environment: Object.fromEntries( [ `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_CONFIG_DIR` ]
                 .filter( key => process.env[ key ] ).map( key => [ key, process.env[ key ] ] ) ),
         },
-        continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : null,
+        // `restart --continue` (account auto-switch) nudges the agent like a recovery
+        continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : flags.continue_prompt ? `pending` : null,
+        claude_account: launch_account?.name || null,
+        account_switches: stored_resume_session?.account_switches || [],
     }
     const mark_clone_launch_failed = () => {
         record_launch_progress( babysit_id, { status: `failed` }, { recovering: cmd.recovering } )
@@ -1432,6 +1446,8 @@ async function start_session( cmd ) {
             `credential discovery and preflight`,
             () => setup_credentials( agent )
         )
+        // A named account rides along as a staged file that outranks the rc token
+        credential_setup.mounts.push( ...account_credential_mounts( launch_account ) )
         foreground_recovery_id = register_credential_recovery( {
             sync_paths: Object.values( credential_setup.tmpfiles ).map(
                 file => private_credential_tmpdir( file ) || file
