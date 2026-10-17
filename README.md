@@ -97,6 +97,54 @@ Absolute-linked worktrees are locked against Git pruning across mount paths; man
 `--clone` checks the whole source before copying. Paths you own but can't read (e.g. a `drw-------`
 `__pycache__`) are listed with the exact `chmod`; answer `y` (or pass `--yes`) to apply it and retry.
 
+## Fork, audit, Claude accounts
+
+### Fork
+
+Hand a session to another agent or mode without losing work or chat.
+
+```bash
+babysit fork 3 codex              # Claude stuck? Codex picks it up
+babysit fork 3 --docker           # same agent + chat, now with Docker socket
+babysit fork 3 opencode --mudbox  # read-only reviewer on the live tree
+babysit fork 3 --clone --takeover # snapshot copy, close the original
+```
+
+- Filesystem: prompt shows `branch · modified · untracked · unpushed · parent live/exited`. Defaults: exited/stuck parent → share; live parent → clone snapshot; `--mudbox` → read-only share. `--share` / `--clone` skip; `--yes` takes the default
+- Clone snapshot carries everything: uncommitted, untracked (minus `exclude`), unpushed commits; mid-merge/rebase → plain copy. New branch from parent HEAD
+- Chat: same agent → native fork (`--fork-session`, `codex fork`, `opencode --fork`); other agent → transcript handoff as first prompt. `--no-history` starts clean
+- Inherits modes, config, model/effort (same agent), Claude account; flags override, `--regular` / `--no-yolo|docker|adb|loop` drop inherited ones
+- Live parent → `Close #N? [y/N]`; `--takeover` closes without asking
+- `list`/`watch` nest forks under the parent; an exited parent stays as `exited` while a fork lives
+- Launcher: press `f` (off the Name row) to pick a session to fork
+
+### Audit
+
+```bash
+babysit audit --config agents/      # every agents/*.yaml, interactive
+babysit audit --config api.yaml --yes
+```
+
+Fills missing required `launch:` keys (asks for `agent`), offers to reset bad values / drop unknown keys, then offers optional defaults (`name`, tuning keys, `clone:`, commands). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: required fixes only.
+
+### Claude accounts
+
+Spread work over several Claude subscriptions; babysit switches when one runs out.
+
+```bash
+babysit auth init --claude-token --name work      # mint + paste + verify, once per subscription
+babysit auth init --claude-token --name personal
+babysit auth accounts                             # name, expiry, headroom (never tokens)
+babysit claude --account work                     # force one; default picks most headroom
+babysit auth accounts remove personal
+```
+
+- Existing `~/.babysitrc` token = account `default`; one account behaves as before
+- Launch picks the account with the most remaining rate-window headroom (cached 5 min, 1 Haiku token per probe)
+- Limit hit → session restarts on the next account with headroom, chat resumed, continue prompt sent. Never back to an account it left until that window resets (A→B→C ok, no ping-pong); waits while you are attached (Pushover: detach to switch); none left → log + Pushover. Off: `claude_account_auto_switch: false` in `babysit.yaml`. Detached restart: reattach with `babysit open`
+- Token reaches only its container, as a private file (never `docker -e`)
+- `usage` / `watch` show `claude / <account>` rows; USAGE column follows the session's account
+
 ## Sessions
 
 Status: `running` for foreground work, `waiting` for background shells, terminals, or Claude subagents, `idle` when ready.
@@ -106,8 +154,10 @@ Idle rules do not start while waiting; manual input remains available.
 |---|---|
 | `babysit init [file.yaml]` | Write a default config; asks for the file name when none is given, then opens the launch menu to fill `launch:` |
 | `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached, compose-style; see [Directory launch](#directory-launch) |
+| `babysit audit --config FILE\|DIR/ [--yes]` | Fix yaml so `--config DIR/` accepts it; see [Audit](#audit) |
 | `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
-| `babysit watch [--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged) plus account usage, one metered row per limit (bar, % used, reset or used / limit); balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. Replaces `list --watch` |
+| `babysit watch [--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged) plus account usage, one metered row per limit (bar, % used, reset or used / limit); balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. USAGE column: the session's worst remaining rate window as `critical` (<5%, red), `low` (<20%, orange), `fine` (<40%), `plenty`. Replaces `list --watch` |
+| `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
@@ -120,6 +170,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check for every installed agent; bypass 12h cache with `--refresh` |
 | `babysit auth [status]` | Cached authentication ages and whether the scheduled checker is installed |
 | `babysit auth check [agent] [--force]` | What the checker runs: offline checks, host CLI probe after 1h, container re-verify after 6h; `--force` probes one agent now |
+| `babysit auth accounts [remove NAME]` | Claude subscriptions; see [Claude accounts](#claude-accounts) |
 | `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image; show image version |

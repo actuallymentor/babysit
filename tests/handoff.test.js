@@ -141,7 +141,7 @@ describe( `handoff markdown`, () => {
 
     } )
 
-    it( `drops older material first to stay under the cap`, () => {
+    it( `drops middle requests and older replies to stay under the cap, keeping the task`, () => {
 
         const long = index => `${ index } ${ `x`.repeat( 1_900 ) }`
         const markdown = build_handoff_markdown( {
@@ -153,6 +153,8 @@ describe( `handoff markdown`, () => {
         expect( markdown ).toContain( `earlier requests omitted` )
         expect( markdown ).toContain( `reply 5` )
         expect( markdown ).toContain( `> 39 x` )
+        expect( markdown ).toContain( `1.\n> 0 x` )
+        expect( markdown ).not.toContain( `> 1 x` )
 
     } )
 
