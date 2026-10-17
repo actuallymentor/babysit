@@ -1233,6 +1233,7 @@ async function start_session( cmd ) {
 
     // Claude subscription: --account, else the resumed session's, else the one
     // with most headroom when several are registered. null keeps the rc token.
+    if( flags.account && agent.name !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ agent.name } sessions have none` )
     const { account: launch_account, reason: account_reason } = agent.name === `claude`
         ? await time_phase( `claude account selection`, () => resolve_launch_account( {
             requested: flags.account,
@@ -1240,7 +1241,7 @@ async function start_session( cmd ) {
             stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
         } ) )
         : { account: null }
-    if( launch_account ) log.info( `Claude account: ${ launch_account.name } (${ account_reason })` )
+    if( launch_account ) log[ account_reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ account_reason })` )
 
     const launch_cwd = canonical_workspace( process.cwd() )
     const stored_original = session_original_workspace( stored_resume_session )
@@ -1432,8 +1433,9 @@ async function start_session( cmd ) {
         },
         // `restart --continue` (account auto-switch) nudges the agent like a recovery
         continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : flags.continue_prompt ? `pending` : null,
-        claude_account: launch_account?.name || null,
-        account_switches: stored_resume_session?.account_switches || [],
+        // Account fields only exist where accounts are in play
+        ...launch_account && { claude_account: launch_account.name },
+        ...stored_resume_session?.account_switches?.length && { account_switches: stored_resume_session.account_switches },
         // forked_from, fork_base, fork_filesystem, fork_history, fork_handoff
         ...cmd.fork?.record,
     }

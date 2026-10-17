@@ -6,15 +6,17 @@ import { log } from '../utils/log.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { notify_pushover } from '../utils/notify.js'
 import { load_session, update_session } from '../sessions/store.js'
+import { get_session_attachment } from '../tmux/session.js'
+import { resolve_checker_command } from '../cli/auth.js'
 import { DEFAULT_ACCOUNT, list_claude_accounts, pick_account, probe_accounts } from '../cli/claude_accounts.js'
 
 /*
  * When Claude says a subscription limit was hit, move the session to another
  * registered account with headroom: `babysit restart --account <next>
  * --continue` closes it, resumes the same conversation on the new token, and
- * sends the continue prompt. At most one switch per limit window per session
- * (switches carry over through resume), so two exhausted accounts never
- * ping-pong.
+ * sends the continue prompt. An account the session left in a limit window
+ * that is still open is never a target again (switches carry over through
+ * resume), so A→B→C works but two exhausted accounts never ping-pong.
  */
 
 export const SWITCH_LOG_PATH = join( BABYSIT_DIR, `account-switch.log` )
@@ -22,9 +24,38 @@ export const SWITCH_LOG_PATH = join( BABYSIT_DIR, `account-switch.log` )
 // A switch whose limit reset is unknown blocks the next one for a session window
 export const SWITCH_FALLBACK_WINDOW_MS = 5 * 3600_000
 
+// Quota readings this young are trusted; the 10-minute rescan always re-reads
+export const SWITCH_PROBE_MAX_AGE_MS = 60_000
+
 const switch_window_open = ( { at, resets_at }, now ) => resets_at
     ? Date.parse( resets_at ) > now
     : now - Date.parse( at ) < SWITCH_FALLBACK_WINDOW_MS
+
+/**
+ * The switch guard, checked before any probe. Pure.
+ * @param {Object} options
+ * @param {Object} options.session - Stored session (claude_account, account_switches)
+ * @param {string[]} options.names - Registered account names
+ * @param {number} [options.now] - Epoch ms
+ * @returns {{ from: string, targets: string[] }|{ skip: string }}
+ */
+export const switch_targets = ( { session, names, now = Date.now() } ) => {
+
+    const from = session.claude_account || DEFAULT_ACCOUNT
+
+    // Accounts this session already left while their limit window is still open
+    const spent = new Set( ( session.account_switches || [] )
+        .filter( entry => switch_window_open( entry, now ) )
+        .map( ( { from: left } ) => left ) )
+
+    // Still on an account it left: that restart has not landed yet
+    if( spent.has( from ) ) return { skip: `a switch away from ${ from } is already under way` }
+
+    const targets = names.filter( name => name !== from && !spent.has( name ) )
+    if( !targets.length ) return { skip: `every other Claude account already hit its limit in this window` }
+    return { from, targets }
+
+}
 
 /**
  * Decide whether and where to move a limited session. Pure.
@@ -36,16 +67,15 @@ const switch_window_open = ( { at, resets_at }, now ) => resets_at
  */
 export const plan_account_switch = ( { session, readings, now = Date.now() } ) => {
 
-    const from = session.claude_account || DEFAULT_ACCOUNT
-    if( ( session.account_switches || [] ).some( entry => switch_window_open( entry, now ) ) ) {
-        return { skip: `this session already switched accounts in the current limit window` }
-    }
+    const guard = switch_targets( { session, names: readings.map( ( { name } ) => name ), now } )
+    if( guard.skip ) return guard
+    const { from, targets } = guard
 
     // Pane text can be a quote; the account's own headers have the final word
     const current = readings.find( reading => reading.name === from )
     if( current?.status === `ok` && current.headroom > 0 ) return { skip: `${ from } still has ${ current.headroom }% left` }
 
-    const best = pick_account( readings.filter( reading => reading.name !== from && reading.headroom > 0 ) )
+    const best = pick_account( readings.filter( reading => targets.includes( reading.name ) && reading.headroom > 0 ) )
     if( !best ) return { skip: `no other Claude account has headroom`, exhausted: true }
 
     // The guard holds until the current account is usable again: its latest exhausted reset
@@ -70,9 +100,8 @@ export const spawn_account_restart = ( babysit_id, account, {
     log_path = SWITCH_LOG_PATH,
 } = {} ) => {
 
-    const argv1 = process.argv[1] || ``
-    const compiled = argv1.startsWith( `/$bunfs` ) || !argv1
-    const [ bin, ...prefix ] = command || ( compiled ? [ process.execPath ] : [ process.execPath, argv1 ] )
+    // Same self-invocation the auth checker timer uses (compiled binary or bun + script)
+    const [ bin, ...prefix ] = command || resolve_checker_command()
 
     // The restart's own output lands in one file, for when a switch goes wrong
     let output = `ignore`
@@ -95,10 +124,20 @@ export const spawn_account_restart = ( babysit_id, account, {
 }
 
 /**
+ * Whether a person has the session's tmux open. Unreadable counts as detached:
+ * the session is likely gone and the restart reports that itself.
+ * @param {string} tmux_session - Exact tmux session name
+ * @returns {Promise<boolean>}
+ */
+const session_attached = tmux_session => get_session_attachment( tmux_session )
+    .then( state => state === `attached` )
+    .catch( () => false )
+
+/**
  * Monitor handler for a Claude limit on screen. Re-entrant calls while one
  * runs are dropped; every outcome is logged.
  * @param {Object} session - Stored session at monitor start
- * @param {Object} [options] - Registry, probe, store, notify and spawn seams
+ * @param {Object} [options] - Registry, probe, store, attachment, notify and spawn seams
  * @returns {Function} Async handler; resolves to the plan it acted on
  */
 export const create_account_switcher = ( session, {
@@ -106,6 +145,7 @@ export const create_account_switcher = ( session, {
     probe = probe_accounts,
     load = load_session,
     update = update_session,
+    attached = session_attached,
     notify = notify_pushover,
     restart = spawn_account_restart,
     now = Date.now,
@@ -113,6 +153,7 @@ export const create_account_switcher = ( session, {
 
     let busy = false
     let told_exhausted = false
+    let told_attached = false
     const skip = reason => {
         log.info( `Claude limit on screen; not switching accounts: ${ reason }` )
         return null
@@ -126,14 +167,24 @@ export const create_account_switcher = ( session, {
         try {
 
             // Single-account users see the limit as before, without log noise
-            if( list().length < 2 ) return null
+            const accounts = list()
+            if( accounts.length < 2 ) return null
+            log.info( `Pane shows a claude usage limit` )
 
             // Resume needs the native id, or it would continue another conversation
             const latest = load( session.babysit_id ) || session
             if( !latest.agent_session_id ) return skip( `no native session id was captured` )
             if( latest.modifiers?.includes( `sandbox` ) ) return skip( `sandbox sessions cannot restart` )
 
-            const plan = plan_account_switch( { session: latest, readings: await probe( list(), { max_age_ms: 0 } ), now: now() } )
+            // Guard before probing: a stale limit line in a resumed transcript costs nothing
+            const guard = switch_targets( { session: latest, names: accounts.map( ( { name } ) => name ), now: now() } )
+            if( guard.skip ) {
+                skip( guard.skip )
+                return guard
+            }
+
+            const candidates = accounts.filter( ( { name } ) => name === guard.from || guard.targets.includes( name ) )
+            const plan = plan_account_switch( { session: latest, readings: await probe( candidates, { max_age_ms: SWITCH_PROBE_MAX_AGE_MS } ), now: now() } )
             if( plan.skip ) {
                 // Say so once per monitor when every account is spent
                 if( !told_exhausted && plan.exhausted ) {
@@ -142,6 +193,16 @@ export const create_account_switcher = ( session, {
                 }
                 skip( plan.skip )
                 return plan
+            }
+
+            // Never pull the session out from under someone typing in it; later scans retry
+            if( latest.tmux_session && await attached( latest.tmux_session ) ) {
+                if( !told_attached ) {
+                    told_attached = true
+                    await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from } in ${ latest.name || latest.babysit_id }; detach to let babysit switch to ${ plan.to }.` } )
+                }
+                skip( `a client is attached; detach to let babysit switch to ${ plan.to }` )
+                return { skip: `attached`, to: plan.to }
             }
 
             // Record first: the new launch copies the history, so the guard survives the restart

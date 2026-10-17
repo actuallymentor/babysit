@@ -271,6 +271,8 @@ export const parse_args = ( argv ) => {
             && argument !== `--account` && !argument.startsWith( `--account=` ) && index + 1 !== account_value )
         if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown restart argument: ${ unexpected[0] || positionals[2] }` )
         if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account <name>]` )
+        // Every session has its own subscription; one account for all of them is never meant
+        if( selector === `all` && flags.account ) throw new Error( `--account applies to one Claude session; restart them one by one` )
         return { verb: `restart`, agent: null, session_id: selector, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ), continue_prompt: Boolean( args.continue ) }, passthrough: [] }
     }
 
@@ -337,6 +339,7 @@ export const parse_args = ( argv ) => {
         // Drop the session id when present so the agent adapter is the only place
         // that injects the resume flag — otherwise the id appears twice.
         const passthrough = collect_passthrough( prepared, agent, session_id, numbered_resume ? [ `all`, `n` ] : [] )
+        if( flags.account && agent !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ agent } has none` )
 
         return { verb: sub_verb, agent, session_id, flags, passthrough }
 

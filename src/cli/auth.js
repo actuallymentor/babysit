@@ -19,7 +19,7 @@ import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
 import { CLAUDE_TOKEN_ENV, setup_claude_token } from './claude_token.js'
-import { cmd_auth_accounts, validate_account_name } from './claude_accounts.js'
+import { DEFAULT_ACCOUNT, cmd_auth_accounts, validate_account_name } from './claude_accounts.js'
 
 // The checker ticks every ten minutes. Offline checks run every tick, host
 // CLI probes once the last proof is an hour old, and the container re-probe
@@ -550,7 +550,8 @@ export const cmd_auth_init = async ( cmd, {
 } = {} ) => {
 
     // A named account only adds a token; the checker is already installed or not
-    if( cmd.flags.name ) {
+    // `--name default` is the rc token: the plain flow
+    if( cmd.flags.name && cmd.flags.name !== DEFAULT_ACCOUNT ) {
         validate_account_name( cmd.flags.name )
         return await claude_token( cmd, { output } ) === `saved` ? 0 : 1
     }

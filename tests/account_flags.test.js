@@ -35,6 +35,11 @@ describe( `--account parsing`, () => {
         expect( () => parse_args( [ `restart`, `2`, `--bogus` ] ) ).toThrow( `Unknown restart argument` )
     } )
 
+    it( `--account is refused where no single Claude session is meant`, () => {
+        expect( () => parse_args( [ `restart`, `all`, `--account`, `work` ] ) ).toThrow( `--account applies to one Claude session` )
+        expect( () => parse_args( [ `codex`, `--account`, `work` ] ) ).toThrow( `codex has none` )
+    } )
+
     it( `auth accounts [remove <name>] and init --name`, () => {
         expect( parse_args( [ `auth`, `accounts` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `accounts`, account_verb: null } )
         expect( parse_args( [ `auth`, `accounts`, `remove`, `work` ] ) ).toMatchObject( { account_verb: `remove`, account_name: `work` } )
@@ -58,6 +63,20 @@ describe( `--account parsing`, () => {
             print: () => {},
         } )
         expect( resumed ).toEqual( [ { account: `work`, continue_prompt: true } ] )
+    } )
+
+    it( `restart refuses --account for a non-Claude session before closing it`, async () => {
+        let closed = false
+        await expect( cmd_restart( { session_id: `1`, flags: { force: true, account: `work` } }, {
+            select: async () => ( { babysit_id: `s1`, agent: `codex`, tmux_session: `t`, agent_session_id: `n1`, launch_spec: { args: [] } } ),
+            close: async () => {
+                closed = true
+            },
+            resume: async () => {},
+            image_id: async () => null,
+            print: () => {},
+        } ) ).rejects.toThrow( `s1 is a codex session` )
+        expect( closed ).toBe( false )
     } )
 
 } )
