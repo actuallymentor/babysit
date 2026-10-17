@@ -1,5 +1,8 @@
 // Normalize provider-native units. Percentages are not token allowances, and
 // credits are not dollars unless the provider explicitly identifies a currency.
+// Rate windows (quotas that refill on a reset) carry `kind: 'window'`; spend
+// caps, credit balances and lifetime spend do not, so headroom ignores them.
+const WINDOW = `window`
 const numeric = value => typeof value === `number` && Number.isFinite( value ) ? value : null
 const require_number = ( value, field ) => {
     if( numeric( value ) === null ) throw new Error( `Usage endpoint returned invalid ${ field }` )
@@ -29,12 +32,13 @@ export const claude_usage = data => {
 
     const limits = Array.isArray( data.limits ) ? data.limits.map( limit => ( {
         name: [ limit.kind, limit.scope?.model?.display_name, limit.scope?.surface ].filter( value => typeof value === `string` ).join( ` / ` ),
+        kind: WINDOW,
         used_percent: numeric( limit.percent ),
         resets_at: limit.resets_at || null,
     } ) ) : Object.entries( data ).filter( ( [ key, value ] ) =>
         /^(five_hour|seven_day)/.test( key ) && numeric( value?.utilization ) !== null
     ).map( ( [ name, value ] ) => ( {
-        name, used_percent: value.utilization, resets_at: value.resets_at || null,
+        name, kind: WINDOW, used_percent: value.utilization, resets_at: value.resets_at || null,
     } ) )
     if( data.spend?.enabled && data.spend.used ) {
         const { currency } = data.spend.used
@@ -66,6 +70,7 @@ export const claude_header_usage = headers => [ ...headers.keys() ]
         const reset = headers.get( `anthropic-ratelimit-unified-${ claim }-reset` )
         return {
             name: CLAUDE_HEADER_LIMITS[ claim ] || claim,
+            kind: WINDOW,
             used_percent: Number.isFinite( utilization ) ? Math.round( utilization * 100 ) : null,
             resets_at: reset ? epoch( Number( reset ) ) : null,
         }
@@ -110,6 +115,7 @@ export const codex_usage = data => {
         if( !bucket ) return []
         const windows = [ bucket.primary, bucket.secondary ].filter( Boolean ).map( window => ( {
             name: `${ bucket.limitName || id } / ${ window.windowDurationMins ? `${ window.windowDurationMins } min` : `window` }`,
+            kind: WINDOW,
             used_percent: numeric( window.usedPercent ),
             resets_at: epoch( window.resetsAt ),
         } ) )
@@ -143,7 +149,8 @@ export const openrouter_usage = ( { data } ) => {
         unlimited: data.limit === null,
     } ]
     if( period !== `lifetime` ) limits.push( { name: `API key / lifetime spend`, unit: `USD`, used: numeric( data.usage ) } )
-    if( data.free_model_daily_requests ) limits.push( { name: `free models / daily`, unit: `requests`, ...data.free_model_daily_requests } )
+    // Free-model requests refill daily: a rate window, unlike the key's spend budget.
+    if( data.free_model_daily_requests ) limits.push( { name: `free models / daily`, unit: `requests`, ...data.free_model_daily_requests, kind: WINDOW } )
     return limits
 
 }

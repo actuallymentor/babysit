@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { cmd_watch, format_usage_panel, limit_percent, short_limit_name, USAGE_REFRESH_MS } from '../src/cli/watch.js'
+import { cmd_watch, format_usage_panel, limit_percent, session_usage_limits, short_limit_name, usage_cell, usage_level, USAGE_REFRESH_MS } from '../src/cli/watch.js'
 import { render_active_sessions } from '../src/cli/list.js'
 
 const capture_console = async fn => {
@@ -91,6 +91,72 @@ describe( `limit_percent`, () => {
 
 } )
 
+// One rate window at a given remaining share
+const window_left = remaining => ( { name: `five_hour`, kind: `window`, used_percent: 100 - remaining } )
+
+describe( `usage_level`, () => {
+
+    it( `walks the waterfall on remaining %, first hit wins`, () => {
+        const labels = [ 0, 4.9, 5, 19.9, 20, 39.9, 40, 100 ].map( remaining => usage_level( [ window_left( remaining ) ] )?.label )
+        expect( labels ).toEqual( [ `critical`, `critical`, `low`, `low`, `fine`, `fine`, `plenty`, `plenty` ] )
+        expect( usage_level( [ window_left( 4.9 ) ] ).color ).toBe( `red` )
+        expect( usage_level( [ window_left( 19.9 ) ] ).color ).toBe( `orange` )
+        expect( usage_level( [ window_left( 39.9 ) ] ).color ).toBe( `green` )
+        expect( usage_level( [ window_left( 40 ) ] ).color ).toBe( `green` )
+    } )
+
+    it( `takes the worst window`, () => {
+        expect( usage_level( [ window_left( 90 ), window_left( 12 ), window_left( 60 ) ] ) ).toEqual( { label: `low`, color: `orange`, remaining: 12 } )
+    } )
+
+    it( `ignores extra usage, spend caps, balances and lifetime spend`, () => {
+        const limits = [
+            window_left( 70 ),
+            { name: `extra usage`, unit: `USD`, used: 19.9, limit: 20, used_percent: 99.5 },
+            { name: `codex / individual limit`, unit: `credits`, remaining_percent: 1 },
+            { name: `API key / daily`, unit: `USD`, used: 9.9, limit: 10 },
+            { name: `credit balance`, unit: `credits`, remaining: `0` },
+            { name: `API key / lifetime spend`, unit: `USD`, used: 500 },
+        ]
+        expect( usage_level( limits ).label ).toBe( `plenty` )
+        expect( usage_level( limits.slice( 1 ) ) ).toBeNull()
+    } )
+
+    it( `is null without data`, () => {
+        expect( usage_level( null ) ).toBeNull()
+        expect( usage_level( [] ) ).toBeNull()
+        expect( usage_level( [ { name: `five_hour`, kind: `window`, used_percent: null } ] ) ).toBeNull()
+    } )
+
+} )
+
+describe( `session_usage_limits`, () => {
+
+    it( `reads the healthy entries for the session's agent`, () => {
+        expect( session_usage_limits( report, { agent: `claude` } ) ).toHaveLength( 3 )
+        expect( session_usage_limits( report, { agent: `opencode` } ) ).toEqual( [] )
+        expect( session_usage_limits( report, undefined ) ).toEqual( [] )
+        expect( session_usage_limits( null, { agent: `claude` } ) ).toEqual( [] )
+    } )
+
+} )
+
+describe( `usage_cell`, () => {
+
+    it( `labels headroom with the floored remaining %, dim dash without data`, () => {
+        const marked = { ...report, agents: report.agents.map( result => ( {
+            ...result,
+            limits: result.limits.map( limit => /min$|five_hour|seven_day/.test( limit.name ) ? { ...limit, kind: `window` } : limit ),
+        } ) ) }
+        // Claude: 5h at 34% used, 7d opus at 81% used → 19% left
+        expect( usage_cell( marked, { agent: `claude` } ) ).toEqual( { text: `low 19%`, color: `orange` } )
+        expect( usage_cell( marked, { agent: `codex` } ) ).toEqual( { text: `plenty 60%`, color: `green` } )
+        expect( usage_cell( marked, { agent: `antigravity` } ) ).toEqual( { text: `—`, color: `dim` } )
+        expect( usage_cell( null, { agent: `claude` } ) ).toEqual( { text: `—`, color: `dim` } )
+    } )
+
+} )
+
 describe( `cmd_watch`, () => {
 
     it( `redraws sessions plus usage, refreshing usage on its own cadence`, async () => {
@@ -121,6 +187,40 @@ describe( `cmd_watch`, () => {
         expect( events ).toContain( JSON.stringify( `\x1b[H\x1b[J` ) )
         expect( output ).toContain( `claude` )
         expect( output ).toContain( `Ctrl+C to stop` )
+    } )
+
+    it( `renders a USAGE column per session row through the real session tree`, async () => {
+        const output = await capture_console( () => cmd_watch( { flags: {} }, {
+            rounds: 2,
+            collect_fn: async () => ( { fetched_at: new Date().toISOString(), agents: [
+                { agent: `claude`, status: `ok`, limits: [ { name: `five_hour`, kind: `window`, used_percent: 97 } ] },
+                { agent: `codex`, status: `ok`, limits: [ { name: `codex / 300 min`, kind: `window`, used_percent: 10 } ] },
+            ] } ),
+            render_sessions_fn: options => render_active_sessions( {
+                ...options,
+                version_check_fn: () => ( { latest: null } ),
+                list_sessions_fn: async () => [
+                    { name: `babysit_a`, attached: false, agent_status: `idle` },
+                    { name: `babysit_b`, attached: false, agent_status: `idle` },
+                    { name: `babysit_c`, attached: false, agent_status: `idle` },
+                ],
+                list_stored_sessions_fn: () => [
+                    { tmux_session: `babysit_a`, name: `a`, agent: `claude`, babysit_id: `a`, pwd: `/w` },
+                    { tmux_session: `babysit_b`, name: `b`, agent: `codex`, babysit_id: `b`, pwd: `/w` },
+                    { tmux_session: `babysit_c`, name: `c`, agent: `opencode`, babysit_id: `c`, pwd: `/w` },
+                ],
+                observe_activity_fn: async sessions => sessions,
+            } ),
+            write_fn: () => {},
+            wait_fn: tick,
+        } ) )
+
+        // The last frame has the report; the first rendered before it landed
+        const frame = output.slice( output.lastIndexOf( `Active babysit sessions` ) )
+        expect( frame ).toMatch( /MEM\s+USAGE\s+FLAGS/ )
+        expect( frame ).toMatch( /a\s.*critical 3%/ )
+        expect( frame ).toMatch( /b\s.*plenty 90%/ )
+        expect( frame ).toMatch( /c\s.*—/ )
     } )
 
     it( `keeps drawing when a usage refresh fails`, async () => {

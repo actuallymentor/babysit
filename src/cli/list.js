@@ -306,6 +306,7 @@ export const usage_totals_row = ( headers, usages ) => {
  * @param {number[]} [options.numbers] - Global selectors for a filtered tree
  * @param {boolean} [options.show_flags=false] - Show stored launch modifiers
  * @param {boolean} [options.show_usage=false] - Show cached container CPU/MEM and a totals row
+ * @param {Array<{ header: string, cell: Function }>} [options.extra_columns=[]] - Caller columns after CPU/MEM; `cell( stored )` gets the session's stored record (maybe undefined) and returns a cell
  * @param {boolean} [options.all=false] - Include tmux attachment, diagnostic IDs and raw tmux names
  * @param {number} [options.now] - Epoch milliseconds for usage staleness
  */
@@ -316,6 +317,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
     show_flags = false,
     show_usage = false,
+    extra_columns = [],
     all = false,
     now = Date.now(),
 } = {} ) => {
@@ -326,6 +328,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         `STATUS`,
         `AGENT`,
         ... show_usage ? [ `CPU`, `MEM` ] : [],
+        ... extra_columns.map( column => column.header ),
         ... show_flags ? [ `FLAGS` ] : [],
         ... all ? [ `TMUX`, `ID`, `SESSION` ] : [],
     ]
@@ -357,6 +360,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
                 { text: status, color: archived ? null : STATUS_COLORS[ status ] },
                 agent,
                 ... show_usage ? [ usage ? format_cpu( host_cpu_percent( usage ) ) : `-`, usage ? format_memory( usage.memory_bytes ) : `-` ] : [],
+                ... extra_columns.map( column => column.cell( stored ) ),
                 ... show_flags ? [ flags ] : [],
                 ... all ? [ tmux_status, session_id, tmux.name ] : [],
             ],
@@ -394,6 +398,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {boolean} [options.all=false] - Diagnostic columns
  * @param {boolean} [options.hide_archived=false] - Drop archived rows; numbers stay global
  * @param {boolean} [options.open_hint=true] - Print the `babysit open` hint
+ * @param {Object[]} [options.extra_columns=[]] - Caller columns, see print_active_sessions_table
  * @param {Function} [options.before_print] - Runs after sampling, right before output
  * @param {Function} [options.list_sessions_fn] - Active tmux session loader
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
@@ -404,6 +409,7 @@ export const render_active_sessions = async ( {
     all = false,
     hide_archived = false,
     open_hint = true,
+    extra_columns = [],
     before_print = () => {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
@@ -437,6 +443,7 @@ export const render_active_sessions = async ( {
         numbers,
         show_flags: true,
         show_usage: true,
+        extra_columns,
         open_hint,
         all,
     } )

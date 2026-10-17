@@ -124,6 +124,10 @@ sessions (numbers unchanged) plus account usage per agent: one row per metered
 limit with a bar, % used and time to reset. Balances and lifetime spend stay in
 babysit usage. Usage refreshes every 5 min.
 
+USAGE column: the worst remaining % across the session agent's rate windows
+(extra usage, spend caps and balances do not count): critical <5% (red),
+low <20% (orange), fine <40%, plenty (green); — while unknown.
+
 Options:
   --all      Add tmux attachment, session IDs, and tmux names
 
