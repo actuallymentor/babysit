@@ -31,6 +31,8 @@ export const antigravity = {
         skip_permissions: () => `--dangerously-skip-permissions`,
         resume: id => [ `--conversation`, id ],
         resume_latest: () => [ `--continue` ],
+        // No CLI fork, only the in-app /fork: babysit fork hands off a summary instead
+        fork: null,
         model: model => [ `--model`, model ],
         effort: effort => [ `--effort`, effort ],
     },

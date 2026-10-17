@@ -26,6 +26,7 @@ Usage:
   babysit watch [--all]                Live sessions with usage headroom + account usage, redrawn every 2s
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
+  babysit fork <number|id> [agent]     Continue a session in a new one (share or clone the tree, chat kept); --takeover
   babysit prune [--list]               Prune unused Docker data and clone workspaces
   babysit recover [id|number]         Recover interrupted sessions, detached
   babysit recover init                Install this account's Ubuntu boot recovery service
@@ -85,7 +86,7 @@ Flags:
   -v, --version   Show version
 
 Session numbers:
-  open/close/archive: Rows from babysit list
+  open/close/archive/fork: Rows from babysit list (forks nest under their parent)
   resume:         Rows from babysit resume (use --all for global history)
   <agent> resume: Same resume rows; the selected session must match the agent
   recover:        Rows from babysit recover --dry-run (all workspaces)
@@ -114,6 +115,7 @@ Examples:
   babysit resume --all
   babysit resume 1
   babysit resume 1 --all
+  babysit fork 2 codex --clone
   babysit recover --dry-run
   babysit recover 1
   babysit prune

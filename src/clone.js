@@ -822,17 +822,29 @@ export const clone_branch_name = ( name, clone_id ) => {
 
 }
 
-const create_clone_branch = ( workspace, branch, hooks_path ) => {
+const create_clone_branch = ( workspace, branch, hooks_path, { keep_checkout_warning = null } = {} ) => {
 
     const git_prefix = [ `-c`, `core.hooksPath=${ hooks_path }`, `-C`, workspace ]
     const has_head = run_git( [ ...git_prefix, `rev-parse`, `--verify`, `HEAD` ], {
         allow_failure: true,
     } ) !== null
 
-    if( has_head ) run_git( [ ...git_prefix, `switch`, `-c`, branch ] )
-    else run_git( [ ...git_prefix, `symbolic-ref`, `HEAD`, `refs/heads/${ branch }` ] )
+    if( !has_head ) return run_git( [ ...git_prefix, `symbolic-ref`, `HEAD`, `refs/heads/${ branch }` ] )
+
+    // A snapshot copied mid-merge or mid-rebase cannot switch branches. Keep
+    // the in-progress checkout and only create the branch at its HEAD.
+    const switched = run_git( [ ...git_prefix, `switch`, `-c`, branch ], { allow_failure: Boolean( keep_checkout_warning ) } )
+    if( switched !== null ) return
+
+    run_git( [ ...git_prefix, `branch`, branch ] )
+    keep_checkout_warning( `Clone keeps the in-progress Git operation checked out; branch ${ branch } was created at HEAD without switching.` )
 
 }
+
+// Merge, rebase, cherry-pick, and revert state lives only in .git, which
+// git mode never copies. Snapshots of such trees fall back to copy mode.
+const IN_PROGRESS_GIT_STATE = [ `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge`, `rebase-apply` ]
+const git_operation_in_progress = source => IN_PROGRESS_GIT_STATE.some( name => path_exists( join( source, `.git`, name ) ) )
 
 const copy_directory_contents = ( source, destination, { exclude = [], excluded = clone_path_matcher( exclude ) } = {} ) => {
 
@@ -1023,7 +1035,10 @@ const clone_repository_contents = ( source, destination, {
     if( dirty && !changes ) warn( `Uncommitted changes in ${ source } are not carried into the clone; set config.clone.changes: true to include them.` )
     if( dirty && changes ) {
         const stash = run_git( [ `-C`, source, `stash`, `create` ], { allow_failure: true } )
-        if( !stash ) throw new Error( `Clone could not capture uncommitted changes in ${ source }; finish any merge or rebase, or set config.clone.changes: false` )
+        if( !stash ) throw Object.assign(
+            new Error( `Clone could not capture uncommitted changes in ${ source }; finish any merge or rebase, or set config.clone.changes: false` ),
+            { code: `CLONE_STASH_FAILED` }
+        )
         run_git( [ ...git_prefix, `-c`, `uploadpack.allowAnySHA1InWant=true`, `-C`, destination, `fetch`, `--quiet`, `--no-tags`, source, stash ] )
         run_git( [ ...git_prefix, `-C`, destination, `stash`, `apply`, `--index`, `--quiet`, stash ] )
     }
@@ -1110,6 +1125,10 @@ const completed_clone = ( clone_path, manifest_path, { source, clone_id } ) => {
  * @param {Function} [options.warn] - Warning sink
  * @param {number} [options.now] - Current epoch milliseconds
  * @param {number} [options.stale_partial_ms] - Partial cleanup threshold
+ * @param {boolean} [options.snapshot=false] - Full snapshot (babysit fork): always carry
+ *   uncommitted and untracked files; copy mode when a Git operation is in progress
+ * @param {string|null} [options.tree=null] - Tree to copy when it differs from `source`,
+ *   e.g. a parent clone; the manifest still records `source` as the original
  * @returns {Object} Original/clone paths, Git metadata, and reuse state
  */
 export const prepare_clone_workspace = ( {
@@ -1121,18 +1140,29 @@ export const prepare_clone_workspace = ( {
     warn = message => log.warn( message ),
     now = Date.now(),
     stale_partial_ms = DEFAULT_STALE_PARTIAL_MS,
+    snapshot = false,
+    tree = null,
 } ) => {
 
     assert_clone_id( clone_id )
-    const { mode, carry, changes, depth, exclude } = { ...DEFAULT_CLONE_CONFIG, ...clone_config }
+    const { mode, carry, changes: configured_changes, depth, exclude } = { ...DEFAULT_CLONE_CONFIG, ...clone_config }
+
+    // A snapshot ignores config.clone.changes: the fork must see what its parent sees
+    const changes = snapshot || configured_changes
 
     const original_workspace = realpathSync( resolve( source ) )
     if( !lstatSync( original_workspace ).isDirectory() ) {
         throw new Error( `Clone source is not a directory: ${ original_workspace }` )
     }
 
+    // Everything below reads the tree being copied; ownership stays with the original
+    const tree_source = tree ? realpathSync( resolve( tree ) ) : original_workspace
+    if( !lstatSync( tree_source ).isDirectory() ) {
+        throw new Error( `Clone snapshot tree is not a directory: ${ tree_source }` )
+    }
+
     const clone_root = canonical_target_path( clones_dir )
-    if( is_same_or_descendant( original_workspace, clone_root ) ) {
+    if( [ original_workspace, tree_source ].some( path => is_same_or_descendant( path, clone_root ) ) ) {
         throw new Error( `Clone source cannot contain the clone root: ${ clone_root }` )
     }
 
@@ -1154,12 +1184,14 @@ export const prepare_clone_workspace = ( {
         } )
         if( existing ) return existing
 
-        const repository = inspect_git_source( original_workspace, warn )
+        const repository = inspect_git_source( tree_source, warn )
+        const in_progress = snapshot && repository.kind === `root` && git_operation_in_progress( tree_source )
+        if( in_progress && mode === `git` ) warn( `A Git merge or rebase is in progress in ${ tree_source }; copying the working tree instead of cloning.` )
         // Git mode copies only listed files, so the tree audit and metadata
         // relocation belong to copy mode; the copied result is verified in both.
-        const clone_mode = mode === `git` && repository.kind === `root` && !uses_attribute_filters( original_workspace, warn ) ? `git` : `copy`
+        let clone_mode = mode === `git` && repository.kind === `root` && !in_progress && !uses_attribute_filters( tree_source, warn ) ? `git` : `copy`
         const excluded = clone_path_matcher( exclude )
-        const git_relocations = clone_mode === `copy` ? audit_source_tree( original_workspace, excluded ) : null
+        const git_relocations = clone_mode === `copy` ? audit_source_tree( tree_source, excluded ) : null
         const clone_branch = repository.kind === `root`
             ? clone_branch_name( name, clone_id )
             : null
@@ -1180,15 +1212,26 @@ export const prepare_clone_workspace = ( {
 
         try {
             if( clone_mode === `git` ) {
-                clone_repository_contents( original_workspace, partial_path, {
-                    hooks_path: paths.hooks, warn, carry, changes, depth, exclude,
-                } )
-            } else {
-                copy_directory_contents( original_workspace, partial_path, { exclude, excluded } )
-                relocate_git_metadata( original_workspace, partial_path, clone_path, git_relocations )
+                try {
+                    clone_repository_contents( tree_source, partial_path, {
+                        hooks_path: paths.hooks, warn, carry, changes, depth, exclude,
+                    } )
+                } catch ( error ) {
+                    // A snapshot must not lose edits Git cannot stash; copy them as files
+                    if( !snapshot || error.code !== `CLONE_STASH_FAILED` ) throw error
+                    warn( `${ error.message.split( `;` )[0] }; copying the working tree instead.` )
+                    rmSync( partial_path, { recursive: true, force: true } )
+                    clone_mode = `copy`
+                }
+            }
+            if( clone_mode === `copy` ) {
+                copy_directory_contents( tree_source, partial_path, { exclude, excluded } )
+                relocate_git_metadata( tree_source, partial_path, clone_path, git_relocations || audit_source_tree( tree_source, excluded ) )
             }
             verify_copied_git_metadata( partial_path, clone_path )
-            if( clone_branch ) create_clone_branch( partial_path, clone_branch, paths.hooks )
+            if( clone_branch ) create_clone_branch( partial_path, clone_branch, paths.hooks, {
+                keep_checkout_warning: snapshot ? warn : null,
+            } )
 
             if( path_exists( clone_path ) ) {
                 throw new Error( `Clone path appeared while preparing the workspace: ${ clone_path }` )

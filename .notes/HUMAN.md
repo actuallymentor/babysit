@@ -37,7 +37,7 @@
 ## 2026-10-11 — automated re-login removed (1.37.0)
 - Leftovers on the host: `docker volume rm babysit-relogin`, `rm ~/.babysit/relogin.json`, drop `GMAIL_USER`/`GMAIL_APP_PASSWORD` from `~/.babysitrc` and revoke the Gmail app password. The pending Gmail forwarding confirmation can be ignored.
 
-## `babysit fork` design decisions (2026-10-17, user-approved, not yet implemented)
+## `babysit fork` design decisions (2026-10-17, user-approved, implemented on branch worktree-agent-ab0d9d55f773468da)
 
 - Filesystem: interactive. Default share if parent exited/stuck; clone snapshot if parent live + fork writable; mudbox fork = read-only share, no prompt. `--share`/`--clone` skip prompt; `--yes`/yolo take default.
 - Clone fork = full snapshot: ignores `config.clone.changes`, carries untracked non-ignored + carry − exclude; copy-mode fallback when mid-merge/rebase. New branch from parent HEAD, store base sha. Prompt warns not to push to parent branch.
@@ -47,6 +47,8 @@
 - Takeover: prompt "close parent?" if live; `--takeover` skips.
 - Sandbox parent: allowed, handoff only, warn.
 - v1 scope adds: launcher fork action, fork-of-fork nesting. Out: web companion, diff/merge helper.
+- Executive calls while building (review): native fork sends no launch prompt, only fork notes (none at all for a plain share); ports never inherited; fork name `<parent>-fork`; clone-of-a-clone keeps the real original as `/original` (manifest keyed to it); `--regular` and `--no-yolo|docker|adb|loop` added for mode/switch overrides; non-TTY without `--share/--clone/--yes` errors; launcher fork via `f` key.
+- Open: OpenCode 1.19.3 showed an "/update to upgrade to OpenCode 2.0" banner and Babysit skipped the initial prompt (readiness timeout), so its handoff instruction was not typed (pre-existing readiness issue, not fork-specific). Antigravity handoffs carry no transcript text (no documented format; only the conversation db path). Codex quota exhausted here, so codex native fork was verified with the fake agent only.
 
 ## `babysit watch` USAGE column (2026-10-17, implemented 3dcac74)
 

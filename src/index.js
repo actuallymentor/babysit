@@ -18,6 +18,7 @@ import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_watch } from './cli/watch.js'
+import { cmd_fork } from './cli/fork.js'
 import { cmd_init } from './cli/init.js'
 import { cmd_audit } from './cli/audit.js'
 import { cmd_archive } from './cli/archive.js'
@@ -50,7 +51,7 @@ const is_directory = path => {
 // are pure metadata reads, `__monitor` is a background daemon that inherits
 // the foreground's already-checked environment, and `update` runs its own
 // dep check inside `cmd_update`.
-const DEP_CHECK_VERBS = new Set( [ `start`, `launch_dir`, `resume`, `list`, `watch`, `open`, `doctor`, `auth` ] )
+const DEP_CHECK_VERBS = new Set( [ `start`, `launch_dir`, `resume`, `fork`, `list`, `watch`, `open`, `doctor`, `auth` ] )
 
 /**
  * Main entry point
@@ -117,7 +118,8 @@ const main = async () => {
         cmd = await launch_from_menu( { name: cmd.flags.name || ``, config: cmd.flags.config } )
         if( !cmd ) return
         try {
-            save_launch_defaults( cmd )
+            // A fork's toggles come from its parent; they are no launch default
+            if( cmd.verb !== `fork` ) save_launch_defaults( cmd )
         } catch ( error ) {
             log.warn( `Could not save launch defaults: ${ error.message }` )
         }
@@ -175,6 +177,10 @@ const main = async () => {
 
     case `list`:
         await cmd_list( cmd )
+        break
+
+    case `fork`:
+        await cmd_fork( cmd )
         break
 
     case `watch`:
