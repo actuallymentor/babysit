@@ -437,7 +437,7 @@ export const cmd_monitor = async ( cmd ) => {
             // Claude limit hit: move to another registered account with headroom
             on_limit_screen: agent.name === `claude` && config.claude_account_auto_switch !== false
                 ? create_account_switcher( session ) : null,
-            approve_dangerous_commands: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
+            approve_dialogs: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_tick: () => {

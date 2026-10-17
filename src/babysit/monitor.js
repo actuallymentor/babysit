@@ -12,6 +12,11 @@ import { WATCHDOG_NUDGE } from './watchdog.js'
 
 // Poll interval for pane capture
 const POLL_INTERVAL_MS = 1_000
+
+// A failed has-session is not proof the session ended: a busy tmux server or a
+// failed spawn looks the same. Ending on one miss orphans a live agent with no
+// monitor (no YOLO approvals, no nudges), so confirm across this many checks.
+const SESSION_GONE_CHECKS = 5
 export const AGENT_EXIT_SENTINEL = `__BABYSIT_AGENT_EXIT__`
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
@@ -131,7 +136,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Object} options.agent - Agent adapter
  * @param {Object|null} [options.web_bridge] - Optional filesystem bridge controller
  * @param {Function|null} [options.open_web_bridge_fn] - Retry bridge initialization until enabled
- * @param {boolean} [options.approve_dangerous_commands=false] - YOLO: answer the agent's bypass-immune dangerous-command prompt with Yes
+ * @param {boolean} [options.approve_dialogs=false] - YOLO: accept the agent's blocking prompts whose default is yes
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_logout_screen] - Callback with the agent name when the pane shows a lost login
@@ -150,7 +155,7 @@ export const start_monitor = async ( {
     web_bridge = null,
     open_web_bridge_fn = null,
     control_bridge = null,
-    approve_dangerous_commands = false,
+    approve_dialogs = false,
     tmux_target = session_name,
     on_session_id,
     on_logout_screen = null,
@@ -215,6 +220,15 @@ export const start_monitor = async ( {
     // The watchdog's nudge runs as a regular action so it owns tmux input the same way
     const watchdog_rule = { on: { type: `watchdog` }, do: WATCHDOG_NUDGE, last_fired_at: 0 }
 
+    // Gone only when every check over ~SESSION_GONE_CHECKS seconds misses
+    const session_gone = async () => {
+        for( let check = 1; check <= SESSION_GONE_CHECKS; check++ ) {
+            if( await has_session_fn( session_name ) ) return false
+            if( check < SESSION_GONE_CHECKS ) await wait_fn( POLL_INTERVAL_MS )
+        }
+        return true
+    }
+
     log.info( `Monitoring session: ${ session_name }` )
     log.debug( `${ rules.length } rules loaded, polling every ${ POLL_INTERVAL_MS }ms` )
 
@@ -235,8 +249,7 @@ export const start_monitor = async ( {
             }
 
             // Check if session is still alive
-            const alive = await has_session_fn( session_name )
-            if( !alive ) {
+            if( await session_gone() ) {
                 log.info( `Session ended: ${ session_name }` )
                 write_loop_deadline_fn( `idle` )
                 await finish_action()
@@ -334,12 +347,11 @@ export const start_monitor = async ( {
                 break
             }
 
-            // YOLO: answer Claude's bypass-immune dangerous-command prompt the
-            // way a person would. Babysit's own input owners finish first; the
-            // prompt waits two minutes before Claude denies it on its own.
-            const dangerous = approve_dangerous_commands && agent?.dangerous_command_dialog?.( clean_output )
-            if( dangerous && !action_busy && !control_bridge?.busy && input_allowed() && Date.now() >= approval_ready_at ) {
-                log.info( `YOLO approved Claude's dangerous command prompt (${ dangerous.reason }): ${ dangerous.command.slice( 0, 200 ) }` )
+            // YOLO: accept prompts that still stop the agent, the way a person
+            // would. Babysit's own input owners finish first.
+            const dialog = approve_dialogs && agent?.yolo_dialog?.( clean_output )
+            if( dialog && !action_busy && !control_bridge?.busy && input_allowed() && Date.now() >= approval_ready_at ) {
+                log.info( `YOLO answered "${ dialog.answer }" to "${ dialog.question }"${ dialog.title ? ` (${ dialog.title.slice( 0, 120 ) })` : `` }` )
                 await send_keys_fn( agent_target, `Enter` )
                 approval_ready_at = Date.now() + APPROVAL_COOLDOWN_MS
                 idle_tracker.reset()

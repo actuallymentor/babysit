@@ -18,7 +18,7 @@ const KEY_COMMENTS = {
     initial_prompt: ` Prompt typed into the agent once it is ready. null or "" sends nothing.`,
     idle_timeout_s: ` Seconds without new output before the agent counts as idle (on: idle, --loop).`,
     watchdog_idle_s: ` Seconds idle, or waiting on background work, before a cheap LLM judges\n whether the agent stalled and nudges it. 0 disables.`,
-    yolo_approve_dangerous_commands: ` YOLO only: answer Claude's bypass-immune rm prompts with Yes; false leaves them to a person.`,
+    yolo_approve_dangerous_commands: ` YOLO only: accept blocking Claude prompts whose default is yes (never model swaps or billing); false leaves them to a person.`,
     isolate_dependencies: ` Mount Docker volumes over dependency folders so container binaries never reach the host.`,
     clone: ` --clone workspace creation: git clones the committed state, copy copies the working tree.`,
     commands: ` Shell commands a rule can run by name, e.g.\n notify_command: curl -f -X POST -d "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&message=I need your input" https://api.pushover.net/1/messages.json`,
