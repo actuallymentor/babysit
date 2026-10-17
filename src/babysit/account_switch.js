@@ -27,9 +27,34 @@ export const SWITCH_FALLBACK_WINDOW_MS = 5 * 3600_000
 // Quota readings this young are trusted; the 10-minute rescan always re-reads
 export const SWITCH_PROBE_MAX_AGE_MS = 60_000
 
+// A limit line this soon after a switch is likely the resumed transcript, not a new limit
+export const SPENT_NOTICE_GRACE_MS = 10 * 60_000
+
 const switch_window_open = ( { at, resets_at }, now ) => resets_at
     ? Date.parse( resets_at ) > now
     : now - Date.parse( at ) < SWITCH_FALLBACK_WINDOW_MS
+
+const open_switches = ( session, now ) => ( session.account_switches || [] ).filter( entry => switch_window_open( entry, now ) )
+
+// Latest reset among a reading's exhausted windows: when that account is usable again
+const exhausted_reset = ( limits = [] ) => limits
+    .filter( limit => limit.used_percent >= 100 && limit.resets_at )
+    .map( limit => limit.resets_at )
+    .sort()
+    .at( -1 ) || null
+
+/**
+ * When every account is spent: the earliest recorded reset of an account this
+ * session left, i.e. when the first one frees up. Pure.
+ * @param {Object} session - Stored session (account_switches)
+ * @param {number} [now] - Epoch ms
+ * @returns {{ window: string, resets_at: string|null }} window keys one spent episode
+ */
+export const spent_window = ( session, now = Date.now() ) => {
+    const entries = open_switches( session, now )
+    const [ resets_at = null ] = entries.map( entry => entry.resets_at ).filter( Boolean ).sort()
+    return { window: entries.map( ( { at } ) => at ).join( `,` ), resets_at }
+}
 
 /**
  * The switch guard, checked before any probe. Pure.
@@ -37,22 +62,20 @@ const switch_window_open = ( { at, resets_at }, now ) => resets_at
  * @param {Object} options.session - Stored session (claude_account, account_switches)
  * @param {string[]} options.names - Registered account names
  * @param {number} [options.now] - Epoch ms
- * @returns {{ from: string, targets: string[] }|{ skip: string }}
+ * @returns {{ from: string, targets: string[] }|{ skip: string, spent?: true, from?: string }} spent: no target left
  */
 export const switch_targets = ( { session, names, now = Date.now() } ) => {
 
     const from = session.claude_account || DEFAULT_ACCOUNT
 
     // Accounts this session already left while their limit window is still open
-    const spent = new Set( ( session.account_switches || [] )
-        .filter( entry => switch_window_open( entry, now ) )
-        .map( ( { from: left } ) => left ) )
+    const spent = new Set( open_switches( session, now ).map( ( { from: left } ) => left ) )
 
     // Still on an account it left: that restart has not landed yet
     if( spent.has( from ) ) return { skip: `a switch away from ${ from } is already under way` }
 
     const targets = names.filter( name => name !== from && !spent.has( name ) )
-    if( !targets.length ) return { skip: `every other Claude account already hit its limit in this window` }
+    if( !targets.length ) return { skip: `every other Claude account already hit its limit in this window`, spent: true, from }
     return { from, targets }
 
 }
@@ -79,11 +102,7 @@ export const plan_account_switch = ( { session, readings, now = Date.now() } ) =
     if( !best ) return { skip: `no other Claude account has headroom`, exhausted: true }
 
     // The guard holds until the current account is usable again: its latest exhausted reset
-    const resets = ( current?.limits || [] )
-        .filter( limit => limit.used_percent >= 100 && limit.resets_at )
-        .map( limit => limit.resets_at )
-        .sort()
-    return { from, to: best.name, headroom: best.headroom, resets_at: resets.at( -1 ) || null }
+    return { from, to: best.name, headroom: best.headroom, resets_at: exhausted_reset( current?.limits ) }
 
 }
 
@@ -154,9 +173,33 @@ export const create_account_switcher = ( session, {
     let busy = false
     let told_exhausted = false
     let told_attached = false
+    let told_spent_window = null
     const skip = reason => {
         log.info( `Claude limit on screen; not switching accounts: ${ reason }` )
         return null
+    }
+
+    /*
+     * Every account spent: one note per window, from the recorded resets. Only
+     * with no reset on record is the current account probed, once per window.
+     * Right after a switch the line is likely the resumed transcript: wait.
+     */
+    const tell_spent = async ( latest, from, accounts ) => {
+
+        const { window, resets_at: recorded } = spent_window( latest, now() )
+        if( told_spent_window === window ) return
+        const last_switch = Math.max( ...open_switches( latest, now() ).map( ( { at } ) => Date.parse( at ) ) )
+        if( now() - last_switch < SPENT_NOTICE_GRACE_MS ) return
+        told_spent_window = window
+
+        const current = recorded ? null : accounts.find( ( { name } ) => name === from )
+        const [ reading ] = current ? await probe( [ current ], { max_age_ms: SWITCH_PROBE_MAX_AGE_MS } ) : []
+        // The headers can still overrule the pane: a quoted limit line is no news
+        if( reading?.status === `ok` && reading.headroom > 0 ) return
+        const resets_at = recorded || exhausted_reset( reading?.limits )
+
+        await notify( { title: `Babysit`, message: `All Claude accounts spent in ${ latest.name || latest.babysit_id }; ${ resets_at ? `resets ${ resets_at.slice( 0, 16 ).replace( `T`, ` ` ) } UTC` : `reset time unknown` }.` } )
+
     }
 
     return async () => {
@@ -179,6 +222,7 @@ export const create_account_switcher = ( session, {
             // Guard before probing: a stale limit line in a resumed transcript costs nothing
             const guard = switch_targets( { session: latest, names: accounts.map( ( { name } ) => name ), now: now() } )
             if( guard.skip ) {
+                if( guard.spent ) await tell_spent( latest, guard.from, accounts )
                 skip( guard.skip )
                 return guard
             }
