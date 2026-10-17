@@ -149,6 +149,40 @@ describe( `account switcher`, () => {
         expect( calls.notes ).toEqual( [] )
     } )
 
+    it( `every account spent: one note per window from the recorded reset, no probe`, async () => {
+        const left = { at: new Date( NOW ).toISOString(), from: `default`, to: `work`, resets_at: RESET }
+        const { calls, switcher, state } = harness( { record: { claude_account: `work`, account_switches: [ left ] } } )
+
+        // Right after the switch the line is the resumed transcript: wait
+        await switcher()
+        expect( calls.notes ).toEqual( [] )
+
+        const later = create_account_switcher( state, {
+            list: () => accounts, load: () => state, probe: async () => calls.probes.push( `probe` ) && [],
+            notify: async note => calls.notes.push( note.message ), restart: () => {}, attached: async () => false,
+            now: () => NOW + 11 * 60_000,
+        } )
+        await later()
+        await later()
+        expect( calls.notes ).toEqual( [ `All Claude accounts spent in b1; resets 2026-10-17 15:00 UTC.` ] )
+        expect( calls.probes ).toEqual( [] )
+    } )
+
+    it( `every account spent with no recorded reset: probes the current account once per window`, async () => {
+        const left = { at: new Date( NOW - 3600_000 ).toISOString(), from: `default`, to: `work`, resets_at: null }
+        const record = { claude_account: `work`, account_switches: [ left ] }
+        const { calls, switcher } = harness( { record, readings: [ reading( `work`, 100 ) ] } )
+        await switcher()
+        await switcher()
+        expect( calls.probes ).toEqual( [ [ [ `work` ], { max_age_ms: 60_000 } ] ] )
+        expect( calls.notes ).toEqual( [ `All Claude accounts spent in b1; resets 2026-10-17 15:00 UTC.` ] )
+
+        // Headers showing headroom mean the pane quoted an old limit: no note
+        const quoted = harness( { record, readings: [ reading( `work`, 50 ) ] } )
+        await quoted.switcher()
+        expect( quoted.calls.notes ).toEqual( [] )
+    } )
+
     it( `probes only the current account and real targets`, async () => {
         const three = [ ...accounts, { name: `home`, token: `c` } ]
         const { calls, switcher } = harness( {

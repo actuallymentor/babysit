@@ -72,7 +72,7 @@
 - Transport: a per-session token file copied in with `docker cp` and sourced after the rc. Never an env var (Docker `Config.Env` is inspectable).
 - Launch: pick the account with the most headroom (`claude_header_request` quota headers, cached); record it on the session record; `--account X` override (also usable on fork).
 - Usage: `babysit watch` shows bars per account; the USAGE column uses the session's own account.
-- Auto-switch: monitor detects the limit-hit message → next account with headroom → restart with chat resume → continue prompt. At most 1 switch per reset window per session; no ping-pong between exhausted accounts.
+- Auto-switch: monitor detects the limit-hit message → next account with headroom → restart with chat resume → continue prompt. Guard: an account the session left is never a target until its window resets (A→B→C ok, no ping-pong), checked before probing; no switch while a tmux client is attached (one Pushover, retried each scan). All spent → one Pushover per window with the recorded reset (current account probed once only when no reset is known; 10 min grace after a switch for the resumed transcript's stale line).
 - Risks: turn lost mid-flight; restart during a tool call.
 - Open: Anthropic consumer terms on using several accounts to get around limits. User to verify.
 ## 2026-10-17 — Multiple Claude subscriptions (built, needs review)
