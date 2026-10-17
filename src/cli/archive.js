@@ -1,29 +1,32 @@
 import { log } from '../utils/log.js'
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions, update_session } from '../sessions/store.js'
-import { order_active_sessions } from './list.js'
+import { exited_session_message, order_active_sessions, stored_by_tmux } from './list.js'
 
 /**
  * Resolve a list number, Babysit id, agent session id, or unique display name
  * to the stored record of an active session.
  * @param {string} selector - User input
- * @param {Array<{ name: string }>} active - Active tmux sessions in display order
+ * @param {Array<{ name: string, exited?: boolean }>} active - Active tmux sessions in display order
  * @param {Object[]} stored - Stored Babysit metadata
  * @returns {Object} Stored session
  */
 export const select_active_session = ( selector, active, stored ) => {
 
-    const stored_for = tmux => stored.find( session => session.tmux_session === tmux.name )
+    const by_tmux = stored_by_tmux( stored )
+    const stored_for = tmux => by_tmux.get( tmux.name )
 
     if( /^\d+$/.test( selector ) ) {
         const tmux = active[ Number( selector ) - 1 ]
         if( !tmux ) throw new Error( `No active session numbered ${ selector }. Run babysit list to see active sessions.` )
         const session = stored_for( tmux )
         if( !session ) throw new Error( `No stored session found for active session numbered ${ selector } (${ tmux.name }).` )
+        // An exited fork parent keeps its number but is not running
+        if( tmux.exited ) throw new Error( exited_session_message( selector, session, tmux ) )
         return session
     }
 
-    const live = active.map( stored_for ).filter( Boolean )
+    const live = active.filter( tmux => !tmux.exited ).map( stored_for ).filter( Boolean )
     const by_id = live.find( session => session.babysit_id === selector || session.agent_session_id === selector )
     if( by_id ) return by_id
 

@@ -1,14 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { spawnSync } from 'child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { parse_args } from '../src/cli/parse.js'
 import { get_agent } from '../src/agents/index.js'
+import { log } from '../src/utils/log.js'
 import { fork_command_from_menu } from '../src/cli/launcher.js'
 import { order_active_sessions, print_active_sessions_table } from '../src/cli/list.js'
+import { cmd_archive } from '../src/cli/archive.js'
+import { select_stored_session } from '../src/cli/recover.js'
+import { cmd_restart, unarchived_sessions } from '../src/cli/restart.js'
+import { fork_lineage } from '../src/sessions/store.js'
 import {
+    COPY_STATE_SCRIPT,
     choose_fork_filesystem,
     cmd_fork,
     copy_agent_state_volumes,
@@ -16,6 +22,7 @@ import {
     describe_parent_tree,
     fork_prompt_notes,
     format_parent_state,
+    fork_name,
     merge_fork_flags,
     merge_fork_passthrough,
     plan_fork_history,
@@ -126,11 +133,37 @@ describe( `fork flag inheritance`, () => {
 
     } )
 
+    it( `reads a typed --share or --clone without a mode as regular`, () => {
+
+        const sandboxed = { ...parent, modifiers: [ `sandbox` ] }
+        expect( merge_fork_flags( parent, parse_args( [ `fork`, `1`, `--clone` ] ).flags ) ).toMatchObject( { mudbox: false, sandbox: false, clone: true } )
+        expect( merge_fork_flags( sandboxed, parse_args( [ `fork`, `1`, `--share` ] ).flags ) ).toMatchObject( { mudbox: false, sandbox: false } )
+        expect( merge_fork_flags( parent, parse_args( [ `fork`, `1`, `--mudbox`, `--share` ] ).flags ).mudbox ).toBe( true )
+
+    } )
+
+    it( `names forks of forks without stacking`, () => {
+
+        expect( fork_name( `x` ) ).toBe( `x-fork` )
+        expect( fork_name( `x-fork` ) ).toBe( `x-fork-2` )
+        expect( fork_name( `x-fork-2`, [ `x-fork`, `x-fork-3` ] ) ).toBe( `x-fork-4` )
+        expect( fork_name( `x`, [ `x-fork` ] ) ).toBe( `x-fork-2` )
+        expect( merge_fork_flags( { ...parent, name: `feature-fork` }, {}, [ `feature` ] ).name ).toBe( `feature-fork-2` )
+
+    } )
+
     it( `keeps model/effort only for the same agent and lets typed values replace them`, () => {
 
         expect( merge_fork_passthrough( parent, `claude`, [] ) ).toEqual( [ `--model`, `opus`, `--effort`, `high` ] )
         expect( merge_fork_passthrough( parent, `claude`, [ `--model=sonnet` ] ) ).toEqual( [ `--effort`, `high`, `--model=sonnet` ] )
         expect( merge_fork_passthrough( parent, `codex`, [ `-c`, `x=1` ] ) ).toEqual( [ `-c`, `x=1` ] )
+
+        // Short aliases replace their long form both ways (codex, opencode take -m)
+        const codex = { agent: `codex`, launch_spec: { args: [ `-m`, `gpt-a`, `--effort`, `high` ] } }
+        expect( merge_fork_passthrough( codex, `codex`, [ `--model`, `gpt-b` ] ) ).toEqual( [ `--effort`, `high`, `--model`, `gpt-b` ] )
+        expect( merge_fork_passthrough( { ...codex, launch_spec: { args: [ `--model`, `gpt-a` ] } }, `codex`, [ `-m`, `gpt-b` ] ) ).toEqual( [ `-m`, `gpt-b` ] )
+        // Claude has no -m: it is not a model option there
+        expect( merge_fork_passthrough( parent, `claude`, [ `-m`, `x` ] ) ).toEqual( [ `--model`, `opus`, `--effort`, `high`, `-m`, `x` ] )
 
     } )
 
@@ -160,7 +193,8 @@ describe( `fork filesystem choice`, () => {
         expect( await choose_fork_filesystem( { flags: { mudbox: true }, fallback: `share`, input: pipe } ) ).toBe( `share` )
         expect( await choose_fork_filesystem( { flags: { sandbox: true }, fallback: `none`, input: pipe } ) ).toBe( `none` )
         await expect( choose_fork_filesystem( { flags: {}, fallback: `clone`, input: pipe } ) ).rejects.toThrow( /--share or --clone/ )
-        await expect( choose_fork_filesystem( { flags: { mudbox: true, clone: true }, fallback: `share`, input: pipe } ) ).rejects.toThrow( /--mudbox/ )
+        // A mudbox fork with --clone never gets here: parse.js refuses it
+        expect( () => parse_args( [ `fork`, `1`, `--mudbox`, `--clone` ] ) ).toThrow( /--clone/ )
 
         const questions = []
         const ask = answer => async question => ( questions.push( question ), answer )
@@ -206,7 +240,26 @@ describe( `fork history plan`, () => {
         expect( await copy_agent_state_volumes( get_agent( `codex` ), { from_workspace: `/a`, to_workspace: `/a`, run_command } ) ).toBe( 0 )
         expect( await copy_agent_state_volumes( claude, { from_workspace: `/a`, to_workspace: `/b`, run_command } ) ).toBe( 0 )
         expect( await copy_agent_state_volumes( get_agent( `codex` ), { from_workspace: `/a`, to_workspace: `/b`, run_command } ) ).toBe( 2 )
-        expect( calls[0].join( ` ` ) ).toMatch( /babysit-codex-sessions-\w+:\/from:ro -v babysit-codex-sessions-\w+:\/to/ )
+        expect( calls[0].join( ` ` ) ).toMatch( /babysit-codex-sessions-\w+:\/from -v babysit-codex-sessions-\w+:\/to/ )
+        expect( calls[0].at( -1 ) ).toBe( COPY_STATE_SCRIPT )
+
+    } )
+
+    it( `backs SQLite databases up instead of copying them raw, and warns about a raw copy of a live parent`, async () => {
+
+        expect( COPY_STATE_SCRIPT ).toContain( `sqlite3 -readonly "$db" ".backup '$copy'"` )
+        expect( COPY_STATE_SCRIPT ).toContain( `rm -f "$copy" "$copy-wal" "$copy-shm"` )
+
+        const warn = spyOn( log, `warn` ).mockImplementation( () => {} )
+        try {
+            const raw = async () => `babysit-raw-sqlite-copy\n`
+            await copy_agent_state_volumes( get_agent( `codex` ), { from_workspace: `/a`, to_workspace: `/b`, run_command: raw } )
+            expect( warn ).not.toHaveBeenCalled()
+            await copy_agent_state_volumes( get_agent( `codex` ), { from_workspace: `/a`, to_workspace: `/b`, live: true, run_command: raw } )
+            expect( warn.mock.calls[0][0] ).toMatch( /copied file by file/ )
+        } finally {
+            warn.mockRestore()
+        }
 
     } )
 
@@ -277,17 +330,19 @@ describe( `cmd_fork`, () => {
 
     afterEach( () => rmSync( directory, { recursive: true, force: true } ) )
 
-    const run_fork = async ( argv, parent, { live = true, answers = [], run = {} } = {} ) => {
+    const run_fork = async ( argv, parent, { live = true, answers = [], run = {}, env = {}, stored = [ parent ], load_clone } = {} ) => {
         const started = []
         const closed = []
         const attached = []
         const chdirs = []
         const output = await capture_console( () => cmd_fork( parse_args( argv ), {
             list_sessions_fn: async () => live ? [ { name: parent.tmux_session } ] : [],
-            list_stored_sessions_fn: () => [ parent ],
+            list_stored_sessions_fn: () => stored,
             start: async cmd => {
                 started.push( cmd )
                 cmd.launch = await cmd.fork.prepare( { workspace: run.workspace || workspace, mode: {}, clone_branch: run.clone_branch || null } )
+                // What start would upload, read before cmd_fork cleans the host copy
+                cmd.uploaded = Object.fromEntries( cmd.launch.mounts.map( mount => [ mount.target, readFileSync( mount.source, `utf8` ) ] ) )
                 return { babysit_id: `fork-id`, name: cmd.flags.name, tmux_session: `t-fork` }
             },
             close: async session => closed.push( session.babysit_id ),
@@ -303,7 +358,9 @@ describe( `cmd_fork`, () => {
             },
             copy_volumes: run.copy_volumes || ( async () => 0 ),
             forks_dir: join( directory, `forks` ),
-            env: {},
+            clones_dir: join( directory, `clones` ),
+            ...load_clone && { load_clone },
+            env,
         } ) )
         return { started, closed, attached, chdirs, output }
     }
@@ -315,7 +372,7 @@ describe( `cmd_fork`, () => {
 
     it( `natively forks a live parent into a clone snapshot by default under YOLO`, async () => {
 
-        const { started, chdirs, output } = await run_fork( [ `fork`, `1` ], parent() )
+        const { started, chdirs, output } = await run_fork( [ `fork`, `1` ], parent(), { env: { AGENT_AUTONOMY_MODE: `yolo` } } )
         const [ cmd ] = started
 
         expect( cmd ).toMatchObject( { verb: `start`, agent: `claude`, detached: true, flags: { clone: true, yolo: true, name: `feature-fork` } } )
@@ -341,10 +398,14 @@ describe( `cmd_fork`, () => {
         expect( cmd.fork.record.fork_history ).toBe( `handoff` )
         expect( cmd.launch.agent_args ).toEqual( [] )
         expect( cmd.launch.mounts.map( mount => mount.target ) ).toEqual( [ `/tmp/babysit-fork-handoff.md`, `/tmp/babysit-fork-transcript-s.jsonl` ] )
-        const handoff = readFileSync( cmd.fork.record.fork_handoff, `utf8` )
+        const handoff = cmd.uploaded[ `/tmp/babysit-fork-handoff.md` ]
         expect( handoff ).toContain( `> Build it` )
         expect( handoff ).toContain( `/tmp/babysit-fork-transcript-s.jsonl` )
         expect( cmd.launch.prompt( `LAUNCH` ) ).toMatch( /^LAUNCH\n\n[\s\S]*Read \/tmp\/babysit-fork-handoff.md first/ )
+
+        // Uploaded, so the host copy is gone; the record names where the fork reads it
+        expect( cmd.fork.record.fork_handoff ).toBe( `/tmp/babysit-fork-handoff.md` )
+        expect( readdirSync( join( directory, `forks` ) ) ).toEqual( [] )
 
     } )
 
@@ -360,12 +421,88 @@ describe( `cmd_fork`, () => {
 
         const cloned = await run_fork( [ `fork`, `1`, `--clone` ], clone_parent, { run: { workspace: join( directory, `new` ), copy_volumes: async ( _, paths ) => copies.push( paths ) } } )
         expect( cloned.started[0].fork.clone_options ).toEqual( { snapshot: true, tree: clone_parent.clone_path } )
-        expect( copies.at( -1 ) ).toEqual( { from_workspace: clone_parent.clone_path, to_workspace: join( directory, `new` ) } )
+        expect( copies.at( -1 ) ).toEqual( { from_workspace: clone_parent.clone_path, to_workspace: join( directory, `new` ), live: true } )
 
         const read_only = await run_fork( [ `fork`, `1`, `--mudbox` ], clone_parent )
         expect( read_only.chdirs ).toEqual( [ clone_parent.clone_path ] )
         expect( read_only.started[0].fork.record.clone_id ).toBe( `c-1` )
         expect( read_only.started[0].flags.clone ).toBe( false )
+
+    } )
+
+    it( `keeps clone membership through a read-only fork of a clone`, async () => {
+
+        // The mudbox fork ran inside the clone: no clone_path, pwd is the clone
+        const clone_path = join( directory, `clones`, `c-1` )
+        mkdirSync( clone_path, { recursive: true } )
+        const viewer = { ...parent(), agent: `codex`, modifiers: [ `mudbox` ], clone_id: `c-1`, clone_path: null, pwd: clone_path, original_pwd: clone_path }
+        const load_clone = id => id === `c-1` ? { original_workspace: workspace } : null
+
+        // A mudbox grandchild keeps the clone_id, so prune keeps the clone
+        const grandchild = await run_fork( [ `fork`, `1`, `--share` , `--mudbox` ], viewer, { load_clone } )
+        expect( grandchild.started[0].fork.record.clone_id ).toBe( `c-1` )
+        expect( grandchild.chdirs ).toEqual( [ clone_path ] )
+
+        // --regular --share joins the clone family from the real original
+        const joined = await run_fork( [ `fork`, `1`, `--regular`, `--share` ], viewer, { load_clone, run: { workspace: clone_path } } )
+        expect( joined.started[0].fork.join_clone_id ).toBe( `c-1` )
+        expect( joined.started[0].flags ).toMatchObject( { clone: true, mudbox: false } )
+        expect( joined.chdirs ).toEqual( [ workspace ] )
+
+        // --clone snapshots the clone's tree but keeps the real original for /original
+        const cloned = await run_fork( [ `fork`, `1`, `--clone` ], viewer, { load_clone, run: { workspace: join( directory, `new` ) } } )
+        expect( cloned.started[0].fork.clone_options ).toEqual( { snapshot: true, tree: clone_path } )
+        expect( cloned.started[0].flags ).toMatchObject( { clone: true, mudbox: false } )
+        expect( cloned.chdirs ).toEqual( [ workspace ] )
+
+        // A clone whose manifest is gone cannot be joined or snapshotted
+        await expect( run_fork( [ `fork`, `1`, `--clone` ], viewer, { load_clone: () => null } ) ).rejects.toThrow( /Parent clone c-1 no longer exists/ )
+
+    } )
+
+    it( `lets only typed flags skip the questions, never an inherited YOLO`, async () => {
+
+        // The parent ran with --yolo, but a pipe still has to say how
+        await expect( run_fork( [ `fork`, `1` ], parent() ) ).rejects.toThrow( /non-interactive/ )
+
+        // Interactive: inherited YOLO still asks about filesystem and takeover
+        const asked = await run_fork( [ `fork`, `1` ], parent(), { answers: [ `s`, `y` ] } )
+        expect( asked.started[0].flags.yolo ).toBe( true )
+        expect( asked.started[0].fork.record.fork_filesystem ).toBe( `share` )
+        expect( asked.closed ).toEqual( [ `p-1` ] )
+
+        // A typed --yolo or --yes pre-agrees: the default, and no takeover
+        const typed = await run_fork( [ `fork`, `1`, `--yolo` ], parent() )
+        expect( typed.started[0].fork.record.fork_filesystem ).toBe( `clone` )
+        expect( typed.closed ).toEqual( [] )
+        expect( ( await run_fork( [ `fork`, `1`, `--yes` ], parent() ) ).started[0].fork.record.fork_filesystem ).toBe( `clone` )
+
+    } )
+
+    it( `numbers a fork of a fork instead of stacking -fork`, async () => {
+
+        const child = { ...parent(), babysit_id: `c-1`, tmux_session: `t-child`, name: `feature-fork`, forked_from: `p-1` }
+        const { started } = await run_fork( [ `fork`, `c-1`, `--share` ], child, { stored: [ child, parent() ] } )
+        expect( started[0].flags.name ).toBe( `feature-fork-2` )
+
+    } )
+
+    it( `removes the host handoff copy even when the launch fails`, async () => {
+
+        const failing = cmd_fork( parse_args( [ `fork`, `1`, `codex`, `--share` ] ), {
+            list_sessions_fn: async () => [ { name: `t-parent` } ],
+            list_stored_sessions_fn: () => [ parent() ],
+            start: async () => {
+                throw new Error( `launch failed` )
+            },
+            input: { isTTY: false },
+            chdir: () => {},
+            read_transcript: async () => null,
+            forks_dir: join( directory, `forks` ),
+            env: {},
+        } )
+        await expect( failing ).rejects.toThrow( /launch failed/ )
+        expect( existsSync( join( directory, `forks` ) ) && readdirSync( join( directory, `forks` ) ) ).toEqual( [] )
 
     } )
 
@@ -385,7 +522,7 @@ describe( `cmd_fork`, () => {
     it( `closes the parent with --takeover and never asks about an exited one`, async () => {
 
         expect( ( await run_fork( [ `fork`, `p-1`, `--share`, `--takeover` ], parent() ) ).closed ).toEqual( [ `p-1` ] )
-        const exited = await run_fork( [ `fork`, `p-1` ], parent(), { live: false } )
+        const exited = await run_fork( [ `fork`, `p-1`, `--yes` ], parent(), { live: false } )
         expect( exited.closed ).toEqual( [] )
         expect( exited.started[0].fork.record.fork_filesystem ).toBe( `share` )
         expect( exited.output ).toContain( `babysit open fork-id` )
@@ -457,6 +594,53 @@ describe( `fork tree in babysit list`, () => {
         expect( order_active_sessions( [ { name: `t-other` } ], stored ).map( row => row.name ) ).toEqual( [ `t-other` ] )
         expect( order_active_sessions( [ { name: `t-child` }, { name: `t-root-2` } ], resumed ).map( row => [ row.name, Boolean( row.exited ) ] ) )
             .toEqual( [ [ `t-root-2`, false ], [ `t-child`, false ] ] )
+
+    } )
+
+} )
+
+describe( `exited fork parents in session actions`, () => {
+
+    // The root exited; its fork still runs, so the root keeps row 1
+    const stored = [
+        { babysit_id: `root`, tmux_session: `t-root`, agent: `claude`, name: `root`, pwd: `/w`, agent_session_id: `n-root` },
+        { babysit_id: `child`, tmux_session: `t-child`, agent: `claude`, name: `child`, pwd: `/w`, forked_from: `root`, agent_session_id: `n-child` },
+    ]
+    const inspect_records = () => ( { records: stored.map( session => ( { session } ) ) } )
+    const sessions = async () => [ { name: `t-child` } ]
+    const exited = /Session 1 has exited\. Resume it with: babysit resume root/
+
+    it( `refuses close, restart and archive of the exited row by number`, async () => {
+
+        await expect( select_stored_session( `1`, { inspect_records, sessions } ) ).rejects.toThrow( exited )
+        expect( ( await select_stored_session( `2`, { inspect_records, sessions } ) ).babysit_id ).toBe( `child` )
+        await expect( cmd_restart( { session_id: `1`, flags: {} }, { select: selector => select_stored_session( selector, { inspect_records, sessions } ) } ) ).rejects.toThrow( exited )
+
+        const updates = []
+        const archive = selector => cmd_archive( { session_id: selector }, {
+            list_sessions_fn: sessions,
+            list_stored_sessions_fn: () => stored,
+            update_session_fn: id => updates.push( id ),
+            print: () => {},
+        } )
+        await expect( archive( `1` ) ).rejects.toThrow( exited )
+        await expect( archive( `root` ) ).rejects.toThrow( /No active session matches root/ )
+        await archive( `child` )
+        expect( updates ).toEqual( [ `child` ] )
+
+    } )
+
+    it( `restart all only sees live sessions`, async () => {
+
+        expect( ( await unarchived_sessions( { inspect_records, sessions } ) ).map( session => session.babysit_id ) ).toEqual( [ `child` ] )
+
+    } )
+
+    it( `keeps fork details across resumes`, () => {
+
+        const fork = { forked_from: `root`, fork_filesystem: `clone`, fork_history: `native`, fork_base: `abc`, fork_handoff: null, name: `x` }
+        expect( fork_lineage( fork ) ).toEqual( { forked_from: `root`, fork_filesystem: `clone`, fork_history: `native`, fork_base: `abc`, fork_handoff: null } )
+        expect( fork_lineage( null ) ).toEqual( { forked_from: null, fork_filesystem: null, fork_history: null, fork_base: null, fork_handoff: null } )
 
     } )
 

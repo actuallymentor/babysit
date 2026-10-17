@@ -68,6 +68,7 @@ import {
     session_original_workspace,
     session_workspace,
     update_session,
+    fork_lineage,
 } from '../sessions/store.js'
 import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
@@ -1416,7 +1417,7 @@ async function start_session( cmd ) {
         status: `preparing`,
         resumed_from: stored_resume_session?.babysit_id || null,
         // Fork lineage survives resumes so babysit list keeps nesting the fork
-        forked_from: stored_resume_session?.forked_from || null,
+        ...fork_lineage( stored_resume_session ),
         started_at,
         boot_id: get_boot_id(),
         launch_owner: { pid: process.pid, process_identity: get_process_identity(), boot_id: get_boot_id(), hostname: owner.host },

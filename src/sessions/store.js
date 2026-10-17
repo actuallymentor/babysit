@@ -40,6 +40,15 @@ export const session_workspace = ( session = {} ) =>
     session?.clone_path || session_original_workspace( session )
 
 /**
+ * Fork fields a resumed launch keeps, so list nesting and fork details survive.
+ * @param {Object|null} session - Launch being resumed
+ * @returns {Object} forked_from, fork_filesystem, fork_history, fork_base, fork_handoff
+ */
+export const fork_lineage = session => Object.fromEntries(
+    [ `forked_from`, `fork_filesystem`, `fork_history`, `fork_base`, `fork_handoff` ].map( field => [ field, session?.[ field ] || null ] )
+)
+
+/**
  * Replace a session record atomically so readers never observe partial JSON.
  * @param {string} path - Final session record path
  * @param {Object} session - Complete session metadata to write

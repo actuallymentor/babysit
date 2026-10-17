@@ -19,6 +19,20 @@ const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck
 export const load_color = ratio => ratio < 0.5 ? `green` : ratio < 0.7 ? `yellow` : `red`
 
 /**
+ * Stored record per tmux session name. Stored lists are newest first, so the
+ * newest record wins when a tmux name somehow repeats.
+ * @param {Object[]} stored_sessions - Stored Babysit metadata, newest first
+ * @returns {Map<string, Object>} Stored session by tmux name
+ */
+export const stored_by_tmux = stored_sessions => {
+
+    const by_tmux = new Map()
+    stored_sessions.forEach( session => by_tmux.has( session.tmux_session ) || by_tmux.set( session.tmux_session, session ) )
+    return by_tmux
+
+}
+
+/**
  * Observe current panes instead of trusting options left by an old or stopped
  * monitor. Sample sessions together so listing costs one polling interval.
  * @param {Object[]} sessions - Active tmux sessions
@@ -45,9 +59,10 @@ export const observe_session_activity = async ( sessions, stored_sessions, {
     await wait( 1_000 )
     const after = await Promise.all( sessions.map( sample ) )
 
+    const by_tmux = stored_by_tmux( stored_sessions )
     return sessions.map( ( session, index ) => {
         if( session.exited ) return { ...session, agent_status: `exited` }
-        const agent = stored_sessions.find( stored => stored.tmux_session === session.name )?.agent
+        const agent = by_tmux.get( session.name )?.agent
         const observed_status = before[index] === null || after[index] === null
             ? `unknown`
             : agent_status( after[index], agent, before[index] === after[index] ? 1 : 0 )
@@ -130,6 +145,17 @@ export const format_session_status_label = ( { name = null, pwd, modifiers = [] 
 }
 
 /**
+ * The refusal for acting on an exited fork-parent row: it keeps its number in
+ * the list but has nothing left to attach to, archive, close or restart.
+ * @param {string} selector - What the user typed
+ * @param {Object|undefined} session - Stored record behind the row
+ * @param {{ name: string }} row - The exited row
+ * @returns {string} Message
+ */
+export const exited_session_message = ( selector, session, row ) =>
+    `Session ${ selector } has exited. Resume it with: babysit resume ${ session?.babysit_id || row.name }`
+
+/**
  * Resolve the fork parent a session should nest under: its `forked_from`
  * launch, followed through resumes to that conversation's current launch.
  * @param {Object|undefined} session - Stored session
@@ -162,9 +188,7 @@ export const fork_parent_of = ( session, by_id ) => {
  */
 export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
 
-    // Newest record wins when a tmux name somehow repeats, like stored_for always did
-    const by_tmux = new Map()
-    stored_sessions.forEach( session => by_tmux.has( session.tmux_session ) || by_tmux.set( session.tmux_session, session ) )
+    const by_tmux = stored_by_tmux( stored_sessions )
     const by_id = new Map( stored_sessions.map( session => [ session.babysit_id, session ] ) )
     const stored_for = node => by_tmux.get( node.name )
     const live_names = new Set( tmux_sessions.map( tmux => tmux.name ) )
@@ -262,7 +286,8 @@ const tree_glyphs = ( env = process.env ) => env.TERM === `dumb`
 export const fork_tree_prefixes = ( rows, stored_sessions, env = process.env ) => {
 
     const by_id = new Map( stored_sessions.map( session => [ session.babysit_id, session ] ) )
-    const stored_for = row => stored_sessions.find( session => session.tmux_session === row.name )
+    const by_tmux = stored_by_tmux( stored_sessions )
+    const stored_for = row => by_tmux.get( row.name )
     const row_of_id = new Map( rows.map( ( row, index ) => [ stored_for( row )?.babysit_id, index ] ).filter( ( [ id ] ) => id ) )
 
     // Only a parent displayed earlier can own a row; anything else is a root
@@ -451,7 +476,8 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
 
     // Forks nest under their parent inside the NAME column and share its trunk
     const { prefixes, roots } = fork_tree_prefixes( tmux_sessions, stored_sessions )
-    const stored_for = tmux => stored_sessions.find( session => session.tmux_session === tmux.name )
+    const by_tmux = stored_by_tmux( stored_sessions )
+    const stored_for = tmux => by_tmux.get( tmux.name )
 
     const sessions = tmux_sessions.map( ( tmux, index ) => {
 
@@ -544,7 +570,8 @@ export const render_active_sessions = async ( {
     const ordered_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
 
     // Numbers stay global so `babysit open <n>` means the same thing everywhere.
-    const is_archived = tmux => Boolean( stored_sessions.find( session => session.tmux_session === tmux.name )?.archived_at )
+    const by_tmux = stored_by_tmux( stored_sessions )
+    const is_archived = tmux => Boolean( by_tmux.get( tmux.name )?.archived_at )
     const tmux_sessions = hide_archived ? ordered_sessions.filter( tmux => !is_archived( tmux ) ) : ordered_sessions
     const numbers = tmux_sessions.map( tmux => ordered_sessions.indexOf( tmux ) + 1 )
 

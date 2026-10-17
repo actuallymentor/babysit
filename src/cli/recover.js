@@ -11,7 +11,7 @@ import { wait_for_continuation } from '../sessions/continuation.js'
 import { list_sessions, get_session_pane, kill_session } from '../tmux/session.js'
 import { inspect_docker_container_state, stop_docker_container } from '../docker/file_transport.js'
 import { cmd_start, recover_clone_container, spawn_monitor_daemon } from './start.js'
-import { order_active_sessions } from './list.js'
+import { exited_session_message, order_active_sessions } from './list.js'
 import { merge_resume_flags } from './resume.js'
 import { is_monitor_alive } from './monitor_process.js'
 
@@ -319,6 +319,8 @@ export const select_stored_session = async ( selector, { inspect_records = inspe
         if( !selected ) throw new Error( `No active session numbered ${ selector }. Run babysit list to see active sessions.` )
         session = records.find( record => record.session.tmux_session === selected.name )?.session
         if( !session ) throw new Error( `No stored session found for active session numbered ${ selector } (${ selected.name }).` )
+        // An exited fork parent keeps its number but has nothing to close or restart
+        if( selected.exited ) throw new Error( exited_session_message( selector, session, selected ) )
     } else [ session ] = select_recovery_sessions( records.map( record => record.session ), selector )
     if( !session ) throw new Error( `No stored session found: ${ selector }` )
     return session
