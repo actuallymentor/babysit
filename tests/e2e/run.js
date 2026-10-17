@@ -874,6 +874,49 @@ babysit: []
     await stop_session( session )
 }
 
+const session_record = id => JSON.parse( readFileSync( join( babysit_home, `sessions`, `${ id }.json` ), `utf8` ) )
+
+const run_fork_session = async () => {
+    const workspace = make_workspace( `fork`, `config:
+    initial_prompt: ""
+babysit: []
+` )
+    const parent = await launch_babysit( workspace, [ `--yolo`, `--name`, `fork-parent` ] )
+    const fork = async ( args, label ) => {
+        await run( compiled_cli, [ `fork`, parent.babysit_id, ...args ], { cwd: workspace, env: e2e_env(), timeout_ms: 360_000 } )
+        const session = latest_session()
+        ensure( session.name === label && session.forked_from === parent.babysit_id, `fork ${ label } did not record its parent` )
+        await wait_until( `fork ${ label } composer`, async () => ( await capture( session ) ).includes( `FAKE_AGENT_READY` ) )
+        return session
+    }
+
+    // Same agent: the native fork subcommand opens the parent's conversation
+    const parent_native_id = await wait_until( `parent native id`, () => session_record( parent.babysit_id ).agent_session_id )
+    const native = await fork( [ `--share`, `--name`, `fork-native` ], `fork-native` )
+    ensure( native.fork_history === `native`, `same-agent fork did not fork natively` )
+    await wait_until( `native fork argv`, () => readFileSync( join( workspace, `e2e-fake-agent.log` ), `utf8` )
+        .includes( `"fork","${ parent_native_id }"` ) )
+
+    // Cross agent: a handoff file is uploaded and named in the first prompt
+    const handoff = await fork( [ `claude`, `--share`, `--name`, `fork-claude` ], `fork-claude` )
+    ensure( handoff.fork_history === `handoff` && existsSync( handoff.fork_handoff ), `cross-agent fork wrote no handoff` )
+    await docker( [ `exec`, handoff.container_id, `test`, `-s`, `/tmp/babysit-fork-handoff.md` ] )
+    await wait_until( `handoff prompt`, async () => ( await capture( handoff ) ).includes( `/tmp/babysit-fork-handoff.md` ) )
+
+    const tree = ( await run( compiled_cli, [ `list` ], { cwd: workspace, env: e2e_env() } ) ).stdout
+    // Siblings follow tmux order, so either fork may be the last branch
+    ensure( /\d\s+[├└]─ fork-native/.test( tree ) && /\d\s+[├└]─ fork-claude/.test( tree ), `babysit list did not nest forks:\n${ tree }` )
+
+    // The exited parent keeps its row while its forks run
+    await stop_session( parent )
+    const exited = ( await run( compiled_cli, [ `list` ], { cwd: workspace, env: e2e_env() } ) ).stdout
+    ensure( /1\s+fork-parent\s+exited/.test( exited ), `exited parent row missing:\n${ exited }` )
+
+    await stop_session( native )
+    await stop_session( handoff )
+    console.log( `PASS fork: native same-agent fork, cross-agent handoff, nested list with exited parent` )
+}
+
 const run_dependency_session = async () => {
     const workspace = make_workspace( `dependency-isolation`, `config:
     initial_prompt: "BABYSIT_E2E_NODE_MODULES_CHECK"
@@ -911,12 +954,7 @@ const cleanup = async () => {
     }
 }
 
-try {
-    ensure( await command_ok( `tmux`, [ `-V` ] ), `tmux is required for E2E tests` )
-    ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
-
-    await run( `bun`, [ `build`, `--compile`, `--minify`, join( repo_root, `src/index.js` ), `--outfile`, compiled_cli ] )
-    await build_images()
+const run_full_suite = async () => {
     await run_fresh_shared_caches()
     const { stdout: status_output } = await run( `node`, [ `tests/e2e/status.js` ], {
         env: { ...process.env, BABYSIT_E2E_BASE_IMAGE: base_image },
@@ -949,6 +987,19 @@ try {
         timeout_ms: 1_800_000,
     } )
     console.log( recovery_output )
+    await run_fork_session()
+}
+
+try {
+    ensure( await command_ok( `tmux`, [ `-V` ] ), `tmux is required for E2E tests` )
+    ensure( docker_without_sudo || use_sudo_docker, `Docker is required for E2E tests` )
+
+    await run( `bun`, [ `build`, `--compile`, `--minify`, join( repo_root, `src/index.js` ), `--outfile`, compiled_cli ] )
+    await build_images()
+
+    // BABYSIT_E2E_ONLY=fork runs just the fork case against the built images
+    if( process.env.BABYSIT_E2E_ONLY === `fork` ) await run_fork_session()
+    else await run_full_suite()
     await assert_no_orphans()
 
     console.log( `E2E passed` )

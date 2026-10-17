@@ -78,6 +78,40 @@ Examples:
   babysit resume 1 --all
   babysit resume abc-123 --yolo`,
 
+    fork: () => `Usage: babysit fork <number|session_id> [agent] [options] [-- agent CLI flags]
+
+Starts a new session that continues another one, live or exited. The number is
+a babysit list row (exited parents of live forks keep theirs). The fork inherits
+the parent's flags, config, and (same agent only) model/effort; flags typed here win.
+
+Filesystem (asked when interactive; the default is in capitals):
+  share   Work in the parent's workspace (or its clone). Default for an exited or stuck parent.
+  clone   Full snapshot of the parent's tree on a new branch: uncommitted, untracked
+          and unpushed work included. Default for a live parent. Never push to its branch.
+  A --mudbox fork shares read-only and a --sandbox fork has no files; neither asks.
+
+History:
+  Same agent: the agent's own fork (claude --fork-session, codex fork, opencode --fork).
+  Other agent, Antigravity, or a sandbox parent: babysit writes a handoff summary of
+  the parent transcript to /tmp/babysit-fork-handoff.md and asks the fork to read it.
+
+Options:
+  --share | --clone         Pick the filesystem without asking
+  --yes                     Take the defaults (as does --yolo); required on non-interactive stdin without --share/--clone
+  --no-history              Start a fresh conversation
+  --takeover                Close the live parent once the fork runs (otherwise: Close #N? [y/N])
+  --regular | --sandbox | --mudbox    Switch mode
+  --no-yolo, --no-docker, --no-adb, --no-loop    Drop a flag the parent had
+  --account NAME            Claude subscription; a Claude → Claude fork otherwise keeps the parent's
+  (plus the launch flags of babysit <agent>: --yolo, --docker, --adb, --name, --config, --port, --loop, --log)
+
+Examples:
+  babysit fork 2
+  babysit fork 2 codex                 Hand a Claude session over to Codex
+  babysit fork 2 --clone --takeover
+  babysit fork 1 --share --mudbox      Read-only second opinion in the same tree
+  babysit fork abc-123 --no-history --name "fresh eyes"`,
+
     init: () => `Usage: babysit init [file.yaml]
 
 Writes a default config. Without a file name it asks for one (default

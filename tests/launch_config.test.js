@@ -113,14 +113,14 @@ describe( `launch: consumers`, () => {
             },
         } )
 
-        expect( opened ).toEqual( { name: `from file`, initial: { agent: `codex`, mode: `mudbox`, clone: true } } )
+        expect( opened ).toEqual( { name: `from file`, initial: { agent: `codex`, mode: `mudbox`, clone: true }, fork_key: true } )
         expect( cmd ).toMatchObject( { verb: `start`, agent: `codex`, passthrough: [ `-m`, `x` ], flags: { mudbox: true, log: `out.log`, config, name: `from file` } } )
         expect( cmd.flags.ports ).toEqual( parse_args( [ `codex`, `--port`, `3000` ] ).flags.ports )
 
         // A typed name wins; a missing file falls back to the plain menu
         const plain = await launch_from_menu( { name: `typed`, config: join( root, `missing.yaml` ), menu: async options => ( opened = options, null ) } )
         expect( plain ).toBeNull()
-        expect( opened ).toEqual( { name: `typed`, initial: {} } )
+        expect( opened ).toEqual( { name: `typed`, initial: {}, fork_key: true } )
     } )
 
 } )

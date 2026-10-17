@@ -27,6 +27,11 @@ const KNOWN_FLAGS = [
 const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
 const AUTH_VERBS = [ `status`, `check`, `init`, `accounts` ]
 
+// `babysit fork` only: filesystem/takeover/mode switches, plus --no-history and
+// --no-<flag> to drop a switch inherited from the parent
+const FORK_FLAGS = [ `share`, `takeover`, `regular`, `history` ]
+export const FORK_NEGATABLE_FLAGS = [ `yolo`, `docker`, `adb`, `loop` ]
+
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
@@ -57,15 +62,16 @@ export const parse_args = ( argv ) => {
     // numbers (01 -> 1, large IDs -> 1e+33). Give bare booleans an explicit
     // value for parsing only; agent passthrough retains the original tokens.
     const separator = prepared.indexOf( `--` )
+    const booleans = named[0] === `fork` ? [ ...BOOLEAN_FLAGS, ...FORK_FLAGS ] : BOOLEAN_FLAGS
     const parseable = prepared.map( ( arg, index ) => {
         if( separator !== -1 && index > separator ) return arg
         const name = arg.replace( /^-+/, `` )
-        const boolean = BOOLEAN_FLAGS.includes( name ) || arg === `-h` || arg === `-v`
+        const boolean = booleans.includes( name ) || arg === `-h` || arg === `-v`
         const explicit_value = [ `true`, `false` ].includes( prepared[ index + 1 ] )
         return arg.startsWith( `-` ) && boolean && !explicit_value ? `${ arg }=true` : arg
     } )
     const parse = tokens => mri( tokens, {
-        boolean: [ ...BOOLEAN_FLAGS ],
+        boolean: [ ...booleans ],
         string: [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n`, `account` ],
         alias: { h: `help`, v: `version` },
     } )
@@ -266,6 +272,35 @@ export const parse_args = ( argv ) => {
         if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown restart argument: ${ unexpected[0] || positionals[2] }` )
         if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account <name>]` )
         return { verb: `restart`, agent: null, session_id: selector, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ), continue_prompt: Boolean( args.continue ) }, passthrough: [] }
+    }
+
+    // babysit fork <number|session_id> [agent] [start flags] [-- agent args]
+    if( verb === `fork` ) {
+        const selector = command_positionals[1] === undefined ? null : String( command_positionals[1] )
+        const agent_word = command_positionals[2] || null
+        const agent = agent_word === `agy` ? `antigravity` : agent_word
+        if( agent && !is_agent( agent ) ) throw new Error( `Unknown agent: ${ agent }` )
+        if( command_positionals.length > 3 ) throw new Error( `Unknown fork argument: ${ command_positionals[3] }` )
+        if( !selector && !flags.help ) throw new Error( `Usage: babysit fork <number|session_id> [agent] [flags]` )
+        if( args.share && args.clone ) throw new Error( `--share and --clone are mutually exclusive` )
+        if( args.regular && ( args.sandbox || args.mudbox ) ) throw new Error( `--regular cannot be combined with --sandbox or --mudbox` )
+
+        const negations = [ ...FORK_NEGATABLE_FLAGS, `history` ].map( flag => `no-${ flag }` )
+        return {
+            verb: `fork`,
+            agent,
+            session_id: selector,
+            flags: {
+                ...flags,
+                share: Boolean( args.share ),
+                takeover: Boolean( args.takeover ),
+                regular: Boolean( args.regular ),
+                history: args.history !== false,
+                // --no-yolo etc.: drop that switch even though the parent had it
+                unset: FORK_NEGATABLE_FLAGS.filter( flag => args[ flag ] === false ),
+            },
+            passthrough: collect_passthrough( prepared.slice( 1 ), agent_word, selector, [ ...FORK_FLAGS, ...negations ] ),
+        }
     }
 
     // babysit resume <id> [--yolo] [extra flags…]

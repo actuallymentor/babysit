@@ -1236,7 +1236,8 @@ async function start_session( cmd ) {
     const { account: launch_account, reason: account_reason } = agent.name === `claude`
         ? await time_phase( `claude account selection`, () => resolve_launch_account( {
             requested: flags.account,
-            stored: stored_resume_session?.claude_account || null,
+            // A Claude → Claude fork keeps its parent's subscription
+            stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
         } ) )
         : { account: null }
     if( launch_account ) log.info( `Claude account: ${ launch_account.name } (${ account_reason })` )
@@ -1269,7 +1270,8 @@ async function start_session( cmd ) {
             log.info( `This folder has ${ active.clones.length } agents working on clones` )
         }
 
-        if( mode.clone && active.direct.length ) {
+        // A fork snapshot of a live parent is the point, not an accident
+        if( mode.clone && active.direct.length && !cmd.fork ) {
             log.warn( `This folder has ${ active.direct.length } active agents working directly in it.` )
             log.warn( `Files may change while the clone is being copied.` )
 
@@ -1282,7 +1284,9 @@ async function start_session( cmd ) {
     }
 
     const babysit_id = generate_session_id()
-    const clone_id = stored_resume_session?.clone_id
+    // A fork that shares its parent's clone joins that clone family
+    const clone_id = cmd.fork?.join_clone_id
+        || stored_resume_session?.clone_id
         || ( stored_is_clone ? stored_resume_session.babysit_id : null )
         || babysit_id
     let clone_branch = stored_resume_session?.clone_branch || null
@@ -1318,15 +1322,34 @@ async function start_session( cmd ) {
             } else {
                 workspace = canonical_workspace( stored_clone_path )
             }
+        } else if( cmd.fork?.join_clone_id ) {
+            // Reuse only the existing, manifest-verified clone; never recreate it
+            if( !existsSync( join( CLONES_DIR, clone_id ) ) ) throw new Error( `Parent clone ${ clone_id } no longer exists` )
+            const prepared_clone = await prepare_clone_with_access_fix( {
+                source: original_workspace,
+                clone_id,
+                name: session_display_name,
+            }, { assume_yes: flags.yes } )
+            if( !prepared_clone.reused ) throw new Error( `Parent clone ${ clone_id } no longer exists` )
+            const {
+                workspace: joined_workspace,
+                clone_branch: joined_branch,
+                git_repository: joined_git_repository,
+            } = prepared_clone
+            workspace = joined_workspace
+            clone_branch = joined_branch
+            clone_git_repository = joined_git_repository
         } else {
             // Clone options come from the source's babysit.yaml, read once at creation.
             const clone_config = load_clone_config( original_workspace, { config_path } )
-            log.info( `${ clone_config.mode === `git` ? `Cloning` : `Copying` } ${ original_workspace } into clone ${ clone_id }` )
+            log.info( `${ clone_config.mode === `git` ? `Cloning` : `Copying` } ${ cmd.fork?.clone_options?.tree || original_workspace } into clone ${ clone_id }` )
+            // A fork snapshots its parent's tree (maybe a clone) with every local change
             const prepared_clone = await prepare_clone_with_access_fix( {
                 source: original_workspace,
                 clone_id,
                 name: session_display_name,
                 clone_config,
+                ...cmd.fork?.clone_options,
             }, { assume_yes: flags.yes } )
             const {
                 workspace: prepared_workspace,
@@ -1345,6 +1368,9 @@ async function start_session( cmd ) {
             log.warn( `Clone preserves the original Git remotes; pushes still target those remotes.` )
         }
     }
+
+    // babysit fork: chat state, handoff mounts and prompt need the final workspace
+    const fork_launch = cmd.fork ? await cmd.fork.prepare( { workspace, mode, clone_branch } ) : null
 
     // Lifecycle identity is stable even when a tmux name is reused after reboot.
     const owner = await docker_identity( { id: docker_status.id } )
@@ -1377,7 +1403,8 @@ async function start_session( cmd ) {
         original_pwd: original_workspace,
         workspace,
         clone: mode.clone,
-        clone_id: mode.clone ? clone_id : null,
+        // A read-only fork of a clone keeps its clone_id across resumes for prune
+        clone_id: mode.clone ? clone_id : stored_resume_session?.clone_id || null,
         clone_path: mode.clone ? workspace : null,
         clone_branch,
         clone_git_repository,
@@ -1387,6 +1414,8 @@ async function start_session( cmd ) {
         container_name,
         status: `preparing`,
         resumed_from: stored_resume_session?.babysit_id || null,
+        // Fork lineage survives resumes so babysit list keeps nesting the fork
+        forked_from: stored_resume_session?.forked_from || null,
         started_at,
         boot_id: get_boot_id(),
         launch_owner: { pid: process.pid, process_identity: get_process_identity(), boot_id: get_boot_id(), hostname: owner.host },
@@ -1405,6 +1434,8 @@ async function start_session( cmd ) {
         continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : flags.continue_prompt ? `pending` : null,
         claude_account: launch_account?.name || null,
         account_switches: stored_resume_session?.account_switches || [],
+        // forked_from, fork_base, fork_filesystem, fork_history, fork_handoff
+        ...cmd.fork?.record,
     }
     const mark_clone_launch_failed = () => {
         record_launch_progress( babysit_id, { status: `failed` }, { recovering: cmd.recovering } )
@@ -1553,9 +1584,11 @@ async function start_session( cmd ) {
 
     // /original remains writable for deliberate merge-back work, so clone
     // safety cannot be disabled by a custom or empty configured prompt.
-    const initial_prompt = should_send_initial_prompt( cmd )
+    const launch_prompt = should_send_initial_prompt( cmd )
         ? ensure_clone_safety_prompt( resolve_initial_prompt( config ), mode )
         : ``
+    // A fork adds its notes; after a native fork they replace the launch prompt
+    const initial_prompt = fork_launch ? fork_launch.prompt( launch_prompt ) : launch_prompt
 
     // Get agent-specific extra env
     const extra_env = agent.extra_env ? agent.extra_env( mode ) : {}
@@ -1583,6 +1616,9 @@ async function start_session( cmd ) {
         }
     }
 
+    // A native fork opens the parent's conversation as a new branch of it
+    if( fork_launch?.agent_args?.length ) agent_args.unshift( ...fork_launch.agent_args )
+
     // Start tmux output logging if --log was passed. The header goes in BEFORE
     // the pane command runs, so each session block opens with a clean
     // "Babysit session start: ..." line.
@@ -1608,7 +1644,8 @@ async function start_session( cmd ) {
     const github_cli_mounts = setup_github_cli_credentials( {
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
-    const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts ]
+    // Fork handoff files ride the same pre-start upload as credentials
+    const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts, ...fork_launch?.mounts || [] ]
 
     let pipe_started = false
 

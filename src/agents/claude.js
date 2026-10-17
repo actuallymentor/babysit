@@ -171,6 +171,8 @@ export const claude = {
         skip_permissions: () => `--dangerously-skip-permissions`,
         resume: ( id ) => [ `--resume`, id ],
         resume_latest: () => [ `--continue` ],
+        // Branch a copy of the conversation under a new session id (babysit fork)
+        fork: ( id ) => [ `--resume`, id, `--fork-session` ],
         model: ( m ) => [ `--model`, m ],
         effort: ( e ) => [ `--effort`, e ],
     },

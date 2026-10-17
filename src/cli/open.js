@@ -59,7 +59,7 @@ const open_current_directory_session = async ( {
 
     const stored = list_stored_sessions_fn()
     const active = order_active_sessions( await list_sessions_fn(), stored )
-    const matches = active_sessions_for_pwd( cwd, active, stored )
+    const matches = active_sessions_for_pwd( cwd, active.filter( session => !session.exited ), stored )
 
     if( matches.length === 1 ) {
         await attach_session_fn( matches[0].name, stored )
@@ -146,6 +146,14 @@ export const cmd_open = async ( cmd, {
         const stored = list_stored_sessions_fn()
         const active = order_active_sessions( unordered, stored )
         const selected = active[ Number( session_id ) - 1 ]
+
+        // Exited fork parents keep their row (and number) but have nothing to attach to
+        if( selected?.exited ) {
+            const parent = stored.find( session => session.tmux_session === selected.name )
+            log.error( `Session ${ session_id } has exited. Resume it with: babysit resume ${ parent?.babysit_id || selected.name }` )
+            exit_fn( 1 )
+            return
+        }
 
         if( selected ) {
             await attach_selected_session( selected.name, stored )

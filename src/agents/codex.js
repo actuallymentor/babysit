@@ -124,6 +124,8 @@ export const codex = {
         // (`codex exec resume`) wouldn't be supervisable through tmux.
         resume: ( id ) => [ `resume`, id ],
         resume_latest: () => [ `resume`, `--last` ],
+        // Interactive fork subcommand: a new thread seeded with the old one
+        fork: ( id ) => [ `fork`, id ],
         model: ( m ) => [ `--model`, m ],
         // Codex reasoning effort lives behind the `model_reasoning_effort` config key
         // (the docs example "reasoning_effort" alone is silently ignored). Pass via -c.

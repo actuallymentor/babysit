@@ -159,6 +159,8 @@ export const opencode = {
         skip_permissions: () => `--dangerously-skip-permissions`,
         resume: ( id ) => [ `--session`, id ],
         resume_latest: () => [ `--continue` ],
+        // --fork only applies together with --session or --continue
+        fork: ( id ) => [ `--session`, id, `--fork` ],
         model: ( m ) => [ `--model`, m ],
         effort: null,
     },
