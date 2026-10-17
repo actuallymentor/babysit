@@ -50,7 +50,7 @@ describe( `account usage`, () => {
         const limits = claude_usage( { seven_day: null, limits: [
             { kind: `weekly_scoped`, percent: 13, resets_at: `2026-09-28T16:00:00Z`, scope: { model: { display_name: `Fable` } } },
         ] } )
-        expect( limits[0] ).toEqual( { name: `weekly_scoped / Fable`, used_percent: 13, resets_at: `2026-09-28T16:00:00Z` } )
+        expect( limits[0] ).toEqual( { name: `weekly_scoped / Fable`, kind: `window`, used_percent: 13, resets_at: `2026-09-28T16:00:00Z` } )
         expect( claude_usage( { five_hour: { utilization: 0, resets_at: null }, seven_day: null } )[0].used_percent ).toBe( 0 )
     } )
 
@@ -60,6 +60,8 @@ describe( `account usage`, () => {
             secondary: null, credits: { balance: `12.34`, unlimited: false },
         } } )
         expect( limits[0].name ).toBe( `codex / 10080 min` )
+        // Credit balances are not rate windows, so session headroom skips them.
+        expect( limits.map( limit => limit.kind ) ).toEqual( [ `window`, undefined ] )
         expect( limits[1] ).toEqual( { name: `credit balance`, unit: `credits`, remaining: `12.34`, unlimited: false } )
     } )
 
@@ -137,9 +139,9 @@ describe( `account usage`, () => {
 
     it( `normalizes Claude quota headers to the usage endpoint's names`, () => {
         expect( claude_header_usage( new Headers( { ...quota_headers, 'anthropic-ratelimit-unified-7d_opus-utilization': `1` } ) ) ).toEqual( [
-            { name: `session`, used_percent: 3, resets_at: `2026-10-10T18:40:00.000Z` },
-            { name: `weekly_all`, used_percent: 26, resets_at: `2026-10-12T16:00:00.000Z` },
-            { name: `7d_opus`, used_percent: 100, resets_at: null },
+            { name: `session`, kind: `window`, used_percent: 3, resets_at: `2026-10-10T18:40:00.000Z` },
+            { name: `weekly_all`, kind: `window`, used_percent: 26, resets_at: `2026-10-12T16:00:00.000Z` },
+            { name: `7d_opus`, kind: `window`, used_percent: 100, resets_at: null },
         ] )
     } )
 

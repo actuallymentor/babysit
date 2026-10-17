@@ -22,7 +22,7 @@ Usage:
   babysit init [file.yaml]             Write a default config; asks for the file name and launch settings
   babysit --config DIR/ [--yes]        Start one detached session per DIR/*.yaml, skipping running ones
   babysit list [--all]                 List active sessions and launch flags
-  babysit watch [--all]                Live sessions + account usage, redrawn every 2s
+  babysit watch [--all]                Live sessions with usage headroom + account usage, redrawn every 2s
   babysit open [id|name|number]        Attach to an active session
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
   babysit prune [--list]               Prune unused Docker data and clone workspaces

@@ -55,6 +55,67 @@ export const limit_percent = limit => {
 }
 
 /**
+ * Headroom waterfall on the worst remaining %, first hit wins.
+ * Thresholds are exclusive upper bounds: 5% left is `low`, not `critical`.
+ */
+export const USAGE_LEVELS = [
+    { below: 5, label: `critical`, color: `red` },
+    { below: 20, label: `low`, color: `orange` },
+    { below: 40, label: `fine`, color: `green` },
+    { below: Infinity, label: `plenty`, color: `green` },
+]
+
+/**
+ * Headroom level for one session: the worst remaining share across its rate
+ * windows. Spend caps, credit balances and lifetime spend carry no
+ * `kind: 'window'` marker (see providers.mjs), so they never count.
+ * @param {Object[]|null} limits - Provider limits for the session's account
+ * @returns {{ label: string, color: string, remaining: number }|null} Level, or null without metered windows
+ */
+export const usage_level = limits => {
+
+    const remaining = ( limits || [] )
+        .filter( limit => limit.kind === `window` )
+        .map( limit_percent )
+        .filter( is_number )
+        .map( used => 100 - used )
+    if( !remaining.length ) return null
+
+    const worst = Math.min( ...remaining )
+    const { label, color } = USAGE_LEVELS.find( level => worst < level.below )
+    return { label, color, remaining: worst }
+
+}
+
+/**
+ * The limits that bound one session: every healthy report entry for its agent.
+ * This is the seam for per-account usage: once sessions record
+ * `session.claude_account`, match that account's entry here instead.
+ * @param {Object|null} report - collect_usage result
+ * @param {Object|undefined} session - Stored session record
+ * @returns {Object[]} Limits, empty when the report has nothing for the session
+ */
+export const session_usage_limits = ( report, session ) => ( report?.agents || [] )
+    .filter( result => result.agent === session?.agent && result.status === `ok` )
+    .flatMap( result => result.limits || [] )
+
+/**
+ * USAGE cell for one session row: level plus the floored remaining %, or a dim
+ * dash while the report loads or holds nothing for the agent.
+ * @param {Object|null} report - collect_usage result
+ * @param {Object|undefined} session - Stored session record
+ * @returns {{ text: string, color: string }}
+ */
+export const usage_cell = ( report, session ) => {
+
+    const level = usage_level( session_usage_limits( report, session ) )
+    if( !level ) return { text: `—`, color: `dim` }
+    // Floor so the shown number never reads as a higher band than its label
+    return { text: `${ level.label } ${ Math.floor( level.remaining ) }%`, color: level.color }
+
+}
+
+/**
  * Ten-cell meter colored like `babysit usage`: calm, warning, red.
  * @param {number} percent - Used share, 0–100
  * @returns {string}
@@ -135,7 +196,8 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
 }
 
 /**
- * Live dashboard: the session tree plus account usage, redrawn every 2s.
+ * Live dashboard: the session tree with a USAGE headroom column plus account
+ * usage, redrawn every 2s.
  * Usage refreshes every 5 min in the background so frames never wait on providers.
  * Codex's app-server fallback stays off: it can rotate tokens outside the auth lease.
  * @param {Object} [cmd] - Parsed command
@@ -185,6 +247,8 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             all: flags.all,
             hide_archived: true,
             open_hint: false,
+            // Read at print time, so a refresh that lands mid-sample still shows
+            extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],
             before_print: () => write_fn( `\x1b[H\x1b[J` ),
         } )
         format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )
