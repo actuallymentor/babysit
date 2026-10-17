@@ -8,10 +8,6 @@
 - `babysit watch` USAGE column: worst remaining rate window per session as `critical` (<5%), `low` (<20%), `fine` (<40%) or `plenty`. Extra usage, spend caps and balances don't count.
 - `babysit audit --config FILE|DIR/`: fill missing `launch:` keys, fix bad values and unknown keys per item, offer optional defaults; diff before write, comments kept. Non-TTY reports only; `--yes` applies required fixes.
 - Claude accounts: `babysit auth init --claude-token --name NAME`, `babysit auth accounts [remove NAME]`, `--account NAME`. Launch picks the account with most headroom; a limit hit restarts the session on the next account with chat resumed. `claude_account_auto_switch: false` turns switching off. Named tokens reach their container as a private file, never `docker -e`. `usage`/`watch` show one row per account.
-
-## 1.43.0 — 2026-10-16
-
-### Added
 - `launch:` yaml section: agent, name, mode, yolo, docker, adb, clone, loop, ignore_host_agents_md, ports, log, args.
 - `babysit --config DIR/`: compose-style start of every `DIR/*.yaml`, detached, after an overview and `[y/N]` (`--yes` skips). Every key but `name` required; name defaults to the file name. Files whose session is still live are skipped, never duplicated. Runs in the current directory.
 - Directory launches follow symlinked yaml, count sessions using an implicit `./babysit.yaml`, re-check right before each start, and name all-digit files by their full file name (`01.yaml`).
@@ -19,6 +15,17 @@
 
 ### Changed
 - `babysit init` opens the launch menu and writes its choice as a live `launch:` section; the rest stays commented.
+
+## 1.43.0 — 2026-10-17
+
+### Changed
+- YOLO now accepts any Claude prompt that still blocks the session when its default answer is a plain yes (Yes, Continue, Accept, Allow, Proceed, Trust, …). Before, it only answered two fixed rm-safety wordings, so every new variant blocked until a release (e.g. `possibly-empty variable path`). Prompts are matched by their shape at the bottom of the pane, not by wording.
+- Never accepted for you: model swaps (fallback or usage-limit offers), billing or extra-usage prompts, prompts whose default is not yes, and prompts raised by your own deny rules. `yolo_approve_dangerous_commands: false` still leaves every prompt to a person.
+
+## 1.42.4 — 2026-10-16
+
+### Fixed
+- A single failed tmux liveness check no longer ends the monitor. One hiccup ended every monitor at once while their agents kept running unwatched: no YOLO approvals, no nudges, and the session listed as exited. The monitor now confirms over ~5s before it treats a session as gone. Repair already orphaned sessions with `babysit recover`.
 
 ## 1.42.3 — 2026-10-15
 

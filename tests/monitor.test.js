@@ -502,3 +502,35 @@ describe( `web bridge coordination`, () => {
     } )
 
 } )
+
+describe( `session liveness`, () => {
+
+    const run_monitor = async alive => {
+        let checks = 0
+        let exits = 0
+        await start_monitor( {
+            session_name: `babysit_test`, config: {}, rules: [], agent: null,
+            has_session_fn: async () => alive[ checks++ ] ?? false,
+            capture_pane_fn: async () => `working`,
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            write_loop_deadline_fn: () => null,
+            on_exit: async () => exits++,
+            wait_fn: async () => {},
+        } )
+        return { checks, exits }
+    }
+
+    it( `survives a transient has-session miss`, async () => {
+        // Live, one blip, live again, then really gone
+        const { checks, exits } = await run_monitor( [ true, false, true ] )
+        expect( checks ).toBe( 3 + 5 )
+        expect( exits ).toBe( 1 )
+    } )
+
+    it( `ends once every confirmation check misses`, async () => {
+        const { checks, exits } = await run_monitor( [] )
+        expect( checks ).toBe( 5 )
+        expect( exits ).toBe( 1 )
+    } )
+
+} )

@@ -33,8 +33,8 @@ ${ comment_block( initial_prompt ) }
 #     watchdog_idle_s: 1800
 #     watchdog_waiting_s: 3600
 #
-#     # YOLO only: answer Claude's bypass-immune rm prompts ("Dangerous rm operation", unchecked shell -c scripts) with Yes.
-#     # false leaves them to a person.
+#     # YOLO only: accept any Claude prompt that still blocks (rm safety checks, folder trust, …) when its default is yes.
+#     # Model swaps, billing and deny-rule prompts always stay with a person. false leaves every prompt to a person.
 #     yolo_approve_dangerous_commands: true
 #
 #     # Claude with two or more accounts (babysit auth accounts): when one hits its limit,
