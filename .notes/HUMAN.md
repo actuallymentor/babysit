@@ -36,3 +36,40 @@
 
 ## 2026-10-11 — automated re-login removed (1.37.0)
 - Leftovers on the host: `docker volume rm babysit-relogin`, `rm ~/.babysit/relogin.json`, drop `GMAIL_USER`/`GMAIL_APP_PASSWORD` from `~/.babysitrc` and revoke the Gmail app password. The pending Gmail forwarding confirmation can be ignored.
+
+## `babysit fork` design decisions (2026-10-17, user-approved, not yet implemented)
+
+- Filesystem: interactive. Default share if parent exited/stuck; clone snapshot if parent live + fork writable; mudbox fork = read-only share, no prompt. `--share`/`--clone` skip prompt; `--yes`/yolo take default.
+- Clone fork = full snapshot: ignores `config.clone.changes`, carries untracked non-ignored + carry − exclude; copy-mode fallback when mid-merge/rebase. New branch from parent HEAD, store base sha. Prompt warns not to push to parent branch.
+- History: same agent → native fork (claude `--fork-session`, codex `fork`, opencode `--fork`); cross-agent → babysit-generated handoff md from transcript as first prompt (+ transcript path). `--no-history` opt-out. Copy per-workspace chat volumes (codex/opencode/agy) into clone fork's volume.
+- Lineage: new `forked_from` field; never `resumed_from`/`superseded_by`.
+- List: forks as tree children; exited parent stays (status exited) while any descendant live.
+- Takeover: prompt "close parent?" if live; `--takeover` skips.
+- Sandbox parent: allowed, handoff only, warn.
+- v1 scope adds: launcher fork action, fork-of-fork nesting. Out: web companion, diff/merge helper.
+
+## `babysit watch` USAGE column (2026-10-17, implemented 3dcac74)
+
+- Per session row: worst remaining % across the session agent's metered limits (`limit_percent` in `src/cli/watch.js`, remaining = 100 − used). Reuses watch's existing usage report; no extra fetch.
+- Waterfall on worst remaining %, first hit wins: <5% critical red → <20% low yellow/orange → <40% fine green → else plenty green. Unknown/no data → dim `—`.
+- Rate windows only; exclude `extra usage`, spend caps, credit balances.
+
+## `babysit audit --config FILE|DIR/` (2026-10-17, implemented e4dbc53)
+
+- Target: one yaml or every `DIR/*.yaml|yml` (same set as directory launch). Goal: file passes `validate_launch(…, { strict: true })`.
+- Required missing → fill with `default_launch()` values; missing `agent` → picker (no silent claude). Show diff, `Write? [Y/n]`.
+- Invalid value / unknown key → offer fix per item (reset to default / remove key).
+- Optional offers (each y/N): `launch.name` (file stem), top-level tuning (idle_timeout_s, watchdog_idle_s/_waiting_s, isolate_dependencies, yolo_approve_dangerous_commands, initial_prompt), `clone:` section (only if launch.clone), commands/rules skeletons.
+- Must preserve user comments/order → yaml `parseDocument` round-trip, not parse+stringify.
+- Non-TTY: report only, exit 1 when strict fails; `--yes` = required fills + fixes, no optionals, no Write prompt.
+- Executive calls to review: optional offers asked even on passing files; accepting `config.initial_prompt` freezes today's generated prompt (no longer mode-following, prompt warns); OpenRouter free-models daily counts as a window.
+
+## Multiple Claude subscriptions with auto-switch (2026-10-17, queued with fork plan, not yet implemented)
+
+- Registry: named setup-tokens (`babysit auth init --claude-token --name X`, list/remove) in a 0600 store; the `~/.babysitrc` managed export stays as the fallback/default.
+- Transport: a per-session token file copied in with `docker cp` and sourced after the rc. Never an env var (Docker `Config.Env` is inspectable).
+- Launch: pick the account with the most headroom (`claude_header_request` quota headers, cached); record it on the session record; `--account X` override (also usable on fork).
+- Usage: `babysit watch` shows bars per account; the USAGE column uses the session's own account.
+- Auto-switch: monitor detects the limit-hit message → next account with headroom → restart with chat resume → continue prompt. At most 1 switch per reset window per session; no ping-pong between exhausted accounts.
+- Risks: turn lost mid-flight; restart during a tool call.
+- Open: Anthropic consumer terms on using several accounts to get around limits. User to verify.
