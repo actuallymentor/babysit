@@ -1,6 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 
-import { collect_usage } from '../docker/assets/usage/command.mjs'
+import { collect_account_usage } from './claude_accounts.js'
 import { relative_time, usage_color } from '../docker/assets/usage/format.mjs'
 import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
@@ -89,7 +89,8 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
     report.agents.forEach( result => {
 
         // OpenCode spans providers; the others map one agent to one account.
-        const label = safe_text( result.agent === `opencode` && result.provider ? `opencode/${ result.provider }` : result.agent )
+        const label = safe_text( result.account ? `claude / ${ result.account }`
+            : result.agent === `opencode` && result.provider ? `opencode/${ result.provider }` : result.agent )
         const first_row = rows.length
 
         // Agents without credentials are noise here; `babysit usage` lists them.
@@ -148,7 +149,7 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
  * @param {number} [deps.rounds] - Redraw count; endless by default
  */
 export const cmd_watch = async ( { flags = {} } = {}, {
-    collect_fn = collect_usage,
+    collect_fn = collect_account_usage,
     render_sessions_fn = render_active_sessions,
     wait_fn = delay,
     write_fn = text => process.stdout.write( text ),

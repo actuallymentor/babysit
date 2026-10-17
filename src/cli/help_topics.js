@@ -23,6 +23,7 @@ const AGENT_FLAGS = `Options:
   --port PORT | H:C         Publish a port; repeatable
   --loop                    When idle, type ./LOOP.md, ~/.agents/LOOP.md, or "Keep going"
   --log[=PATH]              Append raw tmux output to PATH (default .YYYY_MM_DD_HH_MM.babysit.log)
+  --account NAME            Claude: run on this subscription (babysit auth accounts); default picks most headroom
 
 Unknown flags pass through to the agent CLI (e.g. --model, --effort).`
 
@@ -122,7 +123,8 @@ Examples:
 Live dashboard, redrawn every 2s: the babysit list tree without archived
 sessions (numbers unchanged) plus account usage per agent: one row per metered
 limit with a bar, % used and time to reset. Balances and lifetime spend stay in
-babysit usage. Usage refreshes every 5 min.
+babysit usage. Usage refreshes every 5 min. With two or more Claude accounts,
+each gets its own rows (claude / <account>).
 
 Options:
   --all      Add tmux attachment, session IDs, and tmux names
@@ -151,7 +153,7 @@ Examples:
   babysit close 2
   babysit close abc-123`,
 
-    restart: () => `Usage: babysit restart <number|session_id|all> [--force] [--detach]
+    restart: () => `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account NAME]
 
 Closes the session gracefully and resumes it on the current image, continuing
 the agent's own conversation id. Use it after babysit update. Refuses unless
@@ -160,14 +162,17 @@ Sandbox sessions cannot be restarted. "all" restarts every unarchived active
 session detached, skipping (and reporting) any that refuse.
 
 Options:
-  --force    Restart even when busy or without a captured id
-  --detach   Return instead of attaching
+  --force           Restart even when busy or without a captured id
+  --detach          Return instead of attaching
+  --continue        Tell the agent to continue unfinished work once it is back
+  --account NAME    Claude: move the session to another subscription (babysit auth accounts)
 
 Examples:
   babysit restart 1
   babysit restart 1 --detach
   babysit restart all
-  babysit restart abc-123 --force`,
+  babysit restart abc-123 --force
+  babysit restart 2 --account work --continue`,
 
     archive: () => `Usage: babysit archive <number|session_id|name>
 
@@ -250,6 +255,8 @@ Examples:
     auth: () => `Usage: babysit auth [status]
        babysit auth check [agent] [--force]
        babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]
+       babysit auth init --claude-token --name NAME
+       babysit auth accounts [remove NAME]
 
 Keeps agent logins verified so launches start fast, and tells you when one
 breaks. A launch or babysit doctor --auth verifies a login and caches it for
@@ -266,11 +273,35 @@ Subcommands:
   status    Cache ages and checker state (default)
   check     What the checker runs (babysit auth check --help)
   init      Install the checker and the Claude token (babysit auth init --help)
+  accounts  Named Claude subscriptions (babysit auth accounts --help)
 
 Examples:
   babysit auth
   babysit auth init
-  babysit auth check claude --force`,
+  babysit auth check claude --force
+  babysit auth accounts`,
+
+    'auth accounts': () => `Usage: babysit auth accounts [remove NAME]
+
+Several Claude subscriptions, one setup-token each. The ~/.babysitrc token is
+the account "default"; add more with babysit auth init --claude-token --name NAME
+(stored 0600 in the Babysit state dir). With two or more, a new Claude session
+takes the account with most headroom (the tightest rate window, read with one
+1-token request per account, cached 5 min); --account NAME forces one. The
+session keeps its account through resume, restart, and recovery. When a session
+hits its limit, the monitor moves it to another account with headroom (resume
+plus a continue prompt), at most once per limit window
+(config.claude_account_auto_switch, default true).
+The token reaches the container as a private file copied in with docker cp,
+never a docker -e flag.
+
+Shows name, mint date, expiry, and the last headroom read. Tokens are never printed.
+
+Examples:
+  babysit auth accounts
+  babysit auth init --claude-token --name work
+  babysit auth accounts remove work
+  babysit claude --account work`,
 
     'auth status': () => `Usage: babysit auth status
 
@@ -300,6 +331,7 @@ Examples:
   babysit auth check claude --force`,
 
     'auth init': () => `Usage: babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]
+       babysit auth init --claude-token --name NAME
 
 1. Installs the 10-minute checker for your user: a systemd user timer on Linux
    (and enables lingering so it runs while you are logged out), a launchd agent
@@ -310,6 +342,8 @@ Examples:
    (0600). Sessions then use it instead of the rotating /login token, so they
    stop logging each other out. Restart running Claude sessions to switch.
 Rerun after upgrading Babysit to pick up schedule changes.
+With --name NAME only step 2 runs, and the token becomes a named Claude account
+(see babysit auth accounts --help) instead of replacing ~/.babysitrc.
 
 Options:
   --remove            Uninstall the checker (the Claude token stays)
@@ -317,12 +351,14 @@ Options:
                       undo an earlier enable with loginctl disable-linger)
   --claude-token      Mint a new Claude token even if one is set (e.g. after an alert)
   --no-claude-token   Skip the Claude token step
+  --name NAME         Save the token as an extra Claude account; installs no checker
 
 Examples:
   babysit auth init
   babysit auth init --claude-token
   babysit auth init --no-claude-token --no-linger
-  babysit auth init --remove`,
+  babysit auth init --remove
+  babysit auth init --claude-token --name work`,
 
     web: () => `Usage: babysit web init
 

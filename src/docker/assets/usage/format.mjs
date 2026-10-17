@@ -103,7 +103,7 @@ const STATUS_COLORS = { error: `red`, unavailable: `yellow`, unauthenticated: `d
 /** Render native windows/units without presenting missing information as zero. */
 export const format_usage = ( report, options = {} ) => report.agents.map( result => {
 
-    const title = `${ result.agent }${ result.provider ? ` / ${ safe_text( result.provider ) }` : `` }`
+    const title = `${ result.agent }${ result.account || result.provider ? ` / ${ safe_text( result.account || result.provider ) }` : `` }`
     if( result.status !== `ok` ) return `${ title }: ${ paint( result.status, STATUS_COLORS[ result.status ], options ) } — ${ safe_text( result.message ) }`
     if( !result.limits.length ) return `${ title }\n  ${ paint( `no limits reported`, `dim`, options ) }`
 

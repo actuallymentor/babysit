@@ -37,6 +37,10 @@ ${ comment_block( initial_prompt ) }
 #     # false leaves them to a person.
 #     yolo_approve_dangerous_commands: true
 #
+#     # Claude with two or more accounts (babysit auth accounts): when one hits its limit,
+#     # resume the session on the account with most headroom and tell it to continue.
+#     claude_account_auto_switch: true
+#
 #     # Mount Docker volumes over dependency folders (node_modules and friends) so the
 #     # container's Linux binaries never land in the host checkout.
 #     isolate_dependencies: true
@@ -89,6 +93,7 @@ const DEFAULT_CONFIG = {
     watchdog_idle_s: 1_800,
     watchdog_waiting_s: 3_600,
     yolo_approve_dangerous_commands: true,
+    claude_account_auto_switch: true,
     commands: {},
     isolate_dependencies: true,
 }
@@ -196,6 +201,11 @@ export const load_config = ( dir = process.cwd(), {
     const config = { ...DEFAULT_CONFIG, ...raw_config }
     if( !Object.hasOwn( raw_config, `initial_prompt` ) ) {
         config.initial_prompt = default_initial_prompt
+    }
+
+    if( typeof config.claude_account_auto_switch !== `boolean` ) {
+        log.warn( `config.claude_account_auto_switch must be true or false; using true` )
+        config.claude_account_auto_switch = true
     }
 
     // Watchdog thresholds are seconds; 0 turns that check off
