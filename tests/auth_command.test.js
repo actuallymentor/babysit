@@ -698,6 +698,17 @@ describe( `scheduled checker installation`, () => {
             } )
             expect( token_steps ).toEqual( [ true ] )
 
+            // `--name default` is the rc token: the checker installs as in the plain flow
+            const default_calls = []
+            await cmd_auth_init( { flags: { claude_token: true, name: `default` } }, {
+                output, scheduler, command, environment: { PATH: `/bin` }, uid: 1000,
+                execute: async ( binary, args ) => default_calls.push( [ binary, ...args ] ) && ``,
+                write: () => {},
+                claude_token: async cmd => default_calls.push( [ `token`, cmd.flags.name ] ) && `skipped`,
+            } )
+            expect( default_calls.some( call => call.includes( `enable` ) ) ).toBe( true )
+            expect( default_calls ).toContainEqual( [ `token`, `default` ] )
+
             // A token step that fails makes init fail
             expect( await cmd_auth_init( { flags: {} }, {
                 output, scheduler, command, environment: { PATH: `/bin` }, uid: 1000,

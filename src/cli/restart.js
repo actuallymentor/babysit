@@ -72,6 +72,9 @@ const restart_session = async ( session, { force = false, detach = false, accoun
     print = console.log,
 } = {} ) => {
 
+    // Checked before the close: a refused --account after it would strand the session
+    if( account && session.agent !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ session.babysit_id } is a ${ session.agent } session` )
+
     // Sandbox loss is unconditional; the rest is the user's call with --force.
     const blocker = restart_blocker( session )
     if( blocker && ( !force || blocker.startsWith( `Sandbox` ) ) ) throw new Error( blocker )

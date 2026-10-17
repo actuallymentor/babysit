@@ -216,12 +216,12 @@ export const pick_account = ( readings = [] ) => readings
 
 /**
  * Account for a Claude launch: an explicit choice, else the resumed session's,
- * else (with two or more accounts) the one with most headroom.
+ * else the only one, else (with two or more accounts) the one with most headroom.
  * @param {Object} options
  * @param {string|false} [options.requested] - `--account` value
  * @param {string|null} [options.stored] - Resumed session's claude_account
  * @param {Object} [options.seams] - list/probe seams
- * @returns {Promise<{ account: Object|null, reason: string }>} account null means "leave the default route alone"
+ * @returns {Promise<{ account: Object|null, reason: string }>} account null (no accounts) means "leave the default route alone"
  */
 export const resolve_launch_account = async ( { requested = false, stored = null } = {}, {
     list = list_claude_accounts,
@@ -238,12 +238,14 @@ export const resolve_launch_account = async ( { requested = false, stored = null
     }
 
     if( stored && find( stored ) ) return { account: find( stored ), reason: `resumed` }
-    if( accounts.length < 2 ) return { account: null, reason: `single account` }
+
+    // One account is used as is; the default one mounts nothing, a lone named one must
+    if( accounts.length < 2 ) return { account: accounts[ 0 ] || null, reason: `single account` }
 
     const best = pick_account( await probe( accounts ) )
     return best
         ? { account: find( best.name ), reason: `most headroom (${ best.headroom }% left)` }
-        : { account: find( stored ) || accounts[ 0 ], reason: `no readable quota; using the first account` }
+        : { account: accounts[ 0 ], reason: `no readable quota; using the first account` }
 
 }
 

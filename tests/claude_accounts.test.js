@@ -131,11 +131,15 @@ describe( `headroom selection`, () => {
 
     } )
 
-    it( `launch: one account changes nothing and spends no probe`, async () => {
+    it( `launch: one account is used without a probe, none leaves the route alone`, async () => {
         const probe = async () => {
             throw new Error( `must not probe` )
         }
-        expect( await resolve_launch_account( {}, { list: () => accounts.slice( 0, 1 ), probe } ) ).toEqual( { account: null, reason: `single account` } )
+        // The default mounts nothing (as before); a lone named token must reach the container
+        expect( await resolve_launch_account( {}, { list: () => accounts.slice( 0, 1 ), probe } ) ).toEqual( { account: accounts[ 0 ], reason: `single account` } )
+        expect( await resolve_launch_account( {}, { list: () => accounts.slice( 1 ), probe } ) ).toEqual( { account: accounts[ 1 ], reason: `single account` } )
+        expect( account_credential_mounts( accounts[ 1 ] ) ).toHaveLength( 1 )
+        expect( await resolve_launch_account( {}, { list: () => [], probe } ) ).toEqual( { account: null, reason: `single account` } )
     } )
 
     it( `only a named account gets a staged credential, never the default`, () => {

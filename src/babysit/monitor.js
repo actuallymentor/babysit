@@ -311,8 +311,8 @@ export const start_monitor = async ( {
             }
 
             // Not awaited: the handler probes accounts and may restart the session
+            // (it logs the sighting itself, only when an account switch is possible)
             if( on_limit_screen && Date.now() >= limit_check_ready_at && shows_limit( clean_output, agent ) ) {
-                log.info( `Pane shows a ${ agent.name } usage limit` )
                 limit_check_ready_at = Date.now() + LIMIT_RECHECK_MS
                 on_limit_screen( agent.name )
             }

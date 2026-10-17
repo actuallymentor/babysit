@@ -351,7 +351,8 @@ takes the account with most headroom (the tightest rate window, read with one
 1-token request per account, cached 5 min); --account NAME forces one. The
 session keeps its account through resume, restart, and recovery. When a session
 hits its limit, the monitor moves it to another account with headroom (resume
-plus a continue prompt), at most once per limit window
+plus a continue prompt), never back to one it left while that limit window is
+open, and never while you are attached: detach to let it switch
 (config.claude_account_auto_switch, default true).
 The token reaches the container as a private file copied in with docker cp,
 never a docker -e flag.
