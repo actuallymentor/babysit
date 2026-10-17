@@ -4,6 +4,27 @@
 > not current operating guidance. Use README.md, SPEC.md, the test suite, and
 > the implementation itself for the present behavior.
 
+## 2026-10-17 — Fork, usage column, config audit, Claude accounts
+
+Intent: hand a session to another agent/mode without losing work or chat,
+see quota headroom per session, make `--config DIR/` files easy to fix, and
+spread Claude work over several subscriptions. Decisions: `.notes/HUMAN.md`.
+
+1. `babysit fork N [agent] [flags]`: fresh launch with `forked_from`; share or
+   full-snapshot clone (interactive, state-aware defaults); native same-agent
+   chat fork, transcript handoff cross-agent; tree children in `list`/`watch`
+   with exited parents kept while a descendant lives; takeover prompt;
+   launcher action; nesting.
+2. `babysit watch` USAGE column: waterfall over worst remaining rate window
+   (<5 critical, <20 low, <40 fine, else plenty); extra usage excluded.
+3. `babysit audit --config FILE|DIR/`: comment-preserving fill of strict
+   `launch:` keys, per-item fixes, optional default offers.
+4. Claude accounts: named setup-tokens, per-session token file, headroom pick
+   at launch, `--account`, per-account usage, auto-switch on limit hit
+   (restart + resume + continue, one switch per window).
+5. Separate worktree lanes (1, 2+3, 4), merged in order; README quick
+   reference, changelog, minor bump; reviews, unit + real Docker flows.
+
 ## 2026-08-23 — Xvfb and PDF tooling
 
 Intent: make headful Chrome automation and PDF inspection available in every

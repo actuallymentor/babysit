@@ -240,3 +240,11 @@ Source: strings in the native binary (`~/.local/share/claude/versions/2.1.283`).
 - In-turn `wait` shows `• Waiting for agents` + `Working (… esc to interrupt)` → `running`.
 - Non-awaited subagent finishing prints `• Completed \`/root/<name>\`` and the parent does NOT start a turn: the stall pattern. A typed `Status report` makes it collect the result.
 - Codex `gpt-6.1-sol` returned "Selected model is at capacity" mid-test; Luna worked.
+
+## Session fork / chat handoff (2026-10-17, design phase for `babysit fork`)
+
+- Native same-agent fork: claude `--resume <id> --fork-session` (cwd-agnostic since 2.1.223); codex `fork <id>` (cwd prompt; `tui.resume_cwd`/`-C`); opencode `--session <id> --fork`; agy has `/fork` only (undocumented).
+- Chat state lives in docker volumes: claude global (`babysit-claude-projects`, cwd always /workspace); codex/opencode/agy keyed by hash(workspace) → fork into new clone sees empty history unless volumes mounted/copied.
+- Cross-agent: no standard. Converters txcript/baton exist (lossy into codex/gemini, reasoning blocks don't transfer). Baton bench: full transcript 14/17 facts vs summary 3/17, task completion equal. Common practice = handoff markdown seeded as first prompt.
+- Existing lineage = resume chain only (`resumed_from`/`superseded_by`); `resolve_current_session` throws on agent/workspace change → fork needs separate `forked_from`, never touch superseded_by.
+- `babysit list` shows live tmux only; exited sessions never render there. Numbers are positional, not stored.
