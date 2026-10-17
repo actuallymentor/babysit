@@ -271,7 +271,8 @@ export const account_usage_report = async ( { max_age_ms = ACCOUNT_USAGE_TTL_MS,
         fetched_at: new Date().toISOString(),
         agents: readings.map( ( { name, status, limits, message, fetched_at } ) => ( {
             agent: `claude`, provider: `anthropic`, account: name, fetched_at,
-            status, limits, ...message ? { message } : {},
+            // A dead named token is re-minted under its own name
+            status, limits, ...message ? { message: name === DEFAULT_ACCOUNT ? message : message.replace( `--claude-token`, `--claude-token --name ${ name }` ) } : {},
             ...status === `ok` ? { source: `Claude rate-limit headers (1-token request)` } : {},
         } ) ),
     }
