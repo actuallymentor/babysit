@@ -1,7 +1,7 @@
-import { readFileSync, statSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { createInterface } from 'readline/promises'
 import { dirname, relative } from 'path'
-import { isMap, isScalar, parseDocument, Scalar } from 'yaml'
+import { isAlias, isMap, isScalar, parseDocument, Scalar } from 'yaml'
 
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { LAUNCH_KEYS, default_launch, launch_key_problem, validate_launch } from '../babysit/launch_config.js'
@@ -44,6 +44,7 @@ const show = value => JSON.stringify( value )
  */
 export const audit_targets = config => {
 
+    if( !existsSync( config ) ) throw new Error( `No such file or directory: ${ config }` )
     const directory = statSync( config ).isDirectory()
     return directory
         ? { base: config, files: launch_dir_files( config ) }
@@ -190,6 +191,23 @@ const value_node = ( doc, value ) => {
 }
 
 /**
+ * Carry a replaced node's comments onto its replacement, so swapping a bare
+ * `launch:  # TODO` for a map does not drop what the person wrote there.
+ * They head the new section; key-side comments live on the pair's key and
+ * survive a set() untouched.
+ * @param {Object|undefined} old - Node being replaced
+ * @param {Object} node - Replacement
+ * @returns {Object} The replacement
+ */
+const keep_comments = ( old, node ) => {
+
+    const comments = [ old?.commentBefore, old?.comment ].filter( Boolean )
+    if( comments.length ) node.commentBefore = comments.join( `\n` )
+    return node
+
+}
+
+/**
  * Put a key into a map at its canonical position (after the closest earlier
  * key in `order` that is present), so inserts never scramble a file.
  * @param {Object} doc - Yaml document
@@ -253,11 +271,18 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
     // The launch: section itself
     const top_order = [ `launch`, `config`, `babysit` ]
     let launch = doc.get( `launch`, true )
+
+    // Editing through an alias would rewrite its anchor elsewhere in the file
+    if( isAlias( launch ) ) {
+        print( paint( `  launch: is an alias; inline it to audit`, `red` ) )
+        return result( false )
+    }
+
     if( !isMap( launch ) ) {
         const replace = launch === undefined || isScalar( launch ) && launch.value === null
             || await confirm( `launch: is not a mapping. Replace it with an empty section?` )
         if( !replace ) return result( false )
-        if( doc.has( `launch` ) ) doc.set( `launch`, doc.createNode( {} ) )
+        if( doc.has( `launch` ) ) doc.set( `launch`, keep_comments( launch, doc.createNode( {} ) ) )
         else insert_in_order( doc, doc.contents, `launch`, {}, top_order )
         launch = doc.get( `launch`, true )
     }

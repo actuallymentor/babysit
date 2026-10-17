@@ -101,25 +101,27 @@ export const resolve_opencode_default_model = ( options = {} ) => {
 }
 
 /**
+ * The model an OpenCode argument list names explicitly. OpenCode accepts
+ * long/short and separate/equals forms; the last flag wins.
+ *
+ * @param {string[]} agent_args - Arguments passed through to OpenCode
+ * @returns {string|null} provider/model slug, or null when no flag names one
+ */
+export const opencode_model_flag = ( agent_args = [] ) => agent_args.reduce( ( model, argument, index ) => {
+    if( [ `--model`, `-m` ].includes( argument ) ) return agent_args[ index + 1 ] || model
+
+    const inline_model = argument.match( /^(?:--model|-m)=(.+)$/ )?.[1]
+    return inline_model || model
+}, null )
+
+/**
  * Resolve OpenCode's effective model from Babysit passthrough arguments.
- * OpenCode accepts long/short and separate/equals forms; the last flag wins.
  *
  * @param {string[]} agent_args - Arguments passed through to OpenCode
  * @param {Object} [options] - Workspace/profile context
  * @returns {string|null} Effective provider/model slug
  */
-export const resolve_opencode_model = ( agent_args = [], options = {} ) => {
-
-    const explicit_model = agent_args.reduce( ( model, argument, index ) => {
-        if( [ `--model`, `-m` ].includes( argument ) ) return agent_args[ index + 1 ] || model
-
-        const inline_model = argument.match( /^(?:--model|-m)=(.+)$/ )?.[1]
-        return inline_model || model
-    }, null )
-
-    return explicit_model || resolve_opencode_default_model( options )
-
-}
+export const resolve_opencode_model = ( agent_args = [], options = {} ) => opencode_model_flag( agent_args ) || resolve_opencode_default_model( options )
 
 export const opencode = {
 

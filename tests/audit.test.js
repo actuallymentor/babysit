@@ -226,6 +226,28 @@ describe( `babysit audit`, () => {
         expect( code ).toBe( 0 )
     } )
 
+    it( `keeps the comments of a null launch: it replaces`, async () => {
+        write( `a.yaml`, `launch:   # TODO\n  # inner\nconfig: {}\n` )
+        write( `b.yaml`, `# top\nlaunch:\n# after\nconfig:\n` )
+        await audit( { answers: [ [ /Agent \[/, `claude` ], [ /Write/, `y` ] ] } )
+        expect( read( `a.yaml` ) ).toStartWith( `launch:\n    # TODO\n    # inner\n    agent: claude\n` )
+        expect( read( `b.yaml` ) ).toStartWith( `# top\nlaunch:\n    # after\n    agent: claude\n` )
+    } )
+
+    it( `refuses to edit through a launch: alias`, async () => {
+        const text = `base: &base\n  agent: claude\nlaunch: *base\n`
+        write( `a.yaml`, text )
+        const { code, output } = await audit( { yes: true } )
+        expect( output ).toContain( `launch: is an alias; inline it to audit` )
+        expect( read( `a.yaml` ) ).toBe( text )
+        expect( code ).toBe( 1 )
+    } )
+
+    it( `names a missing --config path`, async () => {
+        const missing = join( dir, `nope.yaml` )
+        await expect( audit( { target: missing } ) ).rejects.toThrow( `No such file or directory: ${ missing }` )
+    } )
+
     it( `reports yaml syntax errors without touching the file`, async () => {
         write( `a.yaml`, `launch:\n  agent: [unclosed\n` )
         const { code, output } = await audit( { yes: true } )
