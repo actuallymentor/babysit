@@ -259,6 +259,8 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
         if( yes ) return !optional
         return /^y(es)?$/i.test( await ask( `  ${ question } [y/N] ` ) )
     }
+
+    // The agent is never defaulted: a terminal picks it, anything else reports
     const choose_agent = async reason => {
         if( !interactive ) {
             print( paint( `  launch.agent ${ reason }; run babysit audit in a terminal to pick one`, `red` ) )
@@ -286,6 +288,7 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
         else insert_in_order( doc, doc.contents, `launch`, {}, top_order )
         launch = doc.get( `launch`, true )
     }
+
     // Plain values: get() hands back nodes for lists and maps
     const value_of = key => launch.toJSON()[ key ]
     const present = key => launch.has( key ) && value_of( key ) !== null
@@ -380,7 +383,8 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
 
     // Show the diff and write
     const updated = doc.toString( { indent: yaml_indent( text ), lineWidth: 0 } )
-    const passes = !strict_errors( updated ).length
+    const remaining = strict_errors( updated )
+    const passes = !remaining.length
     if( updated === text ) {
         if( problems.length ) print( `  Nothing changed.` )
         return result( passes )
@@ -389,7 +393,7 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
     print( `` )
     line_diff( text, updated ).forEach( line => print( `  ${ line }` ) )
     print( `` )
-    if( !passes ) print( paint( `  Still failing after these changes: ${ strict_errors( updated ).join( `; ` ) }`, `yellow` ) )
+    if( !passes ) print( paint( `  Still failing after these changes: ${ remaining.join( `; ` ) }`, `yellow` ) )
 
     const approved = yes || !/^n(o)?$/i.test( await ask( `  Write ${ file }? [Y/n] ` ) )
     if( !approved ) {

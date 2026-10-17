@@ -189,6 +189,7 @@ export const read_parent_transcript = async ( parent, { live = false, run_comman
 
 }
 
+// Cap one text block, saying so, so a cut quote never reads as complete
 const clip = ( text, max ) => text.length > max ? `${ text.slice( 0, max ) }\n[…truncated]` : text
 const quote = text => text.split( `\n` ).map( line => `> ${ line }` ).join( `\n` )
 
@@ -262,7 +263,8 @@ export const build_handoff_markdown = ( {
     let reply_count = replies.length
     let markdown = render( prompt_count, reply_count )
 
-    // Keep the first request (the task) and the last reply (where it stopped) longest
+    // Drop from the longer list, oldest first; the latest request and the last
+    // reply (where the parent stopped) are never dropped
     while( markdown.length > max_chars && ( prompt_count > 1 || reply_count > 1 ) ) {
         if( reply_count > 1 && ( reply_count >= prompt_count || prompt_count <= 1 ) ) reply_count--
         else prompt_count--

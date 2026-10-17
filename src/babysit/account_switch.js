@@ -30,6 +30,7 @@ export const SWITCH_PROBE_MAX_AGE_MS = 60_000
 // A limit line this soon after a switch is likely the resumed transcript, not a new limit
 export const SPENT_NOTICE_GRACE_MS = 10 * 60_000
 
+// A recorded switch blocks its source account until that account's limit resets
 const switch_window_open = ( { at, resets_at }, now ) => resets_at
     ? Date.parse( resets_at ) > now
     : now - Date.parse( at ) < SWITCH_FALLBACK_WINDOW_MS
@@ -174,6 +175,8 @@ export const create_account_switcher = ( session, {
     let told_exhausted = false
     let told_attached = false
     let told_spent_window = null
+
+    const label = record => record.name || record.babysit_id
     const skip = reason => {
         log.info( `Claude limit on screen; not switching accounts: ${ reason }` )
         return null
@@ -197,8 +200,9 @@ export const create_account_switcher = ( session, {
         // The headers can still overrule the pane: a quoted limit line is no news
         if( reading?.status === `ok` && reading.headroom > 0 ) return
         const resets_at = recorded || exhausted_reset( reading?.limits )
+        const when = resets_at ? `resets ${ resets_at.slice( 0, 16 ).replace( `T`, ` ` ) } UTC` : `reset time unknown`
 
-        await notify( { title: `Babysit`, message: `All Claude accounts spent in ${ latest.name || latest.babysit_id }; ${ resets_at ? `resets ${ resets_at.slice( 0, 16 ).replace( `T`, ` ` ) } UTC` : `reset time unknown` }.` } )
+        await notify( { title: `Babysit`, message: `All Claude accounts spent in ${ label( latest ) }; ${ when }.` } )
 
     }
 
@@ -228,12 +232,13 @@ export const create_account_switcher = ( session, {
             }
 
             const candidates = accounts.filter( ( { name } ) => name === guard.from || guard.targets.includes( name ) )
-            const plan = plan_account_switch( { session: latest, readings: await probe( candidates, { max_age_ms: SWITCH_PROBE_MAX_AGE_MS } ), now: now() } )
+            const readings = await probe( candidates, { max_age_ms: SWITCH_PROBE_MAX_AGE_MS } )
+            const plan = plan_account_switch( { session: latest, readings, now: now() } )
             if( plan.skip ) {
                 // Say so once per monitor when every account is spent
                 if( !told_exhausted && plan.exhausted ) {
                     told_exhausted = true
-                    await notify( { title: `Babysit`, message: `Claude limit hit in ${ latest.name || latest.babysit_id }; ${ plan.skip }.` } )
+                    await notify( { title: `Babysit`, message: `Claude limit hit in ${ label( latest ) }; ${ plan.skip }.` } )
                 }
                 skip( plan.skip )
                 return plan
@@ -243,7 +248,7 @@ export const create_account_switcher = ( session, {
             if( latest.tmux_session && await attached( latest.tmux_session ) ) {
                 if( !told_attached ) {
                     told_attached = true
-                    await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from } in ${ latest.name || latest.babysit_id }; detach to let babysit switch to ${ plan.to }.` } )
+                    await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from } in ${ label( latest ) }; detach to let babysit switch to ${ plan.to }.` } )
                 }
                 skip( `a client is attached; detach to let babysit switch to ${ plan.to }` )
                 return { skip: `attached`, to: plan.to }
@@ -253,7 +258,7 @@ export const create_account_switcher = ( session, {
             const entry = { at: new Date( now() ).toISOString(), from: plan.from, to: plan.to, resets_at: plan.resets_at }
             update( session.babysit_id, current => ( { account_switches: [ ...current.account_switches || [], entry ] } ) )
             log.info( `Claude limit hit on account ${ plan.from }; restarting session ${ session.babysit_id } on ${ plan.to } (${ plan.headroom }% left)` )
-            await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from }; moved ${ latest.name || latest.babysit_id } to ${ plan.to } (${ plan.headroom }% left).` } )
+            await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from }; moved ${ label( latest ) } to ${ plan.to } (${ plan.headroom }% left).` } )
             restart( session.babysit_id, plan.to )
             return plan
 

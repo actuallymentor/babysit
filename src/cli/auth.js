@@ -549,8 +549,8 @@ export const cmd_auth_init = async ( cmd, {
     claude_token = setup_claude_token,
 } = {} ) => {
 
-    // A named account only adds a token; the checker is already installed or not
-    // `--name default` is the rc token: the plain flow
+    // A named account only adds a token; the checker is already installed or not.
+    // `--name default` is the rc token, so it takes the plain flow below.
     if( cmd.flags.name && cmd.flags.name !== DEFAULT_ACCOUNT ) {
         validate_account_name( cmd.flags.name )
         return await claude_token( cmd, { output } ) === `saved` ? 0 : 1

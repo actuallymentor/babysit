@@ -214,8 +214,6 @@ export const parse_args = ( argv ) => {
     if( verb === `auth` ) {
         const auth_verb = positionals[1] || `status`
         if( !AUTH_VERBS.includes( auth_verb ) ) throw new Error( `Unknown auth command: ${ auth_verb }. Use ${ AUTH_VERBS.join( `, ` ) }.` )
-        // `auth check <agent> --force` re-verifies one agent now; a session
-        // monitor runs it when the agent's pane shows a lost login
         // `auth accounts [remove <name>]` lists or drops named Claude tokens
         if( auth_verb === `accounts` ) {
             const [ , , account_verb = null, account_name = null ] = positionals
@@ -224,6 +222,9 @@ export const parse_args = ( argv ) => {
             if( positionals.length > 4 ) throw new Error( `Unknown auth argument: ${ positionals.at( -1 ) }` )
             return { verb: `auth`, auth_verb, account_verb, account_name, agent: null, flags, passthrough: [] }
         }
+
+        // `auth check <agent> --force` re-verifies one agent now; a session
+        // monitor runs it when the agent's pane shows a lost login
         const auth_agent = auth_verb === `check` ? positionals[2] || null : null
         if( positionals.length > ( auth_agent ? 3 : 2 ) ) throw new Error( `Unknown auth argument: ${ positionals.at( -1 ) }` )
         if( auth_agent && !is_agent( auth_agent ) ) throw new Error( `Unknown agent: ${ auth_agent }` )
@@ -267,8 +268,9 @@ export const parse_args = ( argv ) => {
         const allowed = new Set( [ `--help`, `-h`, `--force`, `--detach`, `--continue` ] )
         // `--account NAME` / `--account=NAME` switch the Claude subscription on the way
         const account_value = prepared.findIndex( ( argument, index ) => index > 0 && prepared[ index - 1 ] === `--account` )
-        const unexpected = prepared.slice( 1 ).filter( ( argument, index ) => argument !== selector && !allowed.has( argument )
-            && argument !== `--account` && !argument.startsWith( `--account=` ) && index + 1 !== account_value )
+        const is_account = ( argument, index ) => argument === `--account` || argument.startsWith( `--account=` ) || index === account_value
+        // Indexes below are shifted by the slice: prepared[0] is the verb
+        const unexpected = prepared.slice( 1 ).filter( ( argument, index ) => argument !== selector && !allowed.has( argument ) && !is_account( argument, index + 1 ) )
         if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown restart argument: ${ unexpected[0] || positionals[2] }` )
         if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account <name>]` )
         // Every session has its own subscription; one account for all of them is never meant
