@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.44.2 — 2026-10-18
+
+### Fixed
+- Nested `claude -p` inside a session now uses the session's Claude account, not the host login. Claude strips `CLAUDE_CODE_OAUTH_TOKEN` from the environment of everything it spawns, so sub-agents silently fell back to the default subscription (and its low usage). The image ships a `claude` shim ahead of the real one on PATH that reloads the chosen account (or the rc token) like the agent's own launch does. Needs a new image: `babysit update`, then new or restarted sessions.
+
 ## 1.44.1 — 2026-10-17
 
 ### Fixed

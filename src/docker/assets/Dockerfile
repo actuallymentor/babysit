@@ -174,6 +174,8 @@ RUN mkdir -p \
 # image needs to point to a baked file anymore.
 COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+# Ahead of the real claude on PATH: see claude-shim.sh
+COPY claude-shim.sh /opt/babysit-bin/claude
 COPY antigravity-auth.py /usr/local/bin/antigravity-auth.py
 COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
@@ -182,7 +184,7 @@ COPY adb/ /opt/adb/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
     && ln -s /opt/babysit-effort /opt/effort \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh /opt/babysit-bin/claude
 
 # Reuse the image's Chrome for both global and project-local Puppeteer installs.
 # This avoids Puppeteer's otherwise automatic Chrome-for-Testing and Headless
@@ -212,7 +214,8 @@ USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV NVM_DIR=/home/node/.nvm
 # Claude and Antigravity use ~/.local/bin; user npm packages use the prefix.
-ENV PATH="/home/node/.npm-global/bin:/home/node/.local/bin:$PATH"
+# /opt/babysit-bin holds the claude shim that restores the session's account token.
+ENV PATH="/opt/babysit-bin:/home/node/.npm-global/bin:/home/node/.local/bin:$PATH"
 
 # nvm — user-scoped Node version switching for repos that pin versions in .nvmrc.
 RUN set -eux; \
