@@ -115,6 +115,16 @@ describe( `docker image`, () => {
 
     } )
 
+    it( `puts the claude shim ahead of the real claude so nested calls keep the session account`, () => {
+
+        const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
+
+        expect( dockerfile ).toContain( `COPY claude-shim.sh /opt/babysit-bin/claude` )
+        expect( dockerfile ).toContain( `/opt/babysit-bin/claude\n` )
+        expect( dockerfile ).toMatch( /ENV PATH="\/opt\/babysit-bin:\/home\/node\/\.npm-global\/bin:\/home\/node\/\.local\/bin:/ )
+
+    } )
+
     it( `fails the image build instead of masking install failures`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
