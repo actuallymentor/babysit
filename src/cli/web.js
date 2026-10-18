@@ -1,4 +1,32 @@
+import { add_api_key, list_api_keys, remove_api_key } from '../web_bridge/api_keys.js'
 import { initialize_web_bridge } from '../web_bridge/init.js'
+
+/**
+ * Manage read-only API keys for the web JSON API.
+ * @param {Object} cmd - Parsed web key command
+ * @param {Function} print - Output seam
+ * @param {Object} keys - add/list/remove seams
+ */
+const cmd_web_key = ( { key_action, key_name }, print, keys ) => {
+
+    if( key_action === `add` ) {
+        const token = keys.add( key_name )
+        print( `API key ${ key_name } (shown once, read-only): ${ token }` )
+        print( `` )
+        print( `curl -H "Authorization: Bearer ${ token }" https://YOUR_ORIGIN/api/status` )
+        return
+    }
+
+    if( key_action === `remove` ) {
+        keys.remove( key_name )
+        return print( `Removed API key ${ key_name }.` )
+    }
+
+    const listed = keys.list()
+    if( !listed.length ) return print( `No API keys. Add one with: babysit web key add NAME` )
+    listed.forEach( ( { name, created_at } ) => print( `${ name }  ${ created_at }` ) )
+
+}
 
 /**
  * Initialize or rotate the local filesystem bridge used by babysit-web.
@@ -6,12 +34,15 @@ import { initialize_web_bridge } from '../web_bridge/init.js'
  * @param {Object} [options]
  * @param {Function} [options.initialize=initialize_web_bridge] - Initializer seam
  * @param {Function} [options.print=console.log] - Output seam
+ * @param {Object} [options.keys] - API key seams (add, list, remove)
  */
 export const cmd_web = async ( cmd, {
     initialize = initialize_web_bridge,
     print = console.log,
+    keys = { add: add_api_key, list: list_api_keys, remove: remove_api_key },
 } = {} ) => {
 
+    if( cmd.web_verb === `key` ) return cmd_web_key( cmd, print, keys )
     if( cmd.web_verb !== `init` ) throw new Error( `Unknown web command: ${ cmd.web_verb || `(missing)` }` )
 
     const { token, paths } = initialize()

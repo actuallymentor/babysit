@@ -16,7 +16,7 @@ export const hash_web_token = token => createHash( `sha256` ).update( token ).di
  * @param {string} path - Destination path
  * @param {Object} value - JSON value
  */
-const write_private_json = ( path, value ) => {
+export const write_private_json = ( path, value ) => {
 
     const pending_path = `${ path }.pending-${ process.pid }-${ randomUUID() }`
 

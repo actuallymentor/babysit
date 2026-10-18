@@ -21,6 +21,8 @@ const configured_origin = value => {
  */
 export const read_config = ( environment=process.env ) => ( {
     access_file: resolve( environment.BABYSIT_WEB_ACCESS_FILE || `/bridge/access/access.json` ),
+    // Read-only API keys; unset means api-keys.json next to the access file
+    api_keys_file: environment.BABYSIT_WEB_API_KEYS_FILE ? resolve( environment.BABYSIT_WEB_API_KEYS_FILE ) : null,
     allow_insecure_http: environment.BABYSIT_WEB_ALLOW_INSECURE_HTTP === `1`,
     heartbeat_ttl_ms: positive_integer( environment.BABYSIT_WEB_HEARTBEAT_TTL_MS, 15_000 ),
     login_limit: positive_integer( environment.BABYSIT_WEB_LOGIN_LIMIT, 8 ),

@@ -52,6 +52,16 @@ describe( `parse_args`, () => {
         expect( cmd.agent ).toBeNull()
     } )
 
+    it( `recognises web key add, list and remove`, () => {
+        expect( parse_args( [ `web`, `key`, `add`, `grafana` ] ) ).toMatchObject( { verb: `web`, web_verb: `key`, key_action: `add`, key_name: `grafana` } )
+        expect( parse_args( [ `web`, `key`, `list` ] ) ).toMatchObject( { key_action: `list`, key_name: null } )
+        expect( parse_args( [ `web`, `key`, `remove`, `grafana` ] ) ).toMatchObject( { key_action: `remove`, key_name: `grafana` } )
+        expect( () => parse_args( [ `web`, `key` ] ) ).toThrow( `babysit web key add|list|remove` )
+        expect( () => parse_args( [ `web`, `key`, `add` ] ) ).toThrow( `needs a NAME` )
+        expect( () => parse_args( [ `web`, `key`, `list`, `extra` ] ) ).toThrow( `Unknown web argument` )
+        expect( () => parse_args( [ `web`, `key`, `add`, `a`, `b` ] ) ).toThrow( `Unknown web argument` )
+    } )
+
     it( `recognises only the web init command`, () => {
         expect( parse_args( [ `web`, `init` ] ) ).toMatchObject( {
             verb: `web`,

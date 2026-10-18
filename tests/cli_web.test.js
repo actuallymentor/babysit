@@ -60,3 +60,31 @@ describe( `babysit web init`, () => {
     } )
 
 } )
+
+describe( `babysit web key`, () => {
+
+    const run = async ( cmd, keys ) => {
+        const lines = []
+        await cmd_web( { web_verb: `key`, ...cmd }, { keys, print: line => lines.push( line ) } )
+        return lines.join( `\n` )
+    }
+
+    it( `prints a new key with a ready curl line`, async () => {
+        const output = await run( { key_action: `add`, key_name: `grafana` }, { add: () => `bsk_secret` } )
+        expect( output ).toContain( `API key grafana (shown once, read-only): bsk_secret` )
+        expect( output ).toContain( `Authorization: Bearer bsk_secret` )
+    } )
+
+    it( `lists names and dates, never hashes`, async () => {
+        const output = await run( { key_action: `list` }, { list: () => [ { name: `grafana`, token_sha256: `abc`, created_at: `2026-10-18T00:00:00.000Z` } ] } )
+        expect( output ).toBe( `grafana  2026-10-18T00:00:00.000Z` )
+        expect( await run( { key_action: `list` }, { list: () => [] } ) ).toContain( `No API keys` )
+    } )
+
+    it( `removes by name`, async () => {
+        const removed = []
+        expect( await run( { key_action: `remove`, key_name: `grafana` }, { remove: name => removed.push( name ) } ) ).toBe( `Removed API key grafana.` )
+        expect( removed ).toEqual( [ `grafana` ] )
+    } )
+
+} )

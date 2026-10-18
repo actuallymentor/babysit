@@ -189,18 +189,27 @@ export const parse_args = ( argv ) => {
     if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }
 
     // babysit web init — creates or rotates the host/sidecar capability.
+    // babysit web key add|list|remove [NAME] — read-only API keys
     if( verb === `web` ) {
         const web_verb = positionals[1]
         const allowed = new Set( [ `--help`, `-h`, `--version`, `-v` ] )
-        const unexpected = prepared.slice( 2 ).filter( argument => !allowed.has( argument ) )
+        const key_args = web_verb === `key` ? positionals.slice( 2, 4 ).map( String ) : []
+        const unexpected = prepared.slice( 2 ).filter( argument => !allowed.has( argument ) && !key_args.includes( argument ) )
 
         if( !web_verb && ( flags.help || flags.version ) ) {
             return { verb: `web`, web_verb: null, agent: null, flags, passthrough: [] }
         }
-        if( web_verb !== `init` ) throw new Error( `Unknown web command: ${ web_verb || `(missing)` }` )
+        if( ![ `init`, `key` ].includes( web_verb ) ) throw new Error( `Unknown web command: ${ web_verb || `(missing)` }` )
         if( unexpected.length ) throw new Error( `Unknown web argument: ${ unexpected[0] }` )
 
-        return { verb: `web`, web_verb, agent: null, flags, passthrough: [] }
+        const [ key_action = null, key_name = null ] = key_args
+        if( web_verb === `key` && !flags.help ) {
+            if( ![ `add`, `list`, `remove` ].includes( key_action ) ) throw new Error( `Usage: babysit web key add|list|remove [NAME]` )
+            if( key_action !== `list` && !key_name ) throw new Error( `babysit web key ${ key_action } needs a NAME` )
+            if( key_action === `list` && key_name ) throw new Error( `Unknown web argument: ${ key_name }` )
+        }
+
+        return { verb: `web`, web_verb, key_action, key_name, agent: null, flags, passthrough: [] }
     }
 
     // babysit prune [--list]

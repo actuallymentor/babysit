@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/
 const MAX_LOGIN_CLIENTS = 1_024
@@ -37,6 +37,34 @@ export class AccessStore {
     current_access_id() {
         const { role, token_sha256 } = this.reload()
         return `${ token_sha256 }:${ role }`
+    }
+}
+
+/**
+ * Read-only API keys, managed on the host with `babysit web key`.
+ * Hash-only like the access file, and re-read per request so added or
+ * removed keys apply without a restart. A missing file means no keys.
+ */
+export class ApiKeyStore {
+
+    constructor( keys_file ) {
+        this.keys_file = keys_file
+    }
+
+    keys() {
+        if( !existsSync( this.keys_file ) ) return []
+
+        const parsed = JSON.parse( readFileSync( this.keys_file, `utf8` ) )
+        if( parsed.protocol !== 1 || !Array.isArray( parsed.keys ) ) throw new Error( `Invalid Babysit Web API key file` )
+        return parsed.keys.filter( key => SHA256_PATTERN.test( key?.token_sha256 ) )
+    }
+
+    authenticate( token ) {
+        const supplied_hash = createHash( `sha256` ).update( token ).digest()
+        const match = this.keys().find( key => timingSafeEqual( supplied_hash, Buffer.from( key.token_sha256, `hex` ) ) )
+
+        // API keys never write, whatever the browser token's role
+        return match ? { api_key: match.name, role: `read` } : null
     }
 }
 

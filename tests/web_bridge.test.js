@@ -17,6 +17,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 
 import { create_web_bridge, open_web_bridge, web_bridge_initialized } from '../src/web_bridge/bridge.js'
+import { add_api_key, list_api_keys, remove_api_key } from '../src/web_bridge/api_keys.js'
 import { initialize_web_bridge } from '../src/web_bridge/init.js'
 
 const temporary_directories = []
@@ -104,6 +105,35 @@ describe( `web bridge initialization`, () => {
 
         expect( () => initialize_web_bridge( { directory } ) ).toThrow( `not a real directory` )
         expect( lstatSync( outside ).mode & 0o777 ).toBe( 0o700 )
+    } )
+
+} )
+
+describe( `web API keys`, () => {
+
+    it( `stores only hashes, survives token rotation and revokes by name`, () => {
+        const directory = make_directory()
+        expect( () => add_api_key( `grafana`, { directory } ) ).toThrow( `babysit web init first` )
+
+        const { paths } = initialize_web_bridge( { directory } )
+        const key = add_api_key( `grafana`, { directory, random_bytes: () => Buffer.alloc( 32, 3 ) } )
+        const stored = readFileSync( paths.api_keys, `utf8` )
+
+        expect( key ).toStartWith( `bsk_` )
+        expect( stored ).not.toContain( key )
+        expect( lstatSync( paths.api_keys ).mode & 0o777 ).toBe( 0o600 )
+        expect( list_api_keys( directory ).map( ( { name } ) => name ) ).toEqual( [ `grafana` ] )
+        expect( () => add_api_key( `grafana`, { directory } ) ).toThrow( `already exists` )
+        expect( () => add_api_key( `bad name`, { directory } ) ).toThrow( `API key name` )
+
+        // Rotating the browser token keeps API keys
+        initialize_web_bridge( { directory } )
+        expect( list_api_keys( directory ) ).toHaveLength( 1 )
+        expect( web_bridge_initialized( directory ) ).toBe( true )
+
+        remove_api_key( `grafana`, { directory } )
+        expect( list_api_keys( directory ) ).toEqual( [] )
+        expect( () => remove_api_key( `grafana`, { directory } ) ).toThrow( `No API key named grafana` )
     } )
 
 } )

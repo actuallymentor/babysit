@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes as RouterRoutes, useParams } from 'react-router-dom'
+import { ApiDocsPage } from '../components/pages/ApiDocsPage.jsx'
 import { SessionPage } from '../components/pages/SessionPage.jsx'
 import { SessionsPage } from '../components/pages/SessionsPage.jsx'
 
@@ -13,6 +14,7 @@ export function Routes( { role } ) {
     return <RouterRoutes>
         <Route element={ <SessionsPage role={ role } /> } path="/" />
         <Route element={ <SessionRoute role={ role } /> } path="/sessions/:session_id" />
+        <Route element={ <ApiDocsPage /> } path="/api-docs" />
         <Route element={ <Navigate replace to="/" /> } path="*" />
     </RouterRoutes>
 }
