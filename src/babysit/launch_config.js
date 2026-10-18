@@ -7,8 +7,8 @@ import { parse_args } from '../cli/parse.js'
 export const LAUNCH_MODES = [ `regular`, `sandbox`, `mudbox` ]
 export const LAUNCH_TOGGLES = [ `yolo`, `docker`, `adb`, `clone`, `loop`, `ignore_host_agents_md` ]
 
-// Every key a `launch:` section declares. `name` is the only optional one:
-// directory launches derive it from the yaml path.
+// Every key a `launch:` section accepts. Only `agent` is required; the rest fall
+// back to the defaults, and `name` to the yaml path in directory launches.
 export const LAUNCH_KEYS = [ `agent`, `name`, `mode`, ...LAUNCH_TOGGLES, `ports`, `log`, `args` ]
 
 /**
@@ -61,9 +61,9 @@ export const launch_key_problem = ( key, value ) => CHECKS[ key ]?.( value ) ?? 
 /**
  * Validate a `launch:` section.
  *
- * Strict mode (directory launches) requires every key but `name`, each with a
- * non-null value; lists may be empty. Lenient mode (menu prefill) accepts a
- * partial section and fills the gaps with defaults.
+ * Strict mode (directory launches) requires the section and its `agent`, and
+ * rejects bad values and unknown keys; everything else falls back to the
+ * defaults. Lenient mode (menu prefill) also accepts a section without an agent.
  *
  * @param {Object|null} raw - Raw section
  * @param {Object} [options]
@@ -87,7 +87,7 @@ export const validate_launch = ( raw, { strict = false } = {} ) => {
 
         const present = Object.hasOwn( raw, key ) && raw[ key ] !== null
         if( !present ) {
-            if( strict && key !== `name` ) errors.push( `launch.${ key } is required` )
+            if( strict && key === `agent` ) errors.push( `launch.${ key } is required` )
             continue
         }
 
@@ -171,34 +171,42 @@ export const build_launch_yaml = launch => {
     const list = items => `[${ items.map( item => JSON.stringify( String( item ) ) ).join( `, ` ) }]`
     const log = typeof launch.log === `string` ? JSON.stringify( launch.log ) : launch.log
 
+    // Defaults are written commented: they apply until the line is uncommented.
+    // The agent is the one key a directory launch needs, so it is always live.
+    const defaults = default_launch()
+    const entry = ( key, value ) => {
+        const is_default = key !== `agent` && JSON.stringify( launch[ key ] ) === JSON.stringify( defaults[ key ] )
+        return `${ is_default ? `# ` : `` }${ key }: ${ value }`
+    }
+
     return `# How the session starts. \`babysit --config DIR/\` starts one session per yaml in
-# DIR and requires every key below except name (lists may be empty); a bare
+# DIR and needs only agent; commented keys show their defaults. A bare
 # \`babysit --config FILE\` opens the launch menu with these values.
 launch:
     # ${ SUPPORTED_AGENTS.join( ` | ` ) }
-    agent: ${ launch.agent }
+    ${ entry( `agent`, launch.agent ) }
 
     # Directory launches default to the yaml path relative to DIR.
     ${ launch.name ? `name: ${ JSON.stringify( launch.name ) }` : `# name: my session` }
 
     # regular | sandbox | mudbox; clone needs regular.
-    mode: ${ launch.mode }
+    ${ entry( `mode`, launch.mode ) }
 
-    yolo: ${ launch.yolo }
-    docker: ${ launch.docker }
-    adb: ${ launch.adb }
-    clone: ${ launch.clone }
-    loop: ${ launch.loop }
-    ignore_host_agents_md: ${ launch.ignore_host_agents_md }
+    ${ entry( `yolo`, launch.yolo ) }
+    ${ entry( `docker`, launch.docker ) }
+    ${ entry( `adb`, launch.adb ) }
+    ${ entry( `clone`, launch.clone ) }
+    ${ entry( `loop`, launch.loop ) }
+    ${ entry( `ignore_host_agents_md`, launch.ignore_host_agents_md ) }
 
     # PORT or HOST:CONTAINER entries.
-    ports: ${ list( launch.ports ) }
+    ${ entry( `ports`, list( launch.ports ) ) }
 
     # false, true for the default path, or a file path.
-    log: ${ log }
+    ${ entry( `log`, log ) }
 
     # Passed to the agent CLI as-is, e.g. ["--model", "opus"].
-    args: ${ list( launch.args ) }
+    ${ entry( `args`, list( launch.args ) ) }
 `
 
 }

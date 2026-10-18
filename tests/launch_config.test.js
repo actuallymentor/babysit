@@ -22,13 +22,13 @@ afterEach( () => rmSync( root, { recursive: true, force: true } ) )
 
 describe( `launch: section`, () => {
 
-    it( `strict mode requires every key but name, never null`, () => {
+    it( `strict mode requires the section and its agent; other keys default`, () => {
         expect( validate_launch( default_launch(), { strict: true } ).errors ).toEqual( [] )
 
-        const { errors } = validate_launch( { agent: `claude`, yolo: null, ports: [] }, { strict: true } )
-        expect( errors ).toContain( `launch.yolo is required` )
-        expect( errors ).toContain( `launch.args is required` )
-        expect( errors.some( error => error.includes( `launch.name` ) ) ).toBe( false )
+        const { errors, launch } = validate_launch( { agent: `codex`, yolo: null }, { strict: true } )
+        expect( errors ).toEqual( [] )
+        expect( launch ).toEqual( default_launch( { agent: `codex` } ) )
+        expect( validate_launch( { yolo: true }, { strict: true } ).errors ).toEqual( [ `launch.agent is required` ] )
 
         expect( validate_launch( null, { strict: true } ).errors ).toEqual( [ `missing launch: section` ] )
     } )
@@ -76,23 +76,26 @@ describe( `launch: section`, () => {
         expect( launch ).toMatchObject( { agent: `claude`, clone: true, loop: true, name: `fix "it"`, mode: `regular` } )
 
         const parsed = parse( build_launch_yaml( launch ) ).launch
-        expect( parsed ).toEqual( launch )
-        expect( parse( build_launch_yaml( default_launch( { log: `a b.log`, args: [ `--model`, `x` ] } ) ) ).launch ).toEqual( default_launch( { log: `a b.log`, args: [ `--model`, `x` ] } ) )
-        expect( parse( build_launch_yaml( default_launch() ) ).launch ).not.toHaveProperty( `name` )
+        // Defaults are commented out, so the live keys are the ones that differ
+        expect( parsed ).toEqual( { agent: `claude`, clone: true, loop: true, name: `fix "it"` } )
+        expect( default_launch( parsed ) ).toEqual( launch )
+        expect( default_launch( parse( build_launch_yaml( default_launch( { log: `a b.log`, args: [ `--model`, `x` ] } ) ) ).launch ) ).toEqual( default_launch( { log: `a b.log`, args: [ `--model`, `x` ] } ) )
+        expect( parse( build_launch_yaml( default_launch() ) ).launch ).toEqual( { agent: `claude` } )
     } )
 
 } )
 
 describe( `launch: consumers`, () => {
 
-    it( `init writes the menu's choice uncommented`, async () => {
+    it( `init writes the menu's non-default choices live and defaults commented`, async () => {
         const messages = []
         await cmd_init( { session_id: `team.yaml` }, {
             choose: async () => command_to_launch( parse_args( [ `codex`, `--yolo`, `--docker` ] ) ),
             write: write_default_config, cwd: root, print: message => messages.push( message ),
         } )
         const { launch } = parse( readFileSync( join( root, `team.yaml` ), `utf8` ) )
-        expect( launch ).toMatchObject( { agent: `codex`, yolo: true, docker: true, adb: false } )
+        expect( launch ).toEqual( { agent: `codex`, yolo: true, docker: true } )
+        expect( readFileSync( join( root, `team.yaml` ), `utf8` ) ).toContain( `# adb: false` )
         expect( validate_launch( launch, { strict: true } ).errors ).toEqual( [] )
         expect( messages.at( -1 ) ).toBe( `Use it with: babysit --config team.yaml` )
 

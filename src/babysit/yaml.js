@@ -14,8 +14,8 @@ const comment_block = ( text, indent = `        ` ) => String( text ).split( `\n
 
 const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ), launch = default_launch() } = {} ) => `# babysit.yaml
 #
-# Babysit configuration. Below launch:, everything is commented out; the values
-# shown are the defaults. Uncomment a line to change it. Delete this file to go
+# Babysit configuration. Only launch.agent and the launch keys you changed are
+# live; every other value shown is a default. Uncomment a line to change it. Delete this file to go
 # back to the defaults entirely.
 
 ${ build_launch_yaml( launch ) }

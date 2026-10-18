@@ -180,9 +180,9 @@ babysit:
         expect( rules[0].on.value ).toBe( `test string` )
     } )
 
-    it( `returns a default yaml with only launch: live, documenting every setting`, () => {
+    it( `returns a default yaml with only the agent live, documenting every setting`, () => {
         const yaml = get_default_yaml()
-        expect( parse( yaml ) ).toEqual( { launch: default_launch() } )
+        expect( parse( yaml ) ).toEqual( { launch: { agent: default_launch().agent } } )
         expect( validate_launch( parse( yaml ).launch, { strict: true } ).errors ).toEqual( [] )
         for( const key of [ `initial_prompt`, `idle_timeout_s`, `yolo_approve_dangerous_commands`, `isolate_dependencies`, `clone:`, `commands:`, `on: idle`, `===`, `--loop` ] ) {
             expect( yaml ).toContain( key )

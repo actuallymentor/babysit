@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { parse } from 'yaml'
+import { parse, stringify } from 'yaml'
 
 import { build_launch_yaml, default_launch } from '../src/babysit/launch_config.js'
 import { cmd_audit, line_diff, strict_errors, yaml_indent } from '../src/cli/audit.js'
@@ -19,6 +19,8 @@ afterEach( () => {
 } )
 
 const write = ( file, text ) => writeFileSync( join( dir, file ), text )
+// Every launch key live, for tests that edit one value
+const full_yaml = ( overrides = {} ) => stringify( { launch: default_launch( overrides ) }, { indent: 4 } )
 const read = file => readFileSync( join( dir, file ), `utf-8` )
 
 // A hand-written file: comments, custom order, two-space indent, gaps to fill
@@ -35,6 +37,9 @@ babysit:
   - on: idle
     do: "Keep going"
 `
+
+// PARTIAL with one bad value, so strict validation fails
+const BROKEN = PARTIAL.replace( `mode: regular`, `mode: turbo` )
 
 /**
  * Run the audit like the CLI does, answering prompts from a table.
@@ -71,22 +76,31 @@ describe( `babysit audit`, () => {
         expect( cmd.flags.yes ).toBe( true )
     } )
 
-    it( `fills missing keys with defaults and keeps comments, order and indent`, async () => {
+    it( `writes answered defaults as commented lines, keeping comments, order and indent`, async () => {
         write( `review.yaml`, PARTIAL )
-        const { code, output } = await audit( { answers: [ [ /^ *Write/, `y` ] ] } )
+        // Answer yes to docker only; everything else takes the default
+        const { code, output } = await audit( { answers: [ [ /launch\.docker/, `y` ], [ /^ *Write/, `y` ] ] } )
 
         const text = read( `review.yaml` )
         expect( code ).toBe( 0 )
-        expect( output ).toContain( `launch.docker is required` )
         expect( strict_errors( text ) ).toEqual( [] )
         for( const comment of [ `# My review session`, `# who does the work`, `# the fast one`, `# keep these rules` ] ) expect( text ).toContain( comment )
-        // Existing values untouched; new keys slot in canonical order
-        expect( text ).toContain( `  yolo: true\n  mode: regular\n  docker: false\n` )
-        expect( text ).toContain( `  ports: [ 3000 ]\n  log: false\n  args: []\n` )
+        // Existing values untouched; the non-default is live, defaults are commented in canonical order
+        expect( text ).toContain( `  yolo: true\n  mode: regular\n  docker: true\n  # adb: false\n  # clone: false\n  # loop: false\n  # ignore_host_agents_md: false\n  ports: [ 3000 ]\n` )
+        expect( parse( text ).launch ).not.toHaveProperty( `adb` )
+        // ports, log and args are never added
+        expect( text ).not.toMatch( /log:|args:/ )
         expect( text ).toMatch( /babysit:\n {2}- on: idle/ )
         // Diff shows only additions
-        expect( output ).toContain( `+   docker: false` )
+        expect( output ).toContain( `+   docker: true` )
         expect( output ).not.toMatch( /^ {2}- {3}/m )
+    } )
+
+    it( `does not ask again about a key an earlier run left commented`, async () => {
+        write( `a.yaml`, PARTIAL )
+        await audit( { answers: [ [ /^ *Write/, `y` ] ] } )
+        const { asked } = await audit()
+        expect( asked ).toEqual( [] )
     } )
 
     it( `asks for a missing agent instead of assuming claude`, async () => {
@@ -98,7 +112,7 @@ describe( `babysit audit`, () => {
     } )
 
     it( `resets an invalid value on y and keeps it on N`, async () => {
-        write( `a.yaml`, build_launch_yaml( default_launch() ).replace( `mode: regular`, `mode: turbo` ).replace( `yolo: false`, `yolo: maybe` ) )
+        write( `a.yaml`, full_yaml().replace( `mode: regular`, `mode: turbo` ).replace( `yolo: false`, `yolo: maybe` ) )
         const { code, output } = await audit( { answers: [ [ /launch\.mode/, `y` ], [ /Write/, `y` ] ] } )
 
         const launch = parse( read( `a.yaml` ) ).launch
@@ -115,7 +129,7 @@ describe( `babysit audit`, () => {
     } )
 
     it( `removes unknown keys one by one`, async () => {
-        write( `a.yaml`, build_launch_yaml( default_launch() ).replace( `    yolo: false\n`, `    yolo: false\n    turbo: true\n    colour: red\n` ) )
+        write( `a.yaml`, full_yaml().replace( `    yolo: false\n`, `    yolo: false\n    turbo: true\n    colour: red\n` ) )
         const { code } = await audit( { answers: [ [ /launch\.turbo/, `y` ], [ /Write/, `y` ] ] } )
         const launch = parse( read( `a.yaml` ) ).launch
         expect( launch ).not.toHaveProperty( `turbo` )
@@ -138,7 +152,8 @@ describe( `babysit audit`, () => {
 
         const parsed = parse( read( `a.yaml` ) )
         expect( code ).toBe( 0 )
-        expect( parsed.launch ).toMatchObject( { mode: `sandbox`, yolo: true, docker: true, adb: false, clone: false, loop: false, ignore_host_agents_md: false, log: false, args: [] } )
+        expect( parsed.launch ).toMatchObject( { agent: `claude`, mode: `sandbox`, yolo: true, docker: true } )
+        expect( read( `a.yaml` ) ).toContain( `# adb: false\n    # loop: false\n    # ignore_host_agents_md: false` )
         // Sandbox cannot clone, so clone is not asked; ports, log and args never are
         expect( asked.filter( question => /\bis missing|Mode \[/.test( question ) ).map( question => question.match( /launch\.(\w+)/ )?.[1] ?? `mode` ) )
             .toEqual( [ `mode`, `yolo`, `docker`, `adb`, `loop`, `ignore_host_agents_md` ] )
@@ -158,19 +173,19 @@ describe( `babysit audit`, () => {
         write( `a.yaml`, PARTIAL )
         const { code } = await audit( { answers: [ [ /Write/, `n` ] ] } )
         expect( read( `a.yaml` ) ).toBe( PARTIAL )
-        expect( code ).toBe( 1 )
+        expect( code ).toBe( 0 )
     } )
 
     it( `audits exactly the directory-launch set`, async () => {
         write( `good.yaml`, build_launch_yaml( default_launch() ) )
-        write( `bad.yml`, PARTIAL )
+        write( `bad.yml`, BROKEN )
         write( `notes.txt`, `launch: nope` )
         mkdirSync( join( dir, `nested` ) )
         writeFileSync( join( dir, `nested`, `deep.yaml` ), `launch: 1` )
 
         const { code, output } = await audit( { interactive: false } )
         expect( output ).toContain( `good.yaml: ok` )
-        expect( output ).toContain( `bad.yml: 7 problems` )
+        expect( output ).toContain( `bad.yml: 1 problem` )
         expect( output ).not.toContain( `notes.txt` )
         expect( output ).not.toContain( `deep.yaml` )
         expect( output ).toContain( `1 of 2 failing: bad.yml` )
@@ -178,10 +193,10 @@ describe( `babysit audit`, () => {
     } )
 
     it( `only reports without a terminal`, async () => {
-        write( `a.yaml`, PARTIAL )
+        write( `a.yaml`, BROKEN )
         const { code, asked } = await audit( { interactive: false } )
         expect( asked ).toEqual( [] )
-        expect( read( `a.yaml` ) ).toBe( PARTIAL )
+        expect( read( `a.yaml` ) ).toBe( BROKEN )
         expect( code ).toBe( 1 )
 
         write( `a.yaml`, build_launch_yaml( default_launch() ) )
