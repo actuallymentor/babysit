@@ -4,6 +4,7 @@ import { join } from 'path'
 
 import { log } from '../utils/log.js'
 import { collect_usage } from '../docker/assets/usage/command.mjs'
+import { claude_account_entries } from '../cli/claude_accounts.js'
 import { web_bridge_paths, WEB_BRIDGE_DIR, WEB_BRIDGE_PROTOCOL } from './paths.js'
 import { write_atomic_json } from './files.js'
 
@@ -49,6 +50,8 @@ export const account_usage_document = report => ( {
     agents: ( report.agents || [] ).map( agent => ( {
         agent: text( agent.agent ) || `agent`,
         provider: text( agent.provider ),
+        // Claude subscription name when two or more accounts exist
+        account: text( agent.account ),
         status: [ `ok`, `unavailable`, `unauthenticated`, `error` ].includes( agent.status ) ? agent.status : `error`,
         message: text( agent.message ),
         limits: ( agent.limits || [] ).slice( 0, 12 ).map( safe_limit ),
@@ -118,7 +121,8 @@ export const refresh_account_usage = async ( {
     try {
         // Collection reaches Codex's app-server only without an OAuth token;
         // report that as signed out rather than spawning a token-rotating CLI.
-        const report = await collect( { codex_read: async () => null } )
+        // Claude is split per account (cached readings) when two or more exist
+        const report = await collect( { codex_read: async () => null, claude_accounts: claude_account_entries() } )
         write_atomic_json( path, account_usage_document( report ) )
         release()
         return true

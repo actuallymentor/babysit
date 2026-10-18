@@ -48,6 +48,7 @@ const normalize_account_usage = ( parsed, age_ms ) => {
 
     return {
         agents: parsed.agents.slice( 0, 16 ).map( agent => ( {
+            account: short_text( agent?.account ),
             agent: short_text( agent?.agent ) || `agent`,
             limits: Array.isArray( agent?.limits ) ? agent.limits.slice( 0, 12 ).map( normalize_limit ) : [],
             message: short_text( agent?.message ),

@@ -19,6 +19,7 @@ const report = {
     fetched_at: `2026-10-13T12:00:00.000Z`,
     agents: [ {
         agent: `claude`,
+        account: `work`,
         provider: `anthropic`,
         fetched_at: `2026-10-13T12:00:00.000Z`,
         status: `ok`,
@@ -53,6 +54,7 @@ describe( `web account usage`, () => {
             agents: [ {
                 agent: `claude`,
                 provider: `anthropic`,
+                account: `work`,
                 status: `ok`,
                 message: null,
                 limits: [ {
@@ -69,6 +71,8 @@ describe( `web account usage`, () => {
             } ],
         } )
         expect( await options.codex_read() ).toBeNull()
+        // Claude is split per account through the shared hook
+        expect( typeof options.claude_accounts ).toBe( `function` )
         expect( existsSync( `${ path }.lock` ) ).toBe( false )
     } )
 

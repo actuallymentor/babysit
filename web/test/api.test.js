@@ -381,7 +381,10 @@ test( `status aggregates containers and account usage`, async () => {
     // No host core count: memory counts, CPU stays out of the host-share total
     writeFileSync( join( state_dir, `four.json` ), JSON.stringify( session_document( { container: { ...container( null, 250 ), host_cpus: null }, epoch: `e4`, session_id: `four` } ) ) )
     writeFileSync( join( state_dir, `account-usage.json` ), JSON.stringify( {
-        agents: [ { agent: `claude`, limits: [ { name: `session / 5h`, resets_at: `2026-10-13T15:00:00Z`, token: `x`, used_percent: 42 } ], provider: `anthropic`, status: `ok` } ],
+        agents: [
+            { account: `work`, agent: `claude`, limits: [ { name: `session / 5h`, resets_at: `2026-10-13T15:00:00Z`, token: `x`, used_percent: 42 } ], provider: `anthropic`, status: `ok` },
+            { account: `default`, agent: `claude`, limits: [ { name: `session / 5h`, used_percent: 7 } ], provider: `anthropic`, status: `ok` },
+        ],
         fetched_at: `2026-10-13T12:00:00Z`,
         kind: `account_usage`,
         protocol: 1,
@@ -416,6 +419,7 @@ test( `status aggregates containers and account usage`, async () => {
         assert.equal( status.body.usage.stale, false )
         assert.equal( status.body.usage.agents[ 0 ].limits[ 0 ].used_percent, 42 )
         assert.equal( `token` in status.body.usage.agents[ 0 ].limits[ 0 ], false )
+        assert.deepEqual( status.body.usage.agents.map( agent => agent.account ), [ `work`, `default` ] )
         assert.ok( Date.parse( status.body.generated_at ) )
 
         // A day-old usage file is dropped; sessions still report

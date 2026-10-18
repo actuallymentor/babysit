@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.44.4 — 2026-10-18
+
+### Fixed
+- Web interface account usage showed one Claude entry however many accounts you had. The host refresh now splits Claude per account (`babysit auth accounts`), and the panel labels each one (`Claude · work`).
+
+### Changed
+- The web Account usage panel is collapsible (open by default).
+
 ## 1.44.3 — 2026-10-18
 
 ### Changed
