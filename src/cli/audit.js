@@ -217,7 +217,26 @@ const insert_in_order = ( doc, map, key, value, order ) => {
 }
 
 /**
- * Audit one yaml in place: list problems, apply fixes, ask about missing
+ * Record a default as a commented `key: value` line at its canonical position,
+ * on the next present key (or the end of the map). Defaults stay commented, like
+ * `babysit init` writes them, and the line marks the key as already decided.
+ * @param {Object} map - YAMLMap
+ * @param {string} key - Key name in `LAUNCH_KEYS`
+ * @param {*} value - Default value
+ */
+const insert_commented = ( map, key, value ) => {
+
+    const line = ` ${ key }: ${ Array.isArray( value ) ? `[]` : value }`
+    const later = LAUNCH_KEYS.slice( LAUNCH_KEYS.indexOf( key ) + 1 )
+    const next = map.items.find( pair => later.includes( pair.key?.value ) )
+
+    if( next ) next.key.commentBefore = [ line, next.key.commentBefore ].filter( Boolean ).join( `\n` )
+    else map.comment = [ map.comment, line ].filter( Boolean ).join( `\n` )
+
+}
+
+/**
+ * Audit one yaml in place: list problems, apply fixes, ask about unset
  * behaviour keys, show the diff, write. Comments and order survive through parseDocument.
  * @param {{ path: string, file: string }} target - Absolute path and display name
  * @param {Object} options
@@ -304,30 +323,43 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
         }
     }
 
-    // Required keys. A terminal is asked about the ones that change behaviour; ports,
-    // log and args, --yes and non-TTY runs take the defaults. The agent is always chosen.
+    // Only the agent is required. Other missing keys mean "default"; a terminal is
+    // asked about the ones that change behaviour (ports, log and args stay out of it),
+    // unless an earlier audit or `babysit init` left the key as a commented line.
+    const decided = key => new RegExp( `^[ \\t]+# ?${ key }:`, `m` ).test( text )
     const asking = interactive && !yes
-    for( const key of LAUNCH_KEYS.filter( key => key !== `name` && !present( key ) ) ) {
 
-        let value = defaults[ key ]
-        if( key === `agent` ) value = await choose_agent( `is missing` )
-
-        if( asking && key === `mode` ) {
-            print( `  launch.mode is missing; pick one:` )
-            value = await pick_mode( ask, print )
+    if( !present( `agent` ) ) {
+        const agent = await choose_agent( `is missing` )
+        if( agent ) {
+            if( launch.has( `agent` ) ) launch.set( `agent`, agent )
+            else insert_in_order( doc, launch, `agent`, agent, LAUNCH_KEYS )
         }
+    }
+
+    const defaulted = []
+    for( const key of [ `mode`, ...Object.keys( TOGGLE_QUESTIONS ) ].filter( key => asking && !present( key ) && !decided( key ) ) ) {
 
         // A container mode cannot clone, so there is nothing to ask
-        const skip_clone = key === `clone` && value_of( `mode` ) !== `regular`
-        if( asking && key in TOGGLE_QUESTIONS && !skip_clone ) {
+        if( key === `clone` && ( value_of( `mode` ) ?? defaults.mode ) !== `regular` ) continue
+
+        let value
+        if( key === `mode` ) {
+            print( `  launch.mode is missing; pick one:` )
+            value = await pick_mode( ask, print )
+        } else {
             value = /^y(es)?$/i.test( await ask( `  launch.${ key } is missing. ${ TOGGLE_QUESTIONS[ key ] } [y/N] ` ) )
         }
 
-        if( value === null ) continue
-        if( launch.has( key ) ) launch.set( key, value_node( doc, value ) )
+        // Non-defaults go in live; defaults wait to become commented lines
+        if( value === defaults[ key ] ) defaulted.push( key )
+        else if( launch.has( key ) ) launch.set( key, value_node( doc, value ) )
         else insert_in_order( doc, launch, key, value, LAUNCH_KEYS )
 
     }
+
+    // Last key first, so each commented line lands above the ones after it
+    defaulted.reverse().forEach( key => insert_commented( launch, key, defaults[ key ] ) )
 
     // Cross-key rule: clone needs regular mode
     const { launch: settled } = validate_launch( launch.toJSON() )
@@ -363,8 +395,8 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
 
 /**
  * `babysit audit --config FILE|DIR/`: bring yaml files up to what a directory
- * launch requires. Non-interactive runs only report; `--yes` applies default
- * fills and per-item fixes without asking.
+ * launch requires. Non-interactive runs only report; `--yes` applies per-item
+ * fixes without asking.
  * @param {Object} cmd - Parsed command; `flags.config` is FILE or DIR, `flags.yes`
  * @param {Object} [deps] - Injectable seams
  * @returns {Promise<number>} Exit code: 0 when every file passes afterwards

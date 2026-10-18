@@ -121,15 +121,15 @@ describe( `babysit --config DIR/`, () => {
         expect( confirmed.started ).toHaveLength( 1 )
     } )
 
-    it( `refuses the whole directory when any yaml is incomplete`, async () => {
+    it( `refuses the whole directory when any yaml is invalid`, async () => {
         write( `api.yaml` )
-        writeFileSync( join( dir, `bad.yaml` ), `launch:\n    agent: claude\n    yolo:\n` )
+        writeFileSync( join( dir, `bad.yaml` ), `launch:\n    agent: claude\n    yolo: maybe\n` )
         writeFileSync( join( dir, `worse.yaml` ), `launch: [` )
 
         const { outcome, started } = await run()
-        await expect( outcome ).rejects.toThrow( /bad\.yaml: launch\.yolo is required[\s\S]*worse\.yaml: / )
+        await expect( outcome ).rejects.toThrow( /bad\.yaml: launch\.yolo must be true or false[\s\S]*worse\.yaml: / )
         expect( started ).toEqual( [] )
-        expect( read_launch_dir( dir ).errors.length ).toBeGreaterThan( 2 )
+        expect( read_launch_dir( dir ).errors ).toHaveLength( 2 )
     } )
 
     it( `keeps the extension when a file name is all digits, and follows symlinked yaml`, () => {

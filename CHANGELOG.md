@@ -3,7 +3,8 @@
 ## 1.44.3 — 2026-10-18
 
 ### Changed
-- `babysit audit` asks about missing keys that change behaviour (`mode`, `yolo`, `docker`, `adb`, `clone`, `loop`, `ignore_host_agents_md`) instead of silently defaulting them, and no longer offers optional keys (`name`, `config:` tuning, `babysit:` rules). `--yes` and non-TTY runs still take the defaults.
+- `launch:` keys now default: a directory launch needs only the section and its `agent`; omitted keys take their defaults. `babysit init` writes keys at their default commented out and non-defaults live; `config:` already ships commented.
+- `babysit audit` asks about unset keys that change behaviour (`mode`, `yolo`, `docker`, `adb`, `clone`, `loop`, `ignore_host_agents_md`): non-default answers are written live, defaults as commented lines that later runs skip. It no longer offers optional keys (`name`, `config:` tuning, `babysit:` rules), and `--yes` / non-TTY runs add nothing.
 
 ## 1.44.2 — 2026-10-18
 

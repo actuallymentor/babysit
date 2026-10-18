@@ -117,10 +117,10 @@ Examples:
 Writes a default config. Without a file name it asks for one (default
 babysit.yaml), then opens the launch menu: its choice becomes the live launch:
 section (agent, name, mode, yolo, docker, adb, clone, loop,
-ignore_host_agents_md, ports, log, args). Everything else is commented out.
+ignore_host_agents_md, ports, log, args). Keys at their default are written commented; everything else is commented out.
 
 launch: drives \`babysit --config DIR/\`, which starts one detached session per
-DIR/*.yaml (every key but name required; name defaults to the file name),
+DIR/*.yaml (only agent required, other keys default; name defaults to the file name),
 shows an overview, asks y/N (--yes skips), and skips files whose session is
 still running. \`babysit --config FILE\` opens the menu with its values.
 
@@ -143,16 +143,18 @@ Checks yaml files against what \`babysit --config DIR/\` requires (every launch:
 key but name, valid values) and fixes them in place, keeping comments and order.
 DIR/ means every DIR/*.yaml|yml, the same set a directory launch reads.
 
-Per file: lists problems and asks about each missing key that changes behaviour
-(agent, mode, yolo, docker, adb, clone, loop, ignore_host_agents_md; the agent
-is never assumed). ports, log and args get empty defaults. Offers y/N per
+Per file: lists problems and asks about the agent when missing (never assumed)
+and about unset keys that change behaviour (mode, yolo, docker, adb, clone,
+loop, ignore_host_agents_md). Non-default answers are written live, defaults as
+commented lines that are not asked about again. ports, log and args are never
+added. Offers y/N per
 invalid value (reset to default) and unknown key (remove). Optional keys (name,
 config:, babysit:) are never offered. Shows a diff, then Write? [Y/n].
 
 Without a terminal it only reports. Exit 1 while any file still fails.
 
 Options:
-  --yes      Fill missing keys with defaults and apply every fix without asking.
+  --yes      Apply every fix without asking, add nothing.
              A missing agent still needs a terminal.
 
 Examples:

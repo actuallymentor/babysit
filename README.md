@@ -125,7 +125,7 @@ babysit audit --config agents/      # every agents/*.yaml, interactive
 babysit audit --config api.yaml --yes
 ```
 
-Fills missing required `launch:` keys: asks for `agent`, `mode` and the on/off switches (yolo, docker, adb, clone, loop, ignore_host_agents_md); `ports`, `log`, `args` get empty defaults. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: defaults for missing keys, no questions.
+Asks for a missing `agent`, and for unset `mode` and on/off switches (yolo, docker, adb, clone, loop, ignore_host_agents_md): a non-default answer is written live, the default as a commented line (not asked again). `ports`, `log`, `args` are never added. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: fixes only, no questions.
 
 ### Claude accounts
 
@@ -443,7 +443,7 @@ launch:
 `babysit --config DIR/` runs every `DIR/*.yaml` / `*.yml` (not recursive), compose-style:
 
 - Workspace: the current directory, for every session
-- Strict: every key except `name` must be present and non-null; `[]` is fine. One bad file aborts the whole run
+- Strict: the `launch:` section and its `agent` must exist and every value must be valid; omitted keys take their defaults (what `babysit init` writes commented). One bad file aborts the whole run
 - Overview of each file (start/running, name, agent, flags), then `Start N sessions? [y/N]`; `--yes` skips, non-TTY requires it
 - Never duplicates: a file whose session (matched by yaml realpath, incl. sessions using an implicit `./babysit.yaml`) is still live is skipped, re-checked right before each start; stopped or dead ones start fresh. Symlinked yaml counts
 - Sessions start one at a time, detached; a failure skips that file only. In-launch prompts are answered by the overview, and an unauthenticated agent fails its file instead of asking
