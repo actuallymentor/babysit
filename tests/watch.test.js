@@ -207,7 +207,7 @@ describe( `cmd_watch`, () => {
     it( `redraws sessions plus usage, refreshing usage on its own cadence`, async () => {
         let now = NOW
         const events = []
-        const output = await capture_console( () => cmd_watch( { flags: {} }, {
+        const output = await capture_console( () => cmd_watch( { flags: { all: true } }, {
             rounds: 3,
             now_fn: () => now,
             collect_fn: async options => {
@@ -292,8 +292,37 @@ describe( `cmd_watch`, () => {
 
     } )
 
+    it( `shows no usage panel by default`, async () => {
+        let rendered = 0
+        const output = await capture_console( () => cmd_watch( { flags: {} }, {
+            rounds: 2,
+            collect_fn: async () => report,
+            accounts_fn: () => ``,
+            render_sessions_fn: async () => rendered++,
+            write_fn: () => {},
+            wait_fn: tick,
+        } ) )
+        expect( rendered ).toBe( 2 )
+        expect( output ).not.toContain( `Account usage` )
+    } )
+
+    it( `shows only the usage panel with --usage`, async () => {
+        const events = []
+        const output = await capture_console( () => cmd_watch( { flags: { usage: true } }, {
+            rounds: 2,
+            collect_fn: async () => report,
+            accounts_fn: () => ``,
+            render_sessions_fn: async () => events.push( `render` ),
+            write_fn: text => events.push( text ),
+            wait_fn: tick,
+        } ) )
+        expect( events ).toEqual( [ `\x1b[H\x1b[J`, `\x1b[H\x1b[J` ] )
+        expect( output ).toContain( `Account usage` )
+        expect( output ).toContain( `Ctrl+C to stop` )
+    } )
+
     it( `keeps drawing when a usage refresh fails`, async () => {
-        const output = await capture_console( () => cmd_watch( {}, {
+        const output = await capture_console( () => cmd_watch( { flags: { usage: true } }, {
             rounds: 2,
             collect_fn: async () => {
                 throw new Error( `offline` )

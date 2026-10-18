@@ -24,6 +24,12 @@ describe( `parse_args`, () => {
         expect( agent_cmd.passthrough ).toContain( `--all` )
     } )
 
+    it( `scopes --usage to babysit watch`, () => {
+        expect( parse_args( [ `watch`, `--usage` ] ).flags ).toMatchObject( { usage: true, all: false } )
+        expect( parse_args( [ `watch`, `--all` ] ).flags ).toMatchObject( { usage: false, all: true } )
+        expect( parse_args( [ `claude`, `--usage` ] ) ).toMatchObject( { flags: { usage: false }, passthrough: [ `--usage` ] } )
+    } )
+
     it( `scopes -n to the resume history listing`, () => {
         expect( parse_args( [ `resume`, `-n`, `25` ] ) ).toMatchObject( { verb: `resume`, flags: { limit: 25 }, passthrough: [] } )
         expect( parse_args( [ `resume`, `--all`, `-n`, `3` ] ).flags ).toMatchObject( { all: true, limit: 3 } )
