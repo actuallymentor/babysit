@@ -42,6 +42,7 @@ Usage:
   babysit loop                         Inside a session: toggle --loop (list flags and tmux bar follow)
   babysit usage [--json]               Account usage and limits, on host or in container
   babysit web init                     Initialize or rotate babysit-web access
+  babysit web key add|list|remove      Read-only API keys for the babysit-web JSON API
   babysit doctor --auth [agent|all]    Verify real agent authentication
   babysit auth [status]                Show cached authentication ages and the checker state
   babysit auth check [agent] [--force] Re-verify logins quietly (what the checker runs); --force probes now

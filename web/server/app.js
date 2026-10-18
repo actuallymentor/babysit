@@ -1,8 +1,8 @@
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { basename, extname, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { log } from 'mentie'
-import { AccessStore, cookie_value, LoginLimiter, SessionStore } from './auth.js'
+import { AccessStore, ApiKeyStore, cookie_value, LoginLimiter, SessionStore } from './auth.js'
 import { BridgeStore } from './bridge.js'
 
 const COOKIE_NAME = `babysit_web_session`
@@ -140,8 +140,37 @@ const serve_static = ( request, response, pathname, config ) => {
     createReadStream( asset_path ).pipe( response )
 }
 
+/** GET endpoints, shared by browser sessions and API keys. */
+const read_route = ( response, pathname, identity, bridge ) => {
+
+    if( pathname === `/api/me` ) return json( response, 200, { role: identity.role } )
+    if( pathname === `/api/sessions` ) return json( response, 200, { sessions: bridge.summaries() } )
+    if( pathname === `/api/status` ) return json( response, 200, bridge.status() )
+
+    const session_match = pathname.match( /^\/api\/sessions\/([A-Za-z0-9-]+)$/ )
+    if( session_match ) {
+        const state = bridge.session( session_match[ 1 ] )
+        if( !state ) return json( response, 404, { error: `Session is unavailable or stale` } )
+        return json( response, 200, { pending: bridge.pending_for( state ), session: state } )
+    }
+
+    return json( response, 404, { error: `Not found` } )
+
+}
+
+// `Authorization: Bearer <key>` — null when the header carries no bearer token
+const bearer_token = request => request.headers.authorization?.match( /^Bearer\s+(\S+)$/i )?.[ 1 ] || null
+
 const api_route = async ( request, response, pathname, stores, config ) => {
-    const { access, bridge, limiter, sessions } = stores
+    const { access, api_keys, bridge, limiter, sessions } = stores
+
+    // API keys: stateless and read-only, so no cookie, renewal or origin check
+    const bearer = bearer_token( request )
+    if( bearer ) {
+        if( !api_keys.authenticate( bearer ) ) return json( response, 401, { error: `Invalid API key` } )
+        if( request.method !== `GET` ) return json( response, 403, { error: `API keys are read-only` } )
+        return read_route( response, pathname, { role: `read` }, bridge )
+    }
 
     if( request.method === `POST` && !valid_unsafe_origin( request, config ) ) return json( response, 403, { error: `Origin is not allowed` } )
 
@@ -167,22 +196,12 @@ const api_route = async ( request, response, pathname, stores, config ) => {
     // Set-Cookie, passed to writeHead, takes precedence over this one.
     if( sessions.needs_renewal( identity ) ) response.setHeader( `Set-Cookie`, session_cookie( sessions.create( identity ), request, config ) )
 
-    if( request.method === `GET` && pathname === `/api/me` ) return json( response, 200, { role: identity.role } )
-
     if( request.method === `POST` && pathname === `/api/logout` ) {
         sessions.delete( identity )
         return json( response, 200, { ok: true }, { 'Set-Cookie': clear_cookie( request, config ) } )
     }
 
-    if( request.method === `GET` && pathname === `/api/sessions` ) return json( response, 200, { sessions: bridge.summaries() } )
-    if( request.method === `GET` && pathname === `/api/status` ) return json( response, 200, bridge.status() )
-
-    const session_match = pathname.match( /^\/api\/sessions\/([A-Za-z0-9-]+)$/ )
-    if( request.method === `GET` && session_match ) {
-        const state = bridge.session( session_match[ 1 ] )
-        if( !state ) return json( response, 404, { error: `Session is unavailable or stale` } )
-        return json( response, 200, { pending: bridge.pending_for( state ), session: state } )
-    }
+    if( request.method === `GET` ) return read_route( response, pathname, identity, bridge )
 
     const message_match = pathname.match( /^\/api\/sessions\/([A-Za-z0-9-]+)\/messages$/ )
     if( request.method === `POST` && message_match ) {
@@ -207,6 +226,7 @@ const api_route = async ( request, response, pathname, stores, config ) => {
 export const create_app = config => {
     const stores = {
         access: new AccessStore( config.access_file ),
+        api_keys: new ApiKeyStore( config.api_keys_file || join( dirname( config.access_file ), `api-keys.json` ) ),
         bridge: new BridgeStore( config ),
         limiter: new LoginLimiter( { limit: config.login_limit, window_ms: config.login_window_ms } ),
         sessions: new SessionStore( config.session_ttl_ms ),

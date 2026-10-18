@@ -464,6 +464,7 @@ Verdicts are in the monitor log.
 
 ```bash
 babysit web init         # Initialize bridge, print token; rerun to rotate token
+babysit web key add NAME # Read-only API key, shown once; also list / remove NAME
 
 # Local: http://127.0.0.1:3000
 BABYSIT_WEB_UID="$(id -u)" \
@@ -490,11 +491,18 @@ docker compose -f examples/compose.web.yml up -d
 
 Sessions page opens with a host overview: container CPU/MEM totals (share of the Docker host) and account limits per signed-in agent, with reset times. Each card shows its container's CPU · MEM.
 
-| JSON API (cookie auth) | Returns |
+JSON API: browser cookie, or `Authorization: Bearer <key>` with a read-only API key (`babysit web key`). Keys: GET only (POST → 403), hash-only in `access/api-keys.json`, applied without restart, kept across `web init`. Full reference: **API docs** in the app menu.
+
+```bash
+curl -H "Authorization: Bearer $BABYSIT_KEY" https://babysit.example.com/api/status
+```
+
+| JSON API | Returns |
 |---|---|
 | `GET /api/status` | `{ generated_at, sessions[], containers: { sessions, sampled, cpu_percent, memory_bytes, host_cpus, host_memory_bytes }, usage: { fetched_at, stale, agents[]: { agent, provider, status, message, limits[] } } \| null }` |
 | `GET /api/sessions` | `{ sessions[] }`, each with `container: { cpu_percent, memory_bytes, … } \| null` |
 | `GET /api/sessions/:id` | `{ session, pending }` |
+| `GET /api/me` | `{ role }`; `read` for API keys |
 
 - Container figures come from each monitor's 30s `docker stats` cache; `cpu_percent` is a share of the whole host.
 - Account limits: a host monitor refreshes `state/account-usage.json` every 5 min (one fetch across sessions, read-only credentials; `stale` after 15 min, dropped after a day). Claude setup-token-only logins spend one output token per refresh. Codex without an OAuth token reports an error here; use `babysit usage`.

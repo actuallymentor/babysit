@@ -9,12 +9,13 @@ export const WEB_BRIDGE_DIR = process.env.BABYSIT_WEB_BRIDGE_DIR
 /**
  * Resolve every filesystem capability used by the web bridge.
  * @param {string} [root=WEB_BRIDGE_DIR] - Bridge root override
- * @returns {{ root: string, access_dir: string, access: string, state: string, requests: string, inflight: string }}
+ * @returns {{ root: string, access_dir: string, access: string, api_keys: string, state: string, requests: string, inflight: string }}
  */
 export const web_bridge_paths = ( root = WEB_BRIDGE_DIR ) => ( {
     root,
     access_dir: join( root, `access` ),
     access: join( root, `access`, `access.json` ),
+    api_keys: join( root, `access`, `api-keys.json` ),
     state: join( root, `state` ),
     requests: join( root, `requests` ),
     inflight: join( root, `inflight` ),

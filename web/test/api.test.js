@@ -226,6 +226,63 @@ test( `authenticated bridge API`, async () => {
     }
 } )
 
+test( `read-only API keys`, async () => {
+    const fixture = mkdtempSync( join( tmpdir(), `babysit-web-keys-` ) )
+    const state_dir = join( fixture, `state` )
+    const request_dir = join( fixture, `requests` )
+    mkdirSync( state_dir )
+    mkdirSync( request_dir )
+    writeFileSync( join( fixture, `access.json` ), access_document( `correct horse` ) )
+    writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document() ) )
+
+    const server = create_app( {
+        access_file: join( fixture, `access.json` ),
+        allow_insecure_http: true,
+        heartbeat_ttl_ms: 5_000,
+        login_limit: 8,
+        login_window_ms: 60_000,
+        public_origin: null,
+        request_dir,
+        request_ttl_ms: 500,
+        session_ttl_ms: 60_000,
+        state_dir,
+        static_dir: join( fixture, `static` ),
+        trust_proxy: false,
+    } )
+    await new Promise( resolve_listen => server.listen( 0, `127.0.0.1`, resolve_listen ) )
+    const origin = `http://127.0.0.1:${ server.address().port }`
+    const bearer = key => ( { request_headers: { Authorization: `Bearer ${ key }` } } )
+
+    try {
+        // No key file yet: every key is refused
+        assert.equal( ( await api_request( origin, `/api/status`, bearer( `bsk_one` ) ) ).status, 401 )
+
+        // Keys apply without a restart
+        writeFileSync( join( fixture, `api-keys.json` ), JSON.stringify( { protocol: 1, keys: [
+            { name: `grafana`, token_sha256: createHash( `sha256` ).update( `bsk_one` ).digest( `hex` ) },
+        ] } ) )
+
+        const status = await api_request( origin, `/api/status`, bearer( `bsk_one` ) )
+        assert.equal( status.status, 200 )
+        assert.equal( status.body.sessions.length, 1 )
+        assert.equal( status.cookie, undefined )
+        assert.deepEqual( ( await api_request( origin, `/api/me`, bearer( `bsk_one` ) ) ).body, { role: `read` } )
+        assert.equal( ( await api_request( origin, `/api/sessions/session-1`, bearer( `bsk_one` ) ) ).status, 200 )
+        assert.equal( ( await api_request( origin, `/api/status`, bearer( `bsk_two` ) ) ).status, 401 )
+
+        // The browser access token is not an API key
+        assert.equal( ( await api_request( origin, `/api/status`, bearer( `correct horse` ) ) ).status, 401 )
+
+        // Read-only: no messages, even with a matching origin
+        const write = await api_request( origin, `/api/sessions/session-1/messages`, { ...bearer( `bsk_one` ), body: { text: `hi` }, method: `POST` } )
+        assert.equal( write.status, 403 )
+        assert.deepEqual( readdirSync( request_dir ), [] )
+    } finally {
+        await new Promise( resolve_close => server.close( resolve_close ) )
+        rmSync( fixture, { force: true, recursive: true } )
+    }
+} )
+
 test( `production proxy and HTTP cookie policy`, async () => {
     const fixture = mkdtempSync( join( tmpdir(), `babysit-web-proxy-` ) )
     const state_dir = join( fixture, `state` )

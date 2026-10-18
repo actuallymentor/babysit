@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.46.0 — 2026-10-18
+
+### Added
+- Read-only API keys for Babysit Web: `babysit web key add|list|remove NAME`. Send `Authorization: Bearer <key>` to any GET endpoint (`/api/status`, `/api/sessions`, `/api/sessions/:id`, `/api/me`); keys can't send messages. Only hashes are stored, changes apply without a restart, and `babysit web init` keeps them.
+- API docs page in the Babysit Web menu, with copyable curl examples for your own origin.
+
 ## 1.45.0 — 2026-10-18
 
 ### Changed

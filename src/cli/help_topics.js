@@ -428,12 +428,29 @@ Examples:
   babysit auth init --remove
   babysit auth init --claude-token --name work`,
 
-    web: () => `Usage: babysit web init
+    web: () => `Usage: babysit web init | babysit web key add|list|remove [NAME]
 
 Babysit Web is a mobile companion for your sessions (see babysit web init --help).
+Read-only API keys open its JSON API to scripts (see babysit web key --help).
 
-Example:
-  babysit web init`,
+Examples:
+  babysit web init
+  babysit web key add grafana`,
+
+    'web key': () => `Usage: babysit web key add|list|remove [NAME]
+
+Read-only API keys for the Babysit Web JSON API. Keys can read every GET
+endpoint (/api/status, /api/sessions, /api/sessions/:id) but never send
+messages. Only a hash is stored; the key is shown once. Changes apply at once,
+no restart. babysit web init (token rotation) keeps API keys.
+
+Use: curl -H "Authorization: Bearer <key>" https://<origin>/api/status
+Full reference: API docs in the web app menu.
+
+Examples:
+  babysit web key add grafana
+  babysit web key list
+  babysit web key remove grafana`,
 
     'web init': () => `Usage: babysit web init
 

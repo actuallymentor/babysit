@@ -91,6 +91,17 @@ const MenuActions = styled.div`
     gap: 0.5rem;
 `
 
+const MenuLink = styled( Link )`
+    color: var(--primary);
+    font-weight: 700;
+    min-height: 3rem;
+    display: flex;
+    align-items: center;
+    text-decoration: none;
+
+    &:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+`
+
 /** Keeps maintenance and reading controls together, outside the reply workflow. */
 export function AppFrame( { children, has_update, logout, update, force_update, can_install, install, reading } ) {
     const [ menu_open, set_menu_open ] = useState( false )
@@ -169,6 +180,7 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
                         <Button $quiet aria-label="Increase text size" disabled={ reading.text_size === 150 } onClick={ () => reading.resize_text( 10 ) }>+</Button>
                     </div>
                 </TextSize>
+                <MenuLink to="/api-docs">API docs</MenuLink>
                 <MenuActions>
                     { can_install && <Button $quiet disabled={ is_working } onClick={ () => run_action( install ) }>Install app</Button> }
                     <Button $quiet disabled={ is_working } onClick={ () => run_action( force_update ) } title="Clear the app cache and reload">Update app</Button>

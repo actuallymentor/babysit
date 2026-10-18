@@ -191,3 +191,4 @@
 - 2026-10-17: 1.43.0. YOLO approval generalised from two rm wordings to any bottom-anchored Claude prompt whose default is yes; user asked to veto model swaps ("continue with a lower-power model?"), so model/fallback/billing words in question/options stay manual.
 - 2026-10-17: 1.44.1 — watch USAGE column credited the unnamed single-account reading to sessions on a just-added named account (stale report, `!result.account` matched all). Now refresh on account-list change; unnamed entry = default only.
 - 2026-10-18: 1.45.0 — `watch` default drops the usage panel; `--usage` = panel only, `--all` = tree + panel (user's spec). `--all` no longer adds diagnostic columns in watch (repurposed; `list --all` keeps them).
+- 2026-10-18: 1.46.0 — Web read-only API keys (host CLI `babysit web key`, `access/api-keys.json`; access dir is mounted read-only into the web container so keys can't be minted from the UI). API docs page in menu.
