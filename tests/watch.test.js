@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { cmd_watch, format_usage_panel, limit_percent, session_usage_limits, short_limit_name, usage_cell, usage_level, USAGE_REFRESH_MS } from '../src/cli/watch.js'
+import { cmd_watch, format_usage_panel, limit_percent, session_usage_limits, short_limit_name, usage_bar, usage_cell, usage_level, USAGE_REFRESH_MS } from '../src/cli/watch.js'
 import { render_active_sessions } from '../src/cli/list.js'
 
 const capture_console = async fn => {
@@ -187,14 +187,15 @@ describe( `session_usage_limits`, () => {
 
 describe( `usage_cell`, () => {
 
-    it( `labels headroom with the floored remaining %, dim dash without data`, () => {
+    it( `draws headroom as the usage bar, dim dash without data`, () => {
         const marked = { ...report, agents: report.agents.map( result => ( {
             ...result,
             limits: result.limits.map( limit => /min$|five_hour|seven_day/.test( limit.name ) ? { ...limit, kind: `window` } : limit ),
         } ) ) }
         // Claude: 5h at 34% used, 7d opus at 81% used → 19% left
-        expect( usage_cell( marked, { agent: `claude` } ) ).toEqual( { text: `low 19%`, color: `orange` } )
-        expect( usage_cell( marked, { agent: `codex` } ) ).toEqual( { text: `plenty 60%`, color: `green` } )
+        expect( usage_cell( marked, { agent: `claude` } ) ).toMatchObject( { text: `▰▰▰▰▰▰▰▰▱▱` } )
+        expect( usage_cell( marked, { agent: `codex` } ) ).toMatchObject( { text: `▰▰▰▰▱▱▱▱▱▱` } )
+        expect( usage_cell( marked, { agent: `codex` } ).rendered ).toBe( usage_bar( 40 ) )
         expect( usage_cell( marked, { agent: `antigravity` } ) ).toEqual( { text: `—`, color: `dim` } )
         expect( usage_cell( null, { agent: `claude` } ) ).toEqual( { text: `—`, color: `dim` } )
     } )
@@ -262,8 +263,8 @@ describe( `cmd_watch`, () => {
         // The last frame has the report; the first rendered before it landed
         const frame = output.slice( output.lastIndexOf( `Active babysit sessions` ) )
         expect( frame ).toMatch( /MEM\s+USAGE\s+FLAGS/ )
-        expect( frame ).toMatch( /a\s.*critical 3%/ )
-        expect( frame ).toMatch( /b\s.*plenty 90%/ )
+        expect( frame ).toMatch( /a\s.*▰{10}/ )
+        expect( frame ).toMatch( /b\s.*▰▱{9}/ )
         expect( frame ).toMatch( /c\s.*—/ )
     } )
 

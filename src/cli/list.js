@@ -72,10 +72,13 @@ export const observe_session_activity = async ( sessions, stored_sessions, {
 
 }
 
-// A cell is plain text or { text, color }; padding uses the visible text only.
+// A cell is plain text, { text, color }, or { text, rendered } for pre-colored
+// content; padding uses the visible text only.
 const cell_text = cell => String( cell?.text ?? cell )
 const visible_length = line => line.replace( /\x1b\[[\d;]*m/g, `` ).length
-const pad = ( cell, width ) => paint( cell_text( cell ).padEnd( width ), cell?.color )
+const pad = ( cell, width ) => cell?.rendered
+    ? cell.rendered + ` `.repeat( Math.max( 0, width - cell_text( cell ).length ) )
+    : paint( cell_text( cell ).padEnd( width ), cell?.color )
 
 /**
  * Keep only the deepest two levels of a session working directory.

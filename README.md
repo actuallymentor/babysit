@@ -156,7 +156,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached, compose-style; see [Directory launch](#directory-launch) |
 | `babysit audit --config FILE\|DIR/ [--yes]` | Fix yaml so `--config DIR/` accepts it; see [Audit](#audit) |
 | `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
-| `babysit watch [--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged) plus account usage, one metered row per limit (bar, % used, reset or used / limit); balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. USAGE column: the session's worst remaining rate window as `critical` (<5%, red), `low` (<20%, orange), `fine` (<40%), `plenty`. Replaces `list --watch` |
+| `babysit watch [--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged) plus account usage, one metered row per limit (bar, % used, reset or used / limit); balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. USAGE column: the usage bar for the session's worst rate window. Replaces `list --watch` |
 | `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
 | `babysit open [id\|name\|number]` | Attach |
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
