@@ -124,22 +124,6 @@ export const session_usage_limits = ( report, session ) => {
 }
 
 /**
- * USAGE cell for one session row: level plus the floored remaining %, or a dim
- * dash while the report loads or holds nothing for the agent.
- * @param {Object|null} report - collect_usage result
- * @param {Object|undefined} session - Stored session record
- * @returns {{ text: string, color: string }}
- */
-export const usage_cell = ( report, session ) => {
-
-    const level = usage_level( session_usage_limits( report, session ) )
-    if( !level ) return { text: `—`, color: `dim` }
-    // Floor so the shown number never reads as a higher band than its label
-    return { text: `${ level.label } ${ Math.floor( level.remaining ) }%`, color: level.color }
-
-}
-
-/**
  * Ten-cell meter colored like `babysit usage`: calm, warning, red.
  * @param {number} percent - Used share, 0–100
  * @returns {string}
@@ -148,6 +132,26 @@ export const usage_bar = percent => {
 
     const filled = Math.round( Math.min( 100, Math.max( 0, percent ) ) / 100 * BAR_CELLS )
     return paint( `▰`.repeat( filled ), usage_color( percent ) ) + paint( `▱`.repeat( BAR_CELLS - filled ), `dim` )
+
+}
+
+/**
+ * USAGE cell for one session row: the account usage bar, filled by the share
+ * of the worst rate window already used, or a dim dash while the report loads
+ * or holds nothing for the agent. `text` is the plain bar (for column width);
+ * `rendered` is the colored one.
+ * @param {Object|null} report - collect_usage result
+ * @param {Object|undefined} session - Stored session record
+ * @returns {{ text: string, color?: string, rendered?: string }}
+ */
+export const usage_cell = ( report, session ) => {
+
+    const level = usage_level( session_usage_limits( report, session ) )
+    if( !level ) return { text: `—`, color: `dim` }
+
+    const used = 100 - level.remaining
+    const filled = Math.round( Math.min( 100, Math.max( 0, used ) ) / 100 * BAR_CELLS )
+    return { text: `▰`.repeat( filled ) + `▱`.repeat( BAR_CELLS - filled ), rendered: usage_bar( used ) }
 
 }
 

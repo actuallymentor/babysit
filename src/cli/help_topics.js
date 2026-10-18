@@ -185,9 +185,9 @@ limit with a bar, % used and time to reset. Balances and lifetime spend stay in
 babysit usage. Usage refreshes every 5 min. With two or more Claude accounts,
 each gets its own rows (claude / <account>).
 
-USAGE column: the worst remaining % across the session agent's rate windows
-(extra usage, spend caps and balances do not count): critical <5% (red),
-low <20% (orange), fine <40%, plenty (green); — while unknown.
+USAGE column: the usage bar (same as the panel below) for the worst rate window
+of the session agent's account, filled by the share used (extra usage, spend
+caps and balances do not count); — while unknown.
 
 Options:
   --all      Add tmux attachment, session IDs, and tmux names

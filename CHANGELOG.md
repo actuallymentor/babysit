@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.44.6 — 2026-10-18
+
+### Changed
+- `babysit watch` USAGE column draws the usage panel's bar (worst rate window, filled by share used) instead of a `low 19%` label.
+
 ## 1.44.5 — 2026-10-18
 
 ### Fixed
