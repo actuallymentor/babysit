@@ -2,6 +2,7 @@ import { close_session, select_stored_session, use_launch_environment } from './
 import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
 import { agent_activity } from '../babysit/activity.js'
+import { strip_ansi } from '../babysit/matcher.js'
 import { capture_pane } from '../tmux/capture.js'
 import { list_sessions } from '../tmux/session.js'
 import { inspect_stored_sessions, load_session } from '../sessions/store.js'
@@ -40,6 +41,34 @@ export const restart_blocker = session => {
 
 }
 
+// Quiet time that counts as "no turn running" on a screen without an idle control
+const SETTLE_MS = 1_500
+
+/**
+ * Activity of a pane, falling back to stability where the agent has no idle control.
+ * Claude Code 2.1.287+ dropped `? for shortcuts`: its idle footer is
+ * `⏵⏵ <mode> on (shift+tab to cycle)`, while a running turn keeps a spinner whose
+ * timer redraws every second. Two identical captures with that footer mean idle;
+ * a dialog, connecting screen or any other unknown pane still reads as no control.
+ * @param {string} target - tmux target
+ * @param {string} agent - Native agent name
+ * @param {Object} seams - capture, activity, sleep
+ * @returns {Promise<string|null>} idle, waiting, running, or null when unknown
+ */
+const settled_activity = async ( target, agent, { capture, activity, sleep } ) => {
+
+    const first = await capture( target )
+    const status = activity( first, agent )
+    if( status || agent !== `claude` ) return status
+
+    const footer = strip_ansi( first ).trimEnd().split( `\n` ).slice( -8 ).join( `\n` )
+    if( !/\(shift\+tab to cycle\)/.test( footer ) ) return null
+
+    await sleep( SETTLE_MS )
+    return await capture( target ) === first ? `idle` : `running`
+
+}
+
 const short_id = id => String( id || `` ).replace( /^sha256:/, `` ).slice( 0, 12 ) || `unknown`
 
 /**
@@ -69,6 +98,7 @@ export const unarchived_sessions = async ( { inspect_records = inspect_stored_se
 const restart_session = async ( session, { force = false, detach = false, account = false, continue_prompt = false }, {
     capture = capture_pane,
     activity = agent_activity,
+    sleep = delay => new Promise( resolve => setTimeout( resolve, delay ) ),
     close = close_session,
     resume = cmd_resume,
     image_id = local_image_id,
@@ -93,7 +123,7 @@ const restart_session = async ( session, { force = false, detach = false, accoun
     if( !force ) {
         // Only a recognised idle/waiting control counts. A quiet but unknown
         // screen (connecting, a dialog) is not evidence that no turn is running.
-        const status = session.stuck_at ? `stuck` : activity( await capture( `=${ session.tmux_session }:` ), session.agent )
+        const status = session.stuck_at ? `stuck` : await settled_activity( `=${ session.tmux_session }:`, session.agent, { capture, activity, sleep } )
         if( ![ `idle`, `waiting` ].includes( status ) ) {
             throw new Error( `Session ${ session.babysit_id } shows ${ status || `no idle control` }; restart it between turns, or pass --force.` )
         }

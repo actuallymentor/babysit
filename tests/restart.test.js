@@ -25,6 +25,7 @@ const harness = ( { pane = IDLE_PANE, image = `sha256:bbbbbbbbbbbbbbbb`, overrid
             events.push( `image` ); return image 
         },
         print: message => events.push( message ),
+        sleep: async () => {},
     }
     return { events, seams }
 }
@@ -61,6 +62,25 @@ describe( `babysit restart`, () => {
             await expect( cmd_restart( { session_id: `1`, flags: {} }, seams ) ).rejects.toThrow( message )
             expect( events.some( event => event.startsWith( `close` ) ) ).toBe( false )
         }
+    } )
+
+    it( `reads a still Claude composer footer as idle, a redrawing one as running`, async () => {
+        const claude = { agent: `claude` }
+        const composer = `❯ \n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
+        const idle = harness( { pane: composer, overrides: claude } )
+        await cmd_restart( { session_id: `1`, flags: {} }, idle.seams )
+        expect( idle.events.filter( event => event.startsWith( `capture` ) ) ).toHaveLength( 2 )
+        expect( idle.events.some( event => event.startsWith( `close` ) ) ).toBe( true )
+
+        // The spinner timer changes between captures
+        const running = harness( { overrides: claude } )
+        let tick = 0
+        running.seams.capture = async () => `✽ Wrangling… (${ tick++ }s · ↓ 21 tokens)\n${ composer }`
+        await expect( cmd_restart( { session_id: `1`, flags: {} }, running.seams ) ).rejects.toThrow( `shows running` )
+
+        // No composer footer, no evidence
+        const dialog = harness( { pane: `Connecting to Claude…`, overrides: claude } )
+        await expect( cmd_restart( { session_id: `1`, flags: {} }, dialog.seams ) ).rejects.toThrow( `shows no idle control` )
     } )
 
     it( `treats a stuck flag as not restartable, and --force skips the pane check`, async () => {
