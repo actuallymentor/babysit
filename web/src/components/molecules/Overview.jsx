@@ -39,6 +39,29 @@ const Stats = styled.dl`
     small { color: var(--muted); font-size: 0.8em; }
 `
 
+// Collapsible panel: the heading is the summary line, the body keeps the panel's grid
+const Collapsible = styled.details`
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.35rem;
+    padding: 1rem;
+
+    > summary {
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    &[open] > summary { margin-bottom: 1rem; }
+    > summary small { font-weight: normal; text-transform: none; }
+`
+
+const Body = styled.div`
+    display: grid;
+    gap: 1rem;
+`
+
 const Agent = styled.div`
     display: grid;
     gap: 0.75rem;
@@ -128,20 +151,22 @@ function LimitRow( { limit } ) {
 function AccountUsage( { usage } ) {
     const agents = usage?.agents.filter( agent => agent.status !== `unauthenticated` ) || []
 
-    return <Panel aria-labelledby="usage-heading">
-        <h2 id="usage-heading">Account usage</h2>
+    return <Collapsible open>
+        <summary>Account usage { agents.length > 1 && <small>· { agents.length } entries</small> }</summary>
+        <Body>
 
-        { !usage && <Muted>Limits appear once a session monitor refreshes them, every 5 minutes.</Muted> }
-        { usage && agents.length === 0 && <Muted>No signed-in agents on the host.</Muted> }
+            { !usage && <Muted>Limits appear once a session monitor refreshes them, every 5 minutes.</Muted> }
+            { usage && agents.length === 0 && <Muted>No signed-in agents on the host.</Muted> }
 
-        { agents.map( agent => <Agent key={ `${ agent.agent }-${ agent.provider }` }>
-            <h3>{ AGENT_NAMES[ agent.agent ] || agent.agent } { agent.provider && <small>{ agent.provider }</small> }</h3>
-            { agent.limits.map( limit => <LimitRow key={ limit.name } limit={ limit } /> ) }
-            { agent.limits.length === 0 && <Muted>{ STATUS_TEXT[ agent.status ] || `No limits reported` }{ agent.message ? ` — ${ agent.message }` : `` }</Muted> }
-        </Agent> ) }
+            { agents.map( agent => <Agent key={ `${ agent.agent }-${ agent.provider }-${ agent.account }` }>
+                <h3>{ AGENT_NAMES[ agent.agent ] || agent.agent } { agent.account && <>· { agent.account } </> }{ agent.provider && <small>{ agent.provider }</small> }</h3>
+                { agent.limits.map( limit => <LimitRow key={ limit.name } limit={ limit } /> ) }
+                { agent.limits.length === 0 && <Muted>{ STATUS_TEXT[ agent.status ] || `No limits reported` }{ agent.message ? ` — ${ agent.message }` : `` }</Muted> }
+            </Agent> ) }
 
-        { usage?.stale && <Muted role="status">Figures are over 15 minutes old.</Muted> }
-    </Panel>
+            { usage?.stale && <Muted role="status">Figures are over 15 minutes old.</Muted> }
+        </Body>
+    </Collapsible>
 }
 
 /** Host overview above the session list. */
