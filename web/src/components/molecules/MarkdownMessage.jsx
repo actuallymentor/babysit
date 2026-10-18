@@ -1,3 +1,4 @@
+import { Check, Copy } from 'lucide-react'
 import { useRef, useState } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
@@ -17,7 +18,7 @@ const Message = styled.article`
 
     h1, h2, h3, h4 {
         font-family: 'Montserrat Variable', system-ui, sans-serif;
-        font-weight: 500;
+        font-weight: 400;
         line-height: 1.3;
         margin: 1.6em 0 0.6em;
     }
@@ -60,38 +61,49 @@ const Message = styled.article`
         padding-left: 1rem;
     }
 
-    table { border-collapse: collapse; display: block; overflow-x: auto; }
-    th, td { border: 1px solid var(--border); padding: 0.55rem; text-align: left; }
-    a { color: var(--primary); font-weight: 700; }
+    table { border-collapse: collapse; display: block; font-size: 0.9375em; overflow-x: auto; }
+    th, td { border-bottom: 1px solid var(--line); padding: 0.5rem 0.75rem 0.5rem 0; text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    td:first-child code { white-space: nowrap; }
+    a { color: var(--primary); font-weight: 600; text-decoration: underline; text-underline-offset: 0.15em; }
 `
 
 const CodeBlock = styled.div`
     background: var(--code-bg);
-    border-radius: 0.25rem;
+    border-radius: 0.5rem;
     margin-bottom: 1.15rem;
     overflow: hidden;
 
     > div {
         align-items: center;
         display: flex;
-        flex-wrap: wrap;
         gap: 0.5rem;
         justify-content: flex-end;
-        padding: 0.25rem 0.5rem;
+        padding: 0.5rem 0.5rem 0;
     }
+
+    /* Small quiet pill on the dark block; ::before widens the hit area to 44px */
     button {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 0.2rem;
-        color: var(--text);
+        align-items: center;
+        background: var(--code-bg);
+        border: 1px solid rgb(255 255 255 / 22%);
+        border-radius: 999px;
+        color: var(--code-text);
         cursor: pointer;
+        display: inline-flex;
         font: inherit;
-        font-size: 0.85em;
-        min-height: 2.75rem;
-        padding: 0.25em 0.75em;
+        font-size: 0.8125rem;
+        gap: 0.25rem;
+        min-height: 1.75rem;
+        padding: 0 0.625rem;
+        position: relative;
+        transition: background 160ms ease;
     }
-    span { color: var(--code-text); font-size: 0.85em; }
-    pre { margin: 0; }
+    button::before { content: ''; inset: -0.5rem -0.25rem; position: absolute; }
+    button:hover { background: rgb(255 255 255 / 10%); }
+    button svg { height: 0.875rem; width: 0.875rem; }
+    span { color: var(--code-text); font-size: 0.8125rem; }
+    pre { margin: 0; padding-top: 0.5rem; }
 `
 
 // Read rendered code text so fenced language labels never enter the clipboard.
@@ -111,7 +123,7 @@ const CopyableCode = ( { children } ) => {
     return <CodeBlock>
         <div>
             <span role="status">{ feedback }</span>
-            <button aria-label="Copy code" onClick={ copy_code } type="button">Copy</button>
+            <button aria-label="Copy code" onClick={ copy_code } type="button">{ feedback === `Copied` ? <Check aria-hidden="true" strokeWidth={ 1.5 } /> : <Copy aria-hidden="true" strokeWidth={ 1.5 } /> }Copy</button>
         </div>
         <pre aria-label="Code block" ref={ code_ref } tabIndex="0">{ children }</pre>
     </CodeBlock>
