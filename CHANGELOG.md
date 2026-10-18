@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.44.3 — 2026-10-18
+
+### Changed
+- `babysit audit` asks about missing keys that change behaviour (`mode`, `yolo`, `docker`, `adb`, `clone`, `loop`, `ignore_host_agents_md`) instead of silently defaulting them, and no longer offers optional keys (`name`, `config:` tuning, `babysit:` rules). `--yes` and non-TTY runs still take the defaults.
+
 ## 1.44.2 — 2026-10-18
 
 ### Fixed

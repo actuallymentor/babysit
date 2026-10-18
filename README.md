@@ -125,7 +125,7 @@ babysit audit --config agents/      # every agents/*.yaml, interactive
 babysit audit --config api.yaml --yes
 ```
 
-Fills missing required `launch:` keys (asks for `agent`), offers to reset bad values / drop unknown keys, then offers optional defaults (`name`, tuning keys, `clone:`, commands). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: required fixes only.
+Fills missing required `launch:` keys: asks for `agent`, `mode` and the on/off switches (yolo, docker, adb, clone, loop, ignore_host_agents_md); `ports`, `log`, `args` get empty defaults. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: defaults for missing keys, no questions.
 
 ### Claude accounts
 
