@@ -237,7 +237,7 @@ try {
     assert.equal( await page.$eval( `[data-testid="markdown-message"] [role="status"]`, element => element.textContent ), `Copied` )
     assert.match( await page.evaluate( () => navigator.clipboard.readText() ), /^const long_message = / )
     await page.evaluate( () => window.scrollTo( 0, 0 ) )
-    const reply_button = await page.waitForSelector( `::-p-text(Reply ↓)` )
+    const reply_button = await page.waitForSelector( `button::-p-text(Reply)` )
     const reply_bounds = await reply_button.boundingBox()
     assert.ok( reply_bounds.y >= 0 && reply_bounds.y + reply_bounds.height <= 844, `Reply stays within the viewport` )
     await reply_button.click()

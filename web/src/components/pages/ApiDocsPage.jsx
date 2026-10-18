@@ -1,20 +1,22 @@
 import { Link } from 'react-router-dom'
 import styled from 'styled-components'
+import { ChevronLeft } from 'lucide-react'
 import { MarkdownMessage } from '../molecules/MarkdownMessage.jsx'
+import { PageHeading } from '../atoms/Layout.jsx'
 
 const Back = styled( Link )`
+    align-items: center;
+    border-radius: 0.5rem;
     color: var(--primary);
     display: inline-flex;
-    font-weight: 700;
-    margin-bottom: 1rem;
+    font-weight: 600;
+    gap: 0.25rem;
+    margin: -0.5rem 0 0.5rem -0.25rem;
     min-height: 2.75rem;
+    padding: 0 0.25rem;
     text-decoration: none;
-`
 
-const Heading = styled.div`
-    margin-bottom: 1.5rem;
-    h1 { font-size: clamp(1.7rem, 6vw, 2.7rem); margin: 0 0 0.35rem; }
-    p { color: var(--muted); margin: 0; }
+    svg { height: 1rem; width: 1rem; }
 `
 
 // Built from this page's origin, so every example runs as pasted
@@ -44,7 +46,7 @@ curl -H "Authorization: Bearer $BABYSIT_KEY" ${ origin }/api/status
 
 ## Errors
 
-| Status | Meaning |
+| Code | Meaning |
 |---|---|
 | 401 | Missing, unknown or removed key |
 | 403 | Not a GET request: API keys never send messages |
@@ -67,11 +69,11 @@ Usage refreshes every 5 minutes on the host; container figures every 30 seconds.
 /** How to read Babysit's JSON API with a read-only key. */
 export function ApiDocsPage() {
     return <>
-        <Back to="/">← Sessions</Back>
-        <Heading>
+        <Back to="/"><ChevronLeft aria-hidden="true" strokeWidth={ 1.5 } />Sessions</Back>
+        <PageHeading>
             <h1>API</h1>
-            <p>Read sessions and usage as JSON from scripts and dashboards</p>
-        </Heading>
+            <p>Read sessions and usage as JSON from scripts and dashboards.</p>
+        </PageHeading>
         <MarkdownMessage>{ reference( window.location.origin ) }</MarkdownMessage>
     </>
 }

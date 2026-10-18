@@ -489,7 +489,7 @@ docker compose -f examples/compose.web.yml up -d
 - Login lasts 30 days, renewed on use (`BABYSIT_WEB_SESSION_TTL_MS`). Sessions are HMAC-signed against the token hash, so restarts/redeploys keep you logged in; `web init` (token rotation) and logout end them.
 - Running sessions discover newly initialized bridges. After upgrades, exit/resume old sessions to load updated monitor/capture helpers; first new reply fills the view.
 
-Sessions page opens with a host overview: container CPU/MEM totals (share of the Docker host) and account limits per signed-in agent, with reset times. Each card shows its container's CPU · MEM.
+Sessions page: session list first (status, agent, directory, container CPU · MEM, heartbeat; a table on desktop), then Host (container CPU/MEM totals as a share of the Docker host) and collapsible Account usage (limits per signed-in agent, with reset times).
 
 JSON API: browser cookie, or `Authorization: Bearer <key>` with a read-only API key (`babysit web key`). Keys: GET only (POST → 403), hash-only in `access/api-keys.json`, applied without restart, kept across `web init`. Full reference: **API docs** in the app menu.
 

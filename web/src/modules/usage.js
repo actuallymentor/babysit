@@ -50,3 +50,28 @@ export const amount_label = limit => {
     if( limit.remaining !== null ) return `${ limit.remaining }${ unit } left`
     return null
 }
+
+/**
+ * Humane limit names: `five_hour` → `5-hour`, `codex / 10080 min` → `7-day`.
+ * The agent prefix is dropped since the group already names it.
+ * @param {string} name - Provider limit name
+ * @param {string} agent - Agent the limit belongs to
+ * @returns {string}
+ */
+export const limit_name = ( name, agent ) => {
+
+    const text = String( name )
+        .replace( new RegExp( `^${ agent } / ` ), `` )
+        .replace( /^API key \/ /, `` )
+        .replace( /(\d+) min\b/, ( _, minutes ) => {
+            const hours = minutes / 60
+            return hours >= 24 && hours % 24 === 0 ? `${ hours / 24 }-day` : hours >= 1 ? `${ hours }-hour` : `${ minutes }-minute`
+        } )
+        .replace( /^five_hour|^session$/, `5-hour` )
+        .replace( /^seven_day_?|^weekly_all$|^weekly_scoped(?: \/ )?/, `7-day ` )
+        .replace( /_/g, ` ` )
+        .trim()
+
+    return text.charAt( 0 ).toUpperCase() + text.slice( 1 )
+
+}

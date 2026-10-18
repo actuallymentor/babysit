@@ -6,6 +6,9 @@
 - Read-only API keys for Babysit Web: `babysit web key add|list|remove NAME`. Send `Authorization: Bearer <key>` to any GET endpoint (`/api/status`, `/api/sessions`, `/api/sessions/:id`, `/api/me`); keys can't send messages. Only hashes are stored, changes apply without a restart, and `babysit web init` keeps them.
 - API docs page in the Babysit Web menu, with copyable curl examples for your own origin.
 
+### Changed
+- Babysit Web redesign for calm and clarity: sessions come first (table-like rows on desktop, compact rows on phones), host totals and account usage move below. Limit names read `5-hour` / `7-day` instead of `five_hour`. Status shows as small tinted pills with icons. Buttons are small pills with full-size tap areas, and the menu is a tidy list with icons. Hairline surfaces replace heavy borders. Dark mode uses deep Solarized blue. Focus shows as a soft halo, and the first load shows skeleton rows.
+
 ## 1.45.0 — 2026-10-18
 
 ### Changed

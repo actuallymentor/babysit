@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { BookOpen, ChevronRight, Download, LogOut, Menu as MenuIcon, Minus, Plus, RefreshCw, X } from 'lucide-react'
 import styled, { keyframes } from 'styled-components'
 import { Button } from '../atoms/Button.jsx'
 import { Notice } from '../atoms/Notice.jsx'
@@ -13,24 +14,31 @@ const Shell = styled.div`
 
 const Header = styled.header`
     align-items: center;
-    background: var(--background);
+    background: color-mix(in srgb, var(--background) 92%, transparent);
+    backdrop-filter: blur(8px);
     display: flex;
     gap: 0.5rem;
     justify-content: space-between;
-    margin-bottom: 1.5rem;
-    min-height: 4.5rem;
-    padding-top: env(safe-area-inset-top);
+    margin: 0 -1rem 1.5rem;
+    min-height: 3.75rem;
+    padding: env(safe-area-inset-top) 1rem 0;
     position: sticky;
     top: 0;
     z-index: 2;
 `
 
 const Brand = styled( Link )`
+    align-items: center;
+    border-radius: 0.5rem;
     color: var(--text);
+    display: inline-flex;
     font-family: 'Montserrat Variable', system-ui, sans-serif;
-    font-size: 1.25rem;
-    font-weight: 500;
+    font-size: 1.125rem;
+    gap: 0.5rem;
+    min-height: 2.75rem;
     text-decoration: none;
+
+    img { height: 1.5rem; width: 1.5rem; }
 `
 
 const Actions = styled.div`
@@ -42,14 +50,14 @@ const Actions = styled.div`
 `
 
 const slide_in = keyframes`
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+    from { opacity: 0; transform: translateX(1.5rem); }
+    to { opacity: 1; transform: translateX(0); }
 `
 
 const Menu = styled.dialog`
     background: var(--surface);
     border: 0;
-    border-left: 1px solid var(--border);
+    border-left: 1px solid var(--line);
     color: var(--text);
     height: 100dvh;
     inset: 0;
@@ -57,16 +65,13 @@ const Menu = styled.dialog`
     max-height: none;
     max-width: 100%;
     overflow-y: auto;
-    padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+    padding: max(0.75rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
     position: fixed;
     width: min(22rem, 100%);
 
-    &[open] { animation: ${ slide_in } 220ms ease-out; display: flex; flex-direction: column; gap: 1.5rem; }
-    &::backdrop { background: rgb(0 0 0 / 45%); }
+    &[open] { animation: ${ slide_in } 280ms cubic-bezier(0.2, 0.8, 0.2, 1); display: flex; flex-direction: column; gap: 1.5rem; }
+    &::backdrop { background: rgb(0 20 28 / 40%); }
     @media (prefers-reduced-motion: reduce) { &[open] { animation: none; } }
-
-    label { display: grid; gap: 0.35rem; }
-    select { border: 1px solid var(--border); border-radius: 0.3rem; min-height: 3rem; padding: 0.5em; width: 100%; }
 `
 
 const MenuHeader = styled.div`
@@ -74,32 +79,82 @@ const MenuHeader = styled.div`
     display: flex;
     gap: 1rem;
     justify-content: space-between;
+    min-height: 2.75rem;
 
-    h2 { font-size: 1.25rem; margin: 0; }
+    h2 { font-size: 1.125rem; margin: 0; }
+`
+
+const Group = styled.div`
+    display: grid;
+    gap: 1rem;
+
+    > h3 {
+        color: var(--muted);
+        font-family: inherit;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    label { display: grid; font-weight: 500; gap: 0.375rem; }
+    select {
+        appearance: auto;
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        min-height: 2.75rem;
+        padding: 0 0.625rem;
+        width: 100%;
+    }
 `
 
 const TextSize = styled.div`
-    display: grid;
-    gap: 0.35rem;
-
-    > div { align-items: center; display: flex; gap: 0.75rem; }
-    output { min-width: 4ch; text-align: center; }
-`
-
-const MenuActions = styled.div`
-    display: grid;
-    gap: 0.5rem;
-`
-
-const MenuLink = styled( Link )`
-    color: var(--primary);
-    font-weight: 700;
-    min-height: 3rem;
-    display: flex;
     align-items: center;
-    text-decoration: none;
+    display: flex;
+    font-weight: 500;
+    gap: 0.5rem;
+    justify-content: space-between;
 
-    &:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+    > div { align-items: center; display: flex; gap: 0.5rem; }
+    output { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: center; }
+`
+
+// Full-width rows with a subtle hover tint, for links and maintenance actions alike
+const row = `
+    align-items: center;
+    background: none;
+    border: 0;
+    border-radius: 0.5rem;
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    gap: 0.75rem;
+    margin: 0 -0.5rem;
+    min-height: 2.75rem;
+    padding: 0 0.5rem;
+    text-align: left;
+    text-decoration: none;
+    transition: background 160ms ease;
+
+    &:hover:not(:disabled) { background: var(--hover); }
+    &:disabled { cursor: not-allowed; opacity: 0.5; }
+    svg { color: var(--muted); flex-shrink: 0; height: 1.25rem; width: 1.25rem; }
+    span { flex: 1; }
+`
+
+const MenuLink = styled( Link )`${ row }`
+const MenuAction = styled.button`${ row }`
+
+const Rows = styled.div`
+    display: grid;
+    gap: 0.125rem;
+`
+
+const Divider = styled.hr`
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 0;
+    width: 100%;
 `
 
 /** Keeps maintenance and reading controls together, outside the reply workflow. */
@@ -150,42 +205,48 @@ export function AppFrame( { children, has_update, logout, update, force_update, 
 
     return <Shell>
         <Header>
-            <Brand to="/">Babysit</Brand>
+            <Brand to="/"><img alt="" src="/icon.svg" />Babysit</Brand>
             <Actions>
-                { has_update && <Button disabled={ is_working } onClick={ () => run_action( update ) }>Update ready</Button> }
-                <Button $quiet aria-controls="app-menu" aria-expanded={ menu_open } aria-label="App menu" onClick={ () => set_menu_open( !menu_open ) } ref={ toggle }>
-                    <svg aria-hidden="true" fill="none" height="24" viewBox="0 0 24 24" width="24">
-                        <path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" strokeWidth="2" />
-                    </svg>
+                { has_update && <Button disabled={ is_working } onClick={ () => run_action( update ) }><RefreshCw aria-hidden="true" strokeWidth={ 1.5 } />Update ready</Button> }
+                <Button $bare $icon aria-controls="app-menu" aria-expanded={ menu_open } aria-label="App menu" onClick={ () => set_menu_open( !menu_open ) } ref={ toggle }>
+                    <MenuIcon aria-hidden="true" strokeWidth={ 1.5 } style={ { height: `1.25rem`, width: `1.25rem` } } />
                 </Button>
             </Actions>
             <Menu aria-labelledby="app-menu-title" id="app-menu" onCancel={ () => set_menu_open( false ) } onClick={ dismiss_backdrop } ref={ menu }>
                 <MenuHeader>
-                    <h2 id="app-menu-title">App settings</h2>
-                    <Button $quiet aria-label="Close menu" onClick={ () => set_menu_open( false ) }>×</Button>
+                    <h2 id="app-menu-title">Menu</h2>
+                    <Button $bare $icon aria-label="Close menu" onClick={ () => set_menu_open( false ) }><X aria-hidden="true" strokeWidth={ 1.5 } style={ { height: `1.25rem`, width: `1.25rem` } } /></Button>
                 </MenuHeader>
-                <label>
-                    Theme
-                    <select aria-label="Theme" onChange={ event => reading.set_theme( event.target.value ) } value={ reading.theme }>
-                        <option value="system">System</option>
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                    </select>
-                </label>
-                <TextSize>
-                    <span>Text size</span>
-                    <div>
-                        <Button $quiet aria-label="Decrease text size" disabled={ reading.text_size === 100 } onClick={ () => reading.resize_text( -10 ) }>−</Button>
-                        <output aria-live="polite">{ reading.text_size }%</output>
-                        <Button $quiet aria-label="Increase text size" disabled={ reading.text_size === 150 } onClick={ () => reading.resize_text( 10 ) }>+</Button>
-                    </div>
-                </TextSize>
-                <MenuLink to="/api-docs">API docs</MenuLink>
-                <MenuActions>
-                    { can_install && <Button $quiet disabled={ is_working } onClick={ () => run_action( install ) }>Install app</Button> }
-                    <Button $quiet disabled={ is_working } onClick={ () => run_action( force_update ) } title="Clear the app cache and reload">Update app</Button>
-                    <Button $quiet disabled={ is_working } onClick={ () => run_action( logout ) }>Log out</Button>
-                </MenuActions>
+
+                <Group>
+                    <h3>Appearance</h3>
+                    <label>
+                        Theme
+                        <select aria-label="Theme" onChange={ event => reading.set_theme( event.target.value ) } value={ reading.theme }>
+                            <option value="system">Match device</option>
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </label>
+                    <TextSize>
+                        <span>Text size</span>
+                        <div>
+                            <Button $icon $quiet aria-label="Decrease text size" disabled={ reading.text_size === 100 } onClick={ () => reading.resize_text( -10 ) }><Minus aria-hidden="true" strokeWidth={ 1.5 } /></Button>
+                            <output aria-live="polite">{ reading.text_size }%</output>
+                            <Button $icon $quiet aria-label="Increase text size" disabled={ reading.text_size === 150 } onClick={ () => reading.resize_text( 10 ) }><Plus aria-hidden="true" strokeWidth={ 1.5 } /></Button>
+                        </div>
+                    </TextSize>
+                </Group>
+
+                <Divider />
+
+                <Rows>
+                    <MenuLink to="/api-docs"><BookOpen aria-hidden="true" strokeWidth={ 1.5 } /><span>API docs</span><ChevronRight aria-hidden="true" strokeWidth={ 1.5 } /></MenuLink>
+                    { can_install && <MenuAction disabled={ is_working } onClick={ () => run_action( install ) }><Download aria-hidden="true" strokeWidth={ 1.5 } /><span>Install app</span></MenuAction> }
+                    <MenuAction disabled={ is_working } onClick={ () => run_action( force_update ) } title="Clear the app cache and reload"><RefreshCw aria-hidden="true" strokeWidth={ 1.5 } /><span>Update app</span></MenuAction>
+                    <MenuAction disabled={ is_working } onClick={ () => run_action( logout ) }><LogOut aria-hidden="true" strokeWidth={ 1.5 } /><span>Log out</span></MenuAction>
+                </Rows>
+
                 { action_error && <Notice $error role="alert">{ action_error }</Notice> }
             </Menu>
         </Header>
