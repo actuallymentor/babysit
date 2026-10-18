@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.44.5 — 2026-10-18
+
+### Fixed
+- `babysit restart` refused an idle Claude session with "shows no idle control". Claude 2.1.287+ has no idle-only footer, so restart now re-checks the pane after 1.5s: an unchanged composer footer is idle, a redrawing spinner is running.
+
 ## 1.44.4 — 2026-10-18
 
 ### Fixed
