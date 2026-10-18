@@ -5,9 +5,7 @@ import { join } from 'node:path'
 import { parse } from 'yaml'
 
 import { build_launch_yaml, default_launch } from '../src/babysit/launch_config.js'
-import { load_config } from '../src/babysit/yaml.js'
 import { cmd_audit, line_diff, strict_errors, yaml_indent } from '../src/cli/audit.js'
-import { read_launch_dir } from '../src/cli/compose.js'
 import { parse_args } from '../src/cli/parse.js'
 
 let dir
@@ -132,36 +130,28 @@ describe( `babysit audit`, () => {
         expect( code ).toBe( 0 )
     } )
 
-    it( `offers name, tuning keys, a clone section and rule skeletons`, async () => {
-        write( `7.yaml`, build_launch_yaml( default_launch( { clone: true } ) ) )
-        const { code } = await audit( { answers: [ [ /initial_prompt/, `n` ], [ /\[y\/N\]/, `y` ], [ /Write/, `y` ] ] } )
+    it( `asks about each missing behaviour key and never offers optional ones`, async () => {
+        write( `a.yaml`, `launch:\n    agent: claude\n    ports: []\n` )
+        const { code, asked } = await audit( { answers: [
+            [ /Mode \[/, `2` ], [ /launch\.yolo/, `y` ], [ /launch\.docker/, `yes` ], [ /Write/, `y` ],
+        ] } )
 
-        const text = read( `7.yaml` )
-        const parsed = parse( text )
+        const parsed = parse( read( `a.yaml` ) )
         expect( code ).toBe( 0 )
-        // Digit-only stems keep the extension, like directory launches
-        expect( parsed.launch.name ).toBe( `7.yaml` )
-        expect( parsed.config ).toMatchObject( { idle_timeout_s: 300, watchdog_idle_s: 1_800, watchdog_waiting_s: 3_600, yolo_approve_dangerous_commands: true, isolate_dependencies: true, commands: {} } )
-        expect( parsed.config ).not.toHaveProperty( `initial_prompt` )
-        expect( parsed.config.clone ).toEqual( { mode: `git`, carry: [ `.env`, `.env.*`, `.notes`, `babysit.yaml` ], changes: false, depth: null, exclude: [ `node_modules` ] } )
-        expect( parsed.babysit ).toEqual( [] )
-        expect( text ).toContain( `# Supervision rules` )
-        expect( text ).toContain( `#     do: ./IDLE.md` )
-        expect( text ).toMatch( /\nconfig:\n {4}# Seconds without new output/ )
-
-        // The result is a config Babysit actually loads and launches
-        const { config, rules } = load_config( dir, { config_path: join( dir, `7.yaml` ) } )
-        expect( config.idle_timeout_s ).toBe( 300 )
-        expect( rules ).toEqual( [] )
-        expect( read_launch_dir( dir ).errors ).toEqual( [] )
+        expect( parsed.launch ).toMatchObject( { mode: `sandbox`, yolo: true, docker: true, adb: false, clone: false, loop: false, ignore_host_agents_md: false, log: false, args: [] } )
+        // Sandbox cannot clone, so clone is not asked; ports, log and args never are
+        expect( asked.filter( question => /\bis missing|Mode \[/.test( question ) ).map( question => question.match( /launch\.(\w+)/ )?.[1] ?? `mode` ) )
+            .toEqual( [ `mode`, `yolo`, `docker`, `adb`, `loop`, `ignore_host_agents_md` ] )
+        expect( asked.join( `\n` ) ).not.toMatch( /name|timeout|initial_prompt|commands|rule/ )
+        expect( parsed ).not.toHaveProperty( `config` )
+        expect( parsed ).not.toHaveProperty( `babysit` )
+        expect( parsed.launch ).not.toHaveProperty( `name` )
     } )
 
-    it( `writes the generated prompt as a literal block when asked`, async () => {
-        write( `a.yaml`, build_launch_yaml( default_launch() ) )
-        await audit( { answers: [ [ /initial_prompt/, `y` ], [ /Write/, `y` ] ] } )
-        const text = read( `a.yaml` )
-        expect( text ).toContain( `initial_prompt: |` )
-        expect( parse( text ).config.initial_prompt.length ).toBeGreaterThan( 50 )
+    it( `asks about clone in regular mode`, async () => {
+        write( `a.yaml`, `launch:\n    agent: claude\n    mode: regular\n` )
+        await audit( { answers: [ [ /launch\.clone/, `y` ], [ /Write/, `y` ] ] } )
+        expect( parse( read( `a.yaml` ) ).launch.clone ).toBe( true )
     } )
 
     it( `leaves the file alone when the write is declined`, async () => {
@@ -198,7 +188,7 @@ describe( `babysit audit`, () => {
         expect( ( await audit( { interactive: false } ) ).code ).toBe( 0 )
     } )
 
-    it( `applies required fixes with --yes and skips optional offers`, async () => {
+    it( `applies required fixes with --yes without asking`, async () => {
         write( `a.yaml`, PARTIAL.replace( `mode: regular`, `mode: turbo\n  turbo: true` ) )
         write( `b.yaml`, `launch:\n    yolo: true\n` )
         const { code, asked, output } = await audit( { interactive: false, yes: true } )

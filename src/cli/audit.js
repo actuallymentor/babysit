@@ -1,37 +1,22 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { createInterface } from 'readline/promises'
 import { dirname, relative } from 'path'
-import { isAlias, isMap, isScalar, parseDocument, Scalar } from 'yaml'
+import { isAlias, isMap, isScalar, parseDocument } from 'yaml'
 
 import { SUPPORTED_AGENTS } from '../agents/index.js'
-import { LAUNCH_KEYS, default_launch, launch_key_problem, validate_launch } from '../babysit/launch_config.js'
-import { DEFAULT_CLONE_CONFIG, DEFAULT_CONFIG } from '../babysit/yaml.js'
-import { build_system_prompt } from '../modes/prompt.js'
+import { LAUNCH_KEYS, LAUNCH_MODES, default_launch, launch_key_problem, validate_launch } from '../babysit/launch_config.js'
 import { paint } from '../utils/color.js'
-import { launch_dir_files, launch_name_for } from './compose.js'
+import { launch_dir_files } from './compose.js'
 
-// `config:` keys audit offers to spell out, in the order `babysit init` documents them
-const TUNING_KEYS = [ `initial_prompt`, `idle_timeout_s`, `watchdog_idle_s`, `watchdog_waiting_s`, `yolo_approve_dangerous_commands`, `isolate_dependencies` ]
-
-// One-line explanations written above inserted keys, condensed from `babysit init`
-const KEY_COMMENTS = {
-    initial_prompt: ` Prompt typed into the agent once it is ready. null or "" sends nothing.`,
-    idle_timeout_s: ` Seconds without new output before the agent counts as idle (on: idle, --loop).`,
-    watchdog_idle_s: ` Seconds idle, or waiting on background work, before a cheap LLM judges\n whether the agent stalled and nudges it. 0 disables.`,
-    yolo_approve_dangerous_commands: ` YOLO only: accept blocking Claude prompts whose default is yes (never model swaps or billing); false leaves them to a person.`,
-    isolate_dependencies: ` Mount Docker volumes over dependency folders so container binaries never reach the host.`,
-    clone: ` --clone workspace creation: git clones the committed state, copy copies the working tree.`,
-    commands: ` Shell commands a rule can run by name, e.g.\n notify_command: curl -f -X POST -d "token=$PUSHOVER_TOKEN&user=$PUSHOVER_USER&message=I need your input" https://api.pushover.net/1/messages.json`,
-    babysit: [
-        ` Supervision rules, checked top-down every second; the first match acts.`,
-        `   on: idle | "literal text" | /regex/flags (last 10 pane lines)`,
-        `   do: enter | a config.commands name | ./FILE.md | any other text`,
-        `   timeout: SS | MM:SS | HH:MM:SS (idle rules only)`,
-        ` e.g.`,
-        `   - on: idle`,
-        `     do: ./IDLE.md`,
-        `     timeout: 30:00`,
-    ].join( `\n` ),
+// Missing launch keys that change what a session does, asked about instead of
+// defaulted. ports, log and args default to "nothing" and are filled silently.
+const TOGGLE_QUESTIONS = {
+    yolo: `Run with --yolo (the agent acts without asking permission)?`,
+    docker: `Run inside Docker (--docker)?`,
+    adb: `Give the session Android device access (--adb)?`,
+    clone: `Work in a clone of the workspace (--clone)?`,
+    loop: `Keep nudging the agent when it goes idle (--loop)?`,
+    ignore_host_agents_md: `Ignore the host's global AGENTS.md (--ignore-host-agents-md)?`,
 }
 
 const show = value => JSON.stringify( value )
@@ -164,17 +149,22 @@ export const pick_agent = async ( ask, print ) => {
 }
 
 /**
- * Build a key whose comment block and blank line read like `babysit init`.
- * @param {string} key - Key name
- * @param {string} [comment] - Comment lines, each starting with a space
- * @returns {Scalar}
+ * Ask for a launch mode by number or name; an empty answer means regular.
+ * @param {Function} ask - Prompt seam
+ * @param {Function} print - Output seam
+ * @returns {Promise<string>} Mode
  */
-const commented_key = ( key, comment = KEY_COMMENTS[ key ] ) => {
+export const pick_mode = async ( ask, print ) => {
 
-    const node = new Scalar( key )
-    if( comment ) node.commentBefore = comment
-    node.spaceBefore = true
-    return node
+    print( LAUNCH_MODES.map( ( mode, index ) => `    ${ index + 1 }) ${ mode }` ).join( `\n` ) )
+
+    for( ;; ) {
+        const answer = ( await ask( `  Mode [1-${ LAUNCH_MODES.length }, empty is regular]: ` ) ).toLowerCase()
+        if( !answer ) return `regular`
+        const mode = LAUNCH_MODES[ Number( answer ) - 1 ] || LAUNCH_MODES.find( name => name === answer )
+        if( mode ) return mode
+        print( `  Not a mode: ${ answer }` )
+    }
 
 }
 
@@ -227,12 +217,12 @@ const insert_in_order = ( doc, map, key, value, order ) => {
 }
 
 /**
- * Audit one yaml in place: list problems, apply fixes, offer optional keys,
- * show the diff, write. Comments and order survive through parseDocument.
+ * Audit one yaml in place: list problems, apply fixes, ask about missing
+ * behaviour keys, show the diff, write. Comments and order survive through parseDocument.
  * @param {{ path: string, file: string }} target - Absolute path and display name
  * @param {Object} options
  * @param {boolean} options.interactive - Prompts allowed
- * @param {boolean} options.yes - Apply required fills and fixes without asking; no optionals
+ * @param {boolean} options.yes - Apply required fills and fixes without asking
  * @param {Function} options.ask - Prompt seam, resolves to the trimmed answer
  * @param {Function} options.print - Output seam
  * @param {Function} [options.write] - File writer seam
@@ -254,11 +244,8 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
     if( doc.contents === null ) doc.contents = doc.createNode( {} )
     if( !isMap( doc.contents ) ) return result( false )
 
-    // y/N per item; --yes accepts fixes but declines optional offers
-    const confirm = async ( question, { optional = false } = {} ) => {
-        if( yes ) return !optional
-        return /^y(es)?$/i.test( await ask( `  ${ question } [y/N] ` ) )
-    }
+    // y/N per item; --yes accepts every fix
+    const confirm = async question => yes || /^y(es)?$/i.test( await ask( `  ${ question } [y/N] ` ) )
 
     // The agent is never defaulted: a terminal picks it, anything else reports
     const choose_agent = async reason => {
@@ -317,68 +304,35 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
         }
     }
 
-    // Required keys: defaults go in without asking, the agent is always chosen
+    // Required keys. A terminal is asked about the ones that change behaviour; ports,
+    // log and args, --yes and non-TTY runs take the defaults. The agent is always chosen.
+    const asking = interactive && !yes
     for( const key of LAUNCH_KEYS.filter( key => key !== `name` && !present( key ) ) ) {
-        const value = key === `agent` ? await choose_agent( `is missing` ) : defaults[ key ]
+
+        let value = defaults[ key ]
+        if( key === `agent` ) value = await choose_agent( `is missing` )
+
+        if( asking && key === `mode` ) {
+            print( `  launch.mode is missing; pick one:` )
+            value = await pick_mode( ask, print )
+        }
+
+        // A container mode cannot clone, so there is nothing to ask
+        const skip_clone = key === `clone` && value_of( `mode` ) !== `regular`
+        if( asking && key in TOGGLE_QUESTIONS && !skip_clone ) {
+            value = /^y(es)?$/i.test( await ask( `  launch.${ key } is missing. ${ TOGGLE_QUESTIONS[ key ] } [y/N] ` ) )
+        }
+
         if( value === null ) continue
         if( launch.has( key ) ) launch.set( key, value_node( doc, value ) )
         else insert_in_order( doc, launch, key, value, LAUNCH_KEYS )
+
     }
 
     // Cross-key rule: clone needs regular mode
     const { launch: settled } = validate_launch( launch.toJSON() )
     if( settled.clone && settled.mode !== `regular` && await confirm( `launch.clone cannot be combined with mode: ${ settled.mode }. Set clone: false?` ) ) {
         launch.set( `clone`, false )
-    }
-
-    // Optional offers, interactive only
-    if( !yes ) {
-
-        const name = launch_name_for( file )
-        if( !present( `name` ) && await confirm( `Add launch.name: ${ show( name ) } (the name directory launches use)?`, { optional: true } ) ) {
-            insert_in_order( doc, launch, `name`, name, LAUNCH_KEYS )
-        }
-
-        // config: is created on the first accepted offer, right after launch:
-        const config_map = () => {
-            if( !isMap( doc.get( `config`, true ) ) ) {
-                if( doc.has( `config` ) ) doc.set( `config`, doc.createNode( {} ) )
-                else insert_in_order( doc, doc.contents, commented_key( `config`, ` Supervision settings; unset keys use the defaults.` ), {}, top_order )
-            }
-            return doc.get( `config`, true )
-        }
-        const config_has = key => isMap( doc.get( `config`, true ) ) && doc.getIn( [ `config`, key ] ) !== undefined
-        const add_config = ( key, value ) => {
-            const map = config_map()
-            const node = value_node( doc, value )
-            // The prompt reads best as a literal block, like `babysit init` writes it
-            if( key === `initial_prompt` ) node.type = Scalar.BLOCK_LITERAL
-            // No blank line right under a fresh `config:`
-            const key_node = commented_key( key )
-            key_node.spaceBefore = map.items.length > 0
-            map.items.push( doc.createPair( key_node, node ) )
-        }
-
-        for( const key of TUNING_KEYS.filter( key => !config_has( key ) ) ) {
-            // Absence means the generated, mode-aware prompt; writing it pins today's text
-            const question = key === `initial_prompt`
-                ? `Add config.initial_prompt (pins the generated prompt; leaving it out follows each session's mode)?`
-                : `Add config.${ key }: ${ show( DEFAULT_CONFIG[ key ] ) }?`
-            if( await confirm( question, { optional: true } ) ) add_config( key, key === `initial_prompt` ? build_system_prompt( {} ) : DEFAULT_CONFIG[ key ] )
-        }
-
-        if( launch.get( `clone` ) === true && !config_has( `clone` ) && await confirm( `Add a config.clone: section with the defaults?`, { optional: true } ) ) {
-            add_config( `clone`, DEFAULT_CLONE_CONFIG )
-        }
-
-        if( !config_has( `commands` ) && await confirm( `Add an empty config.commands: map (with an example comment)?`, { optional: true } ) ) {
-            add_config( `commands`, {} )
-        }
-
-        if( !doc.has( `babysit` ) && await confirm( `Add an empty babysit: rule list (with the rule syntax as comments)?`, { optional: true } ) ) {
-            insert_in_order( doc, doc.contents, commented_key( `babysit` ), [], top_order )
-        }
-
     }
 
     // Show the diff and write
@@ -409,8 +363,8 @@ export const audit_file = async ( { path, file }, { interactive, yes, ask, print
 
 /**
  * `babysit audit --config FILE|DIR/`: bring yaml files up to what a directory
- * launch requires. Non-interactive runs only report; `--yes` applies required
- * fills and per-item fixes, skipping optional offers.
+ * launch requires. Non-interactive runs only report; `--yes` applies default
+ * fills and per-item fixes without asking.
  * @param {Object} cmd - Parsed command; `flags.config` is FILE or DIR, `flags.yes`
  * @param {Object} [deps] - Injectable seams
  * @returns {Promise<number>} Exit code: 0 when every file passes afterwards
