@@ -71,6 +71,19 @@ describe( `claude shim`, () => {
         expect( out ).toBe( `token=none args=--model a b -- -x` )
     } )
 
+    it( `chains through another copy of itself without looping`, () => {
+        // The image shim first on PATH, a hot-fixed copy in a shared volume second
+        mkdirSync( join( root, `volume` ) )
+        writeFileSync( join( root, `volume`, `claude` ), readFileSync( shim ) )
+        chmodSync( join( root, `volume`, `claude` ), 0o755 )
+        const path = `${ join( root, `shim` ) }:${ join( root, `volume` ) }:${ join( root, `real` ) }:/usr/bin:/bin`
+        expect( run( { env: { PATH: path }, account: `CLAUDE_CODE_OAUTH_TOKEN=account-token\n` } ).out ).toBe( `token=account-token args=-p hi` )
+
+        // Entered at the second copy, it still only looks further along
+        const second = spawnSync( join( root, `volume`, `claude` ), [ `-p` ], { encoding: `utf8`, env: { PATH: path, BABYSIT_CLAUDE_RC: `/nonexistent`, BABYSIT_CLAUDE_ACCOUNT_ENV: `/nonexistent` } } )
+        expect( second.stdout.trim() ).toBe( `token=none args=-p` )
+    } )
+
     it( `runs the next claude on PATH, not itself, and fails cleanly without one`, () => {
         expect( run().out ).toContain( `args=-p hi` )
         rmSync( join( root, `real`, `claude` ) )

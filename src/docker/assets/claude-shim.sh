@@ -23,15 +23,30 @@ if [ -f "$account_env" ]; then
     done < "$account_env"
 fi
 
-# The real claude is the next one on PATH after this file. Builtins only, so a
-# bare PATH cannot make the shim mistake itself for the real thing.
-self="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)/${BASH_SOURCE[0]##*/}"
-IFS=: read -ra path_dirs <<< "$PATH"
-for dir in "${path_dirs[@]}"; do
-    candidate="$dir/claude"
-    [ -x "$candidate" ] || continue
-    [ "$(cd "${candidate%/*}" && pwd -P)/claude" = "$self" ] && continue
-    exec "$candidate" "$@"
+# The real claude is the next one on PATH after this file's own directory. Moving
+# only forward means several copies of this shim (the image's plus a hot-fixed one
+# in a shared volume) chain to the real claude instead of calling each other
+# forever. Builtins only, so a bare PATH cannot break the lookup.
+self_dir="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
+IFS=: read -ra path_entries <<< "$PATH"
+
+dirs=()
+on_path=0
+for entry in "${path_entries[@]}"; do
+    dir="$(cd "$entry" 2> /dev/null && pwd -P)" || continue
+    dirs+=("$dir")
+    [ "$dir" = "$self_dir" ] && on_path=1
+done
+
+# On PATH: skip everything up to this directory. Run by absolute path: skip only this file.
+skipping=$on_path
+for dir in "${dirs[@]}"; do
+    if [ "$skipping" = 1 ]; then
+        [ "$dir" = "$self_dir" ] && skipping=0
+        continue
+    fi
+    [ "$dir" = "$self_dir" ] && continue
+    [ -x "$dir/claude" ] && exec "$dir/claude" "$@"
 done
 
 echo "claude: not found on PATH" >&2
