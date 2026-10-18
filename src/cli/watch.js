@@ -225,8 +225,10 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
 }
 
 /**
- * Live dashboard: the session tree with a USAGE headroom column plus account
- * usage, redrawn every 2s.
+ * Live dashboard redrawn every 2s. Views:
+ * - default: the session tree with a USAGE headroom column
+ * - `--usage`: the account usage panel alone
+ * - `--all`: both
  * Usage refreshes every 5 min in the background so frames never wait on providers.
  * Codex's app-server fallback stays off: it can rotate tokens outside the auth lease.
  * @param {Object} [cmd] - Parsed command
@@ -276,19 +278,26 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             .finally( () => pending = null )
     }
 
+    const show_sessions = !flags.usage || flags.all
+    const show_panel = flags.usage || flags.all
+    const clear = () => write_fn( `\x1b[H\x1b[J` )
+
     // Redraw in place on the real terminal so every color survives; clearing
     // right before printing keeps the old frame up while panes are sampled.
     for( let round = 0; round < rounds; round++ ) {
+
         refresh_usage()
-        await render_sessions_fn( {
-            all: flags.all,
+
+        if( show_sessions ) await render_sessions_fn( {
             hide_archived: true,
             open_hint: false,
             // Read at print time, so a refresh that lands mid-sample still shows
             extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],
-            before_print: () => write_fn( `\x1b[H\x1b[J` ),
+            before_print: clear,
         } )
-        format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )
+        else clear()
+
+        if( show_panel ) format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )
         console.log( paint( `\nRefreshing every 2s; Ctrl+C to stop.`, `dim` ) )
         await wait_fn( FRAME_MS )
     }

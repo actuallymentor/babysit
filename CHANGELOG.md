@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.45.0 — 2026-10-18
+
+### Changed
+- `babysit watch` shows only the session tree (with its USAGE column); the account usage panel moved behind flags. `--usage` shows the panel alone, `--all` shows both (the previous view). Diagnostic columns (tmux, IDs) are now `babysit list --all` only.
+
 ## 1.44.6 — 2026-10-18
 
 ### Changed

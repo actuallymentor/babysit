@@ -171,29 +171,33 @@ totals row. Numbers are what open, close, archive, and restart accept.
 Options:
   --all      Add tmux attachment, session IDs, and tmux names
 
-For a live view with account usage, run babysit watch.
+For a live view with account usage, run babysit watch --all.
 
 Examples:
   babysit list
   babysit list --all`,
 
-    watch: () => `Usage: babysit watch [--all]
+    watch: () => `Usage: babysit watch [--usage | --all]
 
 Live dashboard, redrawn every 2s: the babysit list tree without archived
-sessions (numbers unchanged) plus account usage per agent: one row per metered
-limit with a bar, % used and time to reset. Balances and lifetime spend stay in
-babysit usage. Usage refreshes every 5 min. With two or more Claude accounts,
-each gets its own rows (claude / <account>).
+sessions (numbers unchanged) with a USAGE column. Usage refreshes every 5 min.
 
-USAGE column: the usage bar (same as the panel below) for the worst rate window
-of the session agent's account, filled by the share used (extra usage, spend
-caps and balances do not count); — while unknown.
+USAGE column: the usage bar for the worst rate window of the session agent's
+account, filled by the share used (extra usage, spend caps and balances do not
+count); — while unknown.
+
+Usage panel (--usage, --all): account usage per agent, one row per metered
+limit with a bar, % used and time to reset. Balances and lifetime spend stay in
+babysit usage. With two or more Claude accounts, each gets its own rows
+(claude / <account>).
 
 Options:
-  --all      Add tmux attachment, session IDs, and tmux names
+  --usage    Only the usage panel
+  --all      Session tree plus the usage panel
 
 Examples:
   babysit watch
+  babysit watch --usage
   babysit watch --all`,
 
     open: () => `Usage: babysit open [id|name|number]
