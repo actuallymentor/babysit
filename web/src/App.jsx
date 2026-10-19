@@ -13,6 +13,7 @@ import { Routes } from './routes/Routes.jsx'
 export function App() {
     const [ identity, set_identity ] = useState( null )
     const [ is_loading, set_is_loading ] = useState( true )
+    const [ unreachable, set_unreachable ] = useState( null )
     const [ has_update, set_has_update ] = useState( false )
     const { can_install, install } = use_install()
     const reading = use_reading_preferences()
@@ -26,14 +27,18 @@ export function App() {
         const load_identity = ( attempt = 0 ) => api( `/api/me` )
             .then( found => {
                 set_identity( found )
+                set_unreachable( null )
                 set_is_loading( false )
             } )
             .catch( failure => {
                 if( failure.status_code === 401 ) {
                     set_identity( null )
+                    set_unreachable( null )
                     set_is_loading( false )
                     return
                 }
+                // The cached PWA shell loads offline, so say why we are stuck
+                set_unreachable( failure.status_code ? `Babysit server error (${ failure.status_code })` : `Can't reach the Babysit server` )
                 retry_timer = setTimeout( () => load_identity( attempt + 1 ), Math.min( 1_000 * 2 ** attempt, 15_000 ) )
             } )
 
@@ -56,6 +61,7 @@ export function App() {
         set_has_update( false )
     }
 
+    if( is_loading && unreachable ) return <Notice $error role="alert">{ unreachable }. Retrying…</Notice>
     if( is_loading ) return <Notice role="status">Opening Babysit…</Notice>
     if( !identity ) return <LoginPage login={ login } />
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.46.1 — 2026-10-19
+
+### Fixed
+- Babysit Web no longer sits on "Opening Babysit…" forever when the server is unreachable. The cached app shell still loads offline, so it now says "Can't reach the Babysit server" (or shows the HTTP error) while it keeps retrying, then opens normally once the connection is back.
+
 ## 1.46.0 — 2026-10-18
 
 ### Added
