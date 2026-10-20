@@ -55,6 +55,11 @@ export const agent_activity = ( output, agent_name ) => {
         const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*(?:[·•].*)?$/m )
         if( counts && /\b[1-9]\d* [a-z]+/.test( counts[ 1 ] ) ) return `waiting`
 
+        // 2.1.30x drops the agents hint: "⏵⏵ bypass permissions on · 1 shell".
+        // Without that anchor, only shell and monitor counts qualify.
+        const bare = controls.match( /(?:^|[·•])\s*(\d+ (?:shells?|monitors?)(?:,\s*\d+ (?:shells?|monitors?))*)\s*(?:[·•].*)?$/m )
+        if( bare && /\b[1-9]\d* [a-z]+/.test( bare[ 1 ] ) ) return `waiting`
+
         // Background subagents carry no count; each one gets a row under
         // "● main": "◯ general-purpose  Checking MTU   2m 59s · ↓ 35.6k tokens"
         if( /^\s*[○◯◉●]\s+(?!main\s*$)\S/m.test( controls ) ) return `waiting`

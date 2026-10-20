@@ -28,6 +28,9 @@ describe( `agent activity controls`, () => {
             `  2 shells · ← for agents`,
             `⏵⏵ bypass permissions on · 2 shells, 2 monitors · ← for agents`,
             `⏵⏵ bypass permissions on · 0 shells, 1 monitor · ← for agents`,
+            // 2.1.302 dropped the agents hint
+            `⏵⏵ bypass permissions on · 1 shell`,
+            `  2 shells, 1 monitor`,
         ] ) {
             const screen = `✻ Churned for 2m 4s · done 1:03 PM · 1 shell still running\n────\n❯ ok, keep going\n────\nyolo·docker workspace\n${ footer }`
             expect( agent_status( screen, `claude`, 0 ) ).toBe( `waiting` )
@@ -63,6 +66,8 @@ describe( `agent activity controls`, () => {
             `⏵⏵ bypass permissions on · 1 shell · ← for agents\n❯\n? for shortcuts`,
             `❯\n0 shells · ← for agents\n? for shortcuts`,
             `›\n0 shells, 0 monitors · ← for agents\n? for shortcuts`,
+            `❯\n⏵⏵ bypass permissions on · 0 shells\n? for shortcuts`,
+            `❯\n⏵⏵ bypass permissions on · 1 feedback draft\n? for shortcuts`,
             `The task has 1 shell still running\n❯\n? for shortcuts`,
         ] ) expect( agent_status( screen, `claude`, 300 ) ).toBe( `idle` )
         expect( agent_activity( `❯\n1 shell · ← for agents`, `codex` ) ).toBeNull()
