@@ -37,3 +37,4 @@
 ## Self-hosted Babysit Web (babysit.mylentor.life)
 - Host = this machine (LAN 192.168.1.131). Compose project `docker-composition` (`/home/mentor/docker-composition/docker-compose.web.yml`), container `babysit-web`, proxied by `swag` (`proxy-confs/babysit.subdomain.conf`). DNS at Namecheap (DDNS `lighthouse.mylentor.life`, babysit CNAMEs to it).
 - Triage: `docker exec swag curl -sk -H 'Host: babysit.mylentor.life' https://127.0.0.1/api/me` → 401 = app+proxy fine. Then compare `curl ifconfig.me` with `dig lighthouse.mylentor.life`; traceroute via a `--net host` alpine shows double NAT/CGNAT when on the Odido 5G failover (inbound impossible).
+- 2026-10-20: Published v1.47.0 from `3d087fc` via release run 39404940212 (all jobs green; regression run 39404940240 green). Four binaries + checksums; web and agent images built.
