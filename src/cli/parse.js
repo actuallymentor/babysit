@@ -2,6 +2,7 @@ import { resolve } from 'path'
 import mri from 'mri'
 import { is_agent } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
+import { SHELLS } from './shell_init.js'
 
 // Flags babysit recognises — everything else passes through to the agent CLI
 const KNOWN_FLAGS = [
@@ -183,6 +184,13 @@ export const parse_args = ( argv ) => {
             flags: { ...flags, dry_run: Boolean( args[ `dry-run` ] ), json: Boolean( args.json ), no_continue: args.continue === false, boot: Boolean( args.boot ), shutdown: Boolean( args.shutdown ) },
             passthrough: [],
         }
+    }
+
+    // babysit shell-init [bash|zsh|fish]
+    if( verb === `shell-init` ) {
+        const shell = positionals[1] || null
+        if( shell && !SHELLS.includes( shell ) ) throw new Error( `Unknown shell: ${ shell }. Use ${ SHELLS.join( `, ` ) }.` )
+        return { verb: `shell-init`, agent: null, shell, flags, passthrough: [] }
     }
 
     // babysit config

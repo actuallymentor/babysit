@@ -193,6 +193,7 @@ launch:
     ${ entry( `mode`, launch.mode ) }
 
     ${ entry( `yolo`, launch.yolo ) }
+    # Mounts the host Docker socket (sibling containers); agents always run in a container.
     ${ entry( `docker`, launch.docker ) }
     ${ entry( `adb`, launch.adb ) }
     ${ entry( `clone`, launch.clone ) }

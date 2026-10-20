@@ -1,6 +1,7 @@
 import { log } from '../utils/log.js'
 import { has_session, list_sessions, attach_session } from '../tmux/session.js'
-import { list_stored_sessions, update_session } from '../sessions/store.js'
+import { list_stored_sessions, session_workspace, update_session } from '../sessions/store.js'
+import { follow_workspace } from './shell_init.js'
 import { exited_session_message, order_active_sessions, print_active_sessions_table, stored_by_tmux } from './list.js'
 
 /**
@@ -99,6 +100,7 @@ const open_current_directory_session = async ( {
  * @param {Function} [deps.update_session_fn] - Session record writer, used to unarchive
  * @param {Function} [deps.exit_fn] - Process exit helper
  * @param {string} [deps.cwd] - Directory used for zero-arg matching
+ * @param {Function} [deps.follow_workspace_fn] - Moves the shell into the session's workspace after detaching
  */
 export const cmd_open = async ( cmd, {
     has_session_fn = has_session,
@@ -108,15 +110,20 @@ export const cmd_open = async ( cmd, {
     update_session_fn = update_session,
     exit_fn = process.exit,
     cwd = process.cwd(),
+    follow_workspace_fn = follow_workspace,
 } = {} ) => {
 
     const { session_id } = cmd
     // Opening is the way back out of `babysit archive`. Paths that resolved the
     // session through stored metadata pass it along; a raw tmux name does not.
-    const attach_selected_session = ( session_name, stored = [] ) => {
+    const attach_selected_session = async ( session_name, stored = [] ) => {
         const archived = stored.find( session => session.tmux_session === session_name && session.archived_at )
         if( archived ) update_session_fn( archived.babysit_id, { archived_at: null } )
-        return attach( session_name, { attach_session_fn } )
+        await attach( session_name, { attach_session_fn } )
+
+        // Detached: land the shell where the agent works (its clone, for --clone)
+        const record = ( stored.length ? stored : list_stored_sessions_fn() ).find( session => session.tmux_session === session_name )
+        follow_workspace_fn( record ? session_workspace( record ) : null, { cwd } )
     }
 
     if( !session_id ) {

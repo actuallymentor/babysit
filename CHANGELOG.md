@@ -1,8 +1,12 @@
 # Changelog
 
-## 1.46.1 — 2026-10-19
+## 1.47.0 — 2026-10-20
+
+### Added
+- `babysit open` moves your shell into the directory the agent works in (its clone, for `--clone` sessions) when you detach. A program can't change its parent shell's directory, so install the small wrapper once: `eval "$(babysit shell-init)"` in `~/.bashrc` / `~/.zshrc`, or `babysit shell-init fish | source` in fish. Without it, `open` prints the `cd` line.
 
 ### Fixed
+- `babysit audit` described `launch.docker` as "run inside Docker". It now asks whether to give the session the host's Docker daemon, which is what it does (agents always run in a container). The `babysit.yaml` template comments the key too.
 - Babysit Web no longer sits on "Opening Babysit…" forever when the server is unreachable. The cached app shell still loads offline, so it now says "Can't reach the Babysit server" (or shows the HTTP error) while it keeps retrying, then opens normally once the connection is back.
 
 ## 1.46.0 — 2026-10-18

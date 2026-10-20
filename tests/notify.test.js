@@ -82,22 +82,22 @@ describe( `usage alerts`, () => {
 
     it( `notifies once per window at 90% and re-arms on reset or recovery`, async () => {
 
-        const weekly = { name: `weekly`, used_percent: 91, resets_at: `2026-10-12T15:59:00Z` }
+        const weekly = { name: `weekly`, used_percent: 91, resets_at: `2099-10-12T15:59:00Z` }
 
         const first = await run( [ weekly, { name: `session`, used_percent: 89.9 } ] )
         expect( first.keys ).toEqual( [ `claude/anthropic/weekly` ] )
         expect( first.sent[0].title ).toBe( `Babysit: claude usage at 91%` )
-        expect( first.sent[0].message ).toContain( `resets 2026-10-12T15:59:00Z` )
+        expect( first.sent[0].message ).toContain( `resets 2099-10-12T15:59:00Z` )
 
         // Same window: silent
         expect( ( await run( [ { ...weekly, used_percent: 99 } ] ) ).keys ).toEqual( [] )
 
         // New window: alerts again
-        expect( ( await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [ `claude/anthropic/weekly` ] )
+        expect( ( await run( [ { ...weekly, resets_at: `2099-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [ `claude/anthropic/weekly` ] )
 
         // A dip below the threshold in the same window stays silent
-        await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z`, used_percent: 10 } ] )
-        expect( ( await run( [ { ...weekly, resets_at: `2026-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [] )
+        await run( [ { ...weekly, resets_at: `2099-10-19T15:59:00Z`, used_percent: 10 } ] )
+        expect( ( await run( [ { ...weekly, resets_at: `2099-10-19T15:59:00Z` } ] ) ).keys ).toEqual( [] )
 
         // An open window (no reset time) re-arms once it drops below
         const credits = { name: `credits`, used_percent: 95 }
