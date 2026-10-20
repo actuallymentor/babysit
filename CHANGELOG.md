@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.47.1 — 2026-10-20
+
+### Fixed
+- Claude sessions with a running background shell showed `idle` instead of `waiting`. Claude 2.1.302 shortened its footer to `⏵⏵ bypass permissions on · 1 shell` (no `← for agents`), which babysit no longer recognised. Idle rules and `--loop` could then nudge an agent that was only waiting on its own background work.
+
 ## 1.47.0 — 2026-10-20
 
 ### Added
