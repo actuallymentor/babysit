@@ -204,12 +204,25 @@ Examples:
 
 Attaches to an active session. Without a selector it attaches to this
 directory's only session, or lists them when there are several. Opening an
-archived session un-archives it.
+archived session un-archives it. After you detach, your shell moves to the
+directory the agent works in (its clone, for --clone sessions) when the
+babysit shell-init function is installed; otherwise the cd line is printed.
 
 Examples:
   babysit open
   babysit open 2                 Row 2 of babysit list
   babysit open "feature 1"`,
+
+    'shell-init': () => `Usage: babysit shell-init [bash|zsh|fish]
+
+Prints a babysit shell function so babysit open can move your shell into the
+session's workspace (a program cannot change its parent shell's directory).
+Defaults to $SHELL.
+
+Examples:
+  babysit shell-init fish
+  echo 'eval "$(babysit shell-init)"' >> ~/.bashrc     # or ~/.zshrc
+  echo 'babysit shell-init fish | source' >> ~/.config/fish/config.fish`,
 
     close: () => `Usage: babysit close <number|session_id>
 

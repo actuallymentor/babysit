@@ -320,8 +320,10 @@ describe( `cmd_open with a session id`, () => {
             list_sessions_fn: async () => {
                 throw new Error( `Unexpected fuzzy lookup` )
             },
+            // Resolution never reads the store; only the post-detach workspace follow does
             list_stored_sessions_fn: () => {
-                throw new Error( `Unexpected stored lookup` )
+                if( !attached_session ) throw new Error( `Unexpected stored lookup` )
+                return []
             },
             attach_session_fn: session_name => {
                 attached_session = session_name

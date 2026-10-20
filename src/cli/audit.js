@@ -12,7 +12,7 @@ import { launch_dir_files } from './compose.js'
 // defaulted. ports, log and args default to "nothing" and are filled silently.
 const TOGGLE_QUESTIONS = {
     yolo: `Run with --yolo (the agent acts without asking permission)?`,
-    docker: `Run inside Docker (--docker)?`,
+    docker: `Give the session the host's Docker daemon (--docker)?`,
     adb: `Give the session Android device access (--adb)?`,
     clone: `Work in a clone of the workspace (--clone)?`,
     loop: `Keep nudging the agent when it goes idle (--loop)?`,

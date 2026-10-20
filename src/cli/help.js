@@ -24,7 +24,8 @@ Usage:
   babysit audit --config FILE|DIR/     Fix yaml files so babysit --config DIR/ accepts them; --yes, comments kept
   babysit list [--all]                 List active sessions and launch flags
   babysit watch [--usage|--all]        Live sessions with usage headroom (--usage: usage only, --all: both)
-  babysit open [id|name|number]        Attach to an active session
+  babysit open [id|name|number]        Attach to an active session; with shell-init, detaching lands in its workspace
+  babysit shell-init [bash|zsh|fish]   Shell function so open can cd: eval "$(babysit shell-init)" in your rc
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
   babysit fork <number|id> [agent]     Continue a session in a new one (share or clone the tree, chat kept); --takeover
   babysit prune [--list]               Prune unused Docker data and clone workspaces

@@ -38,6 +38,7 @@ import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
 import { run_effort, run_model, run_exit, run_stuck, run_loop } from './docker/assets/effort/command.mjs'
 import { run_usage } from './cli/usage.js'
+import { cmd_shell_init } from './cli/shell_init.js'
 
 const is_directory = path => {
     try {
@@ -205,6 +206,10 @@ const main = async () => {
 
     case `config`:
         await cmd_config( cmd )
+        break
+
+    case `shell-init`:
+        cmd_shell_init( cmd )
         break
 
     case `prune`:
