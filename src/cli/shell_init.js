@@ -1,5 +1,6 @@
 import { existsSync, writeFileSync } from 'fs'
 import { basename } from 'path'
+import { WRAPPER_ENV } from '../utils/wrapper_env.js'
 
 // A process cannot change its parent shell's directory. These wrappers hand
 // babysit a file to write the target into, then `cd` there once it exits.
@@ -12,7 +13,7 @@ const POSIX = `babysit() {
     BABYSIT_CD_FILE="$babysit_cd_file" BABYSIT_ATTACH_FILE="$babysit_attach_file" command babysit "$@"
     babysit_status=$?
     if [ -s "$babysit_attach_file" ]; then
-        { read -r babysit_socket; read -r babysit_target; } < "$babysit_attach_file"
+        { IFS= read -r babysit_socket; IFS= read -r babysit_target; } < "$babysit_attach_file"
         command tmux -L "$babysit_socket" attach -t "$babysit_target"
     fi
     if [ -s "$babysit_cd_file" ]; then cd -- "$(cat "$babysit_cd_file")" || true; fi
@@ -56,7 +57,7 @@ export const cmd_shell_init = cmd => console.log( shell_init_script( cmd.shell |
  * @param {Function} [options.write_file] - File writer seam
  * @returns {boolean} Whether the wrapper will cd
  */
-export const follow_workspace = ( workspace, { cwd = process.cwd(), env = process.env, write_file = writeFileSync } = {} ) => {
+export const follow_workspace = ( workspace, { cwd = process.cwd(), env = WRAPPER_ENV, write_file = writeFileSync } = {} ) => {
 
     if( !workspace || workspace === cwd || !existsSync( workspace ) ) return false
 

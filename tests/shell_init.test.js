@@ -26,15 +26,23 @@ describe( `babysit shell-init`, () => {
         mkdirSync( bin )
 
         // Stand-ins: babysit fills both files and exits; tmux records its argv
-        writeFileSync( join( bin, `babysit` ), `#!/bin/sh\nprintf 'babysit\\n=babysit_x y\\n' > "$BABYSIT_ATTACH_FILE"\nprintf '%s' '${ directory }' > "$BABYSIT_CD_FILE"\n`, { mode: 0o755 } )
+        writeFileSync( join( bin, `babysit` ), `#!/bin/sh\nprintf 'babysit\\n=babysit_x y \\n' > "$BABYSIT_ATTACH_FILE"\nprintf '%s' '${ directory }' > "$BABYSIT_CD_FILE"\n`, { mode: 0o755 } )
         writeFileSync( join( bin, `tmux` ), `#!/bin/sh\nprintf '%s|' "$@" > '${ directory }/tmux.log'\n`, { mode: 0o755 } )
 
         const script = `${ shell_init_script( `bash` ) }\nbabysit open 1; echo "$?:$PWD"`
         const output = spawnSync( `bash`, [ `-c`, script ], { cwd: `/`, env: { ...process.env, PATH: `${ bin }:${ process.env.PATH }` }, encoding: `utf8` } )
 
         expect( output.stdout.trim() ).toBe( `0:${ directory }` )
-        expect( readFileSync( join( directory, `tmux.log` ), `utf8` ) ).toBe( `-L|babysit|attach|-t|=babysit_x y|` )
+        expect( readFileSync( join( directory, `tmux.log` ), `utf8` ) ).toBe( `-L|babysit|attach|-t|=babysit_x y |` )
         rmSync( directory, { recursive: true, force: true } )
+
+    } )
+
+    it( `keeps the handoff files out of every child babysit spawns`, () => {
+
+        const script = `const { WRAPPER_ENV } = await import( '${ join( import.meta.dir, `../src/utils/wrapper_env.js` ) }' ); console.log( JSON.stringify( [ WRAPPER_ENV.BABYSIT_ATTACH_FILE, process.env.BABYSIT_ATTACH_FILE ?? null, process.env.BABYSIT_CD_FILE ?? null ] ) )`
+        const output = spawnSync( `bun`, [ `-e`, script ], { env: { ...process.env, BABYSIT_ATTACH_FILE: `/a`, BABYSIT_CD_FILE: `/c` }, encoding: `utf8` } )
+        expect( JSON.parse( output.stdout ) ).toEqual( [ `/a`, null, null ] )
 
     } )
 

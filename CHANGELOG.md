@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.49.5 — 2026-10-21
+
+### Fixed
+- The shell-init wrapper's handoff files could leak: a wrapped babysit that started the tmux server passed their paths to every pane, so a babysit run there could write into another shell's wrapper. babysit now drops them from its environment at startup.
+- Session names ending in a space lost it in the bash/zsh wrapper's attach.
+
 ## 1.49.4 — 2026-10-21
 
 ### Fixed
