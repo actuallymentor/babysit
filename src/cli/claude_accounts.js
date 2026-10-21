@@ -215,6 +215,9 @@ export const pick_account = ( readings = [] ) => readings
     .filter( reading => reading.status === `ok` && reading.headroom !== null )
     .reduce( ( best, reading ) => !best || reading.headroom > best.headroom ? reading : best, null )
 
+// Restarts often follow a limit hit: a 5-minute-old reading may hide a spent account
+const RESTART_PROBE_MAX_AGE_MS = 60_000
+
 /**
  * Name of the account with most headroom, for a restart that moves a session
  * to the freshest subscription. False with fewer than two accounts or no
@@ -226,7 +229,7 @@ export const most_headroom_account = async ( { list = list_claude_accounts, prob
 
     const accounts = list()
     if( accounts.length < 2 ) return false
-    return pick_account( await probe( accounts ) )?.name || false
+    return pick_account( await probe( accounts, { max_age_ms: RESTART_PROBE_MAX_AGE_MS } ) )?.name || false
 
 }
 

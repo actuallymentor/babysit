@@ -118,15 +118,14 @@ const restart_session = async ( session, { force = false, detach = false, accoun
 
     // Slow Docker work first, so the pane check sits right before the close.
     const next_image = await image_id()
-
-    // No --account: a Claude session moves to the subscription with most headroom
-    if( !account && session.agent === `claude` ) account = await best_account()
-    const account_note = account ? `, account ${ account }` : ``
-
     const updated = next_image && session.image_id && next_image !== session.image_id
     const image_note = next_image
         ? `image ${ short_id( next_image ) } (${ updated ? `updated from ${ short_id( session.image_id ) }` : `unchanged` })`
         : `image unknown`
+
+    // No --account: a Claude session moves to the subscription with most headroom
+    if( !account && session.agent === `claude` ) account = await best_account()
+    const account_note = account ? `, account ${ account }` : ``
 
     if( !force ) {
         // Only a recognised idle/waiting control counts. A quiet but unknown
