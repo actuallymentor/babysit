@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'bun:test'
 import {
     agent_exit_status,
@@ -8,6 +9,7 @@ import {
     DEBOUNCE_MS,
     LOGOUT_RECHECK_MS,
     shows_logout,
+    shows_session_logout,
 } from '../src/babysit/monitor.js'
 import { get_agent } from '../src/agents/index.js'
 import { create_session_logout_handler } from '../src/cli/monitor.js'
@@ -344,12 +346,34 @@ describe( `logout screen trigger`, () => {
                 now: () => clock,
                 ...overrides,
             } )
-            const sight = async ( after_ms = LOGOUT_RECHECK_MS ) => {
+            const sight = async ( after_ms = LOGOUT_RECHECK_MS, alertable = true ) => {
                 clock += after_ms
-                await handle( `claude` )
+                await handle( `claude`, { alertable } )
             }
             return { seen, sight }
         }
+
+        it( `never alerts on generic wording a transcript may quote, but still re-stages and checks`, async () => {
+            const { seen, sight } = handler()
+            for( let i = 0; i < 4; i++ ) await sight( LOGOUT_RECHECK_MS, false )
+            expect( seen.alerts ).toEqual( [] )
+            expect( seen.checks ).toHaveLength( 4 )
+            expect( seen.restaged ).toHaveLength( 4 )
+        } )
+
+        it( `alerts only on the agent's own error line, as Claude 2.1.304 renders it`, () => {
+            const claude = get_agent( `claude` )
+            const real = readFileSync( new URL( `./fixtures/claude/logged-out-2.1.304.txt`, import.meta.url ), `utf8` )
+            expect( shows_session_logout( real, claude ) ).toBe( true )
+            expect( shows_logout( real, claude ) ).toBe( true )
+
+            // Prose quoting the same words: a host check, never an alert
+            const quoted = `● Claude prints "Please run /login · API Error: 401" when the token dies.\n\n❯ `
+            expect( shows_logout( quoted, claude ) ).toBe( true )
+            expect( shows_session_logout( quoted, claude ) ).toBe( false )
+            expect( shows_session_logout( `• not logged in, so log in again\n› `, get_agent( `codex` ) ) ).toBe( false )
+            expect( shows_session_logout( `■ Your access token could not be refreshed. Please log out and sign in again.\n› `, get_agent( `codex` ) ) ).toBe( true )
+        } )
 
         it( `re-stages the host login first, then alerts once for a session that stays logged out`, async () => {
 
@@ -514,14 +538,18 @@ describe( `web bridge coordination`, () => {
             control_bridge,
             web_bridge: {
                 publish: async ( { busy } ) => published.push( busy ),
-                process_requests: async () => { requests++; return { sent: true } },
+                process_requests: async () => {
+                    requests++; return { sent: true } 
+                },
                 close: async () => {},
             },
             has_session_fn: async () => ++checks <= 2,
             capture_pane_fn: async () => `ready`,
             publish_agent_status_fn: async ( { agent_status } ) => agent_status,
             write_loop_deadline_fn: () => null,
-            wait_fn: async () => { control_bridge.busy = false },
+            wait_fn: async () => {
+                control_bridge.busy = false 
+            },
         } )
         expect( published ).toEqual( [ false, false ] )
         expect( requests ).toBe( 1 )
@@ -539,14 +567,18 @@ describe( `web bridge coordination`, () => {
             control_bridge,
             web_bridge: {
                 tmux_target: `%7`,
-                publish: async () => { control_bridge.revision++; control_bridge.busy = false },
+                publish: async () => {
+                    control_bridge.revision++; control_bridge.busy = false 
+                },
                 process_requests: async () => ( { sent: false } ),
                 close: async () => {},
             },
             has_session_fn: async () => ++alive_checks <= 1,
             capture_pane_fn: async () => `error`,
             publish_agent_status_fn: async ( { agent_status } ) => agent_status,
-            execute_action_fn: async () => { action_count++ },
+            execute_action_fn: async () => {
+                action_count++ 
+            },
             write_loop_deadline_fn: () => null,
             wait_fn: async () => null,
         } )

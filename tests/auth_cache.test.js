@@ -154,7 +154,9 @@ describe( `host authentication cache`, () => {
         expect( changed.fingerprint ).not.toBe( first.fingerprint )
         expect( fingerprint_agent_credentials( agent, [], {
             context_files: { babysitrc: `/unreadable` },
-            read_file: () => { throw new Error( `unreadable` ) },
+            read_file: () => {
+                throw new Error( `unreadable` ) 
+            },
         } ) ).toBeNull()
 
     } )
@@ -377,7 +379,9 @@ describe( `host authentication cache`, () => {
 
         expect( clear_host_auth_cache( `codex`, {
             cache_path,
-            lock_cache: () => { throw new Error( `busy` ) },
+            lock_cache: () => {
+                throw new Error( `busy` ) 
+            },
         } ) ).toBe( false )
         expect( Object.keys( read_host_auth_cache( { cache_path } ).agents ) )
             .toEqual( [ `claude`, `codex` ] )

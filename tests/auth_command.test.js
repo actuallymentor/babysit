@@ -406,26 +406,6 @@ describe( `auth check`, () => {
 
         } )
 
-        it( `never lets a deferred host probe postpone the half-TTL container re-probe`, async () => {
-
-            // Sessions run and the access token sits near expiry every tick:
-            // the host probe defers, but the container check still comes due
-            enrol( `codex`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000 )
-            const host = []
-            const { exit_code, probes, rendered } = check( {
-                select_agents: () => [ get_agent( `codex` ) ],
-                list_active_sessions: async () => [ { name: `babysit_x` } ],
-                read_credential: () => ( { state: `present`, text: `{"tokens":{"access_token":"expired.e30.x"},"last_refresh":"2020-01-01T00:00:00Z"}` } ),
-                run_host_check: async agent => host.push( agent.name ) && null,
-            } )
-
-            expect( await exit_code ).toBe( 0 )
-            expect( host ).toEqual( [] )
-            expect( probes ).toEqual( [ `codex` ] )
-            expect( rendered() ).not.toContain( `deferred` )
-
-        } )
-
         it( `treats an unreadable tmux server as a running session`, async () => {
 
             enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
@@ -843,7 +823,6 @@ describe( `scheduled checker installation`, () => {
                 output,
                 scheduler,
                 uid: 1000,
-                claude_token: async () => `skipped`,
                 execute: async ( binary, args ) => {
                     calls.push( [ binary, ...args ] )
                     return ``

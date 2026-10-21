@@ -62,7 +62,8 @@ export const request_auth_check = ( agent_name, { spawn_fn = spawn, command = re
  *    tick: a newer host credential wins) and asks the host for a verdict.
  * 2. Still visible at the next sighting (the monitor re-asks every
  *    LOGOUT_RECHECK_MS), it alerts once for this session, unless a host
- *    logout is on record: that alert already names the fix.
+ *    logout is on record: that alert already names the fix. Only the
+ *    agent's own error line (`alertable`) counts toward an alert.
  *
  * A sighting more than two re-check periods after the last starts a new
  * episode. An undelivered alert retries on the next sighting.
@@ -81,12 +82,7 @@ export const create_session_logout_handler = ( session, {
 
     let episode = null
 
-    return async agent_name => {
-
-        const at = now()
-        if( !episode || at - episode.seen_at > 2 * LOGOUT_RECHECK_MS ) episode = { started_at: at, sightings: 0, alerted: false }
-        episode.seen_at = at
-        episode.sightings += 1
+    return async ( agent_name, { alertable = false } = {} ) => {
 
         try {
             await restage( agent_name )
@@ -94,6 +90,14 @@ export const create_session_logout_handler = ( session, {
             log.warn( `Could not re-stage the host ${ agent_name } login into session ${ session.babysit_id }: ${ error.message }` )
         }
         request_check( agent_name )
+
+        // Generic wording may be a transcript quoting it: the host check is the only reaction
+        if( !alertable ) return
+
+        const at = now()
+        if( !episode || at - episode.seen_at > 2 * LOGOUT_RECHECK_MS ) episode = { started_at: at, sightings: 0, alerted: false }
+        episode.seen_at = at
+        episode.sightings += 1
 
         // First sighting: give the re-staged login a re-check period to land
         if( episode.alerted || episode.sightings < 2 ) return

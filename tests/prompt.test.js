@@ -38,9 +38,13 @@ const make_clock = () => {
     let current = 0
 
     return {
-        advance: milliseconds => { current += milliseconds },
+        advance: milliseconds => {
+            current += milliseconds 
+        },
         now_fn: () => current,
-        wait_fn: async milliseconds => { current += milliseconds },
+        wait_fn: async milliseconds => {
+            current += milliseconds 
+        },
     }
 
 }
@@ -520,7 +524,9 @@ Do NOT add Co-Authored-By lines to git commit messages.
         const clock = make_clock()
         let liveness_checks = 0
         const ready = await wait_for_initial_prompt_ready( `session`, claude, {
-            capture: async () => { throw new Error( `no pane` ) },
+            capture: async () => {
+                throw new Error( `no pane` ) 
+            },
             has_session_fn: async () => {
                 liveness_checks++
                 return false
@@ -629,7 +635,9 @@ describe( `startup authentication policy`, () => {
     it( `checks the active image agent without requiring a host binary`, () => {
         const selected = select_startup_auth_agents( codex, {
             candidates: [ codex ],
-            is_installed: () => { throw new Error( `active agent must not be detected` ) },
+            is_installed: () => {
+                throw new Error( `active agent must not be detected` ) 
+            },
         } )
 
         expect( selected ).toEqual( [ codex ] )

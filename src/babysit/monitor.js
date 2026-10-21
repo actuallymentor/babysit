@@ -38,6 +38,20 @@ export const LIMIT_RECHECK_MS = 10 * 60_000
 const LIMIT_SCREEN_LINES = 15
 
 /**
+ * The last `count` non-blank lines of a pane. Claude pins its composer to the
+ * bottom, so a short transcript leaves a tall blank gap above it: counting raw
+ * rows would cut off the very lines that matter.
+ * @param {string} screen - ANSI-free pane capture
+ * @param {number} count - Lines to keep
+ * @returns {string} Joined tail
+ */
+const screen_tail = ( screen, count ) => screen
+    .split( `\n` )
+    .filter( line => line.trim() )
+    .slice( -count )
+    .join( `\n` )
+
+/**
  * Whether the bottom of the pane shows the agent's subscription-limit message.
  * A hint like shows_logout: the switcher re-reads the account's quota first.
  * @param {string} screen - ANSI-free pane capture
@@ -46,7 +60,7 @@ const LIMIT_SCREEN_LINES = 15
  */
 export const shows_limit = ( screen = ``, agent = null ) => {
     const pattern = agent?.limit_pattern
-    return Boolean( pattern?.test( screen.trimEnd().split( `\n` ).slice( -LIMIT_SCREEN_LINES ).join( `\n` ) ) )
+    return Boolean( pattern?.test( screen_tail( screen, LIMIT_SCREEN_LINES ) ) )
 }
 
 /**
@@ -58,7 +72,19 @@ export const shows_limit = ( screen = ``, agent = null ) => {
  */
 export const shows_logout = ( screen = ``, agent = null ) => {
     const pattern = agent?.auth_check?.failure_pattern
-    return Boolean( pattern?.test( screen.trimEnd().split( `\n` ).slice( -LOGOUT_SCREEN_LINES ).join( `\n` ) ) )
+    return Boolean( pattern?.test( screen_tail( screen, LOGOUT_SCREEN_LINES ) ) )
+}
+
+/**
+ * Whether the lost login on screen is the agent's own error line, specific
+ * enough to alert on. Without a session_alert_pattern only the host check runs.
+ * @param {string} screen - ANSI-free pane capture
+ * @param {Object} agent - Adapter with auth_check.session_alert_pattern
+ * @returns {boolean} True when the latest lines carry the agent's own error
+ */
+export const shows_session_logout = ( screen = ``, agent = null ) => {
+    const pattern = agent?.auth_check?.session_alert_pattern
+    return Boolean( pattern?.test( screen_tail( screen, LOGOUT_SCREEN_LINES ) ) )
 }
 
 /**
@@ -139,7 +165,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {boolean} [options.approve_dialogs=false] - YOLO: accept the agent's blocking prompts whose default is yes
  * @param {string} [options.tmux_target] - Launch-bound agent pane when known
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
- * @param {Function} [options.on_logout_screen] - Callback with the agent name when the pane shows a lost login
+ * @param {Function} [options.on_logout_screen] - Callback with the agent name and { alertable } when the pane shows a lost login
  * @param {Function} [options.on_limit_screen] - Callback when the pane shows a subscription limit
  * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
@@ -320,7 +346,7 @@ export const start_monitor = async ( {
             if( on_logout_screen && Date.now() >= logout_check_ready_at && shows_logout( clean_output, agent ) ) {
                 log.info( `Pane shows a lost ${ agent.name } login; requesting an authentication check` )
                 logout_check_ready_at = Date.now() + LOGOUT_RECHECK_MS
-                on_logout_screen( agent.name )
+                on_logout_screen( agent.name, { alertable: shows_session_logout( clean_output, agent ) } )
             }
 
             // Not awaited: the handler probes accounts and may restart the session
