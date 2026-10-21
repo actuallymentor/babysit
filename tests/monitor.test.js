@@ -388,6 +388,7 @@ describe( `logout screen trigger`, () => {
             // The live composer never counts: Codex's placeholder, a Claude draft
             expect( shows_session_logout( `■ Your access token could not be refreshed.\n\n› Ask Codex to do anything\n  ? for shortcuts`, get_agent( `codex` ) ) ).toBe( true )
             expect( shows_session_logout( real.replace( /^❯[\s\u00a0]*$/m, `❯ half typed draft` ), claude ) ).toBe( true )
+            expect( shows_session_logout( real.replace( /^❯[\s\u00a0]*$/m, `❯ Explain this:\n  > quoted text` ), claude ) ).toBe( true )
 
             // A retry that worked: the old 401 is still on screen, but a prompt followed it
             const recovered = real.replace( `✻ Cogitated`, `❯ try again\n● Hi! How can I help?\n✻ Cogitated` )

@@ -37,9 +37,10 @@ const LOGOUT_SCREEN_LINES = 25
 // 401 line 7 non-blank lines up (status, separators, composer, footer)
 const SESSION_ALERT_LINES = 10
 
-// Prompt lines: Claude `❯`, Codex `›`, older `>`; submitted ones carry text
-const PROMPT_LINE = /^\s*[❯›>](?:\s|$)/
-const SUBMITTED_PROMPT = /^\s*[❯›>]\s+\S/
+// Prompt lines: Claude `❯`, Codex `›`; submitted ones carry text. Not `>`:
+// a markdown quote inside a multi-line draft would pass for a prompt.
+const PROMPT_LINE = /^\s*[❯›](?:\s|$)/
+const SUBMITTED_PROMPT = /^\s*[❯›]\s+\S/
 
 // A limit message on screen asks for an account switch at most this often
 export const LIMIT_RECHECK_MS = 10 * 60_000
