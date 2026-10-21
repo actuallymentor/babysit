@@ -327,12 +327,41 @@ export const select_stored_session = async ( selector, { inspect_records = inspe
 
 }
 
-/** Close a listed number or stored session ID, preserving intentional-close handling. */
+/**
+ * Resolve every selector up front: list numbers shift once a session closes,
+ * so `close 3 4 5` must mean the rows shown before the first close.
+ * Duplicates (`1 01`, a number and its id) collapse to one session.
+ * @param {string[]} selectors - List numbers or session ids
+ * @param {Function} [select] - One-selector resolver
+ * @returns {Promise<Object[]>} Stored sessions, in selector order
+ */
+export const select_each = async ( selectors, select = select_stored_session ) => {
+
+    const sessions = []
+    for( const selector of selectors ) sessions.push( await select( selector ) )
+    return sessions.filter( ( session, index ) => sessions.findIndex( other => other.babysit_id === session.babysit_id ) === index )
+
+}
+
+/** Close listed numbers or stored session IDs, preserving intentional-close handling. */
 export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, sessions = list_sessions, close = close_session, print = console.log } = {} ) => {
 
-    const session = await select_stored_session( cmd.session_id, { inspect_records, sessions } )
-    await close( session )
-    print( `Closed ${ session.babysit_id }; it will not be recovered.` )
+    const selected = await select_each( cmd.session_ids || [ cmd.session_id ], selector => select_stored_session( selector, { inspect_records, sessions } ) )
+
+    // One failed close must not keep the others open
+    const failed = []
+    for( const session of selected ) {
+        try {
+            await close( session )
+            print( `Closed ${ session.babysit_id }; it will not be recovered.` )
+        } catch ( error ) {
+            if( selected.length === 1 ) throw error
+            failed.push( session.babysit_id )
+            print( `Could not close ${ session.babysit_id }: ${ error.message }` )
+        }
+    }
+
+    if( failed.length ) throw new Error( `${ failed.length } of ${ selected.length } sessions not closed: ${ failed.join( `, ` ) }` )
 
 }
 

@@ -11,6 +11,7 @@ import {
     cmd_auth_accounts,
     list_claude_accounts,
     pick_account,
+    most_headroom_account,
     probe_accounts,
     read_account_registry,
     remove_account,
@@ -107,6 +108,14 @@ describe( `headroom selection`, () => {
         expect( pick_account( readings ).name ).toBe( `home` )
         expect( pick_account( readings.slice( 0, 2 ) ).name ).toBe( `default` )
         expect( pick_account( [ readings[ 1 ] ] ) ).toBe( null )
+    } )
+
+    it( `names the restart target only when there is a choice and a readable quota`, async () => {
+        const two = [ { name: `default` }, { name: `work` } ]
+        const probe = async () => [ { name: `default`, status: `ok`, headroom: 10 }, { name: `work`, status: `ok`, headroom: 90 } ]
+        expect( await most_headroom_account( { list: () => two, probe } ) ).toBe( `work` )
+        expect( await most_headroom_account( { list: () => two, probe: async () => [ { name: `work`, status: `error`, headroom: null } ] } ) ).toBe( false )
+        expect( await most_headroom_account( { list: () => two.slice( 0, 1 ), probe } ) ).toBe( false )
     } )
 
     const accounts = [ { name: `default`, token: RC }, { name: `work`, token: WORK } ]

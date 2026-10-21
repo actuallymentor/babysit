@@ -1,4 +1,6 @@
-import { close_session, select_stored_session, use_launch_environment } from './recover.js'
+import { createInterface } from 'readline/promises'
+import { close_session, select_each, select_stored_session, use_launch_environment } from './recover.js'
+import { most_headroom_account } from './claude_accounts.js'
 import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
 import { agent_activity } from '../babysit/activity.js'
@@ -96,6 +98,7 @@ export const unarchived_sessions = async ( { inspect_records = inspect_stored_se
  * @param {Object} [options] - Injectable seams
  */
 const restart_session = async ( session, { force = false, detach = false, account = false, continue_prompt = false }, {
+    best_account = most_headroom_account,
     capture = capture_pane,
     activity = agent_activity,
     sleep = delay => new Promise( resolve => setTimeout( resolve, delay ) ),
@@ -115,6 +118,11 @@ const restart_session = async ( session, { force = false, detach = false, accoun
 
     // Slow Docker work first, so the pane check sits right before the close.
     const next_image = await image_id()
+
+    // No --account: a Claude session moves to the subscription with most headroom
+    if( !account && session.agent === `claude` ) account = await best_account()
+    const account_note = account ? `, account ${ account }` : ``
+
     const updated = next_image && session.image_id && next_image !== session.image_id
     const image_note = next_image
         ? `image ${ short_id( next_image ) } (${ updated ? `updated from ${ short_id( session.image_id ) }` : `unchanged` })`
@@ -129,7 +137,7 @@ const restart_session = async ( session, { force = false, detach = false, accoun
         }
     }
 
-    log.info( `Restarting ${ session.agent } session ${ session.babysit_id } on ${ image_note }` )
+    log.info( `Restarting ${ session.agent } session ${ session.babysit_id } on ${ image_note }${ account_note }` )
 
     // Close and resume under the launch's own credential profile, with the
     // agent arguments it was started with, so nothing changes but the image.
@@ -149,27 +157,53 @@ const restart_session = async ( session, { force = false, detach = false, accoun
         restore_environment()
     }
 
-    print( `Restarted ${ session.babysit_id } on ${ image_note }.` )
+    print( `Restarted ${ session.babysit_id } on ${ image_note }${ account_note }.` )
 
 }
 
 /**
- * Restart a running session on the current image without losing the
- * conversation: close it gracefully (monitor stops, credentials flush back to
+ * Asks whether the restarted agents get a continue prompt. Only a terminal can
+ * answer; anything else (the account switcher, scripts) gets no.
+ * @param {Object} [io] - input/output streams
+ * @returns {Promise<boolean>}
+ */
+const ask_continue = async ( { input = process.stdin, output = process.stdout } = {} ) => {
+
+    if( !input.isTTY ) return false
+
+    const prompt = createInterface( { input, output } )
+    try {
+        return /^y(es)?$/i.test( ( await prompt.question( `Do you want to send a continue command after restart? y/N ` ) ).trim() )
+    } finally {
+        prompt.close()
+    }
+
+}
+
+/**
+ * Restart running sessions on the current image without losing the
+ * conversation: close each gracefully (monitor stops, credentials flush back to
  * the host, container removed), then resume it by its native agent id.
  * The agent must show an idle or waiting control; `--force` overrides.
- * `all` restarts every unarchived session detached, skipping refusals.
- * @param {Object} cmd - Parsed command { session_id, flags: { force, detach } }
+ * Several selectors or `all` restart detached, skipping refusals.
+ * @param {Object} cmd - Parsed command { session_id, session_ids, flags: { force, detach, continue_prompt, account } }
  * @param {Object} [options] - Injectable seams
  */
-export const cmd_restart = async ( cmd, { select = select_stored_session, select_all = unarchived_sessions, load = load_session, ...seams } = {} ) => {
+export const cmd_restart = async ( cmd, { select = select_stored_session, select_all = unarchived_sessions, load = load_session, ask = ask_continue, ...seams } = {} ) => {
 
-    const flags = cmd.flags || {}
-    if( cmd.session_id !== `all` ) return restart_session( await select( cmd.session_id ), flags, seams )
-
-    const sessions = await select_all()
+    const selectors = cmd.session_ids || [ cmd.session_id ]
+    const batch = selectors.length > 1 || selectors[0] === `all`
     const print = seams.print || console.log
+
+    // Numbers shift as sessions close: resolve every selector before touching any
+    const sessions = selectors[0] === `all` ? await select_all() : await select_each( selectors, select )
     if( !sessions.length ) return print( `No unarchived sessions to restart.` )
+
+    // Asked once, for the whole batch
+    const flags = { ...cmd.flags }
+    if( !flags.continue_prompt ) flags.continue_prompt = await ask()
+
+    if( !batch ) return restart_session( sessions[0], flags, seams )
 
     // One refusal (busy, sandbox) must not strand the rest, but a failed
     // resume might be the image, so stop before closing more sessions.

@@ -224,31 +224,37 @@ Examples:
   echo 'eval "$(babysit shell-init)"' >> ~/.bashrc     # or ~/.zshrc
   echo 'babysit shell-init fish | source' >> ~/.config/fish/config.fish`,
 
-    close: () => `Usage: babysit close <number|session_id>
+    close: () => `Usage: babysit close <number|session_id>...
 
-Closes a session on purpose: the agent stops, the container is removed, and
+Closes sessions on purpose: the agent stops, the container is removed, and
 recovery will not bring this launch back. Resume it later with babysit resume.
+Numbers mean the list as it was before the first close; one failure does not
+stop the rest.
 
 Examples:
   babysit close 2
+  babysit close 3 4 5
   babysit close abc-123`,
 
-    restart: () => `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account NAME]
+    restart: () => `Usage: babysit restart <number|session_id|all>... [--force] [--detach] [--continue] [--account NAME]
 
 Closes the session gracefully and resumes it on the current image, continuing
 the agent's own conversation id. Use it after babysit update. Refuses unless
 the agent is idle or waiting and its native session id was captured.
-Sandbox sessions cannot be restarted. "all" restarts every unarchived active
-session detached, skipping (and reporting) any that refuse.
+Sandbox sessions cannot be restarted. Several selectors or "all" restart
+detached, skipping (and reporting) any that refuse; numbers mean the list as
+it was before the first restart. Claude sessions move to the subscription with
+most headroom. Without --continue, a terminal asks once whether to send one.
 
 Options:
   --force           Restart even when busy or without a captured id
   --detach          Return instead of attaching
   --continue        Tell the agent to continue unfinished work once it is back
-  --account NAME    Claude: move the session to another subscription (babysit auth accounts)
+  --account NAME    Claude: this subscription instead of the one with most headroom
 
 Examples:
   babysit restart 1
+  babysit restart 1 6 3
   babysit restart 1 --detach
   babysit restart all
   babysit restart abc-123 --force
