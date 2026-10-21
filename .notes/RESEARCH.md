@@ -253,3 +253,10 @@ Source: strings in the native binary (`~/.local/share/claude/versions/2.1.283`).
 
 ## Claude strips auth env from child processes (2026-10-18, claude 2.1.302)
 Claude's binary hardcodes lists of auth vars (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, Bedrock/Foundry keys, ...) removed from the env of Bash-tool children. Verified in a session: `/proc/<claude pid>/environ` has the chosen account's token, the Bash tool's env has none. A nested `claude -p` therefore falls back to `~/.claude/.credentials.json` (the host `/login`, i.e. the "default" subscription), not the account picked by `resolve_launch_account`. `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is a separate, opt-in extra scrub and is not the cause; no opt-out for the fixed lists was found. The token also reaches children of `default`-account sessions only via the rc export, so they lose it the same way.
+
+## Rendering real Claude error screens offline (2026-10-21)
+- Run the real `claude` in a private tmux socket with `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-fake`, `ANTHROPIC_BASE_URL=http://127.0.0.1:<port>`, `CLAUDE_CONFIG_DIR=<tmp>` (onboarding/trust pre-accepted, see tests/e2e/claude-controls.js) and a tiny node server.
+- 429 + `anthropic-ratelimit-unified-status: rejected` + `-representative-claim: five_hour|seven_day|seven_day_opus|seven_day_sonnet` → `You've hit your <session|weekly|Opus|Sonnet> limit · resets …`; any other/no claim → bare `You've hit your limit`. Opus opens a 3-option picker.
+- 401 `authentication_error` → `● Please run /login · API Error: 401 <message>`.
+- Claude pins the composer to the pane bottom: short transcripts leave a tall blank gap, so scan by non-blank lines.
+- Codex 0.163 with a custom `model_providers` entry hung on "Waiting for startup" against the fake server; not resolved.
