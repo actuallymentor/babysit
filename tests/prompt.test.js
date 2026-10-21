@@ -399,6 +399,12 @@ Do NOT add Co-Authored-By lines to git commit messages.
         expect( is_initial_prompt_ready( opencode, output ) ).toBe( true )
     } )
 
+    it( `recognises OpenCode 1.19's composer behind the non-modal update banner`, () => {
+        const output = read_opencode_fixture( `ready-update-banner` )
+
+        expect( is_initial_prompt_ready( opencode, output ) ).toBe( true )
+    } )
+
     it( `rejects OpenCode's model error even when the composer remains visible`, () => {
         const output = read_opencode_fixture( `model-error` )
 
