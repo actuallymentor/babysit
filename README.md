@@ -544,7 +544,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Codex config is staged in a temporary copy; invalid TOML fails before staging.
 - Codex host `auth.json` changes sync automatically; five-minute reconciliation remains as fallback.
 - Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
-- Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf, adb/fastboot, Python uiautomator2.
+- Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf, adb/fastboot, Python uiautomator2, pymobiledevice3 + facebook-wda (iOS via WebDriverAgent).
 - Image builds refresh agent CLIs on every run/attempt and log installed versions.
 - `babysit update` allows 120 seconds for image pulls and reports the image version.
   Older/unlabelled images show `version unavailable`.
