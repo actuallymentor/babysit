@@ -159,13 +159,17 @@ export const claude = {
         effort: ( e ) => [ `--effort`, e ],
     },
 
-    // A subscription limit stopped the session. Strings from the 2.1.302
-    // binary: `You've hit your ${ session limit | weekly limit | Opus limit |
-    // Sonnet limit | Fable limit } · resets 3pm`, the auto-wait status
-    // `Usage limit reached · continuing automatically …`, and the older
-    // `5-hour limit reached ∙ resets 3pm` / `Claude usage limit reached`.
+    // A subscription limit stopped the session. Rendered by 2.1.304 against a
+    // fake 429 (tests/fixtures/claude/usage-limit-*.txt): `You've hit your
+    // ${ session | weekly | Opus | Sonnet | Fable } limit · resets 3pm`, the
+    // bare `You've hit your limit · resets 3pm` when the claim is anything
+    // else (overage, none), and the auto-wait status, which Claude prefixes
+    // with `●` or `⚠`: `● Usage limit reached · continuing automatically …`.
+    // A model limit (Opus) opens a picker whose height pushes that line out of
+    // the scanned tail, so its `Stop and wait for limit to reset` row counts too.
+    // Older builds: `5-hour limit reached ∙ resets 3pm` / `Claude usage limit reached`.
     // Spend caps (monthly, usage credits) are not account quotas: excluded.
-    limit_pattern: /You[’']ve hit your (?:session|weekly|Opus|Sonnet|Fable) limit\b|\b(?:5-hour|weekly|Opus) limit reached\b|Claude (?:AI )?usage limit reached\b|^\s*Usage limit reached(?: again)?\b/m,
+    limit_pattern: /You[’']ve hit your (?:session|weekly|Opus|Sonnet|Fable) limit\b|You[’']ve hit your limit · resets\b|\b(?:5-hour|weekly|Opus) limit reached\b|Claude (?:AI )?usage limit reached\b|^[\s●⚠]*Usage limit reached(?: again)?\b|^[\s❯]*\d\. Stop and wait for limit to reset\b/m,
 
     auth_check: {
         args: prompt => [ `-p`, prompt, `--no-session-persistence` ],

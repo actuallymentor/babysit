@@ -19,6 +19,11 @@ describe( `Claude limit detection`, () => {
 
     it( `matches the real limit wordings at the bottom of the pane`, () => {
         expect( shows_limit( fixture( `usage-limit-session.txt` ), claude ) ).toBe( true )
+        // Real 2.1.304 panes; an unclaimed limit only says `You've hit your limit`
+        for( const name of [ `usage-limit-session-2.1.304.txt`, `usage-limit-unclaimed.txt`, `usage-limit-opus-dialog.txt` ] ) {
+            expect( shows_limit( fixture( name ), claude ) ).toBe( true )
+        }
+        expect( shows_limit( `❯ go\n  ⎿  done\n  ⚠ Usage limit reached · limit resets 2:57pm\n❯ `, claude ) ).toBe( true )
         const lines = [
             `  ⎿  You've hit your weekly limit · resets Oct 20, 9am (Europe/Amsterdam)`,
             `  ⎿  You’ve hit your Opus limit · resets 3pm`,
