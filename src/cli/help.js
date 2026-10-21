@@ -33,7 +33,7 @@ Usage:
   babysit recover init                Install this account's Ubuntu boot recovery service
   babysit close <number|id>...         Close intentionally; disable recovery for these launches
   babysit restart <number|id|all>...   Rebuild idle session(s) on the current image, keeping the conversation; --force, --detach, --continue
-  babysit archive <number|session_id>  Dim a session and sink it to the bottom of babysit list; open un-archives
+  babysit archive <number|id>...       Dim sessions and sink them to the bottom of babysit list; open un-archives
   babysit config                       Show settings and setup status
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session

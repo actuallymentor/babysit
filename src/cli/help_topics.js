@@ -262,13 +262,15 @@ Examples:
   babysit restart 2 --account work --continue
   babysit restart all --account failover`,
 
-    archive: () => `Usage: babysit archive <number|session_id|name>
+    archive: () => `Usage: babysit archive <number|session_id|name>...
 
-Dims a session and sinks it to the bottom of its workspace in babysit list.
-It keeps running. babysit open un-archives it.
+Dims sessions and sinks them to the bottom of their workspace in babysit list.
+They keep running. babysit open un-archives one. Numbers mean the list as it
+was before the first archive.
 
 Examples:
   babysit archive 3
+  babysit archive 2 5 6
   babysit archive "feature 1"`,
 
     prune: () => `Usage: babysit prune [--list]
