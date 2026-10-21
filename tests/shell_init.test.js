@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { spawnSync } from 'child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -11,10 +12,29 @@ describe( `babysit shell-init`, () => {
 
     it( `prints a POSIX wrapper for bash and zsh, and a fish one`, () => {
 
-        expect( shell_init_script( `bash` ) ).toContain( `BABYSIT_CD_FILE="$babysit_cd_file" command babysit "$@"` )
+        expect( shell_init_script( `bash` ) ).toContain( `BABYSIT_CD_FILE="$babysit_cd_file" BABYSIT_ATTACH_FILE="$babysit_attach_file" command babysit "$@"` )
         // zsh reserves $status, so the wrapper must not assign it
         expect( shell_init_script( `zsh` ) ).not.toMatch( /\bstatus=/ )
         expect( shell_init_script( `fish` ) ).toStartWith( `function babysit` )
+
+    } )
+
+    it( `runs the handed-off tmux attach, then follows the workspace, in a real bash`, () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-wrapper-` ) )
+        const bin = join( directory, `bin` )
+        mkdirSync( bin )
+
+        // Stand-ins: babysit fills both files and exits; tmux records its argv
+        writeFileSync( join( bin, `babysit` ), `#!/bin/sh\nprintf 'babysit\\n=babysit_x y\\n' > "$BABYSIT_ATTACH_FILE"\nprintf '%s' '${ directory }' > "$BABYSIT_CD_FILE"\n`, { mode: 0o755 } )
+        writeFileSync( join( bin, `tmux` ), `#!/bin/sh\nprintf '%s|' "$@" > '${ directory }/tmux.log'\n`, { mode: 0o755 } )
+
+        const script = `${ shell_init_script( `bash` ) }\nbabysit open 1; echo "$?:$PWD"`
+        const output = spawnSync( `bash`, [ `-c`, script ], { cwd: `/`, env: { ...process.env, PATH: `${ bin }:${ process.env.PATH }` }, encoding: `utf8` } )
+
+        expect( output.stdout.trim() ).toBe( `0:${ directory }` )
+        expect( readFileSync( join( directory, `tmux.log` ), `utf8` ) ).toBe( `-L|babysit|attach|-t|=babysit_x y|` )
+        rmSync( directory, { recursive: true, force: true } )
 
     } )
 
@@ -44,7 +64,9 @@ describe( `follow_workspace`, () => {
     it( `never creates a file a stale variable points at, and skips the current or missing directories`, () => {
 
         const stale = join( directory, `gone` )
-        expect( follow_workspace( directory, { cwd: `/`, env: { BABYSIT_CD_FILE: stale }, write_file: () => { throw new Error( `wrote` ) } } ) ).toBe( false )
+        expect( follow_workspace( directory, { cwd: `/`, env: { BABYSIT_CD_FILE: stale }, write_file: () => {
+            throw new Error( `wrote` ) 
+        } } ) ).toBe( false )
         expect( follow_workspace( directory, { cwd: directory, env: { BABYSIT_CD_FILE: cd_file } } ) ).toBe( false )
         expect( follow_workspace( join( directory, `pruned` ), { cwd: `/`, env: { BABYSIT_CD_FILE: cd_file } } ) ).toBe( false )
         rmSync( directory, { recursive: true, force: true } )

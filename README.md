@@ -161,7 +161,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit watch [--usage\|--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged), USAGE column = usage bar for the session's worst rate window. `--usage`: only the account usage panel, one metered row per limit (bar, % used, reset or used / limit); `--all`: tree + panel. Balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. Replaces `list --watch` |
 | `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
 | `babysit open [id\|name\|number]` | Attach; on detach your shell lands in the agent's workspace (its clone for `--clone`) when `eval "$(babysit shell-init)"` is in your rc, else the `cd` line is printed |
-| `babysit shell-init [bash\|zsh\|fish]` | Print the `babysit` shell function that lets `open` change your directory. Fish: `babysit shell-init fish \| source` |
+| `babysit shell-init [bash\|zsh\|fish]` | Print the `babysit` shell function that lets `open` change your directory and runs the attach itself, so no idle babysit process (swapped out on a busy host) delays a detach. Fish: `babysit shell-init fish \| source` |
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |

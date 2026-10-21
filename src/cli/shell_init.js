@@ -3,22 +3,34 @@ import { basename } from 'path'
 
 // A process cannot change its parent shell's directory. These wrappers hand
 // babysit a file to write the target into, then `cd` there once it exits.
+// The attach file does the same for tmux: babysit exits before the attach, so
+// no idle babysit process (swapped out on a busy host) stalls the detach.
 const POSIX = `babysit() {
-    local babysit_cd_file babysit_status
+    local babysit_cd_file babysit_attach_file babysit_status babysit_socket babysit_target
     babysit_cd_file="$(mktemp)" || { command babysit "$@"; return; }
-    BABYSIT_CD_FILE="$babysit_cd_file" command babysit "$@"
+    babysit_attach_file="$(mktemp)" || { rm -f "$babysit_cd_file"; command babysit "$@"; return; }
+    BABYSIT_CD_FILE="$babysit_cd_file" BABYSIT_ATTACH_FILE="$babysit_attach_file" command babysit "$@"
     babysit_status=$?
+    if [ -s "$babysit_attach_file" ]; then
+        { read -r babysit_socket; read -r babysit_target; } < "$babysit_attach_file"
+        command tmux -L "$babysit_socket" attach -t "$babysit_target"
+    fi
     if [ -s "$babysit_cd_file" ]; then cd -- "$(cat "$babysit_cd_file")" || true; fi
-    rm -f "$babysit_cd_file"
+    rm -f "$babysit_cd_file" "$babysit_attach_file"
     return $babysit_status
 }`
 
 const FISH = `function babysit
     set -l babysit_cd_file (mktemp); or begin; command babysit $argv; return; end
-    BABYSIT_CD_FILE=$babysit_cd_file command babysit $argv
+    set -l babysit_attach_file (mktemp); or begin; rm -f $babysit_cd_file; command babysit $argv; return; end
+    BABYSIT_CD_FILE=$babysit_cd_file BABYSIT_ATTACH_FILE=$babysit_attach_file command babysit $argv
     set -l babysit_status $status
+    if test -s $babysit_attach_file
+        set -l babysit_attach (cat $babysit_attach_file)
+        command tmux -L $babysit_attach[1] attach -t $babysit_attach[2]
+    end
     test -s $babysit_cd_file; and cd (cat $babysit_cd_file)
-    rm -f $babysit_cd_file
+    rm -f $babysit_cd_file $babysit_attach_file
     return $babysit_status
 end`
 

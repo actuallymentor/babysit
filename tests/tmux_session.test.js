@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { attach_session, clipboard_command, create_session, get_session_pane, has_session, kill_session, list_sessions, set_agent_status } from '../src/tmux/session.js'
+import { TMUX_SOCKET } from '../src/utils/paths.js'
 
 describe( `create_session mouse copy`, () => {
 
@@ -131,6 +135,26 @@ describe( `attach_session`, () => {
         } )
 
         expect( commands[0] ).toContain( `attach -t "=babysit_test"` )
+    } )
+
+    it( `hands the attach to the shell wrapper's file instead of blocking`, () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-attach-` ) )
+        const attach_file = join( directory, `attach` )
+        writeFileSync( attach_file, `` )
+
+        const exec_command = () => {
+            throw new Error( `attached in-process` )
+        }
+        expect( attach_session( `babysit_test`, { exec_command, env: { BABYSIT_ATTACH_FILE: attach_file } } ) ).toBe( false )
+        expect( readFileSync( attach_file, `utf8` ) ).toBe( `${ TMUX_SOCKET }\n=babysit_test\n` )
+
+        // A stale variable from an exited wrapper never creates a file
+        rmSync( directory, { recursive: true, force: true } )
+        const commands = []
+        expect( attach_session( `babysit_test`, { exec_command: command => commands.push( command ), env: { BABYSIT_ATTACH_FILE: attach_file } } ) ).toBe( true )
+        expect( commands ).toHaveLength( 1 )
+
     } )
 
 } )

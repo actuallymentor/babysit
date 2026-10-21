@@ -1,5 +1,6 @@
 import { createHash } from 'crypto'
 import { execSync } from 'child_process'
+import { existsSync, writeFileSync } from 'fs'
 import { command_exists, run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
@@ -224,13 +225,24 @@ export const kill_session = async ( session_name, { run_command = run } = {} ) =
 }
 
 /**
- * Attach to an existing tmux session.
+ * Attach to an existing tmux session. Under the shell-init wrapper the shell
+ * runs `tmux attach` itself: a babysit process blocked for the whole session
+ * gets swapped out on a busy host, and paging it back in delays every detach.
  * @param {string} session_name - The session name
  * @param {Object} [options]
  * @param {Function} [options.exec_command] - Injectable synchronous command runner
- * @returns {true} Indicates that the foreground tmux client has exited
+ * @param {Object} [options.env] - Environment carrying BABYSIT_ATTACH_FILE
+ * @param {Function} [options.write_file] - File writer seam
+ * @returns {boolean} true once the foreground client exits, false when the wrapper attaches instead
  */
-export const attach_session = ( session_name, { exec_command = execSync } = {} ) => {
+export const attach_session = ( session_name, { exec_command = execSync, env = process.env, write_file = writeFileSync } = {} ) => {
+
+    // Only the wrapper's own temp file, so a stale inherited variable never creates one
+    const attach_file = env.BABYSIT_ATTACH_FILE
+    if( attach_file && existsSync( attach_file ) ) {
+        write_file( attach_file, `${ TMUX_SOCKET }\n=${ session_name }\n` )
+        return false
+    }
 
     try {
         exec_command( `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( `=${ session_name }` ) }`, {
