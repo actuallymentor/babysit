@@ -251,6 +251,7 @@ Options:
   --detach          Return instead of attaching
   --continue        Tell the agent to continue unfinished work once it is back
   --account NAME    Claude: this subscription instead of the one with most headroom
+                    (with several sessions or "all": its Claude sessions only)
 
 Examples:
   babysit restart 1
@@ -258,7 +259,8 @@ Examples:
   babysit restart 1 --detach
   babysit restart all
   babysit restart abc-123 --force
-  babysit restart 2 --account work --continue`,
+  babysit restart 2 --account work --continue
+  babysit restart all --account failover`,
 
     archive: () => `Usage: babysit archive <number|session_id|name>
 

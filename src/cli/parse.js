@@ -301,8 +301,6 @@ export const parse_args = ( argv ) => {
         if( unexpected.length ) throw new Error( `Unknown restart argument: ${ unexpected[0] }` )
         if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all>... [--force] [--detach] [--continue] [--account <name>]` )
         if( selectors.includes( `all` ) && selectors.length > 1 ) throw new Error( `restart all takes no other selectors` )
-        // `all` mixes agents and subscriptions; name the sessions to force one account
-        if( selector === `all` && flags.account ) throw new Error( `--account applies to one Claude session; restart them one by one` )
         return { verb: `restart`, agent: null, session_id: selector, session_ids: selectors, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ), continue_prompt: Boolean( args.continue ) }, passthrough: [] }
     }
 

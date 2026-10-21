@@ -172,6 +172,20 @@ describe( `babysit restart`, () => {
         expect( await run( { continue_prompt: true } ) ).toEqual( { asked: [], resumed: [ true, true ] } )
     } )
 
+    it( `moves only the Claude sessions of a batch to --account`, async () => {
+        const { seams } = harness()
+        const claude = { ...session, babysit_id: `c1`, agent: `claude` }
+        const resumed = []
+        await cmd_restart( { session_id: `all`, session_ids: [ `all` ], flags: { account: `failover`, continue_prompt: true } }, {
+            ...seams, select_all: async () => [ session, claude ], load: () => null,
+            resume: async cmd => resumed.push( `${ cmd.session_id } ${ cmd.flags.account || `-` }` ),
+        } )
+        expect( resumed ).toEqual( [ `s1 -`, `c1 failover` ] )
+
+        // One named non-Claude session still refuses outright
+        await expect( cmd_restart( { session_id: `1`, flags: { account: `failover` } }, { ...harness().seams, ask: async () => false } ) ).rejects.toThrow( `--account picks a Claude subscription` )
+    } )
+
     it( `refuses a sandbox or id-less single session before asking about a continue prompt`, async () => {
         for( const overrides of [ { modifiers: [ `sandbox` ] }, { agent_session_id: null } ] ) {
             const { seams } = harness( { overrides } )
@@ -227,6 +241,7 @@ describe( `babysit restart`, () => {
         expect( () => parse_args( [ `restart` ] ) ).toThrow( `Usage: babysit restart` )
         expect( parse_args( [ `restart`, `1`, `6`, `--detach`, `3` ] ) ).toMatchObject( { session_id: `1`, session_ids: [ `1`, `6`, `3` ], flags: { detach: true } } )
         expect( parse_args( [ `restart`, `1`, `6`, `--account`, `work` ] ) ).toMatchObject( { session_ids: [ `1`, `6` ], flags: { account: `work` } } )
+        expect( parse_args( [ `restart`, `all`, `--account`, `failover` ] ) ).toMatchObject( { session_ids: [ `all` ], flags: { account: `failover` } } )
         expect( () => parse_args( [ `restart`, `all`, `2` ] ) ).toThrow( `restart all takes no other selectors` )
         expect( parse_args( [ `close`, `3`, `4`, `5` ] ) ).toMatchObject( { verb: `close`, session_id: `3`, session_ids: [ `3`, `4`, `5` ] } )
         expect( () => parse_args( [ `close`, `3`, `--force` ] ) ).toThrow( `Unknown close argument: --force` )
