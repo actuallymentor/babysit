@@ -9,6 +9,7 @@ import {
     HOST_AUTH_CACHE_TTL_MS,
     read_host_auth_cache,
     record_host_auth_success,
+    refresh_host_auth_cache,
 } from '../src/agents/auth_cache.js'
 import { get_agent } from '../src/agents/index.js'
 import {
@@ -431,6 +432,89 @@ describe( `auth check`, () => {
 
             await check( { select_agents: () => [ get_agent( `codex` ) ], run_host_check: async agent => host.push( agent.name ) && null } ).exit_code
             expect( host ).toEqual( [] )
+
+        } )
+
+        describe( `container re-verification while sessions run`, () => {
+
+            const near_expiry = { state: `present`, text: `{"tokens":{"access_token":"expired.e30.x"},"last_refresh":"2020-01-01T00:00:00Z"}` }
+            const fresh_token = () => {
+                const claims = Buffer.from( JSON.stringify( { exp: Date.now() / 1_000 + 3_600 } ) ).toString( `base64url` )
+                return { state: `present`, text: JSON.stringify( { tokens: { access_token: `h.${ claims }.s` }, last_refresh: new Date().toISOString() } ) }
+            }
+            const live = { list_active_sessions: async () => [ { name: `babysit_x` } ] }
+            const due = () => enrol( `codex`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000 )
+            const codex_only = { select_agents: () => [ get_agent( `codex` ) ] }
+
+            it( `defers a token-rotating probe, even when forced, and leaves the entry alone`, async () => {
+
+                due()
+                const before = read_host_auth_cache( { cache_path } ).agents.codex
+
+                const deferred = check( { ...codex_only, ...live, read_credential: () => near_expiry } )
+                expect( await deferred.exit_code ).toBe( 0 )
+                expect( deferred.probes ).toEqual( [] )
+                expect( deferred.rendered() ).toContain( `codex: deferred (a running session may be refreshing its token)` )
+                expect( read_host_auth_cache( { cache_path } ).agents.codex ).toEqual( before )
+
+                const forced = check( { ...codex_only, ...live, read_credential: () => near_expiry, agent_name: `codex`, force: true } )
+                expect( await forced.exit_code ).toBe( 0 )
+                expect( forced.probes ).toEqual( [] )
+
+            } )
+
+            it( `probes as before without a session, or when the probe cannot rotate`, async () => {
+
+                due()
+                const idle = check( { ...codex_only, read_credential: () => near_expiry } )
+                expect( await idle.exit_code ).toBe( 0 )
+                expect( idle.probes ).toEqual( [ `codex` ] )
+
+                due()
+                const unexpired = check( { ...codex_only, ...live, read_credential: fresh_token } )
+                expect( await unexpired.exit_code ).toBe( 0 )
+                expect( unexpired.probes ).toEqual( [ `codex` ] )
+
+                // An env token outranks the file inside the probe
+                enrol( `codex`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
+                const keyed = check( { ...codex_only, ...live, read_credential: () => near_expiry } )
+                expect( await keyed.exit_code ).toBe( 0 )
+                expect( keyed.probes ).toEqual( [ `codex` ] )
+
+            } )
+
+            it( `counts a session's token rotation as the proof that keeps the entry warm`, async () => {
+
+                due()
+                const entry = read_host_auth_cache( { cache_path } ).agents.codex
+                expect( refresh_host_auth_cache( `codex`, {
+                    expected_credential_fingerprint: entry.credential_fingerprint,
+                    next_credential_fingerprint: entry.credential_fingerprint,
+                    image_identity: IMAGE_IDENTITY,
+                }, { cache_path } ) ).toBe( true )
+
+                // Same bytes after a final flush: still due
+                const flushed = check( { ...codex_only, ...live, read_credential: () => near_expiry } )
+                await flushed.exit_code
+                expect( flushed.rendered() ).toContain( `codex: deferred` )
+
+                // A real rotation renews it, so the checker has nothing to probe
+                refresh_host_auth_cache( `codex`, {
+                    expected_credential_fingerprint: entry.credential_fingerprint,
+                    next_credential_fingerprint: `rotated`,
+                    image_identity: IMAGE_IDENTITY,
+                }, { cache_path } )
+                refresh_host_auth_cache( `codex`, {
+                    expected_credential_fingerprint: `rotated`,
+                    next_credential_fingerprint: entry.credential_fingerprint,
+                    image_identity: IMAGE_IDENTITY,
+                }, { cache_path } )
+                const renewed = check( { ...codex_only, ...live, read_credential: () => near_expiry } )
+                expect( await renewed.exit_code ).toBe( 0 )
+                expect( renewed.probes ).toEqual( [] )
+                expect( renewed.rendered() ).toContain( `codex: cached` )
+
+            } )
 
         } )
 
