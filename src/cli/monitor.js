@@ -4,15 +4,17 @@ import { get_boot_id } from '../sessions/lock.js'
 import { read_durable_exit } from '../sessions/transcript.js'
 import { spawn } from 'child_process'
 import { existsSync } from 'fs'
+import { basename } from 'path'
 
 import { log } from '../utils/log.js'
+import { host_logout_on_record, notify_pushover } from '../utils/notify.js'
 import { load_session, session_original_workspace, session_workspace, update_session } from '../sessions/store.js'
 import { load_config } from '../babysit/yaml.js'
 import { get_agent } from '../agents/index.js'
 import { apply_loop } from '../modes/loop.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
-import { start_monitor } from '../babysit/monitor.js'
+import { LOGOUT_RECHECK_MS, start_monitor } from '../babysit/monitor.js'
 import { create_watchdog } from '../babysit/watchdog.js'
 import { create_account_switcher } from '../babysit/account_switch.js'
 import { judge_session } from '../babysit/judge.js'
@@ -49,6 +51,63 @@ export const request_auth_check = ( agent_name, { spawn_fn = spawn, command = re
     } catch ( error ) {
         log.warn( `Could not start an authentication check for ${ agent_name }: ${ error.message }` )
     }
+}
+
+/**
+ * React to a session pane showing a lost login. The host verdict alone
+ * misses a session whose own container token died while the host login is
+ * fine, so the session gets its own episode:
+ *
+ * 1. Every sighting re-stages the host login into the container (one sync
+ *    tick: a newer host credential wins) and asks the host for a verdict.
+ * 2. Still visible at the next sighting (the monitor re-asks every
+ *    LOGOUT_RECHECK_MS), it alerts once for this session, unless a host
+ *    logout is on record: that alert already names the fix.
+ *
+ * A sighting more than two re-check periods after the last starts a new
+ * episode. An undelivered alert retries on the next sighting.
+ *
+ * @param {Object} session - Stored session metadata
+ * @param {Object} options - Sync, check, notifier and clock seams
+ * @returns {Function} on_logout_screen handler; never rejects
+ */
+export const create_session_logout_handler = ( session, {
+    restage = async () => {},
+    request_check = request_auth_check,
+    host_logout_known = host_logout_on_record,
+    notify = notify_pushover,
+    now = () => Date.now(),
+} = {} ) => {
+
+    let episode = null
+
+    return async agent_name => {
+
+        const at = now()
+        if( !episode || at - episode.seen_at > 2 * LOGOUT_RECHECK_MS ) episode = { started_at: at, sightings: 0, alerted: false }
+        episode.seen_at = at
+        episode.sightings += 1
+
+        try {
+            await restage( agent_name )
+        } catch ( error ) {
+            log.warn( `Could not re-stage the host ${ agent_name } login into session ${ session.babysit_id }: ${ error.message }` )
+        }
+        request_check( agent_name )
+
+        // First sighting: give the re-staged login a re-check period to land
+        if( episode.alerted || episode.sightings < 2 ) return
+        if( host_logout_known( agent_name ) ) return
+
+        const workspace = session_original_workspace( session )
+        const minutes = Math.round( ( at - episode.started_at ) / 60_000 )
+        episode.alerted = await notify( {
+            title: `Babysit: ${ agent_name } logged out in a session`,
+            message: `${ agent_name } in session ${ session.babysit_id }${ workspace ? ` (${ basename( workspace ) })` : `` } has shown a lost login for ${ minutes } min, and re-staging the host login did not help. Run babysit restart ${ session.babysit_id }; if that fails, log in again on the host.`,
+        } ).catch( () => false )
+
+    }
+
 }
 
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
@@ -433,7 +492,10 @@ export const cmd_monitor = async ( cmd ) => {
             },
             on_user_input: () => stuck_controller.clear(),
             watchdog,
-            on_logout_screen: request_auth_check,
+            // A newer host login wins the sync tick, so this re-stages it
+            on_logout_screen: create_session_logout_handler( session, {
+                restage: name => creds_sync?.flush( name ),
+            } ),
             // Claude limit hit: move to another registered account with headroom
             on_limit_screen: agent.name === `claude` && config.claude_account_auto_switch !== false
                 ? create_account_switcher( session ) : null,

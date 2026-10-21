@@ -137,6 +137,15 @@ export const alert_high_usage = async ( usage, { alerts_path = ALERTS_PATH, noti
 }
 
 /**
+ * Whether a host logout for this agent is on record (pending or delivered).
+ * Session alerts defer to it: the host alert already names the fix.
+ * @param {string} agent - Agent name
+ * @param {Object} [options] - State path seam
+ * @returns {boolean} True while the host login is known lost
+ */
+export const host_logout_on_record = ( agent, { alerts_path = ALERTS_PATH } = {} ) => Boolean( read_alerts( alerts_path ).logouts[ agent ] )
+
+/**
  * Notify once per lost login. Each logout is keyed by the login it ended
  * (the cache entry's authenticated_at), so a re-probe of the same dead login
  * stays silent, and an undelivered alert is retried on every later run.
