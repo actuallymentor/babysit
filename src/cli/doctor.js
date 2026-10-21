@@ -55,6 +55,7 @@ export const select_doctor_auth_agents = ( selection = `all` ) => {
  * @param {AbortSignal|null} [options.signal] - External cancellation; cancelled probes are reported as skipped
  * @param {boolean} [options.clear_on_failure=true] - Also drop cache entries on non-auth probe failures
  * @param {Function} [options.acquire_lease] - Lease acquisition seam; may return an already-owned lease
+ * @param {Function} [options.defer_probe] - Reason to hold back a due probe, or null to run it
  * @returns {Promise<Object[]>} Per-agent results
  */
 export const run_auth_diagnostics = async ( agents, {
@@ -75,6 +76,7 @@ export const run_auth_diagnostics = async ( agents, {
     signal = null,
     allow_skip = false,
     clear_on_failure = true,
+    defer_probe = () => null,
 } = {} ) => {
 
     const cache_options = cache_path ? { cache_path } : {}
@@ -131,6 +133,9 @@ export const run_auth_diagnostics = async ( agents, {
                 image_identity,
             }, { ...cache_options, ttl_ms } )
 
+            // A held-back probe leaves the entry alone: no verdict, no alert
+            const deferral = !hit && defer_probe( agent )
+
             if( hit ) {
                 settled_results.push( {
                     name: agent.name,
@@ -138,6 +143,8 @@ export const run_auth_diagnostics = async ( agents, {
                     authenticated: true,
                     authenticated_at: hit.authenticated_at,
                 } )
+            } else if( deferral ) {
+                settled_results.push( { name: agent.name, status: `deferred`, authenticated: false, reason: deferral } )
             } else {
                 agents_to_check.push( agent )
             }

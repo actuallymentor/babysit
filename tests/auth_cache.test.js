@@ -310,6 +310,45 @@ describe( `host authentication cache`, () => {
 
     } )
 
+    it( `renews trust on each real session rotation, so launches keep hitting past the probe's TTL`, () => {
+
+        record_host_auth_success( `codex`, {
+            credential_fingerprint: CREDENTIAL_FINGERPRINT,
+            image_identity: IMAGE_IDENTITY,
+        }, { cache_path, now: NOW } )
+        const rotate = ( expected, next, now ) => refresh_host_auth_cache( `codex`, {
+            expected_credential_fingerprint: expected,
+            next_credential_fingerprint: next,
+            image_identity: IMAGE_IDENTITY,
+        }, { cache_path, now } )
+        const hit = ( fingerprint, now ) => find_host_auth_cache_hit( `codex`, {
+            credential_fingerprint: fingerprint,
+            image_identity: IMAGE_IDENTITY,
+        }, { cache_path, now } )
+
+        // A flush of unchanged bytes is no new proof
+        expect( rotate( CREDENTIAL_FINGERPRINT, CREDENTIAL_FINGERPRINT, NOW + 1_000 ) ).toBe( true )
+        expect( read_host_auth_cache( { cache_path } ).agents.codex.session_verified_at ).toBeUndefined()
+
+        const first = NOW + HOST_AUTH_CACHE_TTL_MS - 1_000
+        expect( rotate( CREDENTIAL_FINGERPRINT, `second`, first ) ).toBe( true )
+        expect( read_host_auth_cache( { cache_path } ).agents.codex ).toMatchObject( {
+            authenticated_at: new Date( NOW ).toISOString(),
+            session_verified_at: new Date( first ).toISOString(),
+        } )
+
+        // The chain survives the original probe's TTL, one rotation at a time
+        const second = first + HOST_AUTH_CACHE_TTL_MS - 1_000
+        expect( hit( `second`, second ) ).not.toBeNull()
+        expect( rotate( `second`, `third`, second ) ).toBe( true )
+        expect( hit( `third`, second + 1_000 ) ).not.toBeNull()
+
+        // Without another rotation it lapses like any probe result
+        expect( hit( `third`, second + HOST_AUTH_CACHE_TTL_MS ) ).toBeNull()
+        expect( rotate( `third`, `fourth`, second + HOST_AUTH_CACHE_TTL_MS ) ).toBe( false )
+
+    } )
+
     it( `does not let a stale failure clear a newer success`, () => {
 
         record_host_auth_success( `codex`, {

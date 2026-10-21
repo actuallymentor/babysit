@@ -306,6 +306,23 @@ export const resolve_auth_image_identity = async ( {
 }
 
 /**
+ * When an entry was last proven valid inside the image: by a container probe
+ * (authenticated_at) or by a trusted session rotating the token
+ * (session_verified_at). A successful OAuth refresh in a live session is a
+ * stronger liveness signal than a probe, and costs no extra rotation.
+ * @param {Object|undefined} entry - Cache entry
+ * @returns {number} Epoch milliseconds, NaN without a container proof
+ */
+export const last_verified_at = entry => {
+
+    const authenticated_at = Date.parse( entry?.authenticated_at )
+    const session_verified_at = Date.parse( entry?.session_verified_at )
+    if( !Number.isFinite( authenticated_at ) ) return NaN
+    return Number.isFinite( session_verified_at ) ? Math.max( authenticated_at, session_verified_at ) : authenticated_at
+
+}
+
+/**
  * Find a fresh success matching current credential and image identity.
  * @param {string} name - Agent name
  * @param {Object} identity - Current fingerprint and image identity
@@ -324,10 +341,10 @@ export const find_host_auth_cache_hit = ( name, {
     if( !credential_fingerprint || !image_identity ) return null
 
     const entry = read_host_auth_cache( { cache_path } ).agents[ name ]
-    const authenticated_at = Date.parse( entry?.authenticated_at )
+    const verified_at = last_verified_at( entry )
 
-    if( !Number.isFinite( authenticated_at ) ) return null
-    if( now - authenticated_at >= ttl_ms ) return null
+    if( !Number.isFinite( verified_at ) ) return null
+    if( now - verified_at >= ttl_ms ) return null
     if( entry.credential_fingerprint !== credential_fingerprint ) return null
     if( entry.image_identity !== image_identity ) return null
 
@@ -453,7 +470,9 @@ export const clear_host_auth_cache = ( name, {
 /**
  * Re-stamp a fresh matching cache entry after a trusted token rotation.
  * Compare-and-swap prevents one session from blessing credentials replaced by
- * a concurrent launch or explicit doctor check.
+ * a concurrent launch or explicit doctor check. A real rotation also renews
+ * the entry, so launches keep hitting while sessions run and nobody has to
+ * probe (and rotate) a token those sessions hold.
  *
  * @param {string} name - Agent name
  * @param {Object} identity - Expected and refreshed credential identity
@@ -476,15 +495,19 @@ export const refresh_host_auth_cache = ( name, {
         return with_cache_lock( cache_path, () => {
             const cache = read_host_auth_cache( { cache_path } )
             const entry = cache.agents[ name ]
-            const authenticated_at = Date.parse( entry?.authenticated_at )
+            const verified_at = last_verified_at( entry )
 
-            if( !Number.isFinite( authenticated_at ) || now - authenticated_at >= ttl_ms ) return false
+            if( !Number.isFinite( verified_at ) || now - verified_at >= ttl_ms ) return false
             if( entry.credential_fingerprint !== expected_credential_fingerprint ) return false
             if( entry.image_identity !== image_identity ) return false
+
+            // An unchanged file (a final flush after no rotation) proves nothing new
+            const rotated = next_credential_fingerprint !== expected_credential_fingerprint
 
             cache.agents[ name ] = {
                 ...entry,
                 credential_fingerprint: next_credential_fingerprint,
+                ...rotated && { session_verified_at: new Date( now ).toISOString() },
             }
             write_host_auth_cache( cache, { cache_path } )
             return true
