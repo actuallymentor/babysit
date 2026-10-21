@@ -5,7 +5,7 @@ import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { parse_args } from '../cli/parse.js'
 
 export const LAUNCH_MODES = [ `regular`, `sandbox`, `mudbox` ]
-export const LAUNCH_TOGGLES = [ `yolo`, `docker`, `adb`, `clone`, `loop`, `ignore_host_agents_md` ]
+export const LAUNCH_TOGGLES = [ `yolo`, `docker`, `adb`, `ios`, `devices`, `clone`, `loop`, `ignore_host_agents_md` ]
 
 // Every key a `launch:` section accepts. Only `agent` is required; the rest fall
 // back to the defaults, and `name` to the yaml path in directory launches.
@@ -114,7 +114,7 @@ export const validate_launch = ( raw, { strict = false } = {} ) => {
  * @returns {string[]} e.g. `[ '--yolo', '--docker', '--port=3000' ]`
  */
 export const launch_flags = launch => [
-    ...[ `yolo`, `docker`, `adb`, `clone`, `loop` ].filter( key => launch[ key ] ).map( key => `--${ key }` ),
+    ...[ `yolo`, `docker`, `adb`, `ios`, `devices`, `clone`, `loop` ].filter( key => launch[ key ] ).map( key => `--${ key }` ),
     ...launch.mode === `regular` ? [] : [ `--${ launch.mode }` ],
     ...launch.ignore_host_agents_md ? [ `--ignore-host-agents-md` ] : [],
     ...launch.ports.map( port => `--port=${ port }` ),
@@ -155,6 +155,9 @@ export const command_to_launch = ( { agent, flags = {}, passthrough = [] } ) => 
     agent,
     mode: flags.sandbox ? `sandbox` : flags.mudbox ? `mudbox` : `regular`,
     ...Object.fromEntries( LAUNCH_TOGGLES.map( key => [ key, Boolean( flags[ key ] ) ] ) ),
+
+    // --devices expands to adb + ios when parsed; keep the one key the user wrote
+    ...flags.devices ? { adb: false, ios: false } : {},
     ports: flags.ports || [],
     log: typeof flags.log === `string` ? flags.log || true : false,
     args: passthrough,
@@ -195,7 +198,10 @@ launch:
     ${ entry( `yolo`, launch.yolo ) }
     # Mounts the host Docker socket (sibling containers); agents always run in a container.
     ${ entry( `docker`, launch.docker ) }
+    # Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.
     ${ entry( `adb`, launch.adb ) }
+    ${ entry( `ios`, launch.ios ) }
+    ${ entry( `devices`, launch.devices ) }
     ${ entry( `clone`, launch.clone ) }
     ${ entry( `loop`, launch.loop ) }
     ${ entry( `ignore_host_agents_md`, launch.ignore_host_agents_md ) }

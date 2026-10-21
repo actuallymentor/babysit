@@ -17,6 +17,8 @@ const AGENT_FLAGS = `Options:
   --yes                     Accept clone safety prompts (e.g. chmod of unreadable paths)
   --docker                  Mount the host Docker socket (controls the host daemon, even in sandbox)
   --adb                     Android adb with a key shared by every session (network devices only)
+  --ios                     iOS 16 devices via WebDriverAgent, pairing shared by every session (network only)
+  --devices                 Every device kind: --adb and --ios
   --ignore-host-agents-md   Leave out host instructions, skills, preferences, and ~/.babysitrc setup; keep credentials
   --name NAME               Human-readable session name (shown in babysit list, usable with open)
   --config FILE             Use FILE instead of ./babysit.yaml; kept on resume and in clones

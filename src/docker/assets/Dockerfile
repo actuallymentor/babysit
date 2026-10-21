@@ -181,6 +181,7 @@ COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
 COPY usage/ /opt/usage/
 COPY adb/ /opt/adb/
+COPY ios/ /opt/ios/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
     && ln -s /opt/babysit-effort /opt/effort \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit

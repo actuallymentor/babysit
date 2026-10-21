@@ -62,6 +62,8 @@ Flags:
   --clone         Work in a copy while mounting the original at /original
   --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
   --adb           Android Debug Bridge access with adb keys shared across sessions
+  --ios           iPhone/iPad access (WebDriverAgent) with a pairing shared across sessions
+  --devices       All external device access: --adb and --ios, plus future kinds
   --yes           Skip clone safety and --config DIR/ confirmation prompts; with "audit", apply required fixes
   --ignore-host-agents-md
                   Keep host agent instructions, skills, and preferences out of the container

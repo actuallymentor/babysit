@@ -57,6 +57,8 @@ Use explicit commands in scripts.
 | `--clone` | Durable workspace clone + `/original`; explicit merge-back |
 | `--docker` | Host Docker daemon access |
 | `--adb` | `adb` + shared key and device registry (`babysit-adb` volume): pair a phone once with `babysit adb pair HOST:PORT CODE`, every session reconnects it at launch (pins port 5555 until reboot). Network devices only, host at `host.docker.internal` |
+| `--ios` | iPhone (iOS 16 and older) over the LAN via WebDriverAgent, pairing shared in the `babysit-ios` volume; see [iOS devices](#ios-devices---ios) |
+| `--devices` | Every device kind: `--adb` + `--ios` (+ future ones) |
 | `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
 | `--port PORT` / `--port H:C` | Publish port; repeatable |
 | `--loop` | Continue on idle |
@@ -113,7 +115,7 @@ babysit fork 3 --clone --takeover # snapshot copy, close the original
 - Filesystem: prompt shows `branch · modified · untracked · unpushed · parent live/exited`. Defaults: exited/stuck parent → share; live parent → clone snapshot; `--mudbox` → read-only share. `--share` / `--clone` skip; `--yes` takes the default
 - Clone snapshot carries everything: uncommitted, untracked (minus `exclude`), unpushed commits; mid-merge/rebase → plain copy. New branch from parent HEAD
 - Chat: same agent → native fork (`--fork-session`, `codex fork`, `opencode --fork`); other agent → transcript handoff as first prompt. `--no-history` starts clean
-- Inherits modes, config, model/effort (same agent), Claude account; flags override, `--regular` / `--no-yolo|docker|adb|loop` drop inherited ones
+- Inherits modes, config, model/effort (same agent), Claude account; flags override, `--regular` / `--no-yolo|docker|adb|ios|loop` drop inherited ones
 - Live parent → `Close #N? [y/N]`; `--takeover` closes without asking
 - `list`/`watch` nest forks under the parent; an exited parent stays as `exited` while a fork lives
 - Launcher: press `f` (off the Name row) to pick a session to fork
@@ -125,7 +127,7 @@ babysit audit --config agents/      # every agents/*.yaml, interactive
 babysit audit --config api.yaml --yes
 ```
 
-Asks for a missing `agent`, and for unset `mode` and on/off switches (yolo, docker, adb, clone, loop, ignore_host_agents_md): a non-default answer is written live, the default as a commented line (not asked again). `ports`, `log`, `args` are never added. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: fixes only, no questions.
+Asks for a missing `agent`, and for unset `mode` and on/off switches (yolo, docker, adb, ios, devices, clone, loop, ignore_host_agents_md): a non-default answer is written live, the default as a commented line (not asked again). `ports`, `log`, `args` are never added. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: fixes only, no questions.
 
 ### Claude accounts
 
@@ -362,6 +364,19 @@ Wireless debugging connect, `adb tcpip 5555` pins the fixed port until reboot
 (`--no-tcpip` opts out per device). Phone side: static IP, Developer options →
 *Disable adb authorization timeout*. Launch log: `/tmp/babysit-adb-up.log`.
 
+## iOS devices (`--ios`)
+
+iOS 16 and older (newer iOS needs a root tunnel). One-time, on a Mac: Developer Mode + *Enable UI Automation* on the phone, build and install WebDriverAgent with Xcode (`build-for-testing` + `test` once, trust the profile), tick *Show this iPhone when on Wi-Fi*. Copy `/var/db/lockdown/UDID.plist` (the pair record, full device access).
+
+```bash
+babysit ios add 192.168.2.75 UDID ./UDID.plist --name iphone --runner BUNDLE.xctrunner   # once, from any --ios session
+babysit ios                   # launch WebDriverAgent on recorded devices (also runs at launch)
+babysit ios list              # registry + WebDriverAgent state
+babysit ios forget iphone     # drop device and pair record
+```
+
+Registry and records: `/opt/babysit-ios` (`babysit-ios` volume). Control with Python `facebook-wda` at `http://HOST:8100`: post `waitForIdleTimeout=0` and `animationCoolOffTimeout=0` to `session/ID/appium/settings` first or `source()` fails on iOS 16. A supervisor per device relaunches WebDriverAgent whenever `:8100` goes down (idle sleep, phone reboot); every live `--ios` session runs one, so the device stays up while any session lives. Log: `/tmp/babysit-ios-wda.log`. Free Apple IDs re-sign every 7 days. Launch log: `/tmp/babysit-ios-up.log`.
+
 ## Account usage
 
 ```bash
@@ -435,6 +450,8 @@ launch:
     yolo: true
     docker: false
     adb: false
+    ios: false
+    devices: false           # true = adb + ios
     clone: true
     loop: false
     ignore_host_agents_md: false

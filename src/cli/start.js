@@ -1188,6 +1188,7 @@ async function start_session( cmd ) {
         mudbox: flags.mudbox,
         docker: flags.docker,
         adb: flags.adb,
+        ios: flags.ios,
         clone: Boolean( flags.clone || stored_is_clone ),
         ignore_host_agents_md: should_ignore_host_agent_context( flags, stored_resume_session ),
     }

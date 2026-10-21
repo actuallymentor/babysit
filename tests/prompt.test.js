@@ -149,6 +149,14 @@ describe( `build_system_prompt`, () => {
         expect( build_system_prompt( {} ) ).not.toContain( `ADB enabled` )
     } )
 
+    it( `appends ios guidance only when mode.ios is set`, () => {
+        expect( build_system_prompt( { ios: true } ) ).toContain( `iOS enabled` )
+        expect( build_system_prompt( { ios: true } ) ).toContain( `waitForIdleTimeout` )
+        expect( build_system_prompt( { ios: true } ) ).not.toContain( `ADB enabled` )
+        expect( build_system_prompt( { adb: true } ) ).not.toContain( `iOS enabled` )
+        expect( build_system_prompt( {} ) ).not.toContain( `iOS enabled` )
+    } )
+
     it( `describes host-profile isolation when requested`, () => {
         const prompt = build_system_prompt( { ignore_host_agents_md: true } )
         expect( prompt ).toContain( `Host instructions, skills, and preferences are omitted` )

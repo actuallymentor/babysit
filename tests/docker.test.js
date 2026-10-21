@@ -1219,6 +1219,20 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    it( `mounts the shared iOS pairing volume when --ios is enabled`, () => {
+
+        const cmd = build_docker_command( make_options( { mode: { ios: true }, modifiers: [ `ios` ] } ) )
+
+        expect( cmd ).toContain( `babysit-ios:/opt/babysit-ios` )
+        expect( cmd ).toContain( `BABYSIT_IOS=1` )
+        expect( cmd ).not.toContain( `babysit-adb` )
+
+        const plain = build_docker_command( make_options( {} ) )
+        expect( plain ).not.toContain( `babysit-ios` )
+        expect( plain ).not.toContain( `BABYSIT_IOS` )
+
+    } )
+
     it( `mounts the shared adb key volume and host route when --adb is enabled`, () => {
 
         const cmd = build_docker_command( make_options( { mode: { adb: true }, modifiers: [ `adb` ] } ) )

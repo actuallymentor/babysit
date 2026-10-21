@@ -11,8 +11,8 @@ import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './lis
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
-const TOGGLES = [ `docker`, `adb`, `yolo`, `clone`, `loop` ]
-const LABELS = { adb: `ADB`, yolo: `YOLO` }
+const TOGGLES = [ `docker`, `adb`, `ios`, `yolo`, `clone`, `loop` ]
+const LABELS = { adb: `ADB`, ios: `iOS`, yolo: `YOLO` }
 
 // Rows: model, name, one per toggle, then mode.
 const FIRST_TOGGLE_ROW = 2

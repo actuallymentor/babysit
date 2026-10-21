@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.50.0 — 2026-10-21
+
+### Added
+- `--ios`: sessions can drive an iPhone (iOS 16 and older) over the LAN through WebDriverAgent. `babysit ios add|up|list|forget` keeps a registry and the pair record in the shared `babysit-ios` volume; every `--ios` session starts a supervisor that relaunches the runner whenever it goes down. The image gains `pymobiledevice3` and `facebook-wda`.
+- `--devices`: one flag for every device kind (`--adb` + `--ios`, future kinds later). The session prompt tells the agent which device powers it has.
+- Launch `yaml` keys `ios` and `devices` (and an iOS row in the launch menu); `babysit audit` asks about them and `babysit init` writes them.
+
 ## 1.49.5 — 2026-10-21
 
 ### Fixed
