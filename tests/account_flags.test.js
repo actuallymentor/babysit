@@ -35,8 +35,8 @@ describe( `--account parsing`, () => {
         expect( () => parse_args( [ `restart`, `2`, `--bogus` ] ) ).toThrow( `Unknown restart argument` )
     } )
 
-    it( `--account is refused where no single Claude session is meant`, () => {
-        expect( () => parse_args( [ `restart`, `all`, `--account`, `work` ] ) ).toThrow( `--account applies to one Claude session` )
+    it( `--account is refused where no Claude session is meant`, () => {
+        expect( parse_args( [ `restart`, `all`, `--account`, `work` ] ) ).toMatchObject( { session_id: `all`, flags: { account: `work` } } )
         expect( () => parse_args( [ `codex`, `--account`, `work` ] ) ).toThrow( `codex has none` )
     } )
 

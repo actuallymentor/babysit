@@ -195,7 +195,8 @@ const ask_continue = async ( { input = process.stdin, output = process.stdout } 
  * conversation: close each gracefully (monitor stops, credentials flush back to
  * the host, container removed), then resume it by its native agent id.
  * The agent must show an idle or waiting control; `--force` overrides.
- * Several selectors or `all` restart detached, skipping refusals.
+ * Several selectors or `all` restart detached, skipping refusals; there
+ * `--account` applies to the Claude sessions only.
  * @param {Object} cmd - Parsed command { session_id, session_ids, flags: { force, detach, continue_prompt, account } }
  * @param {Object} [options] - Injectable seams
  */
@@ -225,7 +226,11 @@ export const cmd_restart = async ( cmd, { select = select_stored_session, select
     for( const session of sessions ) {
         try {
             // Reload: earlier restarts take minutes and stuck flags move meanwhile
-            await restart_session( load( session.babysit_id ) || session, { ...flags, detach: true }, seams )
+            const latest = load( session.babysit_id ) || session
+
+            // A batch mixes agents: --account moves its Claude sessions and leaves the rest be
+            const account = latest.agent === `claude` && flags.account
+            await restart_session( latest, { ...flags, account, detach: true }, seams )
         } catch ( error ) {
             if( error.closed ) throw error
             failed.push( session.babysit_id )
