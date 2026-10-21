@@ -6,6 +6,7 @@ import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import {
     clear_host_auth_cache,
     HOST_AUTH_CACHE_TTL_MS,
+    last_verified_at,
     read_host_auth_cache,
     resolve_auth_image_identity,
     stamp_host_verification,
@@ -71,16 +72,16 @@ export const describe_auth_cache_entry = ( name, cache, {
 } = {} ) => {
 
     const entry = cache.agents?.[ name ]
-    const authenticated_at = Date.parse( entry?.authenticated_at )
-    if( !Number.isFinite( authenticated_at ) ) return { name, verified: `-`, age: `-`, state: `missing` }
+    const verified_at = last_verified_at( entry )
+    if( !Number.isFinite( verified_at ) ) return { name, verified: `-`, age: `-`, state: `missing` }
 
-    const age_ms = now - authenticated_at
+    const age_ms = now - verified_at
     const state = age_ms >= ttl_ms ? `expired`
         : image_identity && entry.image_identity !== image_identity ? `stale image`
             : age_ms >= AUTH_CHECK_REFRESH_AFTER_MS ? `due for refresh`
                 : `fresh`
 
-    return { name, verified: timestamp( entry.authenticated_at ), age: hours( age_ms ), state }
+    return { name, verified: timestamp( new Date( verified_at ).toISOString() ), age: hours( age_ms ), state }
 
 }
 
@@ -332,7 +333,7 @@ export const find_offline_logouts = async ( agents, {
  */
 const host_probe_due = ( entry, now ) => {
 
-    const container_at = Date.parse( entry?.authenticated_at )
+    const container_at = last_verified_at( entry )
     const host_at = Date.parse( entry?.host_verified_at ) || 0
     if( !Number.isFinite( container_at ) || now - container_at >= AUTH_CHECK_REFRESH_AFTER_MS ) return false
     return now - Math.max( container_at, host_at ) >= HOST_CHECK_AFTER_MS
@@ -456,12 +457,13 @@ export const cmd_auth_check = async ( {
             const credential = read_credential( agent )
             return credential.state !== `present` || !agent.auth_check?.refresh_free?.( credential.text, now )
         }
+        const held_reason = `a running session may be refreshing its token`
         const host_candidates = online.filter( agent => agent.auth_check?.host_args
             && sole_file_login( cache.agents?.[ agent.name ] )
             && ( force || host_probe_due( cache.agents?.[ agent.name ], now ) ) )
         const host_results = ( await Promise.all( host_candidates.map( async agent => {
             if( sessions_active && would_rotate( agent ) ) {
-                return { name: agent.name, status: `deferred`, authenticated: false, reason: `a running session may be refreshing its token` }
+                return { name: agent.name, status: `deferred`, authenticated: false, reason: held_reason }
             }
             return run_host_check( agent, { signal: controller.signal, env } )
         } ) ) ).filter( Boolean )
@@ -478,7 +480,16 @@ export const cmd_auth_check = async ( {
             results.push( labelled( result ) )
         }
 
-        // 3. Container probes for everything the host could not settle
+        // 3. Container probes for everything the host could not settle. They
+        // stage the same host file, so the rotation guard holds here too, but
+        // only for rotating OAuth logins on the file alone: an env token
+        // outranks the file, and adapters without refresh_free do not rotate.
+        // Launches stay warm meanwhile: each rotation the session pulls back
+        // renews the cache entry (session_verified_at).
+        const may_rotate_held_token = agent => sessions_active
+            && typeof agent.auth_check?.refresh_free === `function`
+            && sole_file_login( cache.agents?.[ agent.name ] )
+            && would_rotate( agent )
         const container_agents = online.filter( agent => !host_results.some( result => result.name === agent.name ) )
         if( container_agents.length ) {
             lease_handed = true
@@ -492,6 +503,7 @@ export const cmd_auth_check = async ( {
                 // A network blip must not un-enrol the agent; the entry stays
                 // valid until its TTL and the next run retries.
                 clear_on_failure: false,
+                defer_probe: agent => may_rotate_held_token( agent ) ? held_reason : null,
                 signal: controller.signal,
             } )
 
