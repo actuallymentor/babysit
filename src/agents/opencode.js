@@ -214,10 +214,12 @@ export const opencode = {
     // lines so Babysit does not reduce OpenCode to an imprecise --continue.
     session_id_pattern: /(?:opencode\s+.*?--session\s+|session(?:\s+id)?[:\s]+)([a-z]+_[A-Za-z0-9]+|[0-9a-f-]{36})/i,
 
-    // OpenCode 1.18.15 shows this placeholder only after its composer accepts
-    // pasted text. Provider/auth modals and model errors can leave that composer
-    // visible in the background, so reject their stable headings before sending.
-    initial_prompt_ready_pattern: /^(?![\s\S]*(?:Connect a provider|Select auth method|Manually enter API Key|Model .+ is not valid))[\s\S]*Ask anything\.\.\./i,
+    // OpenCode shows this placeholder only after its composer accepts pasted
+    // text: 1.18.15 ends it with `...`, 1.19.3 with a single `…` character.
+    // The non-modal `/update to upgrade` banner above it does not block input.
+    // Provider/auth modals and model errors can leave that composer visible in
+    // the background, so reject their stable headings before sending.
+    initial_prompt_ready_pattern: /^(?![\s\S]*(?:Connect a provider|Select auth method|Manually enter API Key|Model .+ is not valid))[\s\S]*Ask anything(?:\.\.\.|…)/i,
 
     extra_env: () => ( {} ),
 
