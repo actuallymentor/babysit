@@ -1,3 +1,4 @@
+import { spawnSync } from 'child_process'
 import { readFileSync, writeFileSync } from 'fs'
 import { run_sync } from '../utils/exec.js'
 import { log } from '../utils/log.js'
@@ -11,6 +12,39 @@ import { resolve_credential_file } from './paths.js'
 import { decode_keyring_secret, start_keyring_sync } from './keyring.js'
 
 const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
+
+// errSecItemNotFound: the only `security` exit that says "no such login".
+// A locked keychain or a denied prompt fails differently and proves nothing.
+const KEYCHAIN_ITEM_NOT_FOUND = 44
+
+/**
+ * Read an agent's Keychain item without a shell, telling "no item" apart
+ * from "could not ask" (locked keychain, denied access, timeout).
+ * @param {Object} cred_config - Darwin credential config with keychain_service
+ * @param {Object} [options] - Process seam
+ * @param {Function} [options.spawn_sync=spawnSync] - Synchronous spawn
+ * @returns {{ state: 'present'|'missing'|'unknown', text?: string }} Keychain state
+ */
+export const read_keychain_item = ( cred_config, { spawn_sync = spawnSync } = {} ) => {
+
+    const args = [
+        `find-generic-password`,
+        `-s`, cred_config.keychain_service,
+        ...cred_config.keychain_account ? [ `-a`, cred_config.keychain_account ] : [],
+        `-w`,
+    ]
+    const { status, stdout } = spawn_sync( `security`, args, {
+        encoding: `utf-8`,
+        stdio: [ `ignore`, `pipe`, `ignore` ],
+        timeout: CREDENTIAL_COMMAND_TIMEOUT_MS,
+    } ) || {}
+
+    if( status === KEYCHAIN_ITEM_NOT_FOUND ) return { state: `missing` }
+    const raw = status === 0 ? String( stdout || `` ).trim() : ``
+    const text = cred_config.keychain_encoding === `go-keyring` ? decode_keyring_secret( raw ) : raw
+    return text ? { state: `present`, text } : { state: `unknown` }
+
+}
 
 /**
  * Extract credentials from macOS Keychain (or file fallback) for an agent
