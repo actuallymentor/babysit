@@ -7,6 +7,7 @@ import { join } from 'path'
 import { is_authentication_failure } from '../src/agents/auth.js'
 import { get_agent } from '../src/agents/index.js'
 import { read_host_credential, resolve_host_bin, run_host_cli_auth_check } from '../src/agents/host_probe.js'
+import { read_keychain_item } from '../src/credentials/darwin.js'
 
 const claude = get_agent( `claude` )
 const codex = get_agent( `codex` )
@@ -109,8 +110,50 @@ describe( `host CLI auth probe`, () => {
         expect( read_host_credential( codex, { platform: `linux`, read_file: () => `{}` } ) ).toEqual( { state: `present`, text: `{}` } )
         expect( read_host_credential( codex, { platform: `linux`, read_file: error( `ENOENT` ) } ) ).toEqual( { state: `absent` } )
         expect( read_host_credential( codex, { platform: `linux`, read_file: error( `EACCES` ) } ) ).toEqual( { state: `unknown` } )
-        // Keychain logins are never judged offline
-        expect( read_host_credential( claude, { platform: `darwin`, read_file: error( `ENOENT` ) } ) ).toEqual( { state: `unknown` } )
+    } )
+
+    it( `reads the macOS Keychain item, never calling a Keychain login absent`, () => {
+
+        const error = code => () => {
+            throw Object.assign( new Error( code ), { code } )
+        }
+        const keychain = item => () => item
+
+        expect( read_host_credential( claude, { platform: `darwin`, read_keychain: keychain( { state: `present`, text: `{}` } ) } ) )
+            .toEqual( { state: `present`, text: `{}` } )
+
+        // Locked or denied: nothing learned, even with a fallback file around
+        expect( read_host_credential( claude, { platform: `darwin`, read_keychain: keychain( { state: `unknown` } ), read_file: () => `{}` } ) )
+            .toEqual( { state: `unknown` } )
+
+        // No item: launches stage the fallback file, so it is the evidence
+        expect( read_host_credential( claude, { platform: `darwin`, read_keychain: keychain( { state: `missing` } ), read_file: () => `{"f":1}` } ) )
+            .toEqual( { state: `present`, text: `{"f":1}` } )
+        expect( read_host_credential( claude, { platform: `darwin`, read_keychain: keychain( { state: `missing` } ), read_file: error( `ENOENT` ) } ) )
+            .toEqual( { state: `unknown` } )
+
+    } )
+
+    it( `asks security for the item without a shell and decodes go-keyring secrets`, () => {
+
+        const calls = []
+        const spawn_sync = result => ( bin, args ) => {
+            calls.push( [ bin, ...args ] )
+            return result
+        }
+
+        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 0, stdout: `{"a":1}\n` } ) } ) )
+            .toEqual( { state: `present`, text: `{"a":1}` } )
+        expect( calls[0] ).toEqual( [ `security`, `find-generic-password`, `-s`, `Claude Code-credentials`, `-w` ] )
+
+        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 44, stdout: `` } ) } ) ).toEqual( { state: `missing` } )
+        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 51, stdout: `` } ) } ) ).toEqual( { state: `unknown` } )
+        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: null, error: new Error( `ETIMEDOUT` ) } ) } ) ).toEqual( { state: `unknown` } )
+
+        const antigravity = get_agent( `antigravity` ).credentials.darwin
+        const encoded = `go-keyring-base64:${ Buffer.from( `{"t":1}` ).toString( `base64` ) }`
+        expect( read_keychain_item( antigravity, { spawn_sync: spawn_sync( { status: 0, stdout: encoded } ) } ) ).toEqual( { state: `present`, text: `{"t":1}` } )
+        expect( calls.at( -1 ) ).toEqual( [ `security`, `find-generic-password`, `-s`, `gemini`, `-a`, `antigravity`, `-w` ] )
 
     } )
 

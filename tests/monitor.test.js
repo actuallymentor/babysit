@@ -10,6 +10,7 @@ import {
     shows_logout,
 } from '../src/babysit/monitor.js'
 import { get_agent } from '../src/agents/index.js'
+import { create_session_logout_handler } from '../src/cli/monitor.js'
 
 const make_rule = ( overrides = {} ) => ( {
     on: { type: `regex`, value: /error/i },
@@ -323,6 +324,99 @@ describe( `logout screen trigger`, () => {
         }
 
         expect( requests ).toEqual( [ `claude`, `claude` ] )
+    } )
+
+    describe( `session logout alerts`, () => {
+
+        const session = { babysit_id: `20261010-120000-abc`, original_pwd: `/work/project` }
+
+        const handler = ( overrides = {} ) => {
+            let clock = 0
+            const seen = { restaged: [], checks: [], alerts: [] }
+            const handle = create_session_logout_handler( session, {
+                restage: async name => seen.restaged.push( name ),
+                request_check: name => seen.checks.push( name ),
+                host_logout_known: () => false,
+                notify: async message => {
+                    seen.alerts.push( message )
+                    return true
+                },
+                now: () => clock,
+                ...overrides,
+            } )
+            const sight = async ( after_ms = LOGOUT_RECHECK_MS ) => {
+                clock += after_ms
+                await handle( `claude` )
+            }
+            return { seen, sight }
+        }
+
+        it( `re-stages the host login first, then alerts once for a session that stays logged out`, async () => {
+
+            const { seen, sight } = handler()
+
+            // First sighting: re-stage and ask the host, no alert yet
+            await sight( 0 )
+            expect( seen.restaged ).toEqual( [ `claude` ] )
+            expect( seen.checks ).toEqual( [ `claude` ] )
+            expect( seen.alerts ).toEqual( [] )
+
+            // Still visible a re-check later, though the host is fine: one alert
+            await sight()
+            await sight()
+            expect( seen.alerts ).toHaveLength( 1 )
+            expect( seen.alerts[0].title ).toBe( `Babysit: claude logged out in a session` )
+            expect( seen.alerts[0].message ).toContain( `session 20261010-120000-abc (project)` )
+            expect( seen.alerts[0].message ).toContain( `babysit restart 20261010-120000-abc` )
+            expect( seen.restaged ).toHaveLength( 3 )
+
+            // Gone long enough to end the episode: a new one starts quietly
+            await sight( 3 * LOGOUT_RECHECK_MS )
+            expect( seen.alerts ).toHaveLength( 1 )
+            await sight()
+            expect( seen.alerts ).toHaveLength( 2 )
+
+        } )
+
+        it( `stays quiet when re-staging recovered the session`, async () => {
+
+            const { seen, sight } = handler()
+            await sight( 0 )
+            await sight( 3 * LOGOUT_RECHECK_MS )
+            expect( seen.alerts ).toEqual( [] )
+
+        } )
+
+        it( `defers to a host logout alert and retries an undelivered one`, async () => {
+
+            let host_lost = true
+            let up = false
+            const { seen, sight } = handler( {
+                host_logout_known: () => host_lost,
+                restage: async () => {
+                    throw new Error( `docker unavailable` )
+                },
+                notify: async message => {
+                    seen.alerts.push( message )
+                    return up
+                },
+            } )
+
+            await sight( 0 )
+            await sight()
+            expect( seen.alerts ).toEqual( [] )
+
+            // The host recovered but this session did not; Pushover is down once
+            host_lost = false
+            await sight()
+            up = true
+            await sight()
+            await sight()
+            expect( seen.alerts ).toHaveLength( 2 )
+            expect( seen.checks ).toHaveLength( 5 )
+
+        } )
+
     } )
 
 } )

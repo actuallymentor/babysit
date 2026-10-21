@@ -5,6 +5,7 @@ import { delimiter, isAbsolute, join } from 'path'
 
 import { strip_ansi } from '../babysit/matcher.js'
 import { resolve_credential_file } from '../credentials/paths.js'
+import { read_keychain_item } from '../credentials/darwin.js'
 import { answered_ok, build_host_auth_prompt, is_authentication_failure, last_nonempty_line } from './auth.js'
 
 /*
@@ -45,8 +46,8 @@ export const resolve_host_bin = ( bin, env = process.env ) => {
 
 /**
  * Locate the agent's credential file when a plain file is its only stored
- * login. Keychain and Secret Service logins return null: a lookup failing in
- * a scheduler context is not evidence of anything.
+ * login. Keychain and Secret Service logins return null: a missing file
+ * says nothing about them.
  * @param {Object} agent - Agent adapter
  * @param {Object} [options] - Platform seam
  * @returns {string|null} Absolute credential file path
@@ -59,22 +60,46 @@ export const host_credential_file = ( agent, { platform = detect_platform() } = 
 
 }
 
-/**
- * Read the agent's credential file.
- * @param {Object} agent - Agent adapter
- * @param {Object} [options] - Platform and reader seams
- * @returns {{ state: 'present'|'absent'|'unknown', text?: string }} File state; only ENOENT is absent
- */
-export const read_host_credential = ( agent, { platform = detect_platform(), read_file = readFileSync } = {} ) => {
-
-    const path = host_credential_file( agent, { platform } )
-    if( !path ) return { state: `unknown` }
-
+const read_file_state = ( path, read_file ) => {
     try {
         return { state: `present`, text: read_file( path, `utf8` ) }
     } catch ( error ) {
         return { state: error.code === `ENOENT` ? `absent` : `unknown` }
     }
+}
+
+/**
+ * Read the agent's stored login: its credential file, or on macOS the
+ * Keychain item launches stage (else the fallback file they would stage).
+ * A Keychain login is never `absent`: a scheduler that cannot reach the
+ * item has learned nothing, so only content counts as evidence.
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options] - Platform, file and Keychain seams
+ * @returns {{ state: 'present'|'absent'|'unknown', text?: string }} Login state; only ENOENT is absent
+ */
+export const read_host_credential = ( agent, {
+    platform = detect_platform(),
+    read_file = readFileSync,
+    read_keychain = read_keychain_item,
+} = {} ) => {
+
+    const config = agent?.credentials?.[ platform ]
+
+    if( config?.keychain_service ) {
+
+        const item = read_keychain( config )
+        if( item.state === `present` ) return { state: `present`, text: item.text }
+
+        // Launches use the fallback file only when the item does not exist
+        const fallback = item.state === `missing` && config.fallback_file
+            ? read_file_state( resolve_credential_file( config.fallback_file ), read_file )
+            : null
+        return fallback?.state === `present` ? fallback : { state: `unknown` }
+
+    }
+
+    const path = host_credential_file( agent, { platform } )
+    return path ? read_file_state( path, read_file ) : { state: `unknown` }
 
 }
 
