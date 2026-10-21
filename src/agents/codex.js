@@ -142,6 +142,10 @@ export const codex = {
         // trigger for a running session.
         failure_pattern: /refresh token (?:was |has )?already (?:been )?used|could not be refreshed|(?:log|sign) in again|not logged in|\b401 Unauthorized\b/i,
 
+        // Only Codex's own refresh failures may send a session alert: the
+        // generic phrasings above are everyday words in a transcript
+        session_alert_pattern: /refresh token (?:was |has )?already (?:been )?used|access token could not be refreshed/i,
+
         refresh_free,
     },
 

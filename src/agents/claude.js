@@ -185,6 +185,12 @@ export const claude = {
         // runs. Also the pane trigger for a running session.
         failure_pattern: /Please run \/login|Failed to authenticate|authentication_error|OAuth (?:session|token) (?:has )?(?:expired|been revoked)/i,
 
+        // Claude's own error line for a dead login, rendered by 2.1.304 against
+        // a fake 401: `● Please run /login · API Error: 401 OAuth token has
+        // expired…`. Prose quoting the words never starts a line like this, so
+        // only this shape may send a session alert.
+        session_alert_pattern: /^[\s●⎿]*Please run \/login · API Error: 40[13]\b/m,
+
         refresh_free: ( credential, now = Date.now() ) => oauth_field( credential, `expiresAt` ) - now > REFRESH_MARGIN_MS,
 
         // Past this the login is gone, no network needed to know it
