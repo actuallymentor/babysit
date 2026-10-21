@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.48.1 — 2026-10-21
+
+### Fixed
+- `babysit restart N` no longer asks about a continue prompt for a session it will refuse anyway (sandbox, no captured session id, `--account` on a non-Claude session). The busy check still runs right before the close.
+
 ## 1.48.0 — 2026-10-21
 
 ### Added

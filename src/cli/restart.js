@@ -92,6 +92,22 @@ export const unarchived_sessions = async ( { inspect_records = inspect_stored_se
 }
 
 /**
+ * Refusals that need no screen, so they can fail before any question is asked.
+ * @param {Object} session - Stored session
+ * @param {Object} flags - { force, account }
+ */
+const assert_restartable = ( session, { force = false, account = false } = {} ) => {
+
+    // Checked before the close: a refused --account after it would strand the session
+    if( account && session.agent !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ session.babysit_id } is a ${ session.agent } session` )
+
+    // Sandbox loss is unconditional; the rest is the user's call with --force.
+    const blocker = restart_blocker( session )
+    if( blocker && ( !force || blocker.startsWith( `Sandbox` ) ) ) throw new Error( blocker )
+
+}
+
+/**
  * Close and resume one stored session on the current image.
  * @param {Object} session - Stored session
  * @param {Object} flags - { force, detach, account, continue_prompt }
@@ -109,12 +125,7 @@ const restart_session = async ( session, { force = false, detach = false, accoun
     print = console.log,
 } = {} ) => {
 
-    // Checked before the close: a refused --account after it would strand the session
-    if( account && session.agent !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ session.babysit_id } is a ${ session.agent } session` )
-
-    // Sandbox loss is unconditional; the rest is the user's call with --force.
-    const blocker = restart_blocker( session )
-    if( blocker && ( !force || blocker.startsWith( `Sandbox` ) ) ) throw new Error( blocker )
+    assert_restartable( session, { force, account } )
 
     // Slow Docker work first, so the pane check sits right before the close.
     const next_image = await image_id()
@@ -198,8 +209,11 @@ export const cmd_restart = async ( cmd, { select = select_stored_session, select
     const sessions = selectors[0] === `all` ? await select_all() : await select_each( selectors, select )
     if( !sessions.length ) return print( `No unarchived sessions to restart.` )
 
-    // Asked once, for the whole batch
+    // A single session that would refuse anyway fails before the question
     const flags = { ...cmd.flags }
+    if( !batch ) assert_restartable( sessions[0], flags )
+
+    // Asked once, for the whole batch; the pane check stays right before each close
     if( !flags.continue_prompt ) flags.continue_prompt = await ask()
 
     if( !batch ) return restart_session( sessions[0], flags, seams )

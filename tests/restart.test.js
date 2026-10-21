@@ -172,6 +172,15 @@ describe( `babysit restart`, () => {
         expect( await run( { continue_prompt: true } ) ).toEqual( { asked: [], resumed: [ true, true ] } )
     } )
 
+    it( `refuses a sandbox or id-less single session before asking about a continue prompt`, async () => {
+        for( const overrides of [ { modifiers: [ `sandbox` ] }, { agent_session_id: null } ] ) {
+            const { seams } = harness( { overrides } )
+            const asked = []
+            await expect( cmd_restart( { session_id: `1`, flags: {} }, { ...seams, ask: async () => asked.push( `ask` ) > 0 } ) ).rejects.toThrow()
+            expect( asked ).toEqual( [] )
+        }
+    } )
+
     it( `resolves every selector before the first close, deduplicating, then restarts detached`, async () => {
         const { events, seams } = harness()
         const sessions = { 1: session, 6: { ...session, babysit_id: `s6` }, 3: { ...session, babysit_id: `s3` }, s1: session }
