@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.49.2 — 2026-10-21
+
+### Fixed
+- 1.49.1 suppressed every Codex session logout alert: Codex's empty input box shows `› Ask Codex to do anything`, which read as a prompt typed after the error. An unsent Claude draft hid real logouts the same way. The live input box no longer counts; only a prompt submitted after the error means the session recovered.
+
 ## 1.49.1 — 2026-10-21
 
 ### Fixed

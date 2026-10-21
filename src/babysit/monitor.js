@@ -37,7 +37,8 @@ const LOGOUT_SCREEN_LINES = 25
 // 401 line 7 non-blank lines up (status, separators, composer, footer)
 const SESSION_ALERT_LINES = 10
 
-// A prompt line with text after it: Claude `❯ go`, Codex `› go`, older `> go`
+// Prompt lines: Claude `❯`, Codex `›`, older `>`; submitted ones carry text
+const PROMPT_LINE = /^\s*[❯›>](?:\s|$)/
 const SUBMITTED_PROMPT = /^\s*[❯›>]\s+\S/
 
 // A limit message on screen asks for an account switch at most this often
@@ -98,7 +99,12 @@ export const shows_session_logout = ( screen = ``, agent = null ) => {
     // prompt submitted after it (a retry that worked leaves the old 401 on screen)
     const lines = screen_tail( screen, SESSION_ALERT_LINES ).split( `\n` )
     const at = lines.findLastIndex( line => pattern.test( line ) )
-    return at !== -1 && !lines.slice( at + 1 ).some( line => SUBMITTED_PROMPT.test( line ) )
+    if( at === -1 ) return false
+
+    // The last prompt line is the live composer: its placeholder (`› Ask Codex
+    // to do anything`) or an unsent draft is no evidence. Any earlier one is.
+    const prompts = lines.slice( at + 1 ).filter( line => PROMPT_LINE.test( line ) )
+    return !prompts.slice( 0, -1 ).some( line => SUBMITTED_PROMPT.test( line ) )
 
 }
 
