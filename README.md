@@ -136,6 +136,7 @@ babysit auth init --claude-token --name work      # mint + paste + verify, once 
 babysit auth init --claude-token --name personal
 babysit auth accounts                             # name, expiry, headroom (never tokens)
 babysit claude --account work                     # force one; default picks most headroom
+babysit restart 2 6                               # move sessions to the account with most headroom
 babysit auth accounts remove personal
 ```
 
@@ -163,8 +164,8 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
-| `babysit close <number or id>` | Close by list number or ID; retire launch from recovery |
-| `babysit restart <number, id, or all> [--force] [--detach]` | Close gracefully and resume on the current image, continuing the agent by its native id. Refuses unless the agent shows an idle or waiting control and a native session id was captured; `--force` overrides both, `--detach` returns instead of attaching. Sandbox sessions cannot be restarted. `all` restarts every unarchived active session detached, skipping and reporting refusals |
+| `babysit close <number or id>...` | Close by list number or ID; retire launch from recovery. Several at once (`close 3 4 5`): numbers resolve before the first close |
+| `babysit restart <number, id, or all>... [--force] [--detach] [--continue] [--account NAME]` | Close gracefully and resume on the current image, continuing the agent by its native id. Refuses unless the agent shows an idle or waiting control and a native session id was captured; `--force` overrides both, `--detach` returns instead of attaching. Sandbox sessions cannot be restarted. Several selectors (`restart 1 6 3`, resolved before the first close) or `all` restart detached, skipping and reporting refusals. Claude: moves to the account with most headroom (`--account` overrides). No `--continue` → asks `y/N` once |
 | `babysit archive <number, id or name>` | Dim the session and sink it to the bottom of its workspace; a workspace whose sessions are all archived sinks to the bottom of the list. `babysit open` un-archives |
 | `babysit prune --list` | Managed clone usage |
 | `babysit prune` | Interactively prune unused Docker data and managed clones |

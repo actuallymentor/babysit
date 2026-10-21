@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.48.0 — 2026-10-21
+
+### Added
+- `babysit restart 1 6 3` and `babysit close 3 4 5` take several sessions. Numbers are resolved against the list before anything closes, so renumbering mid-batch can't hit the wrong session. Several restarts run detached like `restart all`. One refusal or failed close doesn't stop the rest.
+- `babysit restart` without `--continue` asks once: `Do you want to send a continue command after restart? y/N`. Only a terminal is asked; scripts and the account switcher get no.
+
+### Changed
+- `babysit restart` moves Claude sessions to the subscription with the most headroom instead of keeping their current one. `--account NAME` still forces one.
+
 ## 1.47.1 — 2026-10-20
 
 ### Fixed

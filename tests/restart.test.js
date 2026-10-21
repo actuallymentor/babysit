@@ -26,6 +26,9 @@ const harness = ( { pane = IDLE_PANE, image = `sha256:bbbbbbbbbbbbbbbb`, overrid
         },
         print: message => events.push( message ),
         sleep: async () => {},
+        best_account: async () => {
+            events.push( `best account` ); return `spare`
+        },
     }
     return { events, seams }
 }
@@ -131,6 +134,62 @@ describe( `babysit restart`, () => {
         expect( empty.events ).toEqual( [ `No unarchived sessions to restart.` ] )
     } )
 
+    it( `moves a Claude session to the account with most headroom unless --account names one`, async () => {
+        const claude = { agent: `claude`, agent_session_id: `native-1` }
+        const picked = harness( { overrides: claude } )
+        const resumed = []
+        picked.seams.resume = async cmd => resumed.push( cmd.flags )
+        await cmd_restart( { session_id: `1`, flags: { force: true } }, picked.seams )
+        expect( resumed ).toEqual( [ { account: `spare` } ] )
+        expect( picked.events.at( -1 ) ).toContain( `, account spare.` )
+
+        const named = harness( { overrides: claude } )
+        named.seams.resume = async cmd => resumed.push( cmd.flags )
+        await cmd_restart( { session_id: `1`, flags: { force: true, account: `work` } }, named.seams )
+        expect( resumed.at( -1 ) ).toEqual( { account: `work` } )
+        expect( named.events ).not.toContain( `best account` )
+
+        // Codex has no subscriptions to pick from
+        const codex = harness()
+        await cmd_restart( { session_id: `1`, flags: { force: true } }, codex.seams )
+        expect( codex.events ).not.toContain( `best account` )
+    } )
+
+    it( `asks once about a continue prompt unless --continue was passed`, async () => {
+        const sessions = { 1: session, 2: { ...session, babysit_id: `s2` } }
+        const run = async flags => {
+            const { seams } = harness()
+            const asked = []
+            const resumed = []
+            await cmd_restart( { session_ids: [ `1`, `2` ], flags }, {
+                ...seams, select: async selector => sessions[ selector ], load: () => null,
+                ask: async () => asked.push( `ask` ) > 0,
+                resume: async cmd => resumed.push( cmd.flags.continue_prompt || false ),
+            } )
+            return { asked, resumed }
+        }
+        expect( await run( {} ) ).toEqual( { asked: [ `ask` ], resumed: [ true, true ] } )
+        expect( await run( { continue_prompt: true } ) ).toEqual( { asked: [], resumed: [ true, true ] } )
+    } )
+
+    it( `resolves every selector before the first close, deduplicating, then restarts detached`, async () => {
+        const { events, seams } = harness()
+        const sessions = { 1: session, 6: { ...session, babysit_id: `s6` }, 3: { ...session, babysit_id: `s3` }, s1: session }
+        await cmd_restart( { session_ids: [ `1`, `6`, `3`, `s1` ], flags: {} }, { ...seams, select: async selector => {
+            events.push( `select ${ selector }` ); return sessions[ selector ]
+        }, load: () => null } )
+        expect( events.slice( 0, 4 ) ).toEqual( [ `select 1`, `select 6`, `select 3`, `select s1` ] )
+        expect( events.filter( event => event.startsWith( `resume` ) ).map( event => event.split( ` ` ).slice( 0, 3 ).join( ` ` ) ) )
+            .toEqual( [ `resume s1 detached=true`, `resume s6 detached=true`, `resume s3 detached=true` ] )
+
+        // A bad selector fails before anything closes
+        const bad = harness()
+        await expect( cmd_restart( { session_ids: [ `1`, `9` ], flags: {} }, { ...bad.seams, select: async selector => {
+            if( selector === `9` ) throw new Error( `No active session numbered 9` ); return session
+        } } ) ).rejects.toThrow( `numbered 9` )
+        expect( bad.events.some( event => event.startsWith( `close` ) ) ).toBe( false )
+    } )
+
     it( `selects live, unarchived stored sessions only`, async () => {
         const stored = [
             { babysit_id: `a`, tmux_session: `babysit_a`, pwd: `/w` },
@@ -157,6 +216,11 @@ describe( `babysit restart`, () => {
         expect( parse_args( [ `restart`, `--detach`, `s1` ] ) ).toMatchObject( { session_id: `s1`, flags: { detach: true } } )
         expect( parse_args( [ `restart`, `all`, `--force` ] ) ).toMatchObject( { session_id: `all`, flags: { force: true } } )
         expect( () => parse_args( [ `restart` ] ) ).toThrow( `Usage: babysit restart` )
+        expect( parse_args( [ `restart`, `1`, `6`, `--detach`, `3` ] ) ).toMatchObject( { session_id: `1`, session_ids: [ `1`, `6`, `3` ], flags: { detach: true } } )
+        expect( parse_args( [ `restart`, `1`, `6`, `--account`, `work` ] ) ).toMatchObject( { session_ids: [ `1`, `6` ], flags: { account: `work` } } )
+        expect( () => parse_args( [ `restart`, `all`, `2` ] ) ).toThrow( `restart all takes no other selectors` )
+        expect( parse_args( [ `close`, `3`, `4`, `5` ] ) ).toMatchObject( { verb: `close`, session_id: `3`, session_ids: [ `3`, `4`, `5` ] } )
+        expect( () => parse_args( [ `close`, `3`, `--force` ] ) ).toThrow( `Unknown close argument: --force` )
         expect( () => parse_args( [ `restart`, `3`, `--yolo` ] ) ).toThrow( `Unknown restart argument: --yolo` )
     } )
 

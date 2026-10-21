@@ -62,3 +62,28 @@ it( `does not skip a numbered live session with missing metadata`, async () => {
     } ) ).rejects.toThrow( `No stored session found for active session numbered 1` )
     expect( closed ).toEqual( [] )
 } )
+
+it( `closes several numbered sessions by the numbers shown before the first close`, async () => {
+    const live = [ `a`, `b`, `c`, `d`, `e` ].map( id => ( { babysit_id: id, tmux_session: `babysit_${ id }` } ) )
+    let open = [ ...live ]
+    const closed = []
+    const output = []
+    await cmd_close( { session_ids: [ `3`, `4`, `5`, `c` ] }, {
+        inspect_records: () => ( { records: live.map( session => ( { session } ) ) } ),
+        // Closing renumbers the list, like the real tmux sweep
+        sessions: async () => open.map( session => ( { name: session.tmux_session } ) ),
+        close: session => {
+            if( session.babysit_id === `d` ) throw new Error( `docker gone` )
+            closed.push( session.babysit_id )
+            open = open.filter( other => other !== session )
+        },
+        print: message => output.push( message ),
+    } ).catch( error => output.push( error.message ) )
+    expect( closed ).toEqual( [ `c`, `e` ] )
+    expect( output ).toEqual( [
+        `Closed c; it will not be recovered.`,
+        `Could not close d: docker gone`,
+        `Closed e; it will not be recovered.`,
+        `1 of 3 sessions not closed: d`,
+    ] )
+} )

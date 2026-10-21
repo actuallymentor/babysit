@@ -216,6 +216,21 @@ export const pick_account = ( readings = [] ) => readings
     .reduce( ( best, reading ) => !best || reading.headroom > best.headroom ? reading : best, null )
 
 /**
+ * Name of the account with most headroom, for a restart that moves a session
+ * to the freshest subscription. False with fewer than two accounts or no
+ * readable quota, so the session keeps the one it has.
+ * @param {Object} [seams] - list/probe seams
+ * @returns {Promise<string|false>}
+ */
+export const most_headroom_account = async ( { list = list_claude_accounts, probe = probe_accounts } = {} ) => {
+
+    const accounts = list()
+    if( accounts.length < 2 ) return false
+    return pick_account( await probe( accounts ) )?.name || false
+
+}
+
+/**
  * Account for a Claude launch: an explicit choice, else the resumed session's,
  * else the only one, else (with two or more accounts) the one with most headroom.
  * @param {Object} options

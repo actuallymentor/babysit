@@ -171,15 +171,18 @@ export const parse_args = ( argv ) => {
     // Recovery options are command-scoped; unknown input must never launch an agent.
     if( verb === `recover` || verb === `close` ) {
         const selector = positionals[1] || null
+        // close takes several selectors at once; recover takes one
+        const selectors = verb === `close` ? positionals.slice( 1 ) : positionals.slice( 1, 2 )
         const allowed = new Set( [ `--help`, `-h`, `--version`, `-v`, ... verb === `recover` && selector !== `init`
             ? [ `--dry-run`, `--json`, `--no-continue`, `--boot`, `--shutdown` ] : []  ] )
-        const unexpected = prepared.slice( 1 ).filter( argument => argument !== selector && !allowed.has( argument ) )
-        if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown ${ verb } argument: ${ unexpected[0] || positionals[2] }` )
-        if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <number|session_id>` )
+        const unexpected = prepared.slice( 1 ).filter( argument => !selectors.includes( argument ) && !allowed.has( argument ) )
+        if( unexpected.length || positionals.length > selectors.length + 1 ) throw new Error( `Unknown ${ verb } argument: ${ unexpected[0] || positionals[2] }` )
+        if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <number|session_id>...` )
         if( args.shutdown && ( selector || args.boot || args.json || args[ `dry-run` ] || args.continue === false ) ) throw new Error( `--shutdown cannot be combined with recovery options` )
         if( args.boot && ( selector || args[ `dry-run` ] ) ) throw new Error( `--boot requires an unfiltered recovery sweep` )
         return {
             verb, agent: null, session_id: selector === `init` && verb === `recover` ? null : selector,
+            ...verb === `close` && { session_ids: selectors },
             recover_verb: verb === `recover` && selector === `init` ? `init` : null,
             flags: { ...flags, dry_run: Boolean( args[ `dry-run` ] ), json: Boolean( args.json ), no_continue: args.continue === false, boot: Boolean( args.boot ), shutdown: Boolean( args.shutdown ) },
             passthrough: [],
@@ -285,20 +288,22 @@ export const parse_args = ( argv ) => {
     // babysit open <id>
     if( verb === `open` ) return { verb: `open`, agent: null, session_id: positionals[1], flags, passthrough: [] }
 
-    // babysit restart <number|session_id|all> [--force] [--detach]
+    // babysit restart <number|session_id|all>... [--force] [--detach] [--continue] [--account NAME]
     if( verb === `restart` ) {
         const selector = positionals[1] || null
+        const selectors = positionals.slice( 1 )
         const allowed = new Set( [ `--help`, `-h`, `--force`, `--detach`, `--continue` ] )
         // `--account NAME` / `--account=NAME` switch the Claude subscription on the way
         const account_value = prepared.findIndex( ( argument, index ) => index > 0 && prepared[ index - 1 ] === `--account` )
         const is_account = ( argument, index ) => argument === `--account` || argument.startsWith( `--account=` ) || index === account_value
         // Indexes below are shifted by the slice: prepared[0] is the verb
-        const unexpected = prepared.slice( 1 ).filter( ( argument, index ) => argument !== selector && !allowed.has( argument ) && !is_account( argument, index + 1 ) )
-        if( unexpected.length || positionals.length > 2 ) throw new Error( `Unknown restart argument: ${ unexpected[0] || positionals[2] }` )
-        if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all> [--force] [--detach] [--continue] [--account <name>]` )
+        const unexpected = prepared.slice( 1 ).filter( ( argument, index ) => !selectors.includes( argument ) && !allowed.has( argument ) && !is_account( argument, index + 1 ) )
+        if( unexpected.length ) throw new Error( `Unknown restart argument: ${ unexpected[0] }` )
+        if( !selector && !flags.help ) throw new Error( `Usage: babysit restart <number|session_id|all>... [--force] [--detach] [--continue] [--account <name>]` )
+        if( selectors.includes( `all` ) && selectors.length > 1 ) throw new Error( `restart all takes no other selectors` )
         // Every session has its own subscription; one account for all of them is never meant
         if( selector === `all` && flags.account ) throw new Error( `--account applies to one Claude session; restart them one by one` )
-        return { verb: `restart`, agent: null, session_id: selector, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ), continue_prompt: Boolean( args.continue ) }, passthrough: [] }
+        return { verb: `restart`, agent: null, session_id: selector, session_ids: selectors, flags: { ...flags, force: Boolean( args.force ), detach: Boolean( args.detach ), continue_prompt: Boolean( args.continue ) }, passthrough: [] }
     }
 
     // babysit fork <number|session_id> [agent] [start flags] [-- agent args]
