@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.49.4 — 2026-10-21
+
+### Fixed
+- Detaching (ctrl+b d) from `babysit open` or `babysit fork` could take 10–30s on a host under memory pressure: the babysit process waiting on the attach got swapped out and had to page back in. Under the shell-init wrapper babysit now exits before the attach and the shell runs `tmux attach` itself. Re-source the wrapper (open a new shell) to get it; without it nothing changes.
+
 ## 1.49.3 — 2026-10-21
 
 ### Fixed
