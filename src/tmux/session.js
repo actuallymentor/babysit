@@ -4,6 +4,7 @@ import { existsSync, writeFileSync } from 'fs'
 import { command_exists, run } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import { TMUX_SOCKET } from '../utils/paths.js'
+import { WRAPPER_ENV } from '../utils/wrapper_env.js'
 import { start_pipe_pane } from './capture.js'
 
 const AGENT_STATUS_OPTION = `@babysit_agent_status`
@@ -235,7 +236,7 @@ export const kill_session = async ( session_name, { run_command = run } = {} ) =
  * @param {Function} [options.write_file] - File writer seam
  * @returns {boolean} true once the foreground client exits, false when the wrapper attaches instead
  */
-export const attach_session = ( session_name, { exec_command = execSync, env = process.env, write_file = writeFileSync } = {} ) => {
+export const attach_session = ( session_name, { exec_command = execSync, env = WRAPPER_ENV, write_file = writeFileSync } = {} ) => {
 
     // Only the wrapper's own temp file, so a stale inherited variable never creates one
     const attach_file = env.BABYSIT_ATTACH_FILE
