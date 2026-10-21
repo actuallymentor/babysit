@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.49.3 — 2026-10-21
+
+### Fixed
+- A `> quote` line inside an unsent multi-line Claude draft counted as a prompt marker, which could hide a real logout alert. Only `❯` (Claude) and `›` (Codex) count now.
+
 ## 1.49.2 — 2026-10-21
 
 ### Fixed
