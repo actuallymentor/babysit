@@ -22,8 +22,10 @@ import { opencode } from '../src/agents/opencode.js'
 import { SUPPORTED_AGENTS } from '../src/agents/index.js'
 import {
     fingerprint_agent_credentials,
+    HOST_AUTH_CACHE_TTL_MS,
     read_host_auth_cache,
     record_host_auth_success,
+    refresh_host_auth_cache,
 } from '../src/agents/auth_cache.js'
 
 const read_opencode_fixture = name => readFileSync(
@@ -724,6 +726,60 @@ describe( `startup authentication policy`, () => {
             } ] )
             expect( result.cache_context.credential_fingerprint )
                 .toBe( credential_identity.fingerprint )
+        } finally {
+            fixture.cleanup()
+        }
+
+    } )
+
+    it( `trusts a login a live session keeps rotating instead of probing its token`, async () => {
+
+        const fixture = startup_auth_fixture()
+        fixture.input.isTTY = false
+        const probes = []
+
+        try {
+            const { fingerprint } = fingerprint_agent_credentials( codex, fixture.creds_mounts )
+            const now = Date.now()
+            record_host_auth_success( `codex`, {
+                credential_fingerprint: fingerprint,
+                image_identity: `sha256:test-image`,
+            }, { cache_path: fixture.cache_path, now: now - HOST_AUTH_CACHE_TTL_MS - 60_000 } )
+            const launch = () => check_startup_agent_authentication( codex, {
+                workspace: `/tmp/project`,
+                mode: {},
+                creds_mounts: fixture.creds_mounts,
+                input: fixture.input,
+                output: fixture.output,
+                cache_path: fixture.cache_path,
+                resolve_image_identity: async () => `sha256:test-image`,
+                resolve_context_files: () => ( {} ),
+                run_auth_check: async agent => {
+                    probes.push( agent.name )
+                    return { name: agent.name, status: `authenticated`, authenticated: true }
+                },
+                agents: [ codex ],
+            } )
+
+            // The probe's proof lapsed and nothing renewed it: probe as before
+            expect( ( await launch() ).results[0].status ).toBe( `authenticated` )
+            expect( probes ).toEqual( [ `codex` ] )
+
+            // Probed 13h ago, but a live session rotated the token 2h ago (the
+            // monitor's compare-and-swap): that refresh is the proof
+            record_host_auth_success( `codex`, {
+                credential_fingerprint: `before-rotation`,
+                image_identity: `sha256:test-image`,
+            }, { cache_path: fixture.cache_path, now: now - 13 * 3_600_000 } )
+            expect( refresh_host_auth_cache( `codex`, {
+                expected_credential_fingerprint: `before-rotation`,
+                next_credential_fingerprint: fingerprint,
+                image_identity: `sha256:test-image`,
+            }, { cache_path: fixture.cache_path, now: now - 2 * 3_600_000 } ) ).toBe( true )
+
+            probes.length = 0
+            expect( ( await launch() ).results[0].status ).toBe( `cached` )
+            expect( probes ).toEqual( [] )
         } finally {
             fixture.cleanup()
         }
