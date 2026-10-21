@@ -160,12 +160,11 @@ export const parse_args = ( argv ) => {
     // babysit init [file.yaml] — write the commented default config
     if( verb === `init` ) return { verb: `init`, agent: null, session_id: positionals[1] || null, flags, passthrough: [] }
 
-    // babysit archive <number|session_id|name>
+    // babysit archive <number|session_id|name>...
     if( verb === `archive` ) {
         const selector = positionals[1] || null
-        if( !selector && !flags.help ) throw new Error( `Usage: babysit archive <number|session_id|name>` )
-        if( positionals.length > 2 ) throw new Error( `Unknown archive argument: ${ positionals[2] }` )
-        return { verb: `archive`, agent: null, session_id: selector, flags, passthrough: [] }
+        if( !selector && !flags.help ) throw new Error( `Usage: babysit archive <number|session_id|name>...` )
+        return { verb: `archive`, agent: null, session_id: selector, session_ids: positionals.slice( 1 ), flags, passthrough: [] }
     }
 
     // Recovery options are command-scoped; unknown input must never launch an agent.

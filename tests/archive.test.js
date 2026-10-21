@@ -88,6 +88,32 @@ describe( `archived sessions`, () => {
         expect( messages[1] ).toContain( `already archived` )
     } )
 
+    it( `archives several sessions by the numbers shown before the first archive`, async () => {
+        // Display order: 1 a2, 2 a1 (archived rows sink within their workspace), 3 b1
+        const updates = []
+        const messages = []
+        await cmd_archive( { session_ids: [ `1`, `2`, `3`, `a2` ] }, {
+            list_sessions_fn: async () => tmux,
+            list_stored_sessions_fn: () => stored,
+            update_session_fn: id => updates.push( id ),
+            print: message => messages.push( message ),
+        } )
+        expect( updates ).toEqual( [ `a2`, `b1` ] )
+        expect( messages ).toHaveLength( 3 )
+        expect( messages[1] ).toContain( `already archived` )
+
+        // A bad selector archives nothing
+        const none = []
+        await expect( cmd_archive( { session_ids: [ `1`, `9` ] }, {
+            list_sessions_fn: async () => tmux,
+            list_stored_sessions_fn: () => stored,
+            update_session_fn: id => none.push( id ),
+        } ) ).rejects.toThrow( /numbered 9/ )
+        expect( none ).toEqual( [] )
+
+        expect( parse_args( [ `archive`, `1`, `2` ] ) ).toMatchObject( { verb: `archive`, session_id: `1`, session_ids: [ `1`, `2` ] } )
+    } )
+
     it( `open un-archives and numbers the displayed order; close numbers it too`, async () => {
         const updates = []
         let attached = null

@@ -39,9 +39,11 @@ export const select_active_session = ( selector, active, stored ) => {
 }
 
 /**
- * Archive an active session: it stays running, but `babysit list` dims it and
- * sinks it to the bottom of its workspace until `babysit open` brings it back.
- * @param {Object} cmd - Parsed command { session_id }
+ * Archive active sessions: they stay running, but `babysit list` dims them and
+ * sinks them to the bottom of their workspace until `babysit open` brings them
+ * back. Archiving renumbers the list, so every selector resolves against one
+ * snapshot before the first write.
+ * @param {Object} cmd - Parsed command { session_id, session_ids }
  * @param {Object} [deps]
  */
 export const cmd_archive = async ( cmd, {
@@ -53,14 +55,19 @@ export const cmd_archive = async ( cmd, {
 
     const stored = list_stored_sessions_fn()
     const active = order_active_sessions( await list_sessions_fn(), stored )
-    const session = select_active_session( cmd.session_id, active, stored )
+    const selected = ( cmd.session_ids || [ cmd.session_id ] ).map( selector => select_active_session( selector, active, stored ) )
+    const sessions = selected.filter( ( session, index ) => selected.findIndex( other => other.babysit_id === session.babysit_id ) === index )
 
-    if( session.archived_at ) {
-        print( `${ session.name || session.babysit_id } is already archived; babysit open brings it back.` )
-        return
+    for( const session of sessions ) {
+
+        if( session.archived_at ) {
+            print( `${ session.name || session.babysit_id } is already archived; babysit open brings it back.` )
+            continue
+        }
+
+        update_session_fn( session.babysit_id, { archived_at: new Date().toISOString() } )
+        print( `Archived ${ session.name || session.babysit_id }; babysit open brings it back.` )
+
     }
-
-    update_session_fn( session.babysit_id, { archived_at: new Date().toISOString() } )
-    print( `Archived ${ session.name || session.babysit_id }; babysit open brings it back.` )
 
 }
