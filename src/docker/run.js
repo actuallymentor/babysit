@@ -20,6 +20,9 @@ export const BABYSIT_HOST_RC_ENV = `BABYSIT_HOST_BABYSITRC`
 // One volume for every --adb session: devices authorise this key pair once.
 export const ADB_KEYS_VOLUME = `babysit-adb`
 
+// One volume for every --ios session: lockdown pair records are authorised once.
+export const IOS_PAIRINGS_VOLUME = `babysit-ios`
+
 export const WATCHTOWER_DISABLE_LABEL = `com.centurylinklabs.watchtower.enable=false`
 
 // Claude's Commander parser consumes required operands even when they look
@@ -289,6 +292,19 @@ const add_adb_flags = flags => {
     flags.push( `-v`, `${ ADB_KEYS_VOLUME }:/opt/babysit-adb` )
     flags.push( `--add-host`, `host.docker.internal:host-gateway` )
     flags.push( `-e`, `BABYSIT_ADB=1` )
+
+}
+
+/**
+ * Add the shared iOS pairing volume. Devices are reached over the LAN
+ * (lockdown :62078, WebDriverAgent :8100); the entrypoint copies pair records
+ * into ~/.pymobiledevice3 and relaunches recorded devices' WebDriverAgent.
+ * @param {string[]} flags - Docker command argument list to mutate
+ */
+const add_ios_flags = flags => {
+
+    flags.push( `-v`, `${ IOS_PAIRINGS_VOLUME }:/opt/babysit-ios` )
+    flags.push( `-e`, `BABYSIT_IOS=1` )
 
 }
 
@@ -591,6 +607,7 @@ export const build_docker_command_args = ( options ) => {
 
     if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
     if( mode.adb ) add_adb_flags( flags )
+    if( mode.ios ) add_ios_flags( flags )
 
     for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )

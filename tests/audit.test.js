@@ -86,7 +86,7 @@ describe( `babysit audit`, () => {
         expect( strict_errors( text ) ).toEqual( [] )
         for( const comment of [ `# My review session`, `# who does the work`, `# the fast one`, `# keep these rules` ] ) expect( text ).toContain( comment )
         // Existing values untouched; the non-default is live, defaults are commented in canonical order
-        expect( text ).toContain( `  yolo: true\n  mode: regular\n  docker: true\n  # adb: false\n  # clone: false\n  # loop: false\n  # ignore_host_agents_md: false\n  ports: [ 3000 ]\n` )
+        expect( text ).toContain( `  yolo: true\n  mode: regular\n  docker: true\n  # adb: false\n  # ios: false\n  # devices: false\n  # clone: false\n  # loop: false\n  # ignore_host_agents_md: false\n  ports: [ 3000 ]\n` )
         expect( parse( text ).launch ).not.toHaveProperty( `adb` )
         // ports, log and args are never added
         expect( text ).not.toMatch( /log:|args:/ )
@@ -153,10 +153,10 @@ describe( `babysit audit`, () => {
         const parsed = parse( read( `a.yaml` ) )
         expect( code ).toBe( 0 )
         expect( parsed.launch ).toMatchObject( { agent: `claude`, mode: `sandbox`, yolo: true, docker: true } )
-        expect( read( `a.yaml` ) ).toContain( `# adb: false\n    # loop: false\n    # ignore_host_agents_md: false` )
+        expect( read( `a.yaml` ) ).toContain( `# adb: false\n    # ios: false\n    # devices: false\n    # loop: false\n    # ignore_host_agents_md: false` )
         // Sandbox cannot clone, so clone is not asked; ports, log and args never are
         expect( asked.filter( question => /\bis missing|Mode \[/.test( question ) ).map( question => question.match( /launch\.(\w+)/ )?.[1] ?? `mode` ) )
-            .toEqual( [ `mode`, `yolo`, `docker`, `adb`, `loop`, `ignore_host_agents_md` ] )
+            .toEqual( [ `mode`, `yolo`, `docker`, `adb`, `ios`, `devices`, `loop`, `ignore_host_agents_md` ] )
         expect( asked.join( `\n` ) ).not.toMatch( /name|timeout|initial_prompt|commands|rule/ )
         expect( parsed ).not.toHaveProperty( `config` )
         expect( parsed ).not.toHaveProperty( `babysit` )

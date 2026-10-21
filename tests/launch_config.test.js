@@ -22,6 +22,21 @@ afterEach( () => rmSync( root, { recursive: true, force: true } ) )
 
 describe( `launch: section`, () => {
 
+    it( `ios and devices keys become device flags and round-trip through init`, () => {
+        const ios = launch_to_command( default_launch( { ios: true } ) )
+        expect( ios.flags ).toMatchObject( { ios: true, adb: false, devices: false } )
+
+        const devices = launch_to_command( default_launch( { devices: true } ) )
+        expect( devices.flags ).toMatchObject( { ios: true, adb: true, devices: true } )
+        expect( launch_flags( default_launch( { devices: true } ) ) ).toEqual( [ `--devices` ] )
+
+        // --devices is written back as the one key the user typed
+        expect( command_to_launch( parse_args( [ `claude`, `--devices` ] ) ) ).toMatchObject( { devices: true, adb: false, ios: false } )
+        expect( command_to_launch( parse_args( [ `claude`, `--ios` ] ) ) ).toMatchObject( { devices: false, adb: false, ios: true } )
+
+        expect( validate_launch( { agent: `claude`, ios: `yes` } ).errors ).toEqual( [ expect.stringContaining( `launch.ios` ) ] )
+    } )
+
     it( `strict mode requires the section and its agent; other keys default`, () => {
         expect( validate_launch( default_launch(), { strict: true } ).errors ).toEqual( [] )
 

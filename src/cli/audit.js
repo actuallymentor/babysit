@@ -14,6 +14,8 @@ const TOGGLE_QUESTIONS = {
     yolo: `Run with --yolo (the agent acts without asking permission)?`,
     docker: `Give the session the host's Docker daemon (--docker)?`,
     adb: `Give the session Android device access (--adb)?`,
+    ios: `Give the session iPhone access (--ios)?`,
+    devices: `Give the session every kind of device access (--devices)?`,
     clone: `Work in a clone of the workspace (--clone)?`,
     loop: `Keep nudging the agent when it goes idle (--loop)?`,
     ignore_host_agents_md: `Ignore the host's global AGENTS.md (--ignore-host-agents-md)?`,

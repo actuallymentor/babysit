@@ -247,6 +247,20 @@ describe( `parse_args`, () => {
         expect( parse_args( [ `claude` ] ).flags.adb ).toBe( false )
     } )
 
+    it( `--ios enables iOS only, --devices enables every device kind`, () => {
+        const ios = parse_args( [ `claude`, `--ios`, `--model`, `sonnet` ] )
+        expect( ios.flags.ios ).toBe( true )
+        expect( ios.flags.adb ).toBe( false )
+        expect( ios.passthrough ).toEqual( [ `--model`, `sonnet` ] )
+
+        const devices = parse_args( [ `claude`, `--devices` ] )
+        expect( devices.flags.ios ).toBe( true )
+        expect( devices.flags.adb ).toBe( true )
+        expect( devices.passthrough ).toEqual( [] )
+
+        expect( parse_args( [ `claude` ] ).flags.ios ).toBe( false )
+    } )
+
     it( `recognises clone safety flags without passing them to the agent`, () => {
         const cmd = parse_args( [ `codex`, `--clone`, `--yes`, `--model`, `gpt-5.6-sol` ] )
 

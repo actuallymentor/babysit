@@ -15,6 +15,8 @@ const KNOWN_FLAGS = [
     `loop`,
     `docker`,
     `adb`,
+    `ios`,
+    `devices`,
     `yes`,
     `ignore-host-agents-md`,
     `name`,
@@ -25,13 +27,13 @@ const KNOWN_FLAGS = [
     `account`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `ios`, `devices`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
 const AUTH_VERBS = [ `status`, `check`, `init`, `accounts` ]
 
 // `babysit fork` only: filesystem/takeover/mode switches, plus --no-history and
 // --no-<flag> to drop a switch inherited from the parent
 const FORK_FLAGS = [ `share`, `takeover`, `regular`, `history` ]
-export const FORK_NEGATABLE_FLAGS = [ `yolo`, `docker`, `adb`, `loop` ]
+export const FORK_NEGATABLE_FLAGS = [ `yolo`, `docker`, `adb`, `ios`, `loop` ]
 
 // `babysit watch` only: --usage shows the usage panel alone
 const WATCH_FLAGS = [ `usage` ]
@@ -101,7 +103,10 @@ export const parse_args = ( argv ) => {
         clone: args.clone || false,
         loop: args.loop || false,
         docker: args.docker || false,
-        adb: args.adb || false,
+        // --devices: every kind of external device access (Android + iOS)
+        adb: args.adb || args.devices || false,
+        ios: args.ios || args.devices || false,
+        devices: args.devices || false,
         yes: args.yes || false,
         ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
         // Command-scoped: list and resume history/number selectors consume `--all`, while

@@ -544,7 +544,7 @@ describe( `fork menu`, () => {
         const chosen = parse_args( [ `codex`, `--docker`, `--clone`, `--name=n` ] )
         const cmd = fork_command_from_menu( { babysit_id: `p-1` }, chosen )
         expect( cmd ).toMatchObject( { verb: `fork`, agent: `codex`, session_id: `p-1`, flags: { clone: true, share: false, regular: true, docker: true, name: `n` } } )
-        expect( cmd.flags.unset ).toEqual( [ `yolo`, `adb`, `loop` ] )
+        expect( cmd.flags.unset ).toEqual( [ `yolo`, `adb`, `ios`, `loop` ] )
         expect( fork_command_from_menu( { babysit_id: `p` }, parse_args( [ `claude`, `--mudbox` ] ) ).flags ).toMatchObject( { regular: false, share: false, clone: false } )
 
     } )

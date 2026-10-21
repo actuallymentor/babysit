@@ -107,6 +107,18 @@ if [ "${BABYSIT_ADB:-0}" = "1" ] && [ -d "$ADB_KEYS" ]; then
         'babysit adb up --quiet > /tmp/babysit-adb-up.log 2>&1' < /dev/null > /dev/null 2>&1 &
 fi
 
+# --ios: pair records live in the shared babysit-ios volume (records/*.plist,
+# devices.json). The dir is world-writable because sessions run as different
+# uids; `babysit ios up` mirrors records into ~/.pymobiledevice3 and relaunches
+# each recorded device's WebDriverAgent as the session user, in the background.
+IOS_ROOT=/opt/babysit-ios
+if [ "${BABYSIT_IOS:-0}" = "1" ] && [ -d "$IOS_ROOT" ]; then
+    mkdir -p "$IOS_ROOT/records" && chmod 777 "$IOS_ROOT" "$IOS_ROOT/records"
+    mkdir -p /home/node/.pymobiledevice3 && chown "$HOST_UID:$HOST_GID" /home/node/.pymobiledevice3
+    gosu node env HOME=/home/node setsid sh -c \
+        'babysit ios up --quiet > /tmp/babysit-ios-up.log 2>&1' < /dev/null > /dev/null 2>&1 &
+fi
+
 # Materialize the credential-only GitHub profile uploaded into the stopped
 # container through `docker cp`. The bootstrap never appears in Config.Env or
 # bind-mount metadata, and is removed before the coding agent starts.

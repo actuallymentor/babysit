@@ -30,6 +30,7 @@ const normalise = ( value = {} ) => {
         agent: SUPPORTED_AGENTS.includes( value?.agent ) ? value.agent : SUPPORTED_AGENTS[0],
         docker: value?.docker === true,
         adb: value?.adb === true,
+        ios: value?.ios === true,
         yolo: value?.yolo === true,
         clone: mode === `regular` && value?.clone === true,
         loop: value?.loop === true,
