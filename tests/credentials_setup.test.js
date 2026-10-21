@@ -226,6 +226,32 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
 
     } )
 
+    it( `skips the pre-flight when asked, so staging never refreshes a held token`, async () => {
+
+        const commands = []
+        const result = await setup_darwin_credentials( {
+            name: `claude`,
+            bin: `claude`,
+            credential_preflight: true,
+            credentials: { darwin: { keychain_service: `Claude Code-credentials` } },
+            container_paths: { creds: `/home/node/.claude/.credentials.json` },
+        }, {
+            preflight: false,
+            run_command: command => {
+                commands.push( command )
+                return command.includes( ` -w ` ) ? `{"refresh_token":"held"}` : `credential exists`
+            },
+        } )
+
+        try {
+            expect( commands.some( command => command.includes( `--version` ) ) ).toBe( false )
+        } finally {
+            await result.sync.stop()
+            rmSync( result.cleanup_path, { recursive: true, force: true } )
+        }
+
+    } )
+
 } )
 
 describe( `setup_linux_credentials existing_tmpfile`, () => {
@@ -708,7 +734,9 @@ describe( `Antigravity credential source pinning`, () => {
                 monitor = await setup( agent, {
                     existing_tmpfile: mount.source,
                     sync_baseline: foreground.sync.baseline(),
-                    run_command: () => { lookups += 1; return `stale-keyring` },
+                    run_command: () => {
+                        lookups += 1; return `stale-keyring` 
+                    },
                 } )
                 await monitor.sync.stop()
                 expect( lookups ).toBe( 0 )

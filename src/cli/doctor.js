@@ -56,6 +56,7 @@ export const select_doctor_auth_agents = ( selection = `all` ) => {
  * @param {boolean} [options.clear_on_failure=true] - Also drop cache entries on non-auth probe failures
  * @param {Function} [options.acquire_lease] - Lease acquisition seam; may return an already-owned lease
  * @param {Function} [options.defer_probe] - Reason to hold back a due probe, or null to run it
+ * @param {boolean} [options.preflight=true] - Let staging run agents' token-refreshing pre-flight
  * @returns {Promise<Object[]>} Per-agent results
  */
 export const run_auth_diagnostics = async ( agents, {
@@ -77,13 +78,14 @@ export const run_auth_diagnostics = async ( agents, {
     allow_skip = false,
     clear_on_failure = true,
     defer_probe = () => null,
+    preflight = true,
 } = {} ) => {
 
     const cache_options = cache_path ? { cache_path } : {}
     const auth_lease = await acquire_lease()
     let credential_setup
     try {
-        credential_setup = await setup( agents[0] )
+        credential_setup = await setup( agents[0], { preflight } )
     } catch ( error ) {
         auth_lease.release()
         throw error

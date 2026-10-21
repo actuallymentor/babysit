@@ -343,10 +343,25 @@ export const select_each = async ( selectors, select = select_stored_session ) =
 
 }
 
+/**
+ * A select_stored_session bound to one read of the store and the tmux list,
+ * so every selector of a batch numbers the same rows even if a session
+ * exits or changes while the batch resolves.
+ * @param {Object} [options] - Store and tmux seams
+ * @returns {Promise<Function>} Selector → stored session
+ */
+export const snapshot_selector = async ( { inspect_records = inspect_stored_sessions, sessions = list_sessions } = {} ) => {
+
+    const records = inspect_records()
+    const live = await sessions( { strict: true } )
+    return selector => select_stored_session( selector, { inspect_records: () => records, sessions: async () => live } )
+
+}
+
 /** Close listed numbers or stored session IDs, preserving intentional-close handling. */
 export const cmd_close = async ( cmd, { inspect_records = inspect_stored_sessions, sessions = list_sessions, close = close_session, print = console.log } = {} ) => {
 
-    const selected = await select_each( cmd.session_ids || [ cmd.session_id ], selector => select_stored_session( selector, { inspect_records, sessions } ) )
+    const selected = await select_each( cmd.session_ids || [ cmd.session_id ], await snapshot_selector( { inspect_records, sessions } ) )
 
     // One failed close must not keep the others open
     const failed = []

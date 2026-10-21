@@ -1,5 +1,5 @@
 import { createInterface } from 'readline/promises'
-import { close_session, select_each, select_stored_session, use_launch_environment } from './recover.js'
+import { close_session, select_each, snapshot_selector, use_launch_environment } from './recover.js'
 import { most_headroom_account } from './claude_accounts.js'
 import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
@@ -200,14 +200,14 @@ const ask_continue = async ( { input = process.stdin, output = process.stdout } 
  * @param {Object} cmd - Parsed command { session_id, session_ids, flags: { force, detach, continue_prompt, account } }
  * @param {Object} [options] - Injectable seams
  */
-export const cmd_restart = async ( cmd, { select = select_stored_session, select_all = unarchived_sessions, load = load_session, ask = ask_continue, ...seams } = {} ) => {
+export const cmd_restart = async ( cmd, { select = null, select_all = unarchived_sessions, load = load_session, ask = ask_continue, ...seams } = {} ) => {
 
     const selectors = cmd.session_ids || [ cmd.session_id ]
     const batch = selectors.length > 1 || selectors[0] === `all`
     const print = seams.print || console.log
 
     // Numbers shift as sessions close: resolve every selector before touching any
-    const sessions = selectors[0] === `all` ? await select_all() : await select_each( selectors, select )
+    const sessions = selectors[0] === `all` ? await select_all() : await select_each( selectors, select || await snapshot_selector() )
     if( !sessions.length ) return print( `No unarchived sessions to restart.` )
 
     // A single session that would refuse anyway fails before the question

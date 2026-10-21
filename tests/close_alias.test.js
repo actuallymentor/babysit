@@ -87,3 +87,24 @@ it( `closes several numbered sessions by the numbers shown before the first clos
         `1 of 3 sessions not closed: d`,
     ] )
 } )
+
+it( `resolves every number of a batch against one list read`, async () => {
+    const live = [ `a`, `b`, `c` ].map( id => ( { babysit_id: id, tmux_session: `babysit_${ id }` } ) )
+    let reads = 0
+    let open = [ ...live ]
+    const closed = []
+    await cmd_close( { session_ids: [ `1`, `2` ] }, {
+        inspect_records: () => ( { records: live.map( session => ( { session } ) ) } ),
+        // A first session exiting mid-resolve must not shift the second number
+        sessions: async () => {
+            reads++
+            const rows = open.map( session => ( { name: session.tmux_session } ) )
+            open = open.slice( 1 )
+            return rows
+        },
+        close: session => closed.push( session.babysit_id ),
+        print: () => {},
+    } )
+    expect( reads ).toBe( 1 )
+    expect( closed ).toEqual( [ `a`, `b` ] )
+} )

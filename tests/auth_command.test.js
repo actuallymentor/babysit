@@ -476,11 +476,37 @@ describe( `auth check`, () => {
                 expect( await unexpired.exit_code ).toBe( 0 )
                 expect( unexpired.probes ).toEqual( [ `codex` ] )
 
-                // An env token outranks the file inside the probe
-                enrol( `codex`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
-                const keyed = check( { ...codex_only, ...live, read_credential: () => near_expiry } )
+                // A token in the checker's env outranks the file inside the probe
+                due()
+                const keyed = check( { ...codex_only, ...live, env: { CODEX_API_KEY: `sk-env` }, read_credential: () => near_expiry } )
                 expect( await keyed.exit_code ).toBe( 0 )
                 expect( keyed.probes ).toEqual( [ `codex` ] )
+
+            } )
+
+            it( `guards on the env this probe gets, not on the env the cached launch had`, async () => {
+
+                // The launch had a key; this checker does not, so the file logs in and may rotate
+                enrol( `codex`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000, { credential_parts: [ { kind: `env` }, { kind: `file` } ] } )
+                const keyless = check( { ...codex_only, ...live, env: {}, read_credential: () => near_expiry } )
+                expect( await keyless.exit_code ).toBe( 0 )
+                expect( keyless.probes ).toEqual( [] )
+                expect( keyless.rendered() ).toContain( `codex: deferred` )
+
+            } )
+
+            it( `stages without the token-refreshing pre-flight while sessions run`, async () => {
+
+                const staged = []
+                const setup = async ( agent, options = {} ) => {
+                    staged.push( options.preflight )
+                    return { mounts: [], sync: null, tmpfiles: {} }
+                }
+                due()
+                await check( { ...codex_only, ...live, setup, read_credential: fresh_token } ).exit_code
+                due()
+                await check( { ...codex_only, setup, read_credential: fresh_token } ).exit_code
+                expect( staged ).toEqual( [ false, true ] )
 
             } )
 

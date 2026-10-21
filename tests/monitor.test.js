@@ -353,6 +353,14 @@ describe( `logout screen trigger`, () => {
             return { seen, sight }
         }
 
+        it( `a recovered sighting ends the episode`, async () => {
+            const { seen, sight } = handler()
+            await sight()
+            await sight( LOGOUT_RECHECK_MS, false )
+            await sight()
+            expect( seen.alerts ).toEqual( [] )
+        } )
+
         it( `never alerts on generic wording a transcript may quote, but still re-stages and checks`, async () => {
             const { seen, sight } = handler()
             for( let i = 0; i < 4; i++ ) await sight( LOGOUT_RECHECK_MS, false )
@@ -373,6 +381,13 @@ describe( `logout screen trigger`, () => {
             expect( shows_session_logout( quoted, claude ) ).toBe( false )
             expect( shows_session_logout( `• not logged in, so log in again\n› `, get_agent( `codex` ) ) ).toBe( false )
             expect( shows_session_logout( `■ Your access token could not be refreshed. Please log out and sign in again.\n› `, get_agent( `codex` ) ) ).toBe( true )
+
+            // Prose that quotes Codex's error is not Codex's error
+            expect( shows_session_logout( `• The report says your access token could not be refreshed.\n› `, get_agent( `codex` ) ) ).toBe( false )
+
+            // A retry that worked: the old 401 is still on screen, but a prompt followed it
+            const recovered = real.replace( `✻ Cogitated`, `❯ try again\n● Hi! How can I help?\n✻ Cogitated` )
+            expect( shows_session_logout( recovered, claude ) ).toBe( false )
         } )
 
         it( `re-stages the host login first, then alerts once for a session that stays logged out`, async () => {
