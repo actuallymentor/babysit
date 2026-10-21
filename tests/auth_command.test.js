@@ -11,6 +11,7 @@ import {
     record_host_auth_success,
 } from '../src/agents/auth_cache.js'
 import { get_agent } from '../src/agents/index.js'
+import { read_host_credential } from '../src/agents/host_probe.js'
 import {
     AUTH_CHECK_REFRESH_AFTER_MS,
     find_offline_logouts,
@@ -404,6 +405,26 @@ describe( `auth check`, () => {
 
         } )
 
+        it( `never lets a deferred host probe postpone the half-TTL container re-probe`, async () => {
+
+            // Sessions run and the access token sits near expiry every tick:
+            // the host probe defers, but the container check still comes due
+            enrol( `codex`, AUTH_CHECK_REFRESH_AFTER_MS + 1_000 )
+            const host = []
+            const { exit_code, probes, rendered } = check( {
+                select_agents: () => [ get_agent( `codex` ) ],
+                list_active_sessions: async () => [ { name: `babysit_x` } ],
+                read_credential: () => ( { state: `present`, text: `{"tokens":{"access_token":"expired.e30.x"},"last_refresh":"2020-01-01T00:00:00Z"}` } ),
+                run_host_check: async agent => host.push( agent.name ) && null,
+            } )
+
+            expect( await exit_code ).toBe( 0 )
+            expect( host ).toEqual( [] )
+            expect( probes ).toEqual( [ `codex` ] )
+            expect( rendered() ).not.toContain( `deferred` )
+
+        } )
+
         it( `treats an unreadable tmux server as a running session`, async () => {
 
             enrol( `codex`, HOST_CHECK_AFTER_MS + 1_000 )
@@ -503,6 +524,23 @@ describe( `auth check`, () => {
                 [ `claude`, `its refresh token expired` ],
             ] )
             expect( read_host_auth_cache( { cache_path } ).agents ).toEqual( {} )
+
+        } )
+
+        it( `finds an expired Claude refresh token in the macOS Keychain`, async () => {
+
+            const cache = { agents: { claude: { credential_kinds: [ `file` ] } } }
+            const expired = JSON.stringify( { claudeAiOauth: { refreshTokenExpiresAt: Date.now() - 1 } } )
+            const keychain = state => agent => read_host_credential( agent, {
+                platform: `darwin`,
+                read_keychain: () => state === `present` ? { state, text: expired } : { state },
+            } )
+            const find = state => find_offline_logouts( [ get_agent( `claude` ) ], { cache, wait: async () => {}, read_credential: keychain( state ) } )
+
+            expect( ( await find( `present` ) ).map( logout => logout.reason ) ).toEqual( [ `its refresh token expired` ] )
+
+            // A locked or unreachable Keychain proves nothing
+            expect( await find( `unknown` ) ).toEqual( [] )
 
         } )
 
