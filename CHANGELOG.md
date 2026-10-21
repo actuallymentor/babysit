@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.49.0 — 2026-10-21
+
+### Added
+- `babysit restart all --account NAME` (and with several numbers): moves the Claude sessions in the batch to that subscription and restarts the others as they are.
+- `babysit archive 2 5 6` archives several sessions; numbers resolve against the list before the first archive.
+- A session that shows a lost login gets the host login re-staged into its container, then its own Pushover alert if it is still logged out 15 minutes later. This covers a container token dying while the host login is fine. Only the agent's own error line counts, so a transcript that quotes logout messages never alerts.
+- Claude on macOS (Keychain): the offline logout check now reads the Keychain item, like the Linux file check.
+
+### Fixed
+- Claude account auto-switch missed real limit screens. Checked against Claude 2.1.304's own rendering, it now catches the bare `You've hit your limit` (overage or unclaimed limits), the `●`/`⚠ Usage limit reached` lines, and the Opus limit picker.
+- Pane checks for limits and lost logins counted raw rows. Claude pins its composer to the bottom, so a short transcript left the error above the scanned window and it was never seen. They now count non-blank lines.
+- OpenCode 1.19.3 sessions never got their initial prompt or fork handoff: its composer placeholder changed from `...` to `…`. The `/update` banner was harmless.
+- The scheduled auth check could rotate a refresh token a running session holds. Its container probe now waits while a session holds a near-expiry token, and each token rotation a session makes keeps the launch cache warm, so launches don't probe either.
+
 ## 1.48.1 — 2026-10-21
 
 ### Fixed
