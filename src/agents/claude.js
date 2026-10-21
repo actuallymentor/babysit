@@ -189,7 +189,7 @@ export const claude = {
         // a fake 401: `● Please run /login · API Error: 401 OAuth token has
         // expired…`. Prose quoting the words never starts a line like this, so
         // only this shape may send a session alert.
-        session_alert_pattern: /^[\s●⎿]*Please run \/login · API Error: 40[13]\b/m,
+        session_alert_pattern: /^[\s●⎿]*Please run \/login · API Error: 40[13]\b/,
 
         refresh_free: ( credential, now = Date.now() ) => oauth_field( credential, `expiresAt` ) - now > REFRESH_MARGIN_MS,
 

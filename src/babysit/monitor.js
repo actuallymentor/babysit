@@ -33,6 +33,13 @@ export const APPROVAL_COOLDOWN_MS = 2_000
 export const LOGOUT_RECHECK_MS = 15 * 60_000
 const LOGOUT_SCREEN_LINES = 25
 
+// An alert needs the error close to the composer: Claude 2.1.304 renders its
+// 401 line 7 non-blank lines up (status, separators, composer, footer)
+const SESSION_ALERT_LINES = 10
+
+// A prompt line with text after it: Claude `❯ go`, Codex `› go`, older `> go`
+const SUBMITTED_PROMPT = /^\s*[❯›>]\s+\S/
+
 // A limit message on screen asks for an account switch at most this often
 export const LIMIT_RECHECK_MS = 10 * 60_000
 const LIMIT_SCREEN_LINES = 15
@@ -83,8 +90,16 @@ export const shows_logout = ( screen = ``, agent = null ) => {
  * @returns {boolean} True when the latest lines carry the agent's own error
  */
 export const shows_session_logout = ( screen = ``, agent = null ) => {
+
     const pattern = agent?.auth_check?.session_alert_pattern
-    return Boolean( pattern?.test( screen_tail( screen, LOGOUT_SCREEN_LINES ) ) )
+    if( !pattern ) return false
+
+    // The error must be the agent's latest word: near the composer, with no
+    // prompt submitted after it (a retry that worked leaves the old 401 on screen)
+    const lines = screen_tail( screen, SESSION_ALERT_LINES ).split( `\n` )
+    const at = lines.findLastIndex( line => pattern.test( line ) )
+    return at !== -1 && !lines.slice( at + 1 ).some( line => SUBMITTED_PROMPT.test( line ) )
+
 }
 
 /**

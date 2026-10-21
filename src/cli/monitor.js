@@ -91,8 +91,12 @@ export const create_session_logout_handler = ( session, {
         }
         request_check( agent_name )
 
-        // Generic wording may be a transcript quoting it: the host check is the only reaction
-        if( !alertable ) return
+        // Generic wording may be a transcript quoting it, or the session recovered:
+        // the host check is the only reaction, and any running episode ends
+        if( !alertable ) {
+            episode = null
+            return
+        }
 
         const at = now()
         if( !episode || at - episode.seen_at > 2 * LOGOUT_RECHECK_MS ) episode = { started_at: at, sightings: 0, alerted: false }

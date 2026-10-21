@@ -23,6 +23,7 @@ const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
 export const setup_linux_credentials = async ( agent, {
     existing_tmpfile = null,
     sync_baseline = null,
+    preflight = true,
     run_command = run_sync,
 } = {} ) => {
 
@@ -82,7 +83,7 @@ export const setup_linux_credentials = async ( agent, {
                 // Skipped when re-using an existing tmpfile — the foreground
                 // already pre-flighted, and the container is already running on
                 // that capture.
-                if( agent.credential_preflight ) {
+                if( preflight && agent.credential_preflight ) {
                     run_command( `${ agent.bin } --version 2>/dev/null`, {
                         timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS,
                     } )

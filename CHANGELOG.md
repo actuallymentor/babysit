@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.49.1 — 2026-10-21
+
+### Fixed
+- The scheduled auth check could still rotate a running session's token: staging credentials ran Claude's `--version` pre-flight, which refreshes near-expiry tokens, before the deferral was decided. Staging now skips that pre-flight while sessions run.
+- The rotation guard trusted the credential kinds the cached launch had. A launch with an env token, checked later without one, would probe the file and could rotate the token. It now checks the env this probe actually gets.
+- `close`, `restart` and `archive` with several numbers read the session list once, so a session exiting mid-command can't shift later numbers.
+- Session logout alerts fired for sessions that had recovered (the old 401 was still on screen) and for Codex prose quoting its error. The error now has to be the agent's latest output near the composer, with no prompt submitted after it, and Codex's error must start its line.
+
 ## 1.49.0 — 2026-10-21
 
 ### Added

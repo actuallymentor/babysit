@@ -15,6 +15,7 @@ import { read_host_credential, run_host_cli_auth_check } from '../agents/host_pr
 import { list_sessions } from '../tmux/session.js'
 import { acquire_host_auth_lease, is_host_auth_lease_wanted } from '../agents/auth_lease.js'
 import { run } from '../utils/exec.js'
+import { detect_platform } from '../utils/platform.js'
 import { alert_high_usage, alert_logouts, pushover_configured } from '../utils/notify.js'
 import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
@@ -486,9 +487,16 @@ export const cmd_auth_check = async ( {
         // outranks the file, and adapters without refresh_free do not rotate.
         // Launches stay warm meanwhile: each rotation the session pulls back
         // renews the cache entry (session_verified_at).
+        // Judged on what this probe will stage now, not on the launch the
+        // cache recorded: a token in this env outranks the file, else the
+        // file is the login and its refresh token is the one sessions share
+        const env_login = agent => {
+            const config = agent.credentials?.[ detect_platform() ]
+            return [ config?.env_key, config?.fallback_env ].some( key => key && env[ key ] )
+        }
         const may_rotate_held_token = agent => sessions_active
             && typeof agent.auth_check?.refresh_free === `function`
-            && sole_file_login( cache.agents?.[ agent.name ] )
+            && !env_login( agent )
             && would_rotate( agent )
         const container_agents = online.filter( agent => !host_results.some( result => result.name === agent.name ) )
         if( container_agents.length ) {
@@ -504,6 +512,8 @@ export const cmd_auth_check = async ( {
                 // valid until its TTL and the next run retries.
                 clear_on_failure: false,
                 defer_probe: agent => may_rotate_held_token( agent ) ? held_reason : null,
+                // Staging runs before any deferral: its pre-flight must not refresh a held token
+                preflight: !sessions_active,
                 signal: controller.signal,
             } )
 

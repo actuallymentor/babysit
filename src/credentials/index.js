@@ -231,9 +231,12 @@ export const setup_credentials = async ( agent, options = {} ) => {
         const sync_baseline = sync_baselines[ credential_agent.name ]
             || ( is_active_agent ? options.sync_baseline : null )
 
+        // A scheduled auth check skips the pre-flight while sessions run: it
+        // could refresh, and so rotate, a token one of them holds
         const result = await setup_platform_credentials( credential_agent, {
             existing_tmpfile,
             sync_baseline,
+            preflight: options.preflight !== false,
         } )
 
         mounts.push( ...result.mounts )

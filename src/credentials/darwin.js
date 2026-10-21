@@ -61,6 +61,7 @@ export const read_keychain_item = ( cred_config, { spawn_sync = spawnSync } = {}
 export const setup_darwin_credentials = async ( agent, {
     existing_tmpfile = null,
     sync_baseline = null,
+    preflight = true,
     run_command = run_sync,
 } = {} ) => {
 
@@ -104,7 +105,7 @@ export const setup_darwin_credentials = async ( agent, {
                 // refreshed by the agent itself before we capture. Without this,
                 // a stale token would ride the container until our 5-minute sync
                 // daemon catches up.
-                if( agent.credential_preflight ) {
+                if( preflight && agent.credential_preflight ) {
                     run_command( `${ agent.bin } --version 2>/dev/null`, {
                         timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS,
                     } )
