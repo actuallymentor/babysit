@@ -114,6 +114,10 @@ describe( `headroom selection`, () => {
         const two = [ { name: `default` }, { name: `work` } ]
         const probe = async () => [ { name: `default`, status: `ok`, headroom: 10 }, { name: `work`, status: `ok`, headroom: 90 } ]
         expect( await most_headroom_account( { list: () => two, probe } ) ).toBe( `work` )
+        // A restart trusts readings for a minute, not the 5-minute launch cache
+        let age = null
+        await most_headroom_account( { list: () => two, probe: async ( _, { max_age_ms } ) => ( age = max_age_ms, [] ) } )
+        expect( age ).toBe( 60_000 )
         expect( await most_headroom_account( { list: () => two, probe: async () => [ { name: `work`, status: `error`, headroom: null } ] } ) ).toBe( false )
         expect( await most_headroom_account( { list: () => two.slice( 0, 1 ), probe } ) ).toBe( false )
     } )
