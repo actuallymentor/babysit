@@ -209,6 +209,12 @@ RUN corepack enable \
 RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore uiautomator2 \
     && python3 -c "import uiautomator2, adbutils"
 
+# iOS device control without a Mac: pymobiledevice3 talks lockdown over Wi-Fi
+# (iOS 16 and older, no tunnel) and launches an installed WebDriverAgent;
+# facebook-wda drives it over HTTP (:8100) — taps, swipes, text, screenshots.
+RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore pymobiledevice3 facebook-wda \
+    && python3 -c "import pymobiledevice3, wda"
+
 # Switch to non-root user for user-scoped agent installs
 USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
