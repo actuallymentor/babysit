@@ -131,6 +131,15 @@ babysit audit --config api.yaml --yes
 
 Asks for a missing `agent`, and for unset `mode` and on/off switches (yolo, docker, adb, ios, devices, clone, loop, ignore_host_agents_md): a non-default answer is written live, the default as a commented line (not asked again). `ports`, `log`, `args` are never added. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: fixes only, no questions.
 
+### Clean
+
+```bash
+babysit clean --config babysit/config.yaml   # one file
+babysit clean --config sessions/ --dry-run   # every sessions/*.yaml|yml, report only
+```
+
+For a finished config: removes full-line comments and blank lines in place, keeps inline comments (`key: value # note`). Text inside `|`/`>` blocks and quoted multi-line strings is left alone, and a file is only rewritten if it still parses to the same values. Invalid yaml is reported and skipped (exit 1). Not undoable outside git.
+
 ### Claude accounts
 
 Spread work over several Claude subscriptions; babysit switches when one runs out.
@@ -161,6 +170,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit init [file.yaml]` | Write a default config; asks for the file name when none is given, then opens the launch menu to fill `launch:` |
 | `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached, compose-style; see [Directory launch](#directory-launch) |
 | `babysit audit --config FILE\|DIR/ [--yes]` | Fix yaml so `--config DIR/` accepts it; see [Audit](#audit) |
+| `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip full-line comments and blank lines from config yaml, keep inline comments; see [Clean](#clean) |
 | `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
 | `babysit watch [--usage\|--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged), USAGE column = usage bar for the session's worst rate window. `--usage`: only the account usage panel, one metered row per limit (bar, % used, reset or used / limit); `--all`: tree + panel. Balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. Replaces `list --watch` |
 | `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |

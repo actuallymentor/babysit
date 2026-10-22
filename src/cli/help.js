@@ -22,6 +22,7 @@ Usage:
   babysit init [file.yaml]             Write a default config; asks for the file name and launch settings
   babysit --config DIR/ [--yes]        Start one detached session per DIR/*.yaml, skipping running ones
   babysit audit --config FILE|DIR/     Fix yaml files so babysit --config DIR/ accepts them; --yes, comments kept
+  babysit clean --config FILE|DIR/    Strip full-line comments and blank lines from config yaml; inline comments stay
   babysit list [--all]                 List active sessions and launch flags
   babysit watch [--usage|--all]        Live sessions with usage headroom (--usage: usage only, --all: both)
   babysit open [id|name|number]        Attach to an active session; with shell-init, detaching lands in its workspace
