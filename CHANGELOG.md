@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.50.1 — 2026-10-22
+
+### Fixed
+- `babysit --port 5173 --name Blog` (flags, no agent) printed the help screen. It now opens the launch menu with the name, ports, log and switches (`--yolo`, `--docker`, ...) prefilled; `babysit fix --yolo` names the session `fix`.
+- An unrecognized flag without an agent now says which flag it was and that agent flags go after the agent (`babysit claude --bogus`), instead of showing help.
+
 ## 1.50.0 — 2026-10-21
 
 ### Added

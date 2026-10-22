@@ -70,7 +70,7 @@ describe( `launcher routing`, () => {
         expect( parse_args( [ `codex` ] ) ).toMatchObject( { verb: `start`, agent: `codex` } )
         expect( parse_args( [ `resume` ] ).verb ).toBe( `resume` )
         expect( parse_args( [ `list` ] ).verb ).toBe( `list` )
-        expect( parse_args( [ `fix`, `--yolo` ] ).verb ).toBe( `help` )
+        expect( parse_args( [ `fix`, `--yolo` ] ) ).toMatchObject( { verb: `launch`, flags: { name: `fix`, yolo: true } } )
 
     } )
 
