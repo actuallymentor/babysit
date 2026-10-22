@@ -19,7 +19,7 @@ describe( `babysit shell-init`, () => {
 
     } )
 
-    it( `runs the handed-off tmux attach, then follows the workspace, in a real bash`, () => {
+    it( `moves to the base directory first, then runs the handed-off tmux attach, in a real bash`, () => {
 
         const directory = mkdtempSync( join( tmpdir(), `babysit-wrapper-` ) )
         const bin = join( directory, `bin` )
@@ -27,13 +27,14 @@ describe( `babysit shell-init`, () => {
 
         // Stand-ins: babysit fills both files and exits; tmux records its argv
         writeFileSync( join( bin, `babysit` ), `#!/bin/sh\nprintf 'babysit\\n=babysit_x y \\n' > "$BABYSIT_ATTACH_FILE"\nprintf '%s' '${ directory }' > "$BABYSIT_CD_FILE"\n`, { mode: 0o755 } )
-        writeFileSync( join( bin, `tmux` ), `#!/bin/sh\nprintf '%s|' "$@" > '${ directory }/tmux.log'\n`, { mode: 0o755 } )
+        writeFileSync( join( bin, `tmux` ), `#!/bin/sh\nprintf '%s|%s' "$PWD" "$*" > '${ directory }/tmux.log'\n`, { mode: 0o755 } )
 
         const script = `${ shell_init_script( `bash` ) }\nbabysit open 1; echo "$?:$PWD"`
         const output = spawnSync( `bash`, [ `-c`, script ], { cwd: `/`, env: { ...process.env, PATH: `${ bin }:${ process.env.PATH }` }, encoding: `utf8` } )
 
         expect( output.stdout.trim() ).toBe( `0:${ directory }` )
-        expect( readFileSync( join( directory, `tmux.log` ), `utf8` ) ).toBe( `-L|babysit|attach|-t|=babysit_x y |` )
+        // tmux saw the base directory as its cwd: the cd came before the attach
+        expect( readFileSync( join( directory, `tmux.log` ), `utf8` ) ).toBe( `${ directory }|-L babysit attach -t =babysit_x y ` )
         rmSync( directory, { recursive: true, force: true } )
 
     } )
@@ -85,7 +86,7 @@ describe( `follow_workspace`, () => {
 
 describe( `cmd_open workspace follow`, () => {
 
-    it( `follows the clone after detaching, even for a raw tmux name`, async () => {
+    it( `moves to the original directory before attaching, never the clone, even for a raw tmux name`, async () => {
 
         const followed = []
         await cmd_open( { session_id: `babysit_c1` }, {
@@ -97,7 +98,7 @@ describe( `cmd_open workspace follow`, () => {
                 throw new Error( `Unexpected exit ${ code }` )
             },
         } )
-        expect( followed ).toEqual( [ `attached`, `/clones/c1` ] )
+        expect( followed ).toEqual( [ `/repo`, `attached` ] )
 
     } )
 
