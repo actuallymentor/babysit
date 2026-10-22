@@ -308,20 +308,32 @@ const read_declared_launch = config => {
  * @param {Object} [options]
  * @param {string} [options.name] - Name typed on the command line; wins over the file
  * @param {string|false} [options.config] - Absolute --config file
+ * @param {Object} [options.flags] - Flags typed on the command line: switches prefill the menu, ports and log carry through
  * @param {Function} [options.menu] - Menu seam
  * @returns {Promise<Object|null>} Parsed start command, or null when cancelled
  */
-export const launch_from_menu = async ( { name = ``, config = false, menu = launch_menu, fork = fork_from_menu } = {} ) => {
+export const launch_from_menu = async ( { name = ``, config = false, flags = {}, menu = launch_menu, fork = fork_from_menu } = {} ) => {
 
     const declared = config ? read_declared_launch( config ) : {}
     const pick = keys => Object.fromEntries( keys.filter( key => Object.hasOwn( declared, key ) ).map( key => [ key, declared[ key ] ] ) )
 
-    const chosen = await menu( { name: name || declared.name || ``, initial: pick( [ `agent`, `mode`, ...TOGGLES ] ), fork_key: true } )
+    // Typed switches beat the file and the remembered defaults, so `babysit --yolo` opens with yolo on
+    const typed = {
+        ...Object.fromEntries( TOGGLES.filter( flag => flags[ flag ] ).map( flag => [ flag, true ] ) ),
+        ...flags.sandbox ? { mode: `sandbox` } : flags.mudbox ? { mode: `mudbox` } : {},
+    }
+
+    const chosen = await menu( { name: name || declared.name || ``, initial: { ...pick( [ `agent`, `mode`, ...TOGGLES ] ), ...typed }, fork_key: true } )
     if( !chosen ) return null
     if( chosen.verb === `fork_menu` ) return fork( { menu } )
 
     // The menu's choice wins for its rows; the rest come from the file as-is
-    const carried = pick( [ `ports`, `log`, `args`, `ignore_host_agents_md` ] )
+    const carried = {
+        ...pick( [ `ports`, `log`, `args`, `ignore_host_agents_md` ] ),
+        ...flags.ports?.length ? { ports: flags.ports } : {},
+        ...typeof flags.log === `string` ? { log: flags.log || true } : {},
+        ...flags.ignore_host_agents_md ? { ignore_host_agents_md: true } : {},
+    }
     return launch_to_command( { ...command_to_launch( chosen ), ...carried }, { config_path: config || null } )
 
 }

@@ -377,17 +377,21 @@ export const parse_args = ( argv ) => {
 
     }
 
-    // Explicit agents and subcommands take precedence over name-only launches.
-    // `--config FILE|DIR` and `--yes` are the flags the menu accepts; strip them before judging.
-    const menu_words = argv.filter( ( arg, index, all ) => arg !== `--yes`
-        && !arg.startsWith( `--config` ) && !( index > 0 && all[ index - 1 ] === `--config` ) )
-    if( !menu_words.length || menu_words.every( arg => !arg.startsWith( `-` ) ) ) {
-        flags.name = menu_words.length ? normalise_session_name( menu_words.join( ` ` ) ) : false
-        return { verb: `launch`, agent: null, flags, passthrough: [] }
+    // No agent or subcommand: bare words are a session name and the launch menu opens,
+    // with Babysit's own flags (name, ports, log, switches) carried into it. Flags the
+    // menu cannot place are explained here, never answered with a silent help screen.
+    if( flags.help || flags.version ) return { verb: `help`, agent: null, flags, passthrough: [] }
+
+    const own = new Set( [ ...KNOWN_FLAGS, ...BOOLEAN_FLAGS, `h`, `v`, `n` ] )
+    const unknown = Object.keys( args ).filter( key => key !== `_` && !own.has( key ) )
+    if( unknown.length ) {
+        const shown = unknown.map( key => key.length === 1 ? `-${ key }` : `--${ key }` )
+        throw new Error( `Unknown flag${ shown.length > 1 ? `s` : `` }: ${ shown.join( `, ` ) }. Without an agent babysit only takes its own flags (--name, --port, --log, --yolo, --docker, --clone, ...); agent flags go after the agent, e.g. babysit claude ${ shown[0] }. See babysit --help.` )
     }
 
-    // Default: show help
-    return { verb: `help`, agent: null, flags, passthrough: [] }
+    // `--name` wins; otherwise the bare words name the session (`babysit My Blog`)
+    if( flags.name === false && command_positionals.length ) flags.name = normalise_session_name( command_positionals.join( ` ` ) )
+    return { verb: `launch`, agent: null, flags, passthrough: [] }
 
 }
 

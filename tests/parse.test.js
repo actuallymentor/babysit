@@ -316,6 +316,22 @@ describe( `parse_args`, () => {
         expect( cmd.verb ).toBe( `launch` )
     } )
 
+    it( `combines Babysit flags with a session name when no agent is given`, () => {
+        const cmd = parse_args( [ `--port`, `5173`, `--name`, `Blog` ] )
+        expect( cmd ).toMatchObject( { verb: `launch`, flags: { name: `Blog` } } )
+        expect( cmd.flags.ports ).toEqual( [ `5173:5173` ] )
+
+        // Bare words still name the session, alongside flags
+        expect( parse_args( [ `My`, `Blog`, `--yolo` ] ) ).toMatchObject( { verb: `launch`, flags: { name: `My Blog`, yolo: true } } )
+        expect( parse_args( [ `--name`, `Typed`, `Words` ] ).flags.name ).toBe( `Typed` )
+        expect( parse_args( [ `--help` ] ).verb ).toBe( `help` )
+    } )
+
+    it( `explains unknown flags given without an agent instead of printing help`, () => {
+        expect( () => parse_args( [ `--bogus`, `--name`, `Blog` ] ) ).toThrow( /Unknown flag: --bogus.*agent flags go after the agent, e\.g\. babysit claude --bogus/ )
+        expect( () => parse_args( [ `--bogus`, `--other` ] ) ).toThrow( /Unknown flags: --bogus, --other/ )
+    } )
+
     it( `recognises -v as version`, () => {
         const cmd = parse_args( [ `-v` ] )
         expect( cmd.flags.version ).toBe( true )

@@ -135,6 +135,15 @@ describe( `launch: consumers`, () => {
         expect( cmd ).toMatchObject( { verb: `start`, agent: `codex`, passthrough: [ `-m`, `x` ], flags: { mudbox: true, log: `out.log`, config, name: `from file` } } )
         expect( cmd.flags.ports ).toEqual( parse_args( [ `codex`, `--port`, `3000` ] ).flags.ports )
 
+        // Flags typed on the command line prefill the switches and carry ports and log
+        const typed = await launch_from_menu( {
+            flags: parse_args( [ `--yolo`, `--sandbox`, `--port`, `5173`, `--log=run.log` ] ).flags,
+            menu: async options => ( opened = options, parse_args( [ `claude`, `--yolo`, `--sandbox` ] ) ),
+        } )
+        expect( opened.initial ).toEqual( { yolo: true, mode: `sandbox` } )
+        expect( typed.flags.ports ).toEqual( [ `5173:5173` ] )
+        expect( typed.flags.log ).toBe( `run.log` )
+
         // A typed name wins; a missing file falls back to the plain menu
         const plain = await launch_from_menu( { name: `typed`, config: join( root, `missing.yaml` ), menu: async options => ( opened = options, null ) } )
         expect( plain ).toBeNull()

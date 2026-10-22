@@ -19,6 +19,7 @@ curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts
 ```bash
 babysit                                 # Interactive launcher
 babysit "feature 1"                      # Launcher with session name
+babysit --port 5173 --name Blog --yolo   # Launcher with flags and name prefilled
 babysit claude --yolo
 babysit codex --clone --name "feature 1"
 babysit codex --sandbox --loop

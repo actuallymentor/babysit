@@ -109,14 +109,14 @@ const main = async () => {
     // `--config DIR/` starts every yaml in DIR; launch flags live in the files.
     // `babysit audit --config DIR/` reads the same files without starting anything.
     if( cmd.verb !== `audit` && cmd.flags.config && is_directory( cmd.flags.config ) ) {
-        if( cmd.verb !== `launch` || cmd.flags.name ) {
+        if( cmd.verb !== `launch` || cmd.flags.name || cmd.flags.ports?.length || typeof cmd.flags.log === `string` ) {
             throw new Error( `babysit --config DIR/ takes no agent, name, or flags besides --yes; declare them in each yaml's launch: section` )
         }
         cmd = { ...cmd, verb: `launch_dir` }
     }
 
     if( cmd.verb === `launch` ) {
-        cmd = await launch_from_menu( { name: cmd.flags.name || ``, config: cmd.flags.config } )
+        cmd = await launch_from_menu( { name: cmd.flags.name || ``, config: cmd.flags.config, flags: cmd.flags } )
         if( !cmd ) return
         try {
             // A fork's toggles come from its parent; they are no launch default
