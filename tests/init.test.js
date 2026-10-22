@@ -32,7 +32,8 @@ describe( `babysit init and --config`, () => {
         // A bare launch with only --config still opens the menu, name included
         expect( parse_args( [ `--config`, `team.yaml` ] ) ).toMatchObject( { verb: `launch`, flags: { config: join( process.cwd(), `team.yaml` ), name: false } } )
         expect( parse_args( [ `feature`, `one`, `--config=team.yaml` ] ) ).toMatchObject( { verb: `launch`, flags: { name: `feature one` } } )
-        expect( parse_args( [ `--config`, `team.yaml`, `--yolo` ] ).verb ).toBe( `help` )
+        // Menu-compatible flags ride along into the menu
+        expect( parse_args( [ `--config`, `team.yaml`, `--yolo` ] ) ).toMatchObject( { verb: `launch`, flags: { yolo: true } } )
     } )
 
     it( `loads an explicit config file for launch, clone settings, and the recovery hash`, () => {

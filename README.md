@@ -38,12 +38,13 @@ Claude defaults to `default` (Claude Code's recommended model), effort `medium`;
 |---|---|
 | ↑/↓ | Navigate rows |
 | ←/→ | Select agent CLI (Model) or Mode |
-| Type on Name | Set session name |
-| Space | Toggle Docker, YOLO, Clone, Loop |
+| Type on Name / Ports / Log / Args | Set session name, ports (`5173, 3000:80`), log (`on` = default path, or a path), agent arguments (`--model "opus 4"`) |
+| Space | Toggle Docker, Devices, YOLO, Clone, Loop; open/close Advanced; toggle ADB, iOS, Ignore host AGENTS.md inside it |
 | Enter / Esc / Ctrl+C | Launch / cancel / cancel |
 
 Mode: Regular → Sandbox → Mudbox. Clone forces Regular.
-Selections persist per workspace; new workspaces inherit the latest global selection.
+Devices = ADB + iOS. Advanced (ADB or iOS alone, ignore host AGENTS.md, Ports, Log, Args) opens by itself when flags or `--config` prefill it.
+Agent, Mode and the top-level switches (Docker, Devices, YOLO, Clone, Loop) persist per workspace; new workspaces inherit the latest global selection. Advanced values are never remembered.
 Names never persist. Menu requires a TTY; explicit agent commands ignore defaults.
 Use explicit commands in scripts.
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.51.0 — 2026-10-22
+
+### Changed
+- The launch menu has a top-level **Devices** switch (ADB + iOS) in place of separate ADB and iOS rows, and a collapsible **Advanced** section: ADB, iOS, Ignore host AGENTS.md, Ports, Log and Args. Every `launch:` key now has a row, so `babysit init` can capture ports, log and agent arguments too.
+- Only the top-level switches are remembered per workspace (Devices included); Advanced values never are. A remembered ADB-only default is dropped; ADB + iOS becomes Devices.
+- Flags typed or read from `--config` prefill their rows and open Advanced when needed.
+
 ## 1.50.1 — 2026-10-22
 
 ### Fixed

@@ -35,8 +35,8 @@ const ask_file_name = async () => {
 const choose_launch = async () => {
 
     if( !stdin.isTTY || !stdout.isTTY ) {
-        const { agent, mode, docker, adb, ios, yolo, clone, loop } = read_launch_defaults()
-        return default_launch( { agent, mode, docker, adb, ios, yolo, clone, loop } )
+        const { agent, mode, docker, devices, yolo, clone, loop } = read_launch_defaults()
+        return default_launch( { agent, mode, docker, devices, yolo, clone, loop } )
     }
 
     const chosen = await launch_menu( { submit: `save` } )
