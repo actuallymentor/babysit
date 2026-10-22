@@ -1,6 +1,6 @@
 import { log } from '../utils/log.js'
 import { has_session, list_sessions, attach_session } from '../tmux/session.js'
-import { list_stored_sessions, session_workspace, update_session } from '../sessions/store.js'
+import { list_stored_sessions, session_original_workspace, update_session } from '../sessions/store.js'
 import { follow_workspace } from './shell_init.js'
 import { exited_session_message, order_active_sessions, print_active_sessions_table, stored_by_tmux } from './list.js'
 
@@ -100,7 +100,7 @@ const open_current_directory_session = async ( {
  * @param {Function} [deps.update_session_fn] - Session record writer, used to unarchive
  * @param {Function} [deps.exit_fn] - Process exit helper
  * @param {string} [deps.cwd] - Directory used for zero-arg matching
- * @param {Function} [deps.follow_workspace_fn] - Moves the shell into the session's workspace after detaching
+ * @param {Function} [deps.follow_workspace_fn] - Moves the shell into the session's base directory before attaching
  */
 export const cmd_open = async ( cmd, {
     has_session_fn = has_session,
@@ -119,11 +119,13 @@ export const cmd_open = async ( cmd, {
     const attach_selected_session = async ( session_name, stored = [] ) => {
         const archived = stored.find( session => session.tmux_session === session_name && session.archived_at )
         if( archived ) update_session_fn( archived.babysit_id, { archived_at: null } )
-        await attach( session_name, { attach_session_fn } )
 
-        // Detached: land the shell where the agent works (its clone, for --clone)
+        // Move the shell to the base directory the session was started from (never its
+        // clone) before attaching, so detaching or backgrounding leaves it there
         const record = ( stored.length ? stored : list_stored_sessions_fn() ).find( session => session.tmux_session === session_name )
-        follow_workspace_fn( record ? session_workspace( record ) : null, { cwd } )
+        follow_workspace_fn( record ? session_original_workspace( record ) : null, { cwd } )
+
+        await attach( session_name, { attach_session_fn } )
     }
 
     if( !session_id ) {

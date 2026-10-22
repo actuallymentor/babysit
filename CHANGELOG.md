@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.52.1 — 2026-10-22
+
+### Fixed
+- `babysit open` (and the attach after `babysit fork`) now moves your shell to the session's base directory, the one it was started from, never its `--clone` copy, and does it before attaching, so detaching or backgrounding leaves you there. The old behavior cd'd into the clone after detaching. Needs the `babysit shell-init` wrapper; without it the `cd` line is printed (now labeled "Session directory").
+
 ## 1.52.0 — 2026-10-22
 
 ### Added
