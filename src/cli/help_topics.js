@@ -164,6 +164,24 @@ Examples:
   babysit audit --config sessions/
   babysit audit --config sessions/ --yes`,
 
+    clean: () => `Usage: babysit clean --config FILE|DIR/ [--dry-run]
+
+Strips full-line comments and blank lines from configuration yaml in place, for
+a config you are done editing. Inline comments (key: value # note) stay. DIR/
+means every DIR/*.yaml|yml, the same set a directory launch reads.
+
+Text inside multi-line values (| and > blocks, quoted strings) is never touched,
+and a file is only rewritten if it still parses to the same values. Invalid
+yaml is reported and left alone; exit 1 if any file could not be cleaned.
+Not undoable outside version control: try --dry-run first.
+
+Options:
+  --dry-run  Report what would be removed without writing
+
+Examples:
+  babysit clean --config babysit/config.yaml
+  babysit clean --config sessions/ --dry-run`,
+
     list: () => `Usage: babysit list [--all]
 
 Active sessions as a tree: workspace trunks with numbered leaves, colored status

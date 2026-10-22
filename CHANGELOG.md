@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.52.0 — 2026-10-22
+
+### Added
+- `babysit clean --config FILE|DIR/`: strips full-line comments and blank lines from configuration yaml in place and keeps inline comments, for a config you are done editing. A directory means every `*.yaml|yml` in it. Multi-line values are untouched and a file is only rewritten if it parses to the same values; `--dry-run` reports without writing.
+
 ## 1.51.0 — 2026-10-22
 
 ### Changed

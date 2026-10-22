@@ -162,6 +162,9 @@ export const parse_args = ( argv ) => {
     // babysit audit --config FILE|DIR/ [--yes] — fix yaml for directory launches
     if( verb === `audit` ) return { verb: `audit`, agent: null, flags, passthrough: [] }
 
+    // babysit clean --config FILE|DIR/ [--dry-run] — drop full-line comments and blank lines
+    if( verb === `clean` ) return { verb: `clean`, agent: null, flags: { ...flags, dry_run: Boolean( args[ `dry-run` ] ) }, passthrough: [] }
+
     // babysit init [file.yaml] — write the commented default config
     if( verb === `init` ) return { verb: `init`, agent: null, session_id: positionals[1] || null, flags, passthrough: [] }
 
