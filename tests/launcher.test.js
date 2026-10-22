@@ -212,14 +212,57 @@ describe( `interactive launch menu`, () => {
         await save_launch_defaults( parse_args( [ `claude` ] ), options )
         const menu = await open_menu( { name: `draft` } )
 
-        menu.input.write( `${ right }${ down }\x7f\x7f\x7f\x7f\x7ffix login${ down } ${ down } ${ down } ${ down } ${ down } ${ down } \r` )
+        menu.input.write( `${ right }${ down }\x7f\x7f\x7f\x7f\x7ffix login${ down } ${ down } ${ down } ${ down } ${ down } \r` )
         expect( await menu.result ).toMatchObject( {
             verb: `start`, agent: `codex`, passthrough: [],
-            flags: { name: `fix login`, docker: true, adb: true, ios: true, yolo: true, clone: true, loop: true, sandbox: false, mudbox: false },
+            flags: { name: `fix login`, docker: true, devices: true, adb: true, ios: true, yolo: true, clone: true, loop: true, sandbox: false, mudbox: false },
         } )
         expect( menu.raw_modes ).toEqual( [ true, false ] )
         expect( menu.input.isPaused() ).toBe( true )
         expect( menu.input.listenerCount( `keypress` ) ).toBe( 0 )
+
+    } )
+
+    it( `keeps ADB, iOS and the free-text rows behind Advanced and never remembers them`, async () => {
+
+        await save_launch_defaults( parse_args( [ `claude` ] ), options )
+        const menu = await open_menu()
+
+        // Collapsed: Advanced is the last row, and its rows are not drawn
+        expect( menu.rendered() ).toContain( `Advanced ▸` )
+        expect( menu.rendered() ).not.toContain( `Ports` )
+
+        // Open Advanced (row 8), then ADB, skip iOS and AGENTS.md, type ports, log and args
+        menu.input.write( `${ down.repeat( 8 ) } ${ down } ${ down.repeat( 3 ) }5173, 3000:80${ down }on${ down }--model "opus 4"\r` )
+        const cmd = await menu.result
+        expect( cmd.flags ).toMatchObject( { adb: true, ios: false, devices: false, log: `` } )
+        expect( cmd.flags.ports ).toEqual( [ `5173:5173`, `3000:80` ] )
+        expect( cmd.passthrough ).toEqual( [ `--model`, `opus 4` ] )
+        expect( menu.rendered() ).toContain( `Ports` )
+
+        // Only the top-level switches are remembered, Devices included
+        save_launch_defaults( cmd, options )
+        expect( read_launch_defaults( options ) ).not.toHaveProperty( `adb` )
+        const stored = readFileSync( options.defaults_path, `utf8` )
+        for( const secret of [ `5173`, `model`, `adb`, `ports` ] ) expect( stored ).not.toContain( secret )
+
+        const devices = await open_menu()
+        devices.input.write( `${ down.repeat( 3 ) } \r` )
+        const chosen = await devices.result
+        expect( chosen.flags ).toMatchObject( { devices: true, adb: true, ios: true } )
+        save_launch_defaults( chosen, options )
+        expect( read_launch_defaults( options ) ).toMatchObject( { devices: true } )
+
+    } )
+
+    it( `reports a bad port under the menu instead of launching`, async () => {
+
+        const menu = await open_menu()
+        menu.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 4 ) }nope\r` )
+        await new Promise( resolve => setTimeout( resolve, 50 ) )
+        expect( menu.rendered() ).toMatch( /Invalid --port/ )
+        menu.input.write( `\x03` )
+        expect( await menu.result ).toBeNull()
 
     } )
 
@@ -239,14 +282,14 @@ describe( `interactive launch menu`, () => {
 
         await save_launch_defaults( parse_args( [ `claude`, `--clone` ] ), options )
         const menu = await open_menu()
-        menu.input.write( `${ left }${ right }${ down.repeat( 8 ) }${ right }\r` )
+        menu.input.write( `${ left }${ right }${ down.repeat( 7 ) }${ right }\r` )
 
         expect( await menu.result ).toMatchObject( {
             agent: `claude`, flags: { clone: false, sandbox: true, mudbox: false },
         } )
 
         const second = await open_menu()
-        second.input.write( `${ down.repeat( 8 ) }${ left }${ up.repeat( 2 ) } \r` )
+        second.input.write( `${ down.repeat( 7 ) }${ left }${ up.repeat( 2 ) } \r` )
         expect( await second.result ).toMatchObject( {
             flags: { clone: true, sandbox: false, mudbox: false },
         } )

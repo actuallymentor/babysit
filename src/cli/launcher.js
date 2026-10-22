@@ -11,16 +11,30 @@ import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './lis
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
-const TOGGLES = [ `docker`, `adb`, `ios`, `yolo`, `clone`, `loop` ]
-const LABELS = { adb: `ADB`, ios: `iOS`, yolo: `YOLO` }
 
-// Rows: model, name, one per toggle, then mode.
-const FIRST_TOGGLE_ROW = 2
-const MODE_ROW = FIRST_TOGGLE_ROW + TOGGLES.length
-const ROW_COUNT = MODE_ROW + 1
+// Top-level switches: the only ones the menu remembers per project
+const TOGGLES = [ `docker`, `devices`, `yolo`, `clone`, `loop` ]
+
+// Behind Advanced: never remembered, prefilled only from flags, --config or a fork's parent
+const ADVANCED_TOGGLES = [ `adb`, `ios`, `ignore_host_agents_md` ]
+const ADVANCED_TEXT = [ `ports`, `log`, `args` ]
+
+const LABELS = { adb: `ADB`, ios: `iOS`, yolo: `YOLO`, devices: `Devices`, ignore_host_agents_md: `Ignore host AGENTS.md` }
+const TEXT_LABELS = { name: `Name`, ports: `Ports`, log: `Log`, args: `Args` }
+const TEXT_HINTS = { name: `(optional)`, ports: `(e.g. 5173, 3000:80)`, log: `(off; "on" for the default path)`, args: `(agent arguments, e.g. --model opus)` }
 
 const cycle = ( choices, value, direction ) =>
     choices[ ( choices.indexOf( value ) + direction + choices.length ) % choices.length ]
+
+// Split a typed line into words, keeping "quoted phrases" together
+const words = text => ( text.match( /"[^"]*"|'[^']*'|\S+/g ) || [] ).map( word => word.replace( /^(["'])(.*)\1$/, `$2` ) )
+
+// Launch-section values as the text a row shows
+const as_text = {
+    ports: value => Array.isArray( value ) ? value.join( `, ` ) : value || ``,
+    log: value => value === true ? `on` : value || ``,
+    args: value => Array.isArray( value ) ? value.map( arg => /\s/.test( arg ) ? JSON.stringify( arg ) : arg ).join( ` ` ) : value || ``,
+}
 
 /**
  * Select a launch using arrow keys, editable name, and Space toggles.
@@ -38,28 +52,46 @@ export const launch_menu = async ( {
         throw new Error( `The launch menu requires an interactive terminal. Use babysit <agent> [flags], or babysit --help.` )
     }
 
-    const state = { ...read_launch_defaults( defaults_options ), ...initial, name }
+    const state = { ...read_launch_defaults( defaults_options ), ...initial }
     if( state.mode !== `regular` ) state.clone = false
+
+    // Text rows keep their own value and cursor; Advanced starts open only when it was prefilled
+    const text = { name, ports: as_text.ports( initial.ports ), log: as_text.log( initial.log ), args: as_text.args( initial.args ) }
+    const cursors = Object.fromEntries( Object.entries( text ).map( ( [ key, value ] ) => [ key, Array.from( value ).length ] ) )
+    let open = [ ...ADVANCED_TOGGLES, ...ADVANCED_TEXT ].some( key => initial[ key ] )
     let row = 0
-    let cursor = Array.from( name ).length
     let error = ``
     const was_raw = Boolean( input.isRaw )
     const was_flowing = input.readableFlowing === true
 
+    // A fork takes its agent arguments from the parent, so it has no Args row
+    const advanced_text = ADVANCED_TEXT.filter( key => key !== `args` || submit !== `fork` )
+    const visible_rows = () => [
+        { type: `cycle`, key: `agent` },
+        { type: `text`, key: `name` },
+        ...TOGGLES.map( key => ( { type: `toggle`, key } ) ),
+        { type: `cycle`, key: `mode` },
+        { type: `expand` },
+        ...open ? [
+            ...ADVANCED_TOGGLES.map( key => ( { type: `toggle`, key } ) ),
+            ...advanced_text.map( key => ( { type: `text`, key } ) ),
+        ] : [],
+    ]
+
     const render = () => {
 
-        const letters = Array.from( state.name )
-        const name_value = row === 1
-            ? [ ...letters.slice( 0, cursor ), `│`, ...letters.slice( cursor ) ].join( `` )
-            : state.name || `(optional)`
-        const rows = [
-            `Model   ‹ ${ state.agent } ›`,
-            `Name    ${ name_value }`,
-            ...TOGGLES.map( flag => `[${ state[ flag ] ? `x` : ` ` }] ${ LABELS[ flag ] || flag[0].toUpperCase() + flag.slice( 1 ) }` ),
-            `Mode    ‹ ${ state.mode } ›`,
-        ]
+        const rows = visible_rows().map( ( { type, key }, index ) => {
+            if( type === `cycle` ) return `${ key === `agent` ? `Model` : `Mode ` }   ‹ ${ state[ key ] } ›`
+            if( type === `expand` ) return `Advanced ${ open ? `▾` : `▸` }`
+            if( type === `toggle` ) return `${ open && ADVANCED_TOGGLES.includes( key ) ? `  ` : `` }[${ state[ key ] ? `x` : ` ` }] ${ LABELS[ key ] || key[0].toUpperCase() + key.slice( 1 ) }`
+            const letters = Array.from( text[ key ] )
+            const value = index === row
+                ? [ ...letters.slice( 0, cursors[ key ] ), `│`, ...letters.slice( cursors[ key ] ) ].join( `` )
+                : text[ key ] || TEXT_HINTS[ key ]
+            return `${ ADVANCED_TEXT.includes( key ) ? `  ` : `` }${ TEXT_LABELS[ key ].padEnd( 8 ) }${ value }`
+        } )
         const lines = [
-            ...rows.map( ( text, index ) => `${ index === row ? `›` : ` ` } ${ text }` ),
+            ...rows.map( ( line, index ) => `${ index === row ? `›` : ` ` } ${ line }` ),
             ``,
             `↑/↓ move · ←/→ choose · Space toggle · Enter ${ submit }${ fork_key ? ` · f fork a session` : `` } · Esc cancel`,
             error,
@@ -68,6 +100,18 @@ export const launch_menu = async ( {
         const width = Math.max( 1, ( output.columns || 80 ) - 1 )
         output.write( `\x1b[H\x1b[2J${ lines.map( line => Array.from( line ).slice( 0, width ).join( `` ) ).join( `\r\n` ) }` )
 
+    }
+
+    // The command line the menu stands for; bad values throw and show under the menu
+    const to_command = () => {
+        const argv = [ state.agent, ...[ ...TOGGLES, ...ADVANCED_TOGGLES ].filter( flag => state[ flag ] ).map( flag => `--${ flag.replaceAll( `_`, `-` ) }` ) ]
+        if( state.mode !== `regular` ) argv.push( `--${ state.mode }` )
+        if( text.name.trim() ) argv.push( `--name=${ text.name }` )
+        for( const port of text.ports.split( /[,\s]+/ ).filter( Boolean ) ) argv.push( `--port=${ port }` )
+        if( text.log.trim() ) argv.push( text.log.trim() === `on` ? `--log=` : `--log=${ text.log.trim() }` )
+
+        // Agent arguments skip Babysit's parser so they can never be read as Babysit flags
+        return { ...parse_args( argv ), passthrough: submit === `fork` ? [] : words( text.args ) }
     }
 
     emitKeypressEvents( input )
@@ -86,17 +130,17 @@ export const launch_menu = async ( {
 
             handle_end = () => resolve( null )
             handle_error = reject
-            handle_key = ( text, key = {} ) => {
+            handle_key = ( chars, key = {} ) => {
+
+                const rows = visible_rows()
+                const current = rows[ row ]
 
                 if( key.name === `escape` || key.ctrl && key.name === `c` ) return resolve( null )
-                // `f` types into the name row; everywhere else it switches to forking
-                if( fork_key && row !== 1 && text === `f` ) return resolve( { verb: `fork_menu` } )
+                // `f` types into text rows; everywhere else it switches to forking
+                if( fork_key && current.type !== `text` && chars === `f` ) return resolve( { verb: `fork_menu` } )
                 if( key.name === `return` ) {
                     try {
-                        const argv = [ state.agent, ...TOGGLES.filter( flag => state[ flag ] ).map( flag => `--${ flag }` ) ]
-                        if( state.mode !== `regular` ) argv.push( `--${ state.mode }` )
-                        if( state.name.trim() ) argv.push( `--name=${ state.name }` )
-                        return resolve( parse_args( argv ) )
+                        return resolve( to_command() )
                     } catch ( failure ) {
                         error = failure.message
                         render()
@@ -105,29 +149,31 @@ export const launch_menu = async ( {
                 }
 
                 error = ``
-                if( key.name === `up` ) row = ( row + ROW_COUNT - 1 ) % ROW_COUNT
-                else if( key.name === `down` || key.name === `tab` ) row = ( row + 1 ) % ROW_COUNT
-                else if( row === 1 ) {
-                    const letters = Array.from( state.name )
+                if( key.name === `up` ) row = ( row + rows.length - 1 ) % rows.length
+                else if( key.name === `down` || key.name === `tab` ) row = ( row + 1 ) % rows.length
+                else if( current.type === `text` ) {
+                    const letters = Array.from( text[ current.key ] )
+                    let cursor = cursors[ current.key ]
                     if( key.name === `left` ) cursor = Math.max( 0, cursor - 1 )
                     else if( key.name === `right` ) cursor = Math.min( letters.length, cursor + 1 )
                     else if( key.name === `home` ) cursor = 0
                     else if( key.name === `end` ) cursor = letters.length
                     else if( key.name === `backspace` && cursor ) letters.splice( --cursor, 1 )
                     else if( key.name === `delete` ) letters.splice( cursor, 1 )
-                    else if( text && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test( text ) ) {
-                        letters.splice( cursor, 0, ...Array.from( text ) )
-                        cursor += Array.from( text ).length
+                    else if( chars && !key.ctrl && !key.meta && !/[\u0000-\u001f\u007f]/.test( chars ) ) {
+                        letters.splice( cursor, 0, ...Array.from( chars ) )
+                        cursor += Array.from( chars ).length
                     }
-                    state.name = letters.join( `` )
-                } else if( ( row === 0 || row === MODE_ROW ) && [ `left`, `right` ].includes( key.name ) ) {
-                    const field = row === 0 ? `agent` : `mode`
-                    state[ field ] = cycle( row === 0 ? SUPPORTED_AGENTS : MODES, state[ field ], key.name === `right` ? 1 : -1 )
+                    text[ current.key ] = letters.join( `` )
+                    cursors[ current.key ] = cursor
+                } else if( current.type === `cycle` && [ `left`, `right` ].includes( key.name ) ) {
+                    state[ current.key ] = cycle( current.key === `agent` ? SUPPORTED_AGENTS : MODES, state[ current.key ], key.name === `right` ? 1 : -1 )
                     if( state.mode !== `regular` ) state.clone = false
-                } else if( row >= FIRST_TOGGLE_ROW && row < MODE_ROW && key.name === `space` ) {
-                    const flag = TOGGLES[ row - FIRST_TOGGLE_ROW ]
-                    state[ flag ] = !state[ flag ]
-                    if( flag === `clone` && state.clone ) state.mode = `regular`
+                } else if( current.type === `expand` && [ `space`, `left`, `right` ].includes( key.name ) ) {
+                    open = key.name === `left` ? false : key.name === `right` ? true : !open
+                } else if( current.type === `toggle` && key.name === `space` ) {
+                    state[ current.key ] = !state[ current.key ]
+                    if( current.key === `clone` && state.clone ) state.mode = `regular`
                 }
                 render()
 
@@ -279,6 +325,11 @@ export const fork_from_menu = async ( {
             agent: parent.agent,
             mode,
             ...Object.fromEntries( TOGGLES.map( flag => [ flag, Boolean( inherited[ flag ] ) ] ) ),
+            // Both device kinds are the Devices switch; a lone kind sits under Advanced
+            devices: Boolean( inherited.adb && inherited.ios ),
+            adb: Boolean( inherited.adb && !inherited.ios ),
+            ios: Boolean( inherited.ios && !inherited.adb ),
+            ignore_host_agents_md: Boolean( inherited.ignore_host_agents_md ),
             clone: filesystem === `clone`,
         },
         submit: `fork`,
@@ -302,13 +353,12 @@ const read_declared_launch = config => {
 }
 
 /**
- * Open the launch menu prefilled from a config file's `launch:` section.
- * Keys the menu has no row for (ports, log, args, ignore_host_agents_md)
- * are carried into the launch unchanged.
+ * Open the launch menu prefilled from a config file's `launch:` section and
+ * from the flags typed on the command line (which win).
  * @param {Object} [options]
  * @param {string} [options.name] - Name typed on the command line; wins over the file
  * @param {string|false} [options.config] - Absolute --config file
- * @param {Object} [options.flags] - Flags typed on the command line: switches prefill the menu, ports and log carry through
+ * @param {Object} [options.flags] - Flags typed on the command line
  * @param {Function} [options.menu] - Menu seam
  * @returns {Promise<Object|null>} Parsed start command, or null when cancelled
  */
@@ -317,23 +367,21 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
     const declared = config ? read_declared_launch( config ) : {}
     const pick = keys => Object.fromEntries( keys.filter( key => Object.hasOwn( declared, key ) ).map( key => [ key, declared[ key ] ] ) )
 
-    // Typed switches beat the file and the remembered defaults, so `babysit --yolo` opens with yolo on
+    // --devices expands to adb + ios when parsed; show it as the one switch the user typed
+    const typed_toggles = [ ...TOGGLES, ...ADVANCED_TOGGLES ].filter( flag => flags[ flag ] && !( flags.devices && [ `adb`, `ios` ].includes( flag ) ) )
     const typed = {
-        ...Object.fromEntries( TOGGLES.filter( flag => flags[ flag ] ).map( flag => [ flag, true ] ) ),
+        ...Object.fromEntries( typed_toggles.map( flag => [ flag, true ] ) ),
         ...flags.sandbox ? { mode: `sandbox` } : flags.mudbox ? { mode: `mudbox` } : {},
+        ...flags.ports?.length ? { ports: flags.ports } : {},
+        ...typeof flags.log === `string` ? { log: flags.log || true } : {},
     }
 
-    const chosen = await menu( { name: name || declared.name || ``, initial: { ...pick( [ `agent`, `mode`, ...TOGGLES ] ), ...typed }, fork_key: true } )
+    const keys = [ `agent`, `mode`, ...TOGGLES, ...ADVANCED_TOGGLES, ...ADVANCED_TEXT ]
+    const chosen = await menu( { name: name || declared.name || ``, initial: { ...pick( keys ), ...typed }, fork_key: true } )
     if( !chosen ) return null
     if( chosen.verb === `fork_menu` ) return fork( { menu } )
 
-    // The menu's choice wins for its rows; the rest come from the file as-is
-    const carried = {
-        ...pick( [ `ports`, `log`, `args`, `ignore_host_agents_md` ] ),
-        ...flags.ports?.length ? { ports: flags.ports } : {},
-        ...typeof flags.log === `string` ? { log: flags.log || true } : {},
-        ...flags.ignore_host_agents_md ? { ignore_host_agents_md: true } : {},
-    }
-    return launch_to_command( { ...command_to_launch( chosen ), ...carried }, { config_path: config || null } )
+    // Every launch key has a row now, so the menu's choice is the whole launch
+    return launch_to_command( command_to_launch( chosen ), { config_path: config || null } )
 
 }

@@ -118,20 +118,22 @@ describe( `launch: consumers`, () => {
         expect( messages.at( -1 ) ).toMatch( /nothing written/ )
     } )
 
-    it( `the menu opens prefilled from a file and carries keys it has no row for`, async () => {
+    it( `the menu opens prefilled from a file, including its Advanced rows`, async () => {
         const config = join( root, `a.yaml` )
         writeFileSync( config, `launch:\n    agent: codex\n    mode: mudbox\n    clone: true\n    ports: [3000]\n    args: ["-m", "x"]\n    log: out.log\n    name: from file\n` )
 
         let opened
         const cmd = await launch_from_menu( {
             config,
+            // Submitting the prefilled menu untouched
             menu: async options => {
                 opened = options
-                return parse_args( [ options.initial.agent, `--${ options.initial.mode }`, `--name`, options.name ] )
+                const { initial } = options
+                return { ...parse_args( [ initial.agent, `--${ initial.mode }`, `--log=${ initial.log }`, ...initial.ports.map( port => `--port=${ port }` ), `--name`, options.name ] ), passthrough: initial.args }
             },
         } )
 
-        expect( opened ).toEqual( { name: `from file`, initial: { agent: `codex`, mode: `mudbox`, clone: true }, fork_key: true } )
+        expect( opened ).toEqual( { name: `from file`, initial: { agent: `codex`, mode: `mudbox`, clone: true, ports: [ 3000 ], args: [ `-m`, `x` ], log: `out.log` }, fork_key: true } )
         expect( cmd ).toMatchObject( { verb: `start`, agent: `codex`, passthrough: [ `-m`, `x` ], flags: { mudbox: true, log: `out.log`, config, name: `from file` } } )
         expect( cmd.flags.ports ).toEqual( parse_args( [ `codex`, `--port`, `3000` ] ).flags.ports )
 
@@ -140,9 +142,13 @@ describe( `launch: consumers`, () => {
             flags: parse_args( [ `--yolo`, `--sandbox`, `--port`, `5173`, `--log=run.log` ] ).flags,
             menu: async options => ( opened = options, parse_args( [ `claude`, `--yolo`, `--sandbox` ] ) ),
         } )
-        expect( opened.initial ).toEqual( { yolo: true, mode: `sandbox` } )
-        expect( typed.flags.ports ).toEqual( [ `5173:5173` ] )
-        expect( typed.flags.log ).toBe( `run.log` )
+        expect( opened.initial ).toEqual( { yolo: true, mode: `sandbox`, ports: [ `5173:5173` ], log: `run.log` } )
+
+        // --devices shows as the one Devices switch; a lone --ios sits under Advanced
+        await launch_from_menu( { flags: parse_args( [ `--devices` ] ).flags, menu: async options => ( opened = options, null ) } )
+        expect( opened.initial ).toEqual( { devices: true } )
+        await launch_from_menu( { flags: parse_args( [ `--ios` ] ).flags, menu: async options => ( opened = options, null ) } )
+        expect( opened.initial ).toEqual( { ios: true } )
 
         // A typed name wins; a missing file falls back to the plain menu
         const plain = await launch_from_menu( { name: `typed`, config: join( root, `missing.yaml` ), menu: async options => ( opened = options, null ) } )
