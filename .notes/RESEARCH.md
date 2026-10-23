@@ -260,3 +260,8 @@ Claude's binary hardcodes lists of auth vars (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHRO
 - 401 `authentication_error` → `● Please run /login · API Error: 401 <message>`.
 - Claude pins the composer to the pane bottom: short transcripts leave a tall blank gap, so scan by non-blank lines.
 - Codex 0.163 with a custom `model_providers` entry hung on "Waiting for startup" against the fake server; not resolved.
+
+## `babysit freeze` feasibility (2026-10-23, not built)
+- Mechanism: `docker pause`/`unpause` (cgroup v2 freezer), tested on Docker 28.3.3: atomic, `docker run` client stays attached, `docker cp` works while paused, `docker exec` fails fast. SIGSTOP = host-mode fallback only; CRIU checkpoint not viable (no experimental daemon, TTY containers).
+- Resume: agents retry timed-out API streams (Claude `API_TIMEOUT_MS`, Codex `stream_idle_timeout_ms`); in-flight Bash tool timeouts fire on resume (monotonic clock).
+- Must change: monitor skips capture/rules/watchdog while `frozen_at` (else idle rules + WATCHDOG_NUDGE queue keystrokes replayed on thaw); reset idle tracker on thaw; recover.js treats `paused` as alive; close unpauses before stop; list/watch `frozen` status. Reconcile with `docker inspect .State.Paused` (reboot ends freeze). ~350 LOC incl. tests. Host-mode: refuse in v1.
