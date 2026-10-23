@@ -124,6 +124,8 @@ export const cmd_open = async ( cmd, {
         // clone) before attaching, so detaching or backgrounding leaves it there
         const record = ( stored.length ? stored : list_stored_sessions_fn() ).find( session => session.tmux_session === session_name )
         follow_workspace_fn( record ? session_original_workspace( record ) : null, { cwd } )
+        // Keys typed into a frozen pane wait in tmux and arrive on unfreeze
+        if( record?.frozen_at ) log.warn( `${ record.name || record.babysit_id } is frozen; babysit unfreeze resumes it.` )
 
         await attach( session_name, { attach_session_fn } )
     }

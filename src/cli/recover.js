@@ -14,6 +14,8 @@ import { cmd_start, recover_clone_container, spawn_monitor_daemon } from './star
 import { exited_session_message, order_active_sessions } from './list.js'
 import { merge_resume_flags } from './resume.js'
 import { is_monitor_alive } from './monitor_process.js'
+import { set_container_paused } from './freeze.js'
+import { log } from '../utils/log.js'
 
 /** Explain why a durable launch cannot be automatically replayed. */
 export const recovery_blocker = ( session, { replay = true } = {} ) => {
@@ -101,7 +103,8 @@ export const recover_session = async ( record, flags = {}, {
         if( active ) {
             const target = await pane( session.tmux_session )
             if( target.pane_id !== session.pane_id || session.boot_id !== get_boot_id() ) throw new Error( `Tmux launch identity differs from saved session` )
-            if( await inspect( session.container_id ) !== `running` ) throw new Error( `Agent container is not running; inspect session before recovery` )
+            // A frozen session (`babysit freeze`) is alive, just paused
+            if( ![ `running`, `paused` ].includes( await inspect( session.container_id ) ) ) throw new Error( `Agent container is not running; inspect session before recovery` )
             if( flags.dry_run ) return { id: session.babysit_id, status: monitoring ? `active` : `repairable` }
             if( flags.no_continue && [ `pending`, `blocked`, `sending` ].includes( session.continuation ) ) {
                 const acknowledged = update( session.babysit_id, current => monitoring && current.continuation === `sending`
@@ -261,6 +264,7 @@ export const close_session = async ( session, { shutdown = false } = {}, {
     identity = docker_identity, sessions = list_sessions, pane = get_session_pane,
     stop = stop_docker_container, kill = kill_session, monitor_alive = is_monitor_alive,
     reconcile = recover_clone_container,
+    unpause = container => set_container_paused( container, false ),
 } = {} ) => {
 
     const release = lock( session_lock_key( session ) )
@@ -287,6 +291,8 @@ export const close_session = async ( session, { shutdown = false } = {}, {
             const target = await pane( latest.tmux_session )
             if( latest.pane_id && target.pane_id !== latest.pane_id ) throw new Error( `Tmux pane belongs to another launch` )
         }
+        // A paused container cannot take SIGTERM: stop would wait out its whole grace period
+        if( latest.frozen_at ) await unpause( latest.container_id ).catch( error => log.debug( `Unpause before close failed: ${ error.message }` ) )
         await stop( latest.container_id || latest.container_name )
         if( active ) await kill( latest.tmux_session )
         if( !monitor_alive( latest.monitor_pid, latest.monitor_token, { boot_id: latest.boot_id } ) ) await reconcile( load( latest.babysit_id ) )

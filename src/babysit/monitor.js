@@ -192,6 +192,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
  * @param {Object|null} [options.watchdog] - Stall watchdog from create_watchdog
+ * @param {Function} [options.is_frozen] - Whether `babysit freeze` paused the session container
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
  */
@@ -213,6 +214,7 @@ export const start_monitor = async ( {
     on_user_input = null,
     watchdog = null,
     input_allowed = () => true,
+    is_frozen = () => false,
     on_exit,
     agent_exit_sentinel = null,
     has_session_fn = has_session,
@@ -237,6 +239,7 @@ export const start_monitor = async ( {
     let approval_ready_at = 0
     let logout_check_ready_at = 0
     let limit_check_ready_at = 0
+    let frozen = false
 
     const begin_action = ( rule, now ) => {
 
@@ -283,6 +286,30 @@ export const start_monitor = async ( {
     try {
 
         while( true ) {
+
+            // Frozen (`babysit freeze`): anything typed into the paused pane would
+            // replay on thaw, and docker exec fails against a paused container.
+            // Only watch for the session ending; the clock restarts on thaw.
+            if( is_frozen() ) {
+                if( !frozen ) log.info( `Session frozen; monitor standing down until babysit unfreeze` )
+                frozen = true
+                if( await session_gone() ) {
+                    log.info( `Session ended while frozen: ${ session_name }` )
+                    await finish_action()
+                    if( on_exit ) await on_exit( { exit_status: null } )
+                    break
+                }
+                await wait_fn( POLL_INTERVAL_MS )
+                continue
+            }
+
+            if( frozen ) {
+                log.info( `Session unfrozen; monitor resumed` )
+                frozen = false
+                idle_tracker.reset()
+                watchdog?.restart()
+                approval_ready_at = Date.now() + APPROVAL_COOLDOWN_MS
+            }
 
             on_tick?.()
             if( control_bridge && control_bridge.revision !== control_revision ) {

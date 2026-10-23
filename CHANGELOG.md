@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.55.0 — 2026-10-23
+
+### Added
+- `babysit freeze <number|id|name|all>...` pauses session containers in place (`docker pause`: every process stops mid-step, nothing is killed); `babysit unfreeze` resumes them where they left off. Host only (`babysit mode`), Docker sessions only.
+- While frozen the monitor stands down (no idle nudges, watchdog verdicts or auto-approvals queued into the paused pane) and restarts its timers on unfreeze. `babysit list`/`watch` show `frozen`; the tmux bar says `FROZEN`; `open` warns.
+- `close`/`restart` unpause before stopping; recovery treats a paused container as alive; a monitor starting on a container that is no longer paused (reboot, Docker restart, outside unpause) drops the stale mark.
+
 ## 1.54.1 — 2026-10-23
 
 ### Fixed

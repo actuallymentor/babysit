@@ -9,7 +9,7 @@ import { newer_version_available } from './version_check.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
-const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey` }
+const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey`, frozen: `yellow` }
 
 /**
  * Color for a share of host capacity: calm below half, warning below 70%, red above.
@@ -538,13 +538,16 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const agent = stored?.agent || `unknown`
         const session_id = stored?.agent_session_id || stored?.babysit_id || tmux.name
         const name = stored?.name || session_id
-        // An exited fork parent has no activity; a `babysit stuck` flag
-        // outranks observed activity until the user types.
+        // An exited fork parent has no activity; a frozen container (`babysit
+        // freeze`) has none either; a `babysit stuck` flag outranks observed
+        // activity until the user types.
         const status = tmux.exited
             ? `exited`
-            : stored?.stuck_at
-                ? `stuck`
-                : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
+            : stored?.frozen_at
+                ? `frozen`
+                : stored?.stuck_at
+                    ? `stuck`
+                    : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.exited ? `exited` : tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers )
         const usage = show_usage && !tmux.exited ? cached_usage( stored, now ) : null

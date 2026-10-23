@@ -18,6 +18,7 @@ import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
 import { cmd_watch, watch_after_detach } from './cli/watch.js'
+import { cmd_freeze } from './cli/freeze.js'
 import { cmd_fork } from './cli/fork.js'
 import { cmd_init } from './cli/init.js'
 import { cmd_audit } from './cli/audit.js'
@@ -163,6 +164,11 @@ const main = async () => {
         if( cmd.recover_verb === `init` ) await cmd_recover_init( cmd )
         else if( cmd.flags.shutdown ) await cmd_recovery_shutdown()
         else await cmd_recover( cmd )
+        break
+
+    case `freeze`:
+    case `unfreeze`:
+        process.exitCode = await cmd_freeze( cmd )
         break
 
     case `archive`:

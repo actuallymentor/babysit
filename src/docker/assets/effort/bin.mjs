@@ -14,7 +14,11 @@ try {
     if( [ `help`, `--help`, `-h` ].includes( command ) ) console.log( Object.hasOwn( HELP, args[0] ?? `` ) ? HELP[ args[0] ] : ALL_HELP )
     // This helper only ships inside the image, so it always answers `container`
     else if( command === `mode` ) console.log( `container` )
-    else if( command === `usage` ) process.exitCode = await run_usage( args )
+    // Freezing pauses this very container from outside; only the host can
+    else if( [ `freeze`, `unfreeze` ].includes( command ) ) {
+        console.error( `babysit ${ command } runs on the host; this is a babysit container (see babysit mode)` )
+        process.exitCode = 1
+    } else if( command === `usage` ) process.exitCode = await run_usage( args )
     else if( command === `adb` ) process.exitCode = await run_adb( args )
     else if( command === `ios` ) process.exitCode = await run_ios( args )
     else if( command === `effort` ) console.log( await run_effort( args ) )

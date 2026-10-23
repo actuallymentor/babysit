@@ -36,6 +36,7 @@ Usage:
   babysit close <number|id>...         Close intentionally; disable recovery for these launches
   babysit restart <number|id|all>...   Rebuild idle session(s) on the current image, keeping the conversation; --force, --detach, --continue
   babysit archive <number|id>...       Dim sessions and sink them to the bottom of babysit list; open un-archives
+  babysit freeze <number|id|all>...    Pause session containers in place (docker pause); unfreeze resumes them
   babysit config                       Show settings and setup status
   babysit mode                         Print container inside a babysit agent container, else host
   babysit effort [level]               Inspect/change effort inside a managed agent session
