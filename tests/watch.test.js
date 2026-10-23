@@ -427,6 +427,16 @@ describe( `cmd_watch`, () => {
             expect( opened ).toEqual( [] )
         } )
 
+        it( `ignores the digits inside key escape sequences`, async () => {
+            const { opened } = await interactive_run( [ `\x1b[3~`, `\x1b[5~`, `\x1b[1;5A`, `\x03` ], { numbers: [ 1, 3, 5 ] } )
+            expect( opened ).toEqual( [] )
+        } )
+
+        it( `lets ctrl+c cancel a selection queued behind a slow frame`, async () => {
+            const { opened } = await interactive_run( [ `2`, `\x03` ] )
+            expect( opened ).toEqual( [] )
+        } )
+
         it( `asks for a number in the footer`, async () => {
             const frames = []
             await run_watch( { interactive: true }, {
