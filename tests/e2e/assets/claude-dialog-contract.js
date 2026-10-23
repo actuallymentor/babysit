@@ -2,7 +2,7 @@
 // approval relies on (src/agents/claude.js). Required markers break the
 // approver when missing; the rest change when or why YOLO sessions see a prompt.
 import { execFileSync } from 'node:child_process'
-import { readFileSync, realpathSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
 
 export const CLAUDE_DIALOG_BINARY_CONTRACT = [
     { label: `reason template "Dangerous \${…} operation"`, pattern: /Dangerous \$\{\w+\} operation/, required: false },
@@ -14,8 +14,17 @@ export const CLAUDE_DIALOG_BINARY_CONTRACT = [
 ]
 
 // Shell shims (Babysit's /opt/babysit-bin/claude) only forward to the real
-// claude; a Node cli.js shebang is the real thing
-const is_shell_shim = path => /^#![^\n]*\b(?:ba|z|da)?sh\b/.test( readFileSync( path ).subarray( 0, 64 ).toString() )
+// claude; a Node cli.js shebang is the real thing. Read only the header: the binary is ~300 MB.
+const is_shell_shim = path => {
+    const header = Buffer.alloc( 64 )
+    const fd = openSync( path, `r` )
+    try {
+        const bytes = readSync( fd, header, 0, header.length, 0 )
+        return /^#![^\n]*\b(?:ba|z|da)?sh\b/.test( header.subarray( 0, bytes ).toString() )
+    } finally {
+        closeSync( fd )
+    }
+}
 
 /** Resolve the installed `claude` executable past any shell shim, or null when absent. */
 export const find_claude_binary = () => {
