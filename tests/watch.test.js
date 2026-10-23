@@ -381,7 +381,7 @@ describe( `cmd_watch`, () => {
                 collect_fn: async () => report,
                 render_sessions_fn: async () => {
                     console.log( `tree` )
-                    return { numbers }
+                    return { targets: new Map( numbers.map( number => [ number, `id${ number }` ] ) ) }
                 },
                 write_fn: () => frames_drawn++ === 0 && setTimeout( input.press, 0 ),
                 wait_fn: () => new Promise( resolve => setTimeout( resolve, 5 ) ),
@@ -397,13 +397,13 @@ describe( `cmd_watch`, () => {
         it( `opens a session by number, then comes back after the detach`, async () => {
             const { opened, input } = await interactive_run( [ `2` ] )
             // The 4-frame budget ran out back on the list, not inside the session
-            expect( opened ).toEqual( [ `2` ] )
+            expect( opened ).toEqual( [ `id2` ] )
             expect( input.raw ).toBe( false )
         } )
 
         it( `exits instead of looping when the shell-init wrapper does the attach`, async () => {
             const { opened } = await interactive_run( [ `1` ], { attach: false } )
-            expect( opened ).toEqual( [ `1` ] )
+            expect( opened ).toEqual( [ `id1` ] )
         } )
 
         it( `ignores numbers that are not on screen, and quits on ctrl+c`, async () => {
@@ -413,7 +413,18 @@ describe( `cmd_watch`, () => {
 
         it( `waits for a second digit when a longer number could follow`, async () => {
             const { opened } = await interactive_run( [ `1`, `2` ], { numbers: [ 1, 12 ] } )
-            expect( opened ).toEqual( [ `12` ] )
+            expect( opened ).toEqual( [ `id12` ] )
+        } )
+
+        it( `reads a pasted chunk key by key`, async () => {
+            const { opened } = await interactive_run( [ `12\r` ], { numbers: [ 1, 12 ] } )
+            expect( opened ).toEqual( [ `id12` ] )
+        } )
+
+        it( `lets ctrl+c win over a pending second digit`, async () => {
+            const { opened } = await interactive_run( [ `1`, `\x03` ], { numbers: [ 1, 12 ] } )
+            await new Promise( resolve => setTimeout( resolve, 800 ) )
+            expect( opened ).toEqual( [] )
         } )
 
         it( `asks for a number in the footer`, async () => {
@@ -421,7 +432,7 @@ describe( `cmd_watch`, () => {
             await run_watch( { interactive: true }, {
                 rounds: 1,
                 collect_fn: async () => report,
-                render_sessions_fn: async () => ( { numbers: [ 1 ] } ),
+                render_sessions_fn: async () => ( { targets: new Map( [ [ 1, `id1` ] ] ) } ),
                 write_fn: text => frames.push( text ),
             } )
             expect( plain( frames.at( -1 ) ) ).toContain( `Press any number to open the session, or ctrl+c to close` )
@@ -443,9 +454,10 @@ describe( `watch_after_detach`, () => {
 
 describe( `track_session_activity`, () => {
 
-    it( `keeps the monitor's status on first sight, then compares with the previous frame`, async () => {
+    it( `keeps the monitor's status on first sight, then times how long the pane stayed still`, async () => {
         let screen = `working`
-        const observe = track_session_activity( { capture: async () => screen } )
+        let now = 0
+        const observe = track_session_activity( { capture: async () => screen, now: () => now += 1_000 } )
         const sessions = [ { name: `s`, agent_status: `waiting` } ]
         const stored = [ { tmux_session: `s`, agent: `codex` } ]
 
@@ -453,6 +465,15 @@ describe( `track_session_activity`, () => {
         screen = `still working`
         expect( ( await observe( sessions, stored ) )[0].agent_status ).toBe( `running` )
         expect( ( await observe( sessions, stored ) )[0].agent_status ).toBe( `idle` )
+    } )
+
+    it( `does not call a pane idle when an early redraw samples it again within the second`, async () => {
+        let now = 0
+        const observe = track_session_activity( { capture: async () => `same`, now: () => now } )
+        const sessions = [ { name: `s`, agent_status: `running` } ]
+        await observe( sessions, [] )
+        now = 100
+        expect( ( await observe( sessions, [] ) )[0].agent_status ).toBe( `running` )
     } )
 
 } )

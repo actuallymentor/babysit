@@ -250,7 +250,10 @@ const main = async () => {
     }
 
     // Detaching (ctrl+b d) or closing a session opened here lands on the interactive watch list
-    if( cmd.verb !== `watch` ) await watch_after_detach()
+    const watched = cmd.verb === `watch` || await watch_after_detach()
+
+    // Watch leaves usage refreshes in flight; they must not hold the shell or the wrapper's attach
+    if( watched ) process.exit( process.exitCode ?? 0 )
 
 }
 

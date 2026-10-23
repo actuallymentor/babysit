@@ -77,32 +77,39 @@ export const observe_session_activity = async ( sessions, stored_sessions, {
 
 /**
  * Activity observer for redraw loops: each call samples every pane once and
- * compares it with the previous call, so frames never wait out the 1s gap
- * observe_session_activity needs. A session seen for the first time keeps the
- * status its monitor last reported until the next frame.
- * @param {Object} [options] - Pane capture seam
+ * remembers when it last changed, so frames never wait out the 1s gap
+ * observe_session_activity needs, and early redraws (milliseconds apart) do
+ * not mistake a still pane for an idle one. A session seen for the first time
+ * keeps the status its monitor last reported until the next frame.
+ * @param {Object} [options] - Pane capture and clock seams
  * @returns {Function} observe_activity_fn for render_active_sessions
  */
-export const track_session_activity = ( { capture = capture_pane } = {} ) => {
+export const track_session_activity = ( { capture = capture_pane, now = Date.now } = {} ) => {
 
+    // tmux name → { screen, changed_at }
     let previous = new Map()
 
     return async ( sessions, stored_sessions ) => {
 
         const screens = await Promise.all( sessions.map( session => sample_pane( session, capture ) ) )
         const by_tmux = stored_by_tmux( stored_sessions )
+        const sampled_at = now()
         const before = previous
-        previous = new Map( sessions.map( ( session, index ) => [ session.name, screens[index] ] ) )
+
+        previous = new Map( sessions.map( ( session, index ) => {
+            const last = before.get( session.name )
+            const changed_at = last && last.screen === screens[index] ? last.changed_at : sampled_at
+            return [ session.name, { screen: screens[index], changed_at } ]
+        } ) )
 
         return sessions.map( ( session, index ) => {
             if( session.exited ) return { ...session, agent_status: `exited` }
             if( screens[index] === null ) return { ...session, agent_status: `unknown` }
-
-            const last = before.get( session.name )
-            if( last === undefined || last === null ) return session
+            if( before.get( session.name )?.screen == null ) return session
 
             const agent = by_tmux.get( session.name )?.agent
-            return { ...session, agent_status: agent_status( screens[index], agent, last === screens[index] ? 1 : 0 ) }
+            const still_seconds = ( sampled_at - previous.get( session.name ).changed_at ) / 1_000
+            return { ...session, agent_status: agent_status( screens[index], agent, still_seconds ) }
         } )
 
     }
@@ -598,7 +605,8 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
  * @param {Function} [options.version_check_fn] - Newer-release lookup
- * @returns {Promise<{ numbers: number[] }>} Shown selectors that can be opened (exited fork parents excluded)
+ * @returns {Promise<{ targets: Map<number, string> }>} Shown selectors that can be opened (exited fork parents
+ * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session
  */
 export const render_active_sessions = async ( {
     all = false,
@@ -627,7 +635,7 @@ export const render_active_sessions = async ( {
         console.log( ordered_sessions.length
             ? `No unarchived babysit sessions. Run babysit list to see archived ones.`
             : `No active babysit sessions.` )
-        return { numbers: [] }
+        return { targets: new Map() }
     }
 
     const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
@@ -648,7 +656,11 @@ export const render_active_sessions = async ( {
     const { latest } = version_check_fn()
     if( latest ) console.log( paint( `New babysit version available: ${ latest } (run babysit update)`, `orange` ) + `\n` )
 
-    return { numbers: numbers.filter( ( _, index ) => !tmux_sessions[index].exited ) }
+    const targets = tmux_sessions
+        .map( ( tmux, index ) => [ numbers[index], by_tmux.get( tmux.name )?.babysit_id || tmux.name, tmux.exited ] )
+        .filter( ( [ , , exited ] ) => !exited )
+        .map( ( [ number, target ] ) => [ number, target ] )
+    return { targets: new Map( targets ) }
 
 }
 
