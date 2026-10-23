@@ -225,6 +225,12 @@ export const kill_session = async ( session_name, { run_command = run } = {} ) =
 
 }
 
+// In-process attaches this run; once one returns, the user detached or the session closed
+let foreground_attaches = 0
+
+/** @returns {number} Attaches that blocked in this process and have since returned */
+export const foreground_attach_count = () => foreground_attaches
+
 /**
  * Attach to an existing tmux session. Under the shell-init wrapper the shell
  * runs `tmux attach` itself: a babysit process blocked for the whole session
@@ -254,6 +260,7 @@ export const attach_session = ( session_name, { exec_command = execSync, env = W
         log.debug( `tmux attach exited: ${ error.message }` )
     }
 
+    foreground_attaches++
     return true
 
 }

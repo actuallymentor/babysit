@@ -17,7 +17,7 @@ import { cmd_launch_dir } from './cli/compose.js'
 import { save_launch_defaults } from './babysit/launch_defaults.js'
 import { cmd_start } from './cli/start.js'
 import { cmd_list } from './cli/list.js'
-import { cmd_watch } from './cli/watch.js'
+import { cmd_watch, watch_after_detach } from './cli/watch.js'
 import { cmd_fork } from './cli/fork.js'
 import { cmd_init } from './cli/init.js'
 import { cmd_audit } from './cli/audit.js'
@@ -29,7 +29,7 @@ import { cmd_recover, cmd_close, cmd_recovery_shutdown } from './cli/recover.js'
 import { cmd_restart } from './cli/restart.js'
 import { cmd_recover_init } from './cli/recover_init.js'
 import { cmd_monitor } from './cli/monitor.js'
-import { cmd_update } from './cli/update.js'
+import { cmd_update, maybe_auto_update } from './cli/update.js'
 import { cmd_config } from './cli/config.js'
 import { cmd_doctor } from './cli/doctor.js'
 import { cmd_auth } from './cli/auth.js'
@@ -48,6 +48,9 @@ const is_directory = path => {
         return false
     }
 }
+
+// Machine-run (monitor, boot recovery) or self-updating verbs never start a background update
+const QUIET_VERBS = new Set( [ `update`, `__monitor`, `shell-init`, `recover` ] )
 
 // Subcommands that need a dep check before they run. `help` and `--version`
 // are pure metadata reads, `__monitor` is a background daemon that inherits
@@ -141,6 +144,9 @@ const main = async () => {
         }
     }
 
+    // Opt-in (`babysit update --auto`): a known newer release installs in the background
+    if( !QUIET_VERBS.has( cmd.verb ) ) maybe_auto_update()
+
     // Dispatch to subcommand
     switch ( cmd.verb ) {
 
@@ -206,7 +212,7 @@ const main = async () => {
         break
 
     case `update`:
-        await cmd_update()
+        await cmd_update( cmd )
         break
 
     case `config`:
@@ -242,6 +248,9 @@ const main = async () => {
         break
 
     }
+
+    // Detaching (ctrl+b d) or closing a session opened here lands on the interactive watch list
+    if( cmd.verb !== `watch` ) await watch_after_detach()
 
 }
 

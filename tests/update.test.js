@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach } from 'bun:test'
-import { is_compiled_binary, binary_platform_tag, is_on_path, update_docker_image } from '../src/cli/update.js'
+import { mkdtempSync, readFileSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { is_compiled_binary, binary_platform_tag, is_on_path, update_docker_image, configure_auto_update, maybe_auto_update } from '../src/cli/update.js'
 
 // is_compiled_binary reads process.argv[1] live, so we save/restore around each
 // case. Same heuristic the real spawn-monitor-daemon path uses; if this drifts
@@ -154,6 +157,51 @@ describe( `Docker image update`, () => {
         expect( output ).toContain( `docker pull failed: registry unavailable` )
         expect( calls ).toHaveLength( 2 )
         expect( output ).not.toContain( `downloaded image` )
+    } )
+
+} )
+
+describe( `automatic updates`, () => {
+
+    it( `update --auto stores the Y/n answer`, async () => {
+        const writes = []
+        const quiet = console.log
+        console.log = () => {}
+        try {
+            expect( await configure_auto_update( { ask: async question => question === `Enable automatic updates? Y/n `, write_config: config => writes.push( config ) } ) ).toBe( true )
+            expect( await configure_auto_update( { ask: async () => false, write_config: config => writes.push( config ) } ) ).toBe( false )
+        } finally {
+            console.log = quiet
+        }
+        expect( writes ).toEqual( [ { auto_update: true }, { auto_update: false } ] )
+    } )
+
+    it( `starts one background update per newer release, retrying a day later`, () => {
+        const directory = mkdtempSync( join( tmpdir(), `babysit-auto-update-` ) )
+        const state_path = join( directory, `auto-update.json` )
+        let started = 0
+        const quiet = console.error
+        console.error = () => {}
+        const attempt = ( options = {} ) => maybe_auto_update( {
+            read_config: () => ( { auto_update: true } ),
+            version_check: () => ( { latest: `9.9.9` } ),
+            start_update: () => started++,
+            state_path,
+            now: 1_000,
+            ...options,
+        } )
+        try {
+            expect( attempt( { read_config: () => ( { auto_update: false } ) } ) ).toBeNull()
+            expect( attempt( { version_check: () => ( { latest: null } ) } ) ).toBeNull()
+            expect( attempt() ).toBe( `9.9.9` )
+            expect( attempt() ).toBeNull()
+            expect( attempt( { now: 1_000 + 25 * 60 * 60_000 } ) ).toBe( `9.9.9` )
+        } finally {
+            console.error = quiet
+        }
+        expect( started ).toBe( 2 )
+        expect( JSON.parse( readFileSync( state_path, `utf8` ) ).version ).toBe( `9.9.9` )
+        rmSync( directory, { recursive: true, force: true } )
     } )
 
 } )

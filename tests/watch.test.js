@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'bun:test'
-import { cmd_watch, format_usage_panel, limit_percent, session_usage_limits, short_limit_name, usage_bar, usage_cell, usage_level, USAGE_REFRESH_MS } from '../src/cli/watch.js'
-import { render_active_sessions } from '../src/cli/list.js'
+import { EventEmitter } from 'events'
+import { cmd_watch, watch_after_detach, format_usage_panel, limit_percent, session_usage_limits, short_limit_name, usage_bar, usage_cell, usage_level, USAGE_REFRESH_MS } from '../src/cli/watch.js'
+import { render_active_sessions, track_session_activity } from '../src/cli/list.js'
 
 const capture_console = async fn => {
     const original_log = console.log
@@ -204,10 +205,26 @@ describe( `usage_cell`, () => {
 
 describe( `cmd_watch`, () => {
 
+    // Frames go to write_fn; strip the paint escapes so assertions read plain text
+    const run_watch = async ( flags, deps ) => {
+        const frames = []
+        await cmd_watch( { flags }, {
+            accounts_fn: () => ``,
+            watch_fn: () => () => {},
+            input: null,
+            output: null,
+            write_fn: text => frames.push( text ),
+            wait_fn: tick,
+            ...deps,
+        } )
+        return frames
+    }
+    const plain = text => text.replace( /\x1b\[[\d;?]*[a-zA-Z]/g, `` )
+
     it( `redraws sessions plus usage, refreshing usage on its own cadence`, async () => {
         let now = NOW
         const events = []
-        const output = await capture_console( () => cmd_watch( { flags: { all: true } }, {
+        const frames = await run_watch( { all: true }, {
             rounds: 3,
             now_fn: () => now,
             collect_fn: async options => {
@@ -216,26 +233,47 @@ describe( `cmd_watch`, () => {
                 expect( await options.codex_read() ).toBeNull()
                 return report
             },
-            render_sessions_fn: async ( { hide_archived, open_hint, before_print } ) => {
-                events.push( `render ${ hide_archived } ${ open_hint }` )
-                before_print()
+            render_sessions_fn: async ( { hide_archived, open_hint, observe_activity_fn } ) => {
+                events.push( `render ${ hide_archived } ${ open_hint } ${ typeof observe_activity_fn }` )
+                console.log( `tree` )
             },
-            write_fn: text => events.push( JSON.stringify( text ) ),
             wait_fn: async () => {
                 now += USAGE_REFRESH_MS / 2
                 await tick()
             },
-        } ) )
+        } )
 
         expect( events.filter( event => event === `collect` ) ).toHaveLength( 2 )
-        expect( events.filter( event => event === `render true false` ) ).toHaveLength( 3 )
-        expect( events ).toContain( JSON.stringify( `\x1b[H\x1b[J` ) )
-        expect( output ).toContain( `claude` )
-        expect( output ).toContain( `Ctrl+C to stop` )
+        expect( events.filter( event => event === `render true false function` ) ).toHaveLength( 3 )
+        // In place: home, then every line clears its own tail, then the rest of the screen
+        expect( frames.at( -1 ) ).toStartWith( `\x1b[Htree\x1b[K\r\n` )
+        expect( frames.at( -1 ) ).toEndWith( `\x1b[J` )
+        expect( plain( frames.at( -1 ) ) ).toContain( `claude` )
+        expect( plain( frames.at( -1 ) ) ).toContain( `Ctrl+C to stop` )
+    } )
+
+    it( `skips frames identical to the one on screen`, async () => {
+        const frames = await run_watch( {}, {
+            rounds: 3,
+            collect_fn: async () => report,
+            render_sessions_fn: async () => console.log( `same` ),
+        } )
+        expect( frames ).toHaveLength( 1 )
+    } )
+
+    it( `takes over the terminal on a TTY and hands it back`, async () => {
+        const frames = await run_watch( {}, {
+            rounds: 1,
+            collect_fn: async () => report,
+            render_sessions_fn: async () => {},
+            output: { isTTY: true },
+        } )
+        expect( frames[0] ).toBe( `\x1b[?1049h\x1b[?25l` )
+        expect( frames.at( -1 ) ).toBe( `\x1b[?25h\x1b[?1049l` )
     } )
 
     it( `renders a USAGE column per session row through the real session tree`, async () => {
-        const output = await capture_console( () => cmd_watch( { flags: {} }, {
+        const frames = await run_watch( {}, {
             rounds: 2,
             collect_fn: async () => ( { fetched_at: new Date().toISOString(), agents: [
                 { agent: `claude`, status: `ok`, limits: [ { name: `five_hour`, kind: `window`, used_percent: 97 } ] },
@@ -256,12 +294,10 @@ describe( `cmd_watch`, () => {
                 ],
                 observe_activity_fn: async sessions => sessions,
             } ),
-            write_fn: () => {},
-            wait_fn: tick,
-        } ) )
+        } )
 
         // The last frame has the report; the first rendered before it landed
-        const frame = output.slice( output.lastIndexOf( `Active babysit sessions` ) )
+        const frame = plain( frames.at( -1 ) )
         expect( frame ).toMatch( /MEM\s+USAGE\s+FLAGS/ )
         expect( frame ).toMatch( /a\s.*▰{10}/ )
         expect( frame ).toMatch( /b\s.*▰▱{9}/ )
@@ -272,7 +308,7 @@ describe( `cmd_watch`, () => {
 
         let accounts = `default`
         let calls = 0
-        await capture_console( () => cmd_watch( {}, {
+        await run_watch( {}, {
             rounds: 3,
             collect_fn: async () => {
                 calls++
@@ -282,10 +318,8 @@ describe( `cmd_watch`, () => {
             render_sessions_fn: async () => {
                 accounts = `default,OliviaSub`
             },
-            write_fn: () => {},
-            wait_fn: tick,
             now_fn: () => 0,
-        } ) )
+        } )
 
         // First frame, then the account added mid-frame; no third call within 5 min
         expect( calls ).toBe( 2 )
@@ -294,45 +328,131 @@ describe( `cmd_watch`, () => {
 
     it( `shows no usage panel by default`, async () => {
         let rendered = 0
-        const output = await capture_console( () => cmd_watch( { flags: {} }, {
+        const frames = await run_watch( {}, {
             rounds: 2,
             collect_fn: async () => report,
-            accounts_fn: () => ``,
-            render_sessions_fn: async () => rendered++,
-            write_fn: () => {},
-            wait_fn: tick,
-        } ) )
+            render_sessions_fn: async () => console.log( `frame ${ ++rendered }` ),
+        } )
         expect( rendered ).toBe( 2 )
-        expect( output ).not.toContain( `Account usage` )
+        expect( plain( frames.join( `` ) ) ).not.toContain( `Account usage` )
     } )
 
     it( `shows only the usage panel with --usage`, async () => {
-        const events = []
-        const output = await capture_console( () => cmd_watch( { flags: { usage: true } }, {
+        let rendered = 0
+        const frames = await run_watch( { usage: true }, {
             rounds: 2,
             collect_fn: async () => report,
-            accounts_fn: () => ``,
-            render_sessions_fn: async () => events.push( `render` ),
-            write_fn: text => events.push( text ),
-            wait_fn: tick,
-        } ) )
-        expect( events ).toEqual( [ `\x1b[H\x1b[J`, `\x1b[H\x1b[J` ] )
-        expect( output ).toContain( `Account usage` )
-        expect( output ).toContain( `Ctrl+C to stop` )
+            render_sessions_fn: async () => rendered++,
+        } )
+        expect( rendered ).toBe( 0 )
+        expect( plain( frames.at( -1 ) ) ).toContain( `Account usage` )
+        expect( plain( frames.at( -1 ) ) ).toContain( `Ctrl+C to stop` )
     } )
 
     it( `keeps drawing when a usage refresh fails`, async () => {
-        const output = await capture_console( () => cmd_watch( { flags: { usage: true } }, {
+        const frames = await run_watch( { usage: true }, {
             rounds: 2,
             collect_fn: async () => {
                 throw new Error( `offline` )
             },
-            accounts_fn: () => ``,
             render_sessions_fn: async () => {},
-            write_fn: () => {},
-            wait_fn: tick,
-        } ) )
-        expect( output ).toContain( `refresh failed: offline` )
+        } )
+        expect( plain( frames.at( -1 ) ) ).toContain( `refresh failed: offline` )
+    } )
+
+    describe( `--interactive`, () => {
+
+        // A fake raw-mode keyboard: keys arrive once the first frame is up
+        const keyboard = keys => {
+            const input = new EventEmitter()
+            Object.assign( input, { isTTY: true, setRawMode: mode => input.raw = mode, resume: () => {}, pause: () => {} } )
+            input.press = () => keys.forEach( key => input.emit( `data`, Buffer.from( key ) ) )
+            return input
+        }
+
+        const interactive_run = async ( keys, { numbers = [ 1, 2 ], attach = true } = {} ) => {
+            const input = keyboard( keys )
+            const opened = []
+            let attaches = 0
+            let frames_drawn = 0
+            const frames = await run_watch( { interactive: true }, {
+                rounds: 4,
+                input,
+                collect_fn: async () => report,
+                render_sessions_fn: async () => {
+                    console.log( `tree` )
+                    return { numbers }
+                },
+                write_fn: () => frames_drawn++ === 0 && setTimeout( input.press, 0 ),
+                wait_fn: () => new Promise( resolve => setTimeout( resolve, 5 ) ),
+                open_fn: async ( { session_id } ) => {
+                    opened.push( session_id )
+                    if( attach ) attaches++
+                },
+                attach_count_fn: () => attaches,
+            } )
+            return { frames, opened, input }
+        }
+
+        it( `opens a session by number, then comes back after the detach`, async () => {
+            const { opened, input } = await interactive_run( [ `2` ] )
+            // The 4-frame budget ran out back on the list, not inside the session
+            expect( opened ).toEqual( [ `2` ] )
+            expect( input.raw ).toBe( false )
+        } )
+
+        it( `exits instead of looping when the shell-init wrapper does the attach`, async () => {
+            const { opened } = await interactive_run( [ `1` ], { attach: false } )
+            expect( opened ).toEqual( [ `1` ] )
+        } )
+
+        it( `ignores numbers that are not on screen, and quits on ctrl+c`, async () => {
+            const { opened } = await interactive_run( [ `7`, `\x03` ] )
+            expect( opened ).toEqual( [] )
+        } )
+
+        it( `waits for a second digit when a longer number could follow`, async () => {
+            const { opened } = await interactive_run( [ `1`, `2` ], { numbers: [ 1, 12 ] } )
+            expect( opened ).toEqual( [ `12` ] )
+        } )
+
+        it( `asks for a number in the footer`, async () => {
+            const frames = []
+            await run_watch( { interactive: true }, {
+                rounds: 1,
+                collect_fn: async () => report,
+                render_sessions_fn: async () => ( { numbers: [ 1 ] } ),
+                write_fn: text => frames.push( text ),
+            } )
+            expect( plain( frames.at( -1 ) ) ).toContain( `Press any number to open the session, or ctrl+c to close` )
+        } )
+
+    } )
+
+} )
+
+describe( `watch_after_detach`, () => {
+
+    it( `only runs on a terminal`, async () => {
+        const runs = []
+        expect( await watch_after_detach( { terminal: false, watch_fn: async cmd => runs.push( cmd ) } ) ).toBe( false )
+        expect( runs ).toEqual( [] )
+    } )
+
+} )
+
+describe( `track_session_activity`, () => {
+
+    it( `keeps the monitor's status on first sight, then compares with the previous frame`, async () => {
+        let screen = `working`
+        const observe = track_session_activity( { capture: async () => screen } )
+        const sessions = [ { name: `s`, agent_status: `waiting` } ]
+        const stored = [ { tmux_session: `s`, agent: `codex` } ]
+
+        expect( ( await observe( sessions, stored ) )[0].agent_status ).toBe( `waiting` )
+        screen = `still working`
+        expect( ( await observe( sessions, stored ) )[0].agent_status ).toBe( `running` )
+        expect( ( await observe( sessions, stored ) )[0].agent_status ).toBe( `idle` )
     } )
 
 } )

@@ -1,13 +1,20 @@
-import { setTimeout as delay } from 'node:timers/promises'
+import { watch } from 'node:fs'
 
 import { opencode_model_flag } from '../agents/opencode.js'
 import { DEFAULT_ACCOUNT, collect_account_usage, list_claude_accounts } from './claude_accounts.js'
 import { relative_time, usage_color } from '../docker/assets/usage/format.mjs'
 import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
-import { render_active_sessions } from './list.js'
+import { render_active_sessions, track_session_activity } from './list.js'
+import { cmd_open } from './open.js'
+import { foreground_attach_count } from '../tmux/session.js'
+import { SESSIONS_DIR } from '../utils/paths.js'
 
-const FRAME_MS = 2_000
+const FRAME_MS = 1_000
+// Registry writes come in bursts; redraw once they settle
+const SETTLE_MS = 100
+// With 1 and 12 on screen, how long `1` waits for a second digit
+const CHORD_MS = 700
 export const USAGE_REFRESH_MS = 5 * 60_000
 const BAR_CELLS = 10
 
@@ -225,10 +232,57 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
 }
 
 /**
- * Live dashboard redrawn every 2s. Views:
+ * Collect what fn logs instead of printing it, one entry per line.
+ * @param {Function} fn - Async printer
+ * @returns {Promise<{ lines: string[], result: * }>}
+ */
+const collect_lines = async fn => {
+
+    const original = console.log
+    const lines = []
+    console.log = ( ...parts ) => lines.push( ...parts.join( ` ` ).split( `\n` ) )
+    try {
+        const result = await fn()
+        return { lines, result }
+    } finally {
+        console.log = original
+    }
+
+}
+
+// Home, then each line clearing its own tail, then the rest of the screen:
+// the old frame stays up until overwritten, so nothing flickers. \r\n keeps
+// lines aligned while stdin is raw.
+const paint_frame = lines => `\x1b[H${ lines.map( line => `${ line }\x1b[K` ).join( `\r\n` ) }\x1b[J`
+
+/**
+ * Wake on session registry writes (start, close, archive, rename): the list
+ * changes the moment babysit records it instead of on the next tick.
+ * @param {Function} on_change - Called on any change
+ * @returns {Function} Stops watching
+ */
+const watch_registry = on_change => {
+    try {
+        const watcher = watch( SESSIONS_DIR, on_change )
+        watcher.on( `error`, () => watcher.close() )
+        return () => watcher.close()
+    } catch ( error ) {
+        log.debug( `watch: session registry not watched: ${ error.message }` )
+        return () => {}
+    }
+}
+
+/**
+ * Live dashboard. Views:
  * - default: the session tree with a USAGE headroom column
  * - `--usage`: the account usage panel alone
  * - `--all`: both
+ * Frames sample every pane once per second (track_session_activity) and also
+ * redraw the moment the session registry changes. A frame is written only when
+ * it differs from the one on screen, in place on the alternate screen.
+ * `--interactive`: typing a session number opens it; detaching (or the session
+ * closing) comes back here. Under the shell-init wrapper babysit exits instead
+ * and the wrapper attaches, then runs `babysit watch --interactive` again.
  * Usage refreshes every 5 min in the background so frames never wait on providers.
  * Codex's app-server fallback stays off: it can rotate tokens outside the auth lease.
  * @param {Object} [cmd] - Parsed command
@@ -236,18 +290,30 @@ export const format_usage_panel = ( report, { now = Date.now(), error = null } =
  * @param {Function} [deps.collect_fn] - Usage collector seam
  * @param {Function} [deps.accounts_fn] - Registered Claude account names, as one comparable string
  * @param {Function} [deps.render_sessions_fn] - Session tree renderer
- * @param {Function} [deps.wait_fn] - Delay between redraws
+ * @param {Function} [deps.observe_activity_fn] - Pane activity observer, kept across frames
+ * @param {Function|null} [deps.wait_fn] - Delay between frames; null waits until the next tick or change
  * @param {Function} [deps.write_fn] - Raw terminal writer
  * @param {Function} [deps.now_fn] - Clock seam
- * @param {number} [deps.rounds] - Redraw count; endless by default
+ * @param {Function} [deps.watch_fn] - Registry change listener, returns a stop function
+ * @param {Object} [deps.input] - Keyboard stream
+ * @param {Object} [deps.output] - Terminal stream, for TTY and resize detection
+ * @param {Function} [deps.open_fn] - Session opener
+ * @param {Function} [deps.attach_count_fn] - In-process attach counter
+ * @param {number} [deps.rounds] - Frame count; endless by default
  */
 export const cmd_watch = async ( { flags = {} } = {}, {
     collect_fn = collect_account_usage,
     accounts_fn = () => list_claude_accounts().map( ( { name } ) => name ).join( `,` ),
     render_sessions_fn = render_active_sessions,
-    wait_fn = delay,
+    observe_activity_fn = track_session_activity(),
+    wait_fn = null,
     write_fn = text => process.stdout.write( text ),
     now_fn = Date.now,
+    watch_fn = watch_registry,
+    input = process.stdin,
+    output = process.stdout,
+    open_fn = cmd_open,
+    attach_count_fn = foreground_attach_count,
     rounds = Infinity,
 } = {} ) => {
 
@@ -256,6 +322,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     let refreshed_at = -Infinity
     let pending = null
     let accounts_seen = null
+    let round = 0
 
     // Refresh on the 5-min cadence, or at once when Claude accounts are added
     // or removed: the old report has no row for a new account's sessions
@@ -280,28 +347,182 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
     const show_sessions = !flags.usage || flags.all
     const show_panel = flags.usage || flags.all
-    const clear = () => write_fn( `\x1b[H\x1b[J` )
+    const interactive = Boolean( flags.interactive ) && show_sessions
+    const keyboard = Boolean( input?.isTTY )
+    const screen = Boolean( output?.isTTY )
 
-    // Redraw in place on the real terminal so every color survives; clearing
-    // right before printing keeps the old frame up while panes are sampled.
-    for( let round = 0; round < rounds; round++ ) {
+    /**
+     * One dashboard run, until Ctrl+C or a chosen session.
+     * @returns {Promise<number|null>} The session number to open, or null to quit
+     */
+    const dashboard = async () => {
 
-        refresh_usage()
+        let body = []
+        let shown = null
+        let typed = ``
+        let chosen = null
+        let stopped = false
+        let chord = null
+        let tick = null
+        let wake = () => {}
+        let selectable = []
 
-        if( show_sessions ) await render_sessions_fn( {
-            hide_archived: true,
-            open_hint: false,
-            // Read at print time, so a refresh that lands mid-sample still shows
-            extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],
-            before_print: clear,
+        const footer = () => interactive
+            ? `Press any number to open the session, or ctrl+c to close${ typed ? `: ${ typed }…` : `` }`
+            : `Live; Ctrl+C to stop.`
+
+        // Writes only what changed on screen; key presses repaint just the footer
+        const show = () => {
+            const frame = paint_frame( [ ...body, paint( footer(), `dim` ) ] )
+            if( frame !== shown ) write_fn( frame )
+            shown = frame
+        }
+
+        const stop = number => {
+            chosen = number ?? null
+            stopped = true
+            wake()
+        }
+
+        const choose = number => selectable.includes( number ) ? stop( number ) : ( typed = ``, show() )
+
+        // Digits pick a session as soon as no longer number could still follow;
+        // with 1 and 12 on screen, `1` waits CHORD_MS for a second digit
+        const on_key = data => {
+
+            const key = data.toString()
+            if( key === `\x03` || key === `q` ) return stop()
+            if( !interactive ) return
+
+            clearTimeout( chord )
+            if( key === `\r` ) return choose( Number( typed ) )
+            if( key === `\x7f` || key === `\x1b` ) {
+                typed = ``
+                return show()
+            }
+            if( !/^\d+$/.test( key ) ) return
+
+            typed += key
+            const exact = selectable.includes( Number( typed ) )
+            const longer = selectable.some( number => String( number ).length > typed.length && String( number ).startsWith( typed ) )
+            if( exact && !longer ) return choose( Number( typed ) )
+            if( !longer ) typed = ``
+            else chord = setTimeout( () => choose( Number( typed ) ), CHORD_MS )
+            show()
+
+        }
+
+        // Redraw early on registry changes and resizes; bursts settle first
+        let settle = null
+        const nudge = () => {
+            clearTimeout( settle )
+            settle = setTimeout( () => wake(), SETTLE_MS )
+        }
+        const resize = () => {
+            shown = null
+            nudge()
+        }
+
+        const stop_watching = watch_fn( nudge )
+        const on_signal = () => stop()
+        process.on( `SIGINT`, on_signal )
+        output?.on?.( `resize`, resize )
+        if( keyboard ) {
+            input.setRawMode( true )
+            input.on( `data`, on_key )
+            input.resume()
+        }
+        if( screen ) write_fn( `\x1b[?1049h\x1b[?25l` )
+
+        const pause = () => new Promise( resolve => {
+            tick = setTimeout( resolve, FRAME_MS )
+            wake = () => {
+                clearTimeout( tick )
+                resolve()
+            }
         } )
-        else clear()
 
-        if( show_panel ) format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )
-        console.log( paint( `\nRefreshing every 2s; Ctrl+C to stop.`, `dim` ) )
-        await wait_fn( FRAME_MS )
+        try {
+
+            while( !stopped && round < rounds ) {
+
+                round++
+                refresh_usage()
+
+                const frame = await collect_lines( async () => {
+                    const rendered = show_sessions ? await render_sessions_fn( {
+                        hide_archived: true,
+                        open_hint: false,
+                        observe_activity_fn,
+                        // Read at print time, so a refresh that lands mid-sample still shows
+                        extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],
+                    } ) : null
+                    if( show_panel ) format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )
+                    return rendered
+                } )
+
+                selectable = frame.result?.numbers || []
+                body = frame.lines
+                if( !stopped ) show()
+
+                if( !stopped && round < rounds ) await ( wait_fn ? wait_fn( FRAME_MS ) : pause() )
+
+            }
+
+        } finally {
+
+            clearTimeout( chord )
+            clearTimeout( settle )
+            clearTimeout( tick )
+            stop_watching()
+            process.off( `SIGINT`, on_signal )
+            output?.off?.( `resize`, resize )
+            if( keyboard ) {
+                input.off( `data`, on_key )
+                input.setRawMode( false )
+                input.pause()
+            }
+            if( screen ) write_fn( `\x1b[?25h\x1b[?1049l` )
+
+        }
+
+        return chosen
+
+    }
+
+    while( true ) {
+
+        const number = await dashboard()
+        if( number === null ) break
+
+        // A blocking attach comes back here on detach or close. Under the
+        // shell-init wrapper nothing attached yet: babysit exits so the shell can.
+        const attaches = attach_count_fn()
+        await open_fn( { session_id: String( number ), flags: {} } )
+        if( attach_count_fn() === attaches || round >= rounds ) break
+
     }
 
     await pending
+
+}
+
+/**
+ * After an in-process attach ends (ctrl+b d, or the session closing), land on
+ * the interactive watch list. Terminals only: scripts and tests get their
+ * shell back.
+ * @param {Object} [options]
+ * @param {Function} [options.watch_fn] - Watch runner seam
+ * @param {boolean} [options.terminal] - Whether stdin and stdout are TTYs
+ * @returns {Promise<boolean>} Whether the watch list ran
+ */
+export const watch_after_detach = async ( {
+    watch_fn = cmd_watch,
+    terminal = Boolean( process.stdin.isTTY && process.stdout.isTTY ),
+} = {} ) => {
+
+    if( !terminal || !foreground_attach_count() ) return false
+    await watch_fn( { flags: { interactive: true } } )
+    return true
 
 }

@@ -27,6 +27,8 @@ describe( `parse_args`, () => {
     it( `scopes --usage to babysit watch`, () => {
         expect( parse_args( [ `watch`, `--usage` ] ).flags ).toMatchObject( { usage: true, all: false } )
         expect( parse_args( [ `watch`, `--all` ] ).flags ).toMatchObject( { usage: false, all: true } )
+        expect( parse_args( [ `watch`, `--interactive` ] ).flags ).toMatchObject( { interactive: true } )
+        expect( parse_args( [ `update`, `--auto` ] ) ).toMatchObject( { verb: `update`, flags: { auto: true } } )
         expect( parse_args( [ `claude`, `--usage` ] ) ).toMatchObject( { flags: { usage: false }, passthrough: [ `--usage` ] } )
     } )
 

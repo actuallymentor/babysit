@@ -172,10 +172,10 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit audit --config FILE\|DIR/ [--yes]` | Fix yaml so `--config DIR/` accepts it; see [Audit](#audit) |
 | `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip full-line comments and blank lines from config yaml, keep inline comments; see [Clean](#clean) |
 | `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
-| `babysit watch [--usage\|--all]` | Live dashboard, redrawn every 2s: the `list` tree minus archived sessions (numbers unchanged), USAGE column = usage bar for the session's worst rate window. `--usage`: only the account usage panel, one metered row per limit (bar, % used, reset or used / limit); `--all`: tree + panel. Balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. Replaces `list --watch` |
+| `babysit watch [--usage\|--all] [--interactive]` | Live dashboard (panes sampled every second, instant redraw on session start/close/archive, changed frames only): the `list` tree minus archived sessions (numbers unchanged), USAGE column = usage bar for the session's worst rate window. `--usage`: only the account usage panel, one metered row per limit (bar, % used, reset or used / limit); `--all`: tree + panel. Balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. `--interactive`: type a session number to open it, ctrl+c to close; detaching or the session closing returns here, and `open`/start/`fork` land here after a detach in a terminal. Replaces `list --watch` |
 | `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
 | `babysit open [id\|name\|number]` | Attach; your shell moves to the session's base directory (where it was started, never its `--clone` copy) before attaching, so detaching leaves you there; needs `eval "$(babysit shell-init)"` in your rc, else the `cd` line is printed. `fork` does the same |
-| `babysit shell-init [bash\|zsh\|fish]` | Print the `babysit` shell function that lets `open` change your directory and runs the attach itself, so no idle babysit process (swapped out on a busy host) delays a detach. Fish: `babysit shell-init fish \| source` |
+| `babysit shell-init [bash\|zsh\|fish]` | Print the `babysit` shell function that lets `open` change your directory and runs the attach itself, so no idle babysit process (swapped out on a busy host) delays a detach; after the detach it runs `babysit watch --interactive`. Fish: `babysit shell-init fish \| source` |
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
 | `babysit resume <id\|number> [flags]` | Restore saved session |
 | `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
@@ -191,6 +191,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit update` | Update Babysit, agent tools, image; show image version |
+| `babysit update --auto` | Ask `Enable automatic updates? Y/n`; when on, a newer release triggers one background `babysit update` (log `~/.babysit/auto-update.log`, retried daily on failure) |
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
 input/interrupt controls → idle/running; background shells/terminals or Claude subagent rows → waiting; otherwise output stability; unreadable → unknown.

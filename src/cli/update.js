@@ -1,13 +1,19 @@
-import { existsSync, chmodSync, mkdirSync, accessSync, constants as fs_constants } from 'fs'
+import { existsSync, chmodSync, mkdirSync, accessSync, openSync, readFileSync, writeFileSync, constants as fs_constants } from 'fs'
 import { dirname, join } from 'path'
 import { tmpdir, platform, arch, homedir } from 'os'
 import { fileURLToPath } from 'url'
+import { spawn } from 'child_process'
+import { createInterface } from 'readline/promises'
 import { promise_timeout } from 'mentie'
 
 import pkg from '../../package.json' with { type: 'json' }
 
 import { command_exists, run } from '../utils/exec.js'
-import { AGENTS_DIR } from '../utils/paths.js'
+import { AGENTS_DIR, BABYSIT_DIR } from '../utils/paths.js'
+import { paint } from '../utils/color.js'
+import { log } from '../utils/log.js'
+import { read_babysit_config, write_babysit_config } from '../babysit/config.js'
+import { newer_version_available } from './version_check.js'
 import { get_image_name } from '../docker/update.js'
 import { SUPPORTED_AGENTS, get_agent } from '../agents/index.js'
 import { build_update_strategies } from '../deps/agent_update.js'
@@ -30,6 +36,11 @@ const USER_INSTALL_PATH = join( USER_INSTALL_DIR, `babysit` )
 const __dirname = dirname( fileURLToPath( import.meta.url ) )
 const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
 
+// Automatic updates: one background `babysit update` per new release, retried daily on failure
+export const AUTO_UPDATE_LOG = join( BABYSIT_DIR, `auto-update.log` )
+const AUTO_UPDATE_STATE = join( BABYSIT_DIR, `auto-update.json` )
+const AUTO_UPDATE_RETRY_MS = 24 * 60 * 60_000
+
 /**
  * `babysit update` — the only update path. Refreshes:
  *   1. babysit itself (git pull for source checkouts, GitHub release download
@@ -44,12 +55,15 @@ const BABYSIT_REPO_ROOT = join( __dirname, `..`, `..` )
  * what failed. Step result icons follow common CLI conventions: ✓ done,
  * → skipped, ✗ failed.
  *
- * Regular subcommands (`babysit start` / `resume` / etc.) no longer auto-update
- * on boot, so this verb is how users opt in.
+ * Regular subcommands only update in the background when `babysit update --auto`
+ * turned that on (see maybe_auto_update); otherwise this verb is how users opt in.
  *
+ * @param {Object} [cmd] - Parsed command; `flags.auto` toggles automatic updates instead
  * @returns {Promise<void>}
  */
-export const cmd_update = async () => {
+export const cmd_update = async ( { flags = {} } = {} ) => {
+
+    if( flags.auto ) return configure_auto_update()
 
     console.log( `\nbabysit update — refreshing local install\n` )
 
@@ -346,6 +360,108 @@ const update_host_agent_clis = async () => {
     }
 
     console.log( `` )
+
+}
+
+// --- automatic updates -----------------------------------------------------
+
+/**
+ * Ask Y/n; an empty answer means yes.
+ * @param {string} question - Prompt text
+ * @returns {Promise<boolean>}
+ */
+const ask_yes = async question => {
+    const prompt = createInterface( { input: process.stdin, output: process.stdout } )
+    try {
+        return /^(y(es)?)?$/i.test( ( await prompt.question( question ) ).trim() )
+    } finally {
+        prompt.close()
+    }
+}
+
+/**
+ * `babysit update --auto` — ask, then store the answer in ~/.babysit/config.json.
+ * @param {Object} [deps]
+ * @param {Function} [deps.ask] - Y/n prompt seam
+ * @param {Function} [deps.write_config] - Config writer seam
+ * @returns {Promise<boolean>} Whether automatic updates are now on
+ */
+export const configure_auto_update = async ( { ask = ask_yes, write_config = write_babysit_config } = {} ) => {
+
+    const enabled = await ask( `Enable automatic updates? Y/n ` )
+    write_config( { auto_update: enabled } )
+
+    console.log( enabled
+        ? `Automatic updates on: new releases install in the background (log: ${ AUTO_UPDATE_LOG }).`
+        : `Automatic updates off. Run babysit update to update by hand.` )
+    return enabled
+
+}
+
+const read_json = path => {
+    try {
+        return JSON.parse( readFileSync( path, `utf8` ) )
+    } catch {
+        return null
+    }
+}
+
+/**
+ * Run `babysit update` detached, output appended to the auto-update log.
+ * @returns {void}
+ */
+const spawn_background_update = () => {
+
+    mkdirSync( dirname( AUTO_UPDATE_LOG ), { recursive: true } )
+    const output = openSync( AUTO_UPDATE_LOG, `a` )
+
+    // Same re-spawn rule as the monitor daemon: compiled binaries take the verb directly
+    const args = is_compiled_binary() ? [ `update` ] : [ process.argv[1], `update` ]
+    const child = spawn( process.execPath, args, { detached: true, stdio: [ `ignore`, output, output ] } )
+    child.on( `error`, error => log.debug( `Background update failed to start: ${ error.message }` ) )
+    child.unref()
+
+}
+
+/**
+ * With automatic updates on, a newer known release starts one background
+ * `babysit update`. Reads the cached release lookup `list` shares, so it never
+ * waits on the network; a failed attempt retries a day later.
+ * @param {Object} [deps]
+ * @param {Function} [deps.read_config] - Host config reader
+ * @param {Function} [deps.version_check] - Cached newer-release lookup
+ * @param {Function} [deps.start_update] - Background update launcher
+ * @param {string} [deps.state_path] - Last attempt record
+ * @param {number} [deps.now] - Epoch milliseconds
+ * @returns {string|null} The version being installed, or null when nothing started
+ */
+export const maybe_auto_update = ( {
+    read_config = read_babysit_config,
+    version_check = newer_version_available,
+    start_update = spawn_background_update,
+    state_path = AUTO_UPDATE_STATE,
+    now = Date.now(),
+} = {} ) => {
+
+    if( !read_config().auto_update ) return null
+
+    const { latest } = version_check()
+    if( !latest ) return null
+
+    const last = read_json( state_path )
+    if( last?.version === latest && now - last.started_at < AUTO_UPDATE_RETRY_MS ) return null
+
+    try {
+        mkdirSync( dirname( state_path ), { recursive: true } )
+        writeFileSync( state_path, JSON.stringify( { version: latest, started_at: now } ) )
+        start_update()
+    } catch ( error ) {
+        log.debug( `Automatic update did not start: ${ error.message }` )
+        return null
+    }
+
+    console.error( paint( `Updating babysit to v${ latest } in the background (log: ${ AUTO_UPDATE_LOG })`, `dim` ) )
+    return latest
 
 }
 

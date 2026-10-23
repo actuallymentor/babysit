@@ -9,6 +9,7 @@ import {
     default_babysit_config,
     normalise_auth_check_agents,
     read_babysit_config,
+    write_babysit_config,
 } from '../src/babysit/config.js'
 import {
     cmd_config,
@@ -22,6 +23,17 @@ describe( `babysit config`, () => {
         expect( default_babysit_config().auth_check_agents ).toEqual( [ `codex`, `claude` ] )
         expect( read_babysit_config( { config_path: `/tmp/does-not-exist-babysit-config.json` } ).auth_check_agents )
             .toEqual( [ `codex`, `claude` ] )
+    } )
+
+    it( `keeps auto_update when only the auth agents change, and the reverse`, () => {
+        const directory = mkdtempSync( join( tmpdir(), `babysit-config-merge-` ) )
+        const config_path = join( directory, `config.json` )
+        write_babysit_config( { auto_update: true }, { config_path } )
+        write_babysit_config( { auth_check_agents: [ `claude` ] }, { config_path } )
+        expect( read_babysit_config( { config_path } ) ).toEqual( { version: 1, auth_check_agents: [ `claude` ], auto_update: true } )
+        write_babysit_config( { auto_update: false }, { config_path } )
+        expect( read_babysit_config( { config_path } ).auth_check_agents ).toEqual( [ `claude` ] )
+        rmSync( directory, { recursive: true, force: true } )
     } )
 
     it( `normalises auth-check agent selections`, () => {

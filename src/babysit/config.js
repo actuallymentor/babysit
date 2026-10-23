@@ -37,18 +37,19 @@ export const normalise_auth_check_agents = ( agent_names = DEFAULT_AUTH_CHECK_AG
 
 /**
  * Build the default host-level Babysit config.
- * @returns {{ version: number, auth_check_agents: string[] }} Default config
+ * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean }} Default config
  */
 export const default_babysit_config = () => ( {
     version: 1,
     auth_check_agents: [ ...DEFAULT_AUTH_CHECK_AGENTS ],
+    auto_update: false,
 } )
 
 /**
  * Read host-level Babysit config from the selected storage root.
  * @param {Object} [options]
  * @param {string} [options.config_path] - Config file path
- * @returns {{ version: number, auth_check_agents: string[] }} Parsed config
+ * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean }} Parsed config
  */
 export const read_babysit_config = ( {
     config_path = BABYSIT_CONFIG_PATH,
@@ -65,6 +66,7 @@ export const read_babysit_config = ( {
         return {
             version: 1,
             auth_check_agents: normalise_auth_check_agents( auth_check_agents ),
+            auto_update: parsed?.auto_update === true,
         }
     } catch {
         return default_babysit_config()
@@ -77,15 +79,18 @@ export const read_babysit_config = ( {
  * @param {Object} config - Partial config values
  * @param {Object} [options]
  * @param {string} [options.config_path] - Config file path
- * @returns {{ version: number, auth_check_agents: string[] }} Saved config
+ * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean }} Saved config
  */
 export const write_babysit_config = ( config = {}, {
     config_path = BABYSIT_CONFIG_PATH,
 } = {} ) => {
 
+    // Partial writes keep every other setting: `babysit config` and `update --auto` share this file
+    const merged = { ...read_babysit_config( { config_path } ), ...config }
     const next_config = {
         version: 1,
-        auth_check_agents: normalise_auth_check_agents( config.auth_check_agents ),
+        auth_check_agents: normalise_auth_check_agents( merged.auth_check_agents ),
+        auto_update: merged.auto_update === true,
     }
 
     mkdirSync( dirname( config_path ), { recursive: true } )

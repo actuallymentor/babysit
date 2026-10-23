@@ -39,6 +39,28 @@ describe( `babysit shell-init`, () => {
 
     } )
 
+    it( `lands on babysit watch --interactive after a detach on a terminal, and loops on its pick`, () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-wrapper-loop-` ) )
+        const bin = join( directory, `bin` )
+        mkdirSync( bin )
+
+        // Stand-ins: `open` and the first watch pick a session; the second watch quits
+        writeFileSync( join( bin, `babysit` ), `#!/bin/sh\necho "$*" >> '${ directory }/babysit.log'\n[ "$(wc -l < '${ directory }/babysit.log')" -lt 4 ] && printf 'babysit\\n=babysit_x\\n' > "$BABYSIT_ATTACH_FILE"\nexit 0\n`, { mode: 0o755 } )
+        writeFileSync( join( bin, `tmux` ), `#!/bin/sh\necho attach >> '${ directory }/babysit.log'\n`, { mode: 0o755 } )
+
+        // `script` gives the wrapper a real terminal, as an interactive shell has
+        writeFileSync( join( directory, `run.sh` ), `${ shell_init_script( `bash` ) }\nbabysit open 1\n` )
+        const output = spawnSync( `script`, [ `-qec`, `bash ${ join( directory, `run.sh` ) }`, `/dev/null` ], { env: { ...process.env, PATH: `${ bin }:${ process.env.PATH }` }, encoding: `utf8` } )
+
+        expect( output.status ).toBe( 0 )
+        expect( readFileSync( join( directory, `babysit.log` ), `utf8` ).split( `\n` ).filter( Boolean ) ).toEqual( [
+            `open 1`, `attach`, `watch --interactive`, `attach`, `watch --interactive`,
+        ] )
+        rmSync( directory, { recursive: true, force: true } )
+
+    } )
+
     it( `keeps the handoff files out of every child babysit spawns`, () => {
 
         const script = `const { WRAPPER_ENV } = await import( '${ join( import.meta.dir, `../src/utils/wrapper_env.js` ) }' ); console.log( JSON.stringify( [ WRAPPER_ENV.BABYSIT_ATTACH_FILE, process.env.BABYSIT_ATTACH_FILE ?? null, process.env.BABYSIT_CD_FILE ?? null ] ) )`
