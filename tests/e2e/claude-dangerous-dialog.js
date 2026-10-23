@@ -53,11 +53,18 @@ const until = async ( label, predicate, timeout_ms ) => {
 
 // Everything the approver and monitor depend on, checked one by one so a
 // report says exactly which assumption broke.
-const option_rows = lines => lines.slice( 0, -1 ).filter( line => YOLO_DIALOG.option.test( line ) )
+// Options end where the footer starts, past at most YOLO_DIALOG.max_notices status notices
+const options_end = lines => {
+    let end = lines.length - 1
+    const lowest = end - YOLO_DIALOG.max_notices
+    while( end > lowest && !YOLO_DIALOG.option.test( lines[ end - 1 ] || `` ) ) end--
+    return end
+}
+const option_rows = lines => lines.slice( 0, options_end( lines ) ).filter( line => YOLO_DIALOG.option.test( line ) )
 const DIALOG_EXPECTATIONS = [
     [ `footer "Esc to cancel" is the last line (dialog owns the bottom)`, lines => YOLO_DIALOG.footer.test( lines.at( -1 ) || `` ), `YOLO_DIALOG.footer` ],
-    [ `numbered option rows stacked on the footer`, lines => YOLO_DIALOG.option.test( lines.at( -2 ) || `` ) && YOLO_DIALOG.option.test( lines.at( -3 ) || `` ), `YOLO_DIALOG.option` ],
-    [ `question ending in "?" directly above the options`, lines => YOLO_DIALOG.question.test( lines[ lines.length - 2 - option_rows( lines ).length ] || `` ), `YOLO_DIALOG.question` ],
+    [ `numbered option rows stacked on the footer (≤ ${ YOLO_DIALOG.max_notices } notices between)`, lines => [ 1, 2 ].every( offset => YOLO_DIALOG.option.test( lines[ options_end( lines ) - offset ] || `` ) ), `YOLO_DIALOG.option / max_notices` ],
+    [ `question ending in "?" directly above the options`, lines => YOLO_DIALOG.question.test( lines[ options_end( lines ) - 1 - option_rows( lines ).length ] || `` ), `YOLO_DIALOG.question` ],
     [ `default cursor "❯" on an approving answer`, lines => option_rows( lines ).some( line => /❯/.test( line ) && YOLO_DIALOG.approve.test( line.match( YOLO_DIALOG.option )[ 3 ] ) ), `YOLO_DIALOG.approve` ],
 ]
 
@@ -88,6 +95,7 @@ const static_contract = () => {
 const start_claude = async () => {
     mkdirSync( victim )
     for( const name of [ `a`, `b` ] ) writeFileSync( join( victim, name ), name )
+
     const settings = JSON.stringify( { skipDangerousModePermissionPrompt: true } )
     await tmux( [ `new-session`, `-d`, `-s`, pane, `-x`, `180`, `-y`, `50`, `-c`, root,
         `claude --dangerously-skip-permissions --model ${ model } --settings '${ settings }'` ] )
@@ -157,6 +165,8 @@ const main = async () => {
         if( check( lines ) ) console.log( `PASS live: ${ label }` )
         else drift.push( `live: ${ label } — adjust ${ fix }` )
     }
+    const notices = lines.slice( options_end( lines ), -1 )
+    if( notices.length ) console.log( `PASS live: looked past ${ notices.length } notice(s): ${ notices.map( line => line.trim() ).join( ` | ` ) }` )
     if( !/will automatically deny this request in/.test( screen ) ) notes.push( `live: no auto-deny countdown; unattended fallback timing changed` )
     const match = find_yolo_dialog( screen )
     if( match ) console.log( `PASS live: matcher would answer "${ match.answer }" to "${ match.question }" (${ match.title })` )

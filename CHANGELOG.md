@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.55.3 — 2026-10-23
+
+### Fixed
+- YOLO auto-approval of Claude's bypass-immune prompts (dangerous `rm` etc.) works again on Claude Code 2.1.309, which can show a status notice (`+1 file edited before this session`) between the options and the footer. Running sessions need `babysit restart` to load the fix.
+- The Claude dialog contract check reads the real Claude binary instead of Babysit's in-container `claude` shim.
+
 ## 1.55.2 — 2026-10-23
 
 ### Fixed

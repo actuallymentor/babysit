@@ -13,10 +13,15 @@ export const CLAUDE_DIALOG_BINARY_CONTRACT = [
     { label: `auto-deny countdown "will automatically deny this request in"`, pattern: /will automatically deny this request in/, required: false },
 ]
 
-/** Resolve the installed `claude` executable, or null when absent. */
+// Shell shims (Babysit's /opt/babysit-bin/claude) only forward to the real
+// claude; a Node cli.js shebang is the real thing
+const is_shell_shim = path => /^#![^\n]*\b(?:ba|z|da)?sh\b/.test( readFileSync( path ).subarray( 0, 64 ).toString() )
+
+/** Resolve the installed `claude` executable past any shell shim, or null when absent. */
 export const find_claude_binary = () => {
     try {
-        return realpathSync( execFileSync( `which`, [ `claude` ], { encoding: `utf8` } ).trim() )
+        const paths = execFileSync( `which`, [ `-a`, `claude` ], { encoding: `utf8` } ).split( `\n` ).filter( Boolean )
+        return paths.map( path => realpathSync( path ) ).find( path => !is_shell_shim( path ) ) || null
     } catch {
         return null
     }
