@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.53.1 — 2026-10-23
+
+### Fixed
+- `watch --interactive` opens the session that was on screen even if the list shifted before the next redraw (picks by session id, not position).
+- Ctrl+C always wins over a pending second digit; pasted or buffered keys are read one at a time.
+- Quitting watch, or handing an attach to the shell wrapper, no longer waits on in-flight usage requests; SIGTERM/SIGHUP restore the terminal too.
+- Live watch status: redraws triggered milliseconds apart no longer mark a running session idle.
+
 ## 1.53.0 — 2026-10-23
 
 ### Added

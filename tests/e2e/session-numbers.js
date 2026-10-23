@@ -31,6 +31,7 @@ const record_path = id => join( root, `sessions`, `${ id }.json` )
 
 // Exercise a genuine foreground attach and keyboard detach. Inspecting the
 // attached client proves which session was selected, beyond a success message.
+// The detach lands on the interactive watch list, which ctrl+c closes.
 const terminal_driver = String.raw`
 import errno, os, pty, select, subprocess, sys, time
 
@@ -40,6 +41,7 @@ child = subprocess.Popen(sys.argv[3:], stdin=slave, stdout=slave, stderr=slave)
 os.close(slave)
 output = b''
 attached = False
+quit = False
 deadline = time.monotonic() + 25
 try:
     while True:
@@ -63,9 +65,14 @@ try:
             if not chunk:
                 break
             output += chunk
+            # Detaching lands on babysit watch --interactive; ctrl+c leaves it
+            if attached and not quit and b'ctrl+c to close' in output:
+                quit = True
+                os.write(master, b'\x03')
         elif child.poll() is not None:
             break
     assert attached, 'CLI exited before attaching: ' + repr(output)
+    assert quit, 'Detach did not land on babysit watch --interactive: ' + repr(output)
     assert child.wait(timeout=5) == 0, 'CLI failed after attach: ' + repr(output)
 finally:
     if child.poll() is None:

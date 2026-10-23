@@ -15,6 +15,7 @@ const FRAME_MS = 1_000
 const SETTLE_MS = 100
 // With 1 and 12 on screen, how long `1` waits for a second digit
 const CHORD_MS = 700
+const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
 export const USAGE_REFRESH_MS = 5 * 60_000
 const BAR_CELLS = 10
 
@@ -353,7 +354,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
     /**
      * One dashboard run, until Ctrl+C or a chosen session.
-     * @returns {Promise<number|null>} The session number to open, or null to quit
+     * @returns {Promise<string|null>} The chosen session's babysit id (or tmux name), or null to quit
      */
     const dashboard = async () => {
 
@@ -365,7 +366,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         let chord = null
         let tick = null
         let wake = () => {}
-        let selectable = []
+        let targets = new Map()
 
         const footer = () => interactive
             ? `Press any number to open the session, or ctrl+c to close${ typed ? `: ${ typed }…` : `` }`
@@ -378,19 +379,22 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             shown = frame
         }
 
+        // Idempotent, and it disarms a pending chord so ctrl+c always wins
         const stop = number => {
+            if( stopped ) return
+            clearTimeout( chord )
             chosen = number ?? null
             stopped = true
             wake()
         }
 
-        const choose = number => selectable.includes( number ) ? stop( number ) : ( typed = ``, show() )
+        const choose = number => targets.has( number ) ? stop( targets.get( number ) ) : ( typed = ``, show() )
 
         // Digits pick a session as soon as no longer number could still follow;
         // with 1 and 12 on screen, `1` waits CHORD_MS for a second digit
-        const on_key = data => {
+        const on_key = key => {
 
-            const key = data.toString()
+            if( stopped ) return
             if( key === `\x03` || key === `q` ) return stop()
             if( !interactive ) return
 
@@ -400,11 +404,12 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                 typed = ``
                 return show()
             }
-            if( !/^\d+$/.test( key ) ) return
+            if( !/^\d$/.test( key ) ) return
 
             typed += key
-            const exact = selectable.includes( Number( typed ) )
-            const longer = selectable.some( number => String( number ).length > typed.length && String( number ).startsWith( typed ) )
+            const numbers = [ ...targets.keys() ]
+            const exact = targets.has( Number( typed ) )
+            const longer = numbers.some( number => String( number ).length > typed.length && String( number ).startsWith( typed ) )
             if( exact && !longer ) return choose( Number( typed ) )
             if( !longer ) typed = ``
             else chord = setTimeout( () => choose( Number( typed ) ), CHORD_MS )
@@ -413,6 +418,9 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         }
 
         // Redraw early on registry changes and resizes; bursts settle first
+        // Pastes and buffered SSH input arrive as one chunk: one key at a time
+        const on_data = data => [ ...data.toString() ].forEach( on_key )
+
         let settle = null
         const nudge = () => {
             clearTimeout( settle )
@@ -425,11 +433,12 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
         const stop_watching = watch_fn( nudge )
         const on_signal = () => stop()
-        process.on( `SIGINT`, on_signal )
+        // Signals still restore the terminal through the finally below
+        SIGNALS.forEach( signal => process.on( signal, on_signal ) )
         output?.on?.( `resize`, resize )
         if( keyboard ) {
             input.setRawMode( true )
-            input.on( `data`, on_key )
+            input.on( `data`, on_data )
             input.resume()
         }
         if( screen ) write_fn( `\x1b[?1049h\x1b[?25l` )
@@ -461,7 +470,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                     return rendered
                 } )
 
-                selectable = frame.result?.numbers || []
+                targets = frame.result?.targets || new Map()
                 body = frame.lines
                 if( !stopped ) show()
 
@@ -475,10 +484,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             clearTimeout( settle )
             clearTimeout( tick )
             stop_watching()
-            process.off( `SIGINT`, on_signal )
+            SIGNALS.forEach( signal => process.off( signal, on_signal ) )
             output?.off?.( `resize`, resize )
             if( keyboard ) {
-                input.off( `data`, on_key )
+                input.off( `data`, on_data )
                 input.setRawMode( false )
                 input.pause()
             }
@@ -492,18 +501,19 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
     while( true ) {
 
-        const number = await dashboard()
-        if( number === null ) break
+        const session_id = await dashboard()
+        if( session_id === null ) break
 
         // A blocking attach comes back here on detach or close. Under the
         // shell-init wrapper nothing attached yet: babysit exits so the shell can.
         const attaches = attach_count_fn()
-        await open_fn( { session_id: String( number ), flags: {} } )
+        await open_fn( { session_id, flags: {} } )
         if( attach_count_fn() === attaches || round >= rounds ) break
 
     }
 
-    await pending
+    // A usage refresh still in flight is not awaited: quitting, or handing the
+    // attach to the wrapper, must not wait on providers (index.js exits after watch)
 
 }
 
