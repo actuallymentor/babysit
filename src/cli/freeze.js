@@ -5,13 +5,21 @@ import { run } from '../utils/exec.js'
 import { detect_mode } from '../utils/platform.js'
 import { docker_command_prefix } from '../docker/run.js'
 import { list_sessions, set_status_label } from '../tmux/session.js'
-import { list_stored_sessions, session_original_workspace, update_session } from '../sessions/store.js'
+import { list_stored_sessions, load_session, session_original_workspace, update_session } from '../sessions/store.js'
+import { acquire_session_lock } from '../sessions/lock.js'
+import { inspect_docker_container_state } from '../docker/file_transport.js'
 import { format_session_status_label, order_active_sessions, stored_by_tmux } from './list.js'
 import { select_active_session } from './archive.js'
+import { is_monitor_alive } from './monitor_process.js'
 
-// The monitor reads frozen_at once per tick (1s); give an in-flight tick time
-// to finish before the pause, so nothing it types lands in a frozen pane
-const MONITOR_SETTLE_MS = 1_500
+// How long freeze waits for the monitor to stand down: a babysit action still
+// typing (segmented rules wait for the agent between messages) holds it off
+const ACK_TIMEOUT_MS = 30_000
+const ACK_POLL_MS = 250
+
+// A mark this young may belong to a freeze still waiting for its ack, so
+// reconciliation leaves it alone even though the container still runs
+export const FREEZE_GRACE_MS = 2 * ACK_TIMEOUT_MS
 
 // Docker refuses to pause twice or unpause a running container; both mean "already there"
 const ALREADY_PATTERN = /already paused|is not paused/i
@@ -74,14 +82,71 @@ const select_sessions = ( selectors, active, stored, freeze ) => {
 }
 
 /**
+ * Whether a session's frozen mark still holds. A mark is stale once Docker
+ * says the container is not paused (reboot, Docker restart, outside unpause,
+ * a freeze killed before its pause), unless it is young enough to be a freeze
+ * in progress. When Docker cannot answer, the mark stands.
+ * @param {Object} session - Latest stored session
+ * @param {Object} [deps]
+ * @param {Function} [deps.inspect] - Container state lookup
+ * @param {Function} [deps.update] - Session record writer
+ * @param {number} [deps.now] - Epoch milliseconds
+ * @returns {Promise<boolean>} Whether the session is still frozen
+ */
+export const reconcile_frozen = async ( session, {
+    inspect = inspect_docker_container_state,
+    update = update_session,
+    now = Date.now(),
+} = {} ) => {
+
+    if( !session?.frozen_at ) return false
+    if( now - Date.parse( session.frozen_at ) < FREEZE_GRACE_MS ) return true
+
+    let state
+    try {
+        state = await inspect( session.container_id )
+    } catch ( error ) {
+        log.debug( `Frozen state unknown for ${ session.babysit_id }: ${ error.message }` )
+        return true
+    }
+    if( state === `paused` ) return true
+
+    log.info( `Session ${ session.babysit_id } is no longer paused; clearing its frozen mark` )
+    update( session.babysit_id, { frozen_at: null, frozen_ack: null } )
+    return false
+
+}
+
+/**
+ * Wait until the session's monitor confirms it stopped touching the pane for
+ * this freeze. No live monitor means nobody to wait for.
+ * @param {string} babysit_id - Session id
+ * @param {string} frozen_at - The mark this freeze wrote
+ * @param {Object} deps - load, monitor_alive and wait seams
+ * @returns {Promise<boolean>} Whether it is safe to pause
+ */
+const monitor_stood_down = async ( babysit_id, frozen_at, { load, monitor_alive, wait_fn } ) => {
+
+    for( let waited = 0; waited <= ACK_TIMEOUT_MS; waited += ACK_POLL_MS ) {
+        const latest = load( babysit_id )
+        if( latest?.frozen_ack === frozen_at ) return true
+        if( !monitor_alive( latest?.monitor_pid, latest?.monitor_token, { boot_id: latest?.boot_id } ) ) return true
+        await wait_fn( ACK_POLL_MS )
+    }
+    return false
+
+}
+
+/**
  * `babysit freeze` / `babysit unfreeze`: pause session containers in place and
  * resume them later, mid-turn included. Host only, Docker sessions only.
  *
- * Freeze marks the record first so the monitor stands down (no idle nudges,
- * watchdog verdicts or dialog answers queued into a frozen pane), then pauses.
- * Unfreeze resumes first, then clears the mark so the monitor restarts its
- * timers against a live agent. Freezing ends at reboot or Docker restart; the
- * next monitor start drops a stale mark.
+ * Each session transitions under its own lock. Freeze marks the record, waits
+ * for the monitor to acknowledge it stood down (no idle nudges, watchdog
+ * verdicts, dialog answers or action segments typed into a frozen pane), then
+ * pauses. Unfreeze resumes first, then clears the mark so the monitor restarts
+ * its timers against a live agent. An interrupted freeze rolls its marks back;
+ * monitors reconcile any mark Docker no longer backs (see reconcile_frozen).
  * @param {Object} cmd - Parsed command { verb, session_ids }
  * @param {Object} [deps]
  * @returns {Promise<number>} Exit code
@@ -90,7 +155,10 @@ export const cmd_freeze = async ( cmd, {
     mode = detect_mode,
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
+    load_session_fn = load_session,
     update_session_fn = update_session,
+    lock_fn = id => acquire_session_lock( id, { namespace: `freeze`, wait_ms: 2 * ACK_TIMEOUT_MS } ),
+    monitor_alive = is_monitor_alive,
     pause_fn = set_container_paused,
     label_fn = set_status_label,
     wait_fn = delay,
@@ -112,45 +180,71 @@ export const cmd_freeze = async ( cmd, {
         return 0
     }
 
-    // Containerless sessions run as host processes: no cgroup freezer to use
-    const docker = selected.filter( session => {
-        if( session.container_id ) return true
-        print( `${ label( session ) } runs without Docker; only Docker sessions can be frozen.` )
-        return false
-    } )
-    const pending = docker.filter( session => {
-        if( Boolean( session.frozen_at ) !== freeze ) return true
-        print( `${ label( session ) } is already ${ freeze ? `frozen` : `running` }.` )
-        return false
-    } )
-
-    if( freeze && pending.length ) {
-        pending.forEach( session => update_session_fn( session.babysit_id, { frozen_at: new Date().toISOString() } ) )
-        await wait_fn( MONITOR_SETTLE_MS )
+    // Marks written but not yet backed by a pause; an interrupt rolls them back
+    const unbacked = new Set()
+    const roll_back = () => unbacked.forEach( id => update_session_fn( id, { frozen_at: null, frozen_ack: null } ) )
+    const on_signal = signal => {
+        roll_back()
+        process.exit( signal === `SIGINT` ? 130 : 143 )
     }
+    const signals = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
+    signals.forEach( signal => process.on( signal, on_signal ) )
 
-    let failed = docker.length < selected.length
+    const transition = async session => {
 
-    for( const session of pending ) {
-
-        try {
-            await pause_fn( session.container_id, freeze )
-        } catch ( error ) {
-            // A freeze that did not happen must not leave the monitor standing down
-            if( freeze ) update_session_fn( session.babysit_id, { frozen_at: null } )
-            print( `Could not ${ cmd.verb } ${ label( session ) }: ${ error.message }` )
-            failed = true
-            continue
+        // Containerless sessions run as host processes: no cgroup freezer to use
+        if( !session.container_id ) {
+            print( `${ label( session ) } runs without Docker; only Docker sessions can be frozen.` )
+            return false
         }
 
-        if( !freeze ) update_session_fn( session.babysit_id, { frozen_at: null } )
+        const release = lock_fn( session.babysit_id )
+        try {
+
+            // Another freeze or unfreeze may have run while this one waited
+            const latest = load_session_fn( session.babysit_id ) || session
+            if( Boolean( latest.frozen_at ) === freeze ) {
+                print( `${ label( session ) } is already ${ freeze ? `frozen` : `running` }.` )
+                return true
+            }
+
+            if( freeze ) {
+                const frozen_at = new Date().toISOString()
+                unbacked.add( session.babysit_id )
+                update_session_fn( session.babysit_id, { frozen_at, frozen_ack: null } )
+                if( !await monitor_stood_down( session.babysit_id, frozen_at, { load: load_session_fn, monitor_alive, wait_fn } ) ) {
+                    throw new Error( `its monitor is still running a babysit action; try again shortly` )
+                }
+                await pause_fn( session.container_id, true )
+                unbacked.delete( session.babysit_id )
+            } else {
+                await pause_fn( session.container_id, false )
+                update_session_fn( session.babysit_id, { frozen_at: null, frozen_ack: null } )
+            }
+
+        } catch ( error ) {
+            // A freeze that did not happen must not leave the monitor standing down
+            if( unbacked.delete( session.babysit_id ) ) update_session_fn( session.babysit_id, { frozen_at: null, frozen_ack: null } )
+            print( `Could not ${ cmd.verb } ${ label( session ) }: ${ error.message }` )
+            return false
+        } finally {
+            release()
+        }
+
         await label_fn( session.tmux_session, frozen_status_label( session, freeze ) ).catch( error => log.debug( `Could not refresh the tmux label: ${ error.message }` ) )
         print( freeze
             ? `Froze ${ label( session ) }; babysit unfreeze resumes it where it left off.`
             : `Unfroze ${ label( session ) }.` )
+        return true
 
     }
 
-    return failed ? 1 : 0
+    try {
+        // Sessions are independent: wait for their monitors side by side
+        const results = await Promise.all( selected.map( transition ) )
+        return results.every( Boolean ) ? 0 : 1
+    } finally {
+        signals.forEach( signal => process.off( signal, on_signal ) )
+    }
 
 }

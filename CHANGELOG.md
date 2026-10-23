@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.55.1 — 2026-10-23
+
+### Fixed
+- `babysit freeze` waits for the session monitor to acknowledge it stood down (a babysit action still typing finishes first; 30s limit, then the freeze is rolled back) instead of a fixed delay.
+- Freeze/unfreeze run under a per-session lock, so concurrent runs cannot leave a paused container unmarked.
+- Ctrl+C during freeze rolls back marks not yet backed by a pause; monitors re-check every 30s whether Docker still backs a mark, keep it when Docker cannot answer or a freeze is still in progress, and clear it otherwise.
+
 ## 1.55.0 — 2026-10-23
 
 ### Added

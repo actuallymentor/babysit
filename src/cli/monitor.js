@@ -21,7 +21,8 @@ import { judge_session } from '../babysit/judge.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { capture_history } from '../tmux/capture.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
-import { inspect_docker_container_state, remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import { reconcile_frozen } from './freeze.js'
 import { start_usage_sampler } from '../docker/stats.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
@@ -117,6 +118,9 @@ export const create_session_logout_handler = ( session, {
     }
 
 }
+
+// While frozen, how often the monitor asks Docker whether the container is still paused
+const FROZEN_RECHECK_MS = 30_000
 
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
@@ -290,15 +294,6 @@ export const cmd_monitor = async ( cmd ) => {
         status: `active`,
     } )
 
-    // A freeze ends with a reboot, a Docker restart or an outside `docker
-    // unpause`; a mark left behind would keep this monitor standing down forever
-    if( session.frozen_at ) {
-        const state = await inspect_docker_container_state( session.container_id ).catch( () => null )
-        if( state !== `paused` ) {
-            log.info( `Session ${ session.babysit_id } is no longer paused; clearing its frozen mark` )
-            update_session( session.babysit_id, { frozen_at: null } )
-        }
-    }
 
     const existing_tmpfiles = session.creds_tmpfiles || (
         session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {}
@@ -308,6 +303,7 @@ export const cmd_monitor = async ( cmd ) => {
     )
 
     const identity_reader = create_identity_reader( session )
+    let frozen_checked_at = 0
     let observed_identity = session.agent_session_id
     let { continuation } = session
 
@@ -530,7 +526,17 @@ export const cmd_monitor = async ( cmd ) => {
                 }
             },
             input_allowed: () => ![ `pending`, `sending`, `blocked` ].includes( load_session( session.babysit_id )?.continuation ),
-            is_frozen: () => Boolean( load_session( session.babysit_id )?.frozen_at ),
+            // The record decides each tick; Docker is asked at most every
+            // FROZEN_RECHECK_MS whether a mark is stale (reboot, outside
+            // unpause, a freeze killed before its pause), the first time at once
+            is_frozen: async () => {
+                const latest = load_session( session.babysit_id )
+                if( !latest?.frozen_at ) return false
+                if( Date.now() - frozen_checked_at < FROZEN_RECHECK_MS ) return true
+                frozen_checked_at = Date.now()
+                return reconcile_frozen( latest )
+            },
+            on_frozen: standing => update_session( session.babysit_id, { frozen_ack: standing ? load_session( session.babysit_id )?.frozen_at ?? null : null } ),
             on_session_id: ( id ) => {
                 if( session.agent_session_id_source !== `structured` ) update_session( session.babysit_id, { agent_session_id: id } )
             },

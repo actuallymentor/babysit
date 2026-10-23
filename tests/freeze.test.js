@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'bun:test'
 
-import { cmd_freeze, frozen_status_label, set_container_paused } from '../src/cli/freeze.js'
+import { cmd_freeze, FREEZE_GRACE_MS, frozen_status_label, reconcile_frozen, set_container_paused } from '../src/cli/freeze.js'
 import { start_monitor } from '../src/babysit/monitor.js'
 import { close_session } from '../src/cli/recover.js'
 import { print_active_sessions_table } from '../src/cli/list.js'
@@ -12,13 +12,20 @@ const stored_session = ( id, extra = {} ) => ( {
 } )
 
 // A freeze run against an in-memory registry; events record the order of effects
-const run_freeze = async ( verb, session_ids, { stored, mode = `host`, pause = async () => {} } = {} ) => {
+// The fake monitor acknowledges a mark on its next poll unless `ack` is false
+const run_freeze = async ( verb, session_ids, { stored, mode = `host`, pause = async () => {}, ack = true, monitor = true } = {} ) => {
     const events = []
     const records = new Map( stored.map( session => [ session.babysit_id, { ...session } ] ) )
     const code = await cmd_freeze( { verb, session_ids }, {
         mode: () => mode,
         list_sessions_fn: async () => stored.map( session => ( { name: session.tmux_session, attached: false } ) ),
         list_stored_sessions_fn: () => [ ...records.values() ],
+        load_session_fn: id => ( { ...records.get( id ) } ),
+        lock_fn: id => {
+            events.push( `lock ${ id }` )
+            return () => events.push( `release ${ id }` )
+        },
+        monitor_alive: () => monitor,
         update_session_fn: ( id, updates ) => {
             events.push( `update ${ id } ${ updates.frozen_at ? `frozen` : `null` }` )
             Object.assign( records.get( id ), updates )
@@ -28,7 +35,12 @@ const run_freeze = async ( verb, session_ids, { stored, mode = `host`, pause = a
             await pause( container )
         },
         label_fn: async ( tmux, label ) => events.push( `label ${ tmux } ${ label.endsWith( `FROZEN` ) ? `FROZEN` : `plain` }` ),
-        wait_fn: async () => events.push( `settle` ),
+        wait_fn: async () => {
+            events.push( `poll` )
+            records.forEach( record => {
+                if( ack && record.frozen_at ) record.frozen_ack = record.frozen_at
+            } )
+        },
         print: message => events.push( message ),
     } )
     return { code, events, records }
@@ -36,16 +48,30 @@ const run_freeze = async ( verb, session_ids, { stored, mode = `host`, pause = a
 
 describe( `babysit freeze`, () => {
 
-    it( `marks first so the monitor stands down, then pauses`, async () => {
+    it( `marks, waits for the monitor to stand down, then pauses, all under the session lock`, async () => {
         const { code, events, records } = await run_freeze( `freeze`, [ `1` ], { stored: [ stored_session( `a` ) ] } )
         expect( code ).toBe( 0 )
-        expect( events.slice( 0, 4 ) ).toEqual( [ `update a frozen`, `settle`, `pause ca`, `label babysit_a FROZEN` ] )
+        expect( events.slice( 0, 6 ) ).toEqual( [ `lock a`, `update a frozen`, `poll`, `pause ca`, `release a`, `label babysit_a FROZEN` ] )
         expect( records.get( `a` ).frozen_at ).toBeTruthy()
+    } )
+
+    it( `does not wait when no monitor is alive`, async () => {
+        const { events } = await run_freeze( `freeze`, [ `1` ], { stored: [ stored_session( `a` ) ], ack: false, monitor: false } )
+        expect( events ).not.toContain( `poll` )
+        expect( events ).toContain( `pause ca` )
+    } )
+
+    it( `gives up and drops the mark when the monitor never stands down`, async () => {
+        const { code, events, records } = await run_freeze( `freeze`, [ `1` ], { stored: [ stored_session( `a` ) ], ack: false } )
+        expect( code ).toBe( 1 )
+        expect( events ).not.toContain( `pause ca` )
+        expect( records.get( `a` ).frozen_at ).toBeNull()
+        expect( events.some( event => event.includes( `still running a babysit action` ) ) ).toBe( true )
     } )
 
     it( `unfreezes by resuming first, then clearing the mark`, async () => {
         const { events, records } = await run_freeze( `unfreeze`, [ `all` ], { stored: [ stored_session( `a`, { frozen_at: `2026-10-23T00:00:00Z` } ), stored_session( `b` ) ] } )
-        expect( events.slice( 0, 3 ) ).toEqual( [ `unpause ca`, `update a null`, `label babysit_a plain` ] )
+        expect( events.slice( 0, 5 ) ).toEqual( [ `lock a`, `unpause ca`, `update a null`, `release a`, `label babysit_a plain` ] )
         expect( events ).not.toContain( `unpause cb` )
         expect( records.get( `a` ).frozen_at ).toBeNull()
     } )
@@ -74,6 +100,21 @@ describe( `babysit freeze`, () => {
         } )
         expect( code ).toBe( 1 )
         expect( records.get( `a` ).frozen_at ).toBeNull()
+    } )
+
+    it( `reconciles marks Docker no longer backs, and keeps them when unsure or young`, async () => {
+        const updates = []
+        const old = { babysit_id: `a`, container_id: `ca`, frozen_at: new Date( 0 ).toISOString() }
+        const now = FREEZE_GRACE_MS * 10
+        const update = ( id, values ) => updates.push( [ id, values.frozen_at ] )
+        expect( await reconcile_frozen( old, { inspect: async () => `paused`, update, now } ) ).toBe( true )
+        expect( await reconcile_frozen( old, { inspect: async () => {
+            throw new Error( `timeout` )
+        }, update, now } ) ).toBe( true )
+        expect( await reconcile_frozen( { ...old, frozen_at: new Date( now - 1_000 ).toISOString() }, { inspect: async () => `running`, update, now } ) ).toBe( true )
+        expect( updates ).toEqual( [] )
+        expect( await reconcile_frozen( old, { inspect: async () => `running`, update, now } ) ).toBe( false )
+        expect( updates ).toEqual( [ [ `a`, null ] ] )
     } )
 
     it( `only runs on the host`, async () => {
@@ -113,6 +154,7 @@ describe( `monitor while frozen`, () => {
         let now = 1_000_000
         const captured = []
         const fired = []
+        const acks = []
         const original_now = Date.now
         Date.now = () => now
         try {
@@ -122,7 +164,8 @@ describe( `monitor while frozen`, () => {
                 rules: [ { on: { type: `idle` }, do: `nudge`, timeout_s: 10, last_fired_at: 0 } ],
                 agent: { name: `codex` },
                 // Frozen for ticks 1–4: twenty quiet seconds that must not count
-                is_frozen: () => tick >= 1 && tick <= 4,
+                is_frozen: async () => tick >= 1 && tick <= 4,
+                on_frozen: standing => acks.push( [ tick, standing ] ),
                 has_session_fn: async () => tick < 8,
                 capture_pane_fn: async () => {
                     captured.push( tick )
@@ -141,8 +184,48 @@ describe( `monitor while frozen`, () => {
             Date.now = original_now
         }
         expect( captured.filter( at => at >= 1 && at <= 4 ) ).toEqual( [] )
+        expect( acks ).toEqual( [ [ 1, true ], [ 5, false ] ] )
         // Thawed at tick 5: the 10s idle rule needs two more quiet ticks, not zero
         expect( fired[0] ).toBeGreaterThanOrEqual( 7 )
+    } )
+
+} )
+
+describe( `monitor asked to freeze mid-action`, () => {
+
+    it( `acknowledges only after the running action finished`, async () => {
+        let tick = 0
+        let finish_action = null
+        let now = 1_000_000
+        const acks = []
+        const original_now = Date.now
+        Date.now = () => now
+        try {
+            await start_monitor( {
+                session_name: `babysit_busy`,
+                config: { idle_timeout_s: 1 },
+                rules: [ { on: { type: `idle` }, do: `nudge`, timeout_s: 1, last_fired_at: 0 } ],
+                agent: { name: `codex` },
+                is_frozen: async () => tick >= 2,
+                on_frozen: standing => acks.push( [ tick, standing ] ),
+                has_session_fn: async () => tick < 8,
+                capture_pane_fn: async () => `› same screen`,
+                publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+                // The action holds until tick 5, like a segmented rule waiting for the agent
+                execute_action_fn: () => new Promise( resolve => finish_action = resolve ),
+                write_loop_deadline_fn: () => {},
+                wait_fn: async () => {
+                    await new Promise( resolve => setTimeout( resolve, 0 ) )
+                    tick++
+                    now += 5_000
+                    if( tick === 5 ) finish_action?.()
+                },
+            } )
+        } finally {
+            Date.now = original_now
+        }
+        expect( finish_action ).not.toBeNull()
+        expect( acks[0]?.[0] ).toBeGreaterThanOrEqual( 5 )
     } )
 
 } )
