@@ -40,20 +40,23 @@ export const stored_by_tmux = stored_sessions => {
  * @param {Object} [options] - Pane capture and wait seams
  * @returns {Promise<Object[]>} Sessions with freshly observed activity
  */
+// One visible-pane sample; null when tmux could not capture it
+const sample_pane = async ( session, capture ) => {
+    // Exited fork parents have no pane left to observe
+    if( session.exited ) return ``
+    try {
+        return strip_ansi( await capture( `=${ session.name }:` ) )
+    } catch {
+        return null
+    }
+}
+
 export const observe_session_activity = async ( sessions, stored_sessions, {
     capture = capture_pane,
     wait = delay,
 } = {} ) => {
 
-    const sample = async session => {
-        // Exited fork parents have no pane left to observe
-        if( session.exited ) return ``
-        try {
-            return strip_ansi( await capture( `=${ session.name }:` ) )
-        } catch {
-            return null
-        }
-    }
+    const sample = session => sample_pane( session, capture )
 
     const before = await Promise.all( sessions.map( sample ) )
     await wait( 1_000 )
@@ -69,6 +72,40 @@ export const observe_session_activity = async ( sessions, stored_sessions, {
 
         return { ...session, agent_status: observed_status }
     } )
+
+}
+
+/**
+ * Activity observer for redraw loops: each call samples every pane once and
+ * compares it with the previous call, so frames never wait out the 1s gap
+ * observe_session_activity needs. A session seen for the first time keeps the
+ * status its monitor last reported until the next frame.
+ * @param {Object} [options] - Pane capture seam
+ * @returns {Function} observe_activity_fn for render_active_sessions
+ */
+export const track_session_activity = ( { capture = capture_pane } = {} ) => {
+
+    let previous = new Map()
+
+    return async ( sessions, stored_sessions ) => {
+
+        const screens = await Promise.all( sessions.map( session => sample_pane( session, capture ) ) )
+        const by_tmux = stored_by_tmux( stored_sessions )
+        const before = previous
+        previous = new Map( sessions.map( ( session, index ) => [ session.name, screens[index] ] ) )
+
+        return sessions.map( ( session, index ) => {
+            if( session.exited ) return { ...session, agent_status: `exited` }
+            if( screens[index] === null ) return { ...session, agent_status: `unknown` }
+
+            const last = before.get( session.name )
+            if( last === undefined || last === null ) return session
+
+            const agent = by_tmux.get( session.name )?.agent
+            return { ...session, agent_status: agent_status( screens[index], agent, last === screens[index] ? 1 : 0 ) }
+        } )
+
+    }
 
 }
 
@@ -561,6 +598,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
  * @param {Function} [options.version_check_fn] - Newer-release lookup
+ * @returns {Promise<{ numbers: number[] }>} Shown selectors that can be opened (exited fork parents excluded)
  */
 export const render_active_sessions = async ( {
     all = false,
@@ -589,7 +627,7 @@ export const render_active_sessions = async ( {
         console.log( ordered_sessions.length
             ? `No unarchived babysit sessions. Run babysit list to see archived ones.`
             : `No active babysit sessions.` )
-        return
+        return { numbers: [] }
     }
 
     const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
@@ -609,6 +647,8 @@ export const render_active_sessions = async ( {
     // Cached lookup: never a network wait in front of the table.
     const { latest } = version_check_fn()
     if( latest ) console.log( paint( `New babysit version available: ${ latest } (run babysit update)`, `orange` ) + `\n` )
+
+    return { numbers: numbers.filter( ( _, index ) => !tmux_sessions[index].exited ) }
 
 }
 

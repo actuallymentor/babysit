@@ -25,6 +25,7 @@ Usage:
   babysit clean --config FILE|DIR/    Strip full-line comments and blank lines from config yaml; inline comments stay
   babysit list [--all]                 List active sessions and launch flags
   babysit watch [--usage|--all]        Live sessions with usage headroom (--usage: usage only, --all: both)
+  babysit watch --interactive          Same, and typing a session number opens it; detaching comes back here
   babysit open [id|name|number]        Attach to an active session; with shell-init, detaching lands in its workspace
   babysit shell-init [bash|zsh|fish]   Shell function so open can cd: eval "$(babysit shell-init)" in your rc
   babysit resume [id|number] [flags]  List this workspace's sessions or resume one
@@ -53,6 +54,7 @@ Usage:
                                        Offers a one-year Claude token (claude setup-token) when none is set
   babysit auth accounts [remove NAME]  Claude subscriptions; add one with auth init --claude-token --name NAME
   babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
+  babysit update --auto                Ask to turn background updates on new releases on or off
 
 Agents: ${ agents }
 

@@ -1,4 +1,4 @@
-import { spawn, execSync } from 'child_process'
+import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'fs'
 import { join, relative, resolve } from 'path'
@@ -57,7 +57,7 @@ import { run_auth_checks_with_progress } from './auth_progress.js'
 import { start_startup_status } from './startup_status.js'
 import { auth_checker_hint } from './auth.js'
 import { apply_loop } from '../modes/loop.js'
-import { create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
+import { attach_session, create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
 import { capture_pane, stop_pipe_pane } from '../tmux/capture.js'
 import {
@@ -1884,16 +1884,10 @@ async function start_session( cmd ) {
 
     // Hand the user's terminal over to tmux. Blocks until they detach
     // (Ctrl+B d) or the agent exits and the session terminates.
+    // Stays in-process even under the shell-init wrapper (empty env): the
+    // re-attach/resume hint below needs babysit alive after the detach.
     log.info( `Attaching to tmux session: ${ session_name }` )
-    try {
-        time_phase_sync( `foreground tmux attach`, () => execSync(
-            `tmux -L ${ TMUX_SOCKET } attach -t ${ JSON.stringify( session_name ) }`,
-            { stdio: `inherit` }
-        ), { slow_ms: Infinity } )
-    } catch ( e ) {
-        // tmux exits non-zero on certain detach scenarios — that's normal
-        log.debug( `tmux attach exited: ${ e.message }` )
-    }
+    time_phase_sync( `foreground tmux attach`, () => attach_session( session_name, { env: {} } ), { slow_ms: Infinity } )
 
     // Tell the user how to come back to or resume this session. Both branches
     // print the command unquoted on its own line so a triple-click selects it

@@ -35,8 +35,11 @@ const AUTH_VERBS = [ `status`, `check`, `init`, `accounts` ]
 const FORK_FLAGS = [ `share`, `takeover`, `regular`, `history` ]
 export const FORK_NEGATABLE_FLAGS = [ `yolo`, `docker`, `adb`, `ios`, `loop` ]
 
-// `babysit watch` only: --usage shows the usage panel alone
-const WATCH_FLAGS = [ `usage` ]
+// `babysit watch` only: --usage shows the usage panel alone, --interactive opens sessions by number
+const WATCH_FLAGS = [ `usage`, `interactive` ]
+
+// `babysit update` only: --auto toggles automatic background updates
+const UPDATE_FLAGS = [ `auto` ]
 
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
@@ -68,7 +71,7 @@ export const parse_args = ( argv ) => {
     // numbers (01 -> 1, large IDs -> 1e+33). Give bare booleans an explicit
     // value for parsing only; agent passthrough retains the original tokens.
     const separator = prepared.indexOf( `--` )
-    const command_booleans = named[0] === `fork` ? FORK_FLAGS : named[0] === `watch` ? WATCH_FLAGS : []
+    const command_booleans = named[0] === `fork` ? FORK_FLAGS : named[0] === `watch` ? WATCH_FLAGS : named[0] === `update` ? UPDATE_FLAGS : []
     const booleans = [ ...BOOLEAN_FLAGS, ...command_booleans ]
     const parseable = prepared.map( ( arg, index ) => {
         if( separator !== -1 && index > separator ) return arg
@@ -114,6 +117,9 @@ export const parse_args = ( argv ) => {
         all: ( verb === `list` || verb === `watch` || uses_resume_history ) && ( args.all || false ),
         // `watch --usage`: the account usage panel alone
         usage: verb === `watch` && ( args.usage || false ),
+        interactive: verb === `watch` && ( args.interactive || false ),
+        // `update --auto`: ask whether to update automatically
+        auto: verb === `update` && ( args.auto || false ),
         // `-n N` caps the resume history listing; numbered resumes ignore it.
         limit: resume_listing ? normalise_limit( args.n ) : null,
         // `list --watch` is retired in favor of `babysit watch`; kept to explain the move.

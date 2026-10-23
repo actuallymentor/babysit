@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.53.0 — 2026-10-23
+
+### Added
+- `babysit watch --interactive`: type a session number to open it ("Press any number to open the session, or ctrl+c to close"); multi-digit numbers settle on Enter or a short pause.
+- Detaching (ctrl+b d) or a session closing lands on `babysit watch --interactive` after `babysit open`, a session start or `fork`, on a terminal. The `babysit shell-init` wrapper loops there too; re-run `eval "$(babysit shell-init)"` (new shells pick it up).
+- `babysit update --auto` asks "Enable automatic updates? Y/n". When on, any babysit command that knows of a newer release runs `babysit update` once in the background (log `~/.babysit/auto-update.log`, retried a day later on failure). Off by default.
+
+### Changed
+- `babysit watch` is live: panes sampled every second (was ~3s), instant redraw when a session starts, closes or is archived, drawn in place on the alternate screen and only when something changed, so no flicker.
+
 ## 1.52.1 — 2026-10-22
 
 ### Fixed

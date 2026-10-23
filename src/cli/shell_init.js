@@ -7,34 +7,43 @@ import { WRAPPER_ENV } from '../utils/wrapper_env.js'
 // The attach file does the same for tmux: babysit exits before the attach, so
 // no idle babysit process (swapped out on a busy host) stalls the detach.
 // The cd comes first: opening a session moves the shell to the session's base
-// directory, and detaching leaves it there.
+// directory, and detaching leaves it there. Detaching or closing the session
+// lands on `babysit watch --interactive`, where picking a number loops again.
 const POSIX = `babysit() {
     local babysit_cd_file babysit_attach_file babysit_status babysit_socket babysit_target
-    babysit_cd_file="$(mktemp)" || { command babysit "$@"; return; }
-    babysit_attach_file="$(mktemp)" || { rm -f "$babysit_cd_file"; command babysit "$@"; return; }
-    BABYSIT_CD_FILE="$babysit_cd_file" BABYSIT_ATTACH_FILE="$babysit_attach_file" command babysit "$@"
-    babysit_status=$?
-    if [ -s "$babysit_cd_file" ]; then cd -- "$(cat "$babysit_cd_file")" || true; fi
-    if [ -s "$babysit_attach_file" ]; then
-        { IFS= read -r babysit_socket; IFS= read -r babysit_target; } < "$babysit_attach_file"
+    while :; do
+        babysit_cd_file="$(mktemp)" || { command babysit "$@"; return; }
+        babysit_attach_file="$(mktemp)" || { rm -f "$babysit_cd_file"; command babysit "$@"; return; }
+        BABYSIT_CD_FILE="$babysit_cd_file" BABYSIT_ATTACH_FILE="$babysit_attach_file" command babysit "$@"
+        babysit_status=$?
+        if [ -s "$babysit_cd_file" ]; then cd -- "$(cat "$babysit_cd_file")" || true; fi
+        babysit_socket=
+        if [ -s "$babysit_attach_file" ]; then
+            { IFS= read -r babysit_socket; IFS= read -r babysit_target; } < "$babysit_attach_file"
+        fi
+        rm -f "$babysit_cd_file" "$babysit_attach_file"
+        [ -n "$babysit_socket" ] || return $babysit_status
         command tmux -L "$babysit_socket" attach -t "$babysit_target"
-    fi
-    rm -f "$babysit_cd_file" "$babysit_attach_file"
-    return $babysit_status
+        [ -t 0 ] && [ -t 1 ] || return $babysit_status
+        set -- watch --interactive
+    done
 }`
 
 const FISH = `function babysit
-    set -l babysit_cd_file (mktemp); or begin; command babysit $argv; return; end
-    set -l babysit_attach_file (mktemp); or begin; rm -f $babysit_cd_file; command babysit $argv; return; end
-    BABYSIT_CD_FILE=$babysit_cd_file BABYSIT_ATTACH_FILE=$babysit_attach_file command babysit $argv
-    set -l babysit_status $status
-    test -s $babysit_cd_file; and cd (cat $babysit_cd_file)
-    if test -s $babysit_attach_file
-        set -l babysit_attach (cat $babysit_attach_file)
+    while true
+        set -l babysit_cd_file (mktemp); or begin; command babysit $argv; return; end
+        set -l babysit_attach_file (mktemp); or begin; rm -f $babysit_cd_file; command babysit $argv; return; end
+        BABYSIT_CD_FILE=$babysit_cd_file BABYSIT_ATTACH_FILE=$babysit_attach_file command babysit $argv
+        set -l babysit_status $status
+        test -s $babysit_cd_file; and cd (cat $babysit_cd_file)
+        set -l babysit_attach
+        test -s $babysit_attach_file; and set babysit_attach (cat $babysit_attach_file)
+        rm -f $babysit_cd_file $babysit_attach_file
+        test -n "$babysit_attach[1]"; or return $babysit_status
         command tmux -L $babysit_attach[1] attach -t $babysit_attach[2]
+        isatty stdin; and isatty stdout; or return $babysit_status
+        set argv watch --interactive
     end
-    rm -f $babysit_cd_file $babysit_attach_file
-    return $babysit_status
 end`
 
 export const SHELLS = [ `bash`, `zsh`, `fish` ]

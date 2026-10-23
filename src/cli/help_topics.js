@@ -197,10 +197,17 @@ Examples:
   babysit list
   babysit list --all`,
 
-    watch: () => `Usage: babysit watch [--usage | --all]
+    watch: () => `Usage: babysit watch [--usage | --all] [--interactive]
 
-Live dashboard, redrawn every 2s: the babysit list tree without archived
-sessions (numbers unchanged) with a USAGE column. Usage refreshes every 5 min.
+Live dashboard: the babysit list tree without archived sessions (numbers
+unchanged) with a USAGE column. Panes are sampled every second and the list
+redraws the moment a session starts, closes or is archived; only changed
+frames are drawn. Usage refreshes every 5 min.
+
+--interactive: type a session number to open it (Enter or a short pause
+settles multi-digit numbers), ctrl+c to close. Detaching (ctrl+b d) or the
+session closing comes back to this list; after babysit open, start or fork in
+a terminal that happens on its own.
 
 USAGE column: the usage bar for the worst rate window of the session agent's
 account, filled by the share used (extra usage, spend caps and balances do not
@@ -212,11 +219,13 @@ babysit usage. With two or more Claude accounts, each gets its own rows
 (claude / <account>).
 
 Options:
-  --usage    Only the usage panel
-  --all      Session tree plus the usage panel
+  --usage        Only the usage panel
+  --all          Session tree plus the usage panel
+  --interactive  Open a session by typing its number
 
 Examples:
   babysit watch
+  babysit watch --interactive
   babysit watch --usage
   babysit watch --all`,
 
@@ -506,14 +515,20 @@ Examples:
   babysit web init
   BABYSIT_WEB_UID="$(id -u)" BABYSIT_WEB_GID="$(id -g)" docker compose -f examples/compose.web.local.yml up --build -d`,
 
-    update: () => `Usage: babysit update
+    update: () => `Usage: babysit update [--auto]
 
 Updates Babysit itself, the ~/.agents repository, the Docker image (120s pull
-limit), and the host agent CLIs, then shows the image version. Nothing updates
-implicitly. Running sessions keep their image; babysit restart moves one over.
+limit), and the host agent CLIs, then shows the image version. Running sessions
+keep their image; babysit restart moves one over.
 
-Example:
-  babysit update`,
+--auto asks "Enable automatic updates? Y/n". When on, any babysit command that
+knows of a newer release (checked at most every 6 hours) runs babysit update in
+the background once, logging to ~/.babysit/auto-update.log; a failed attempt
+retries a day later. Off by default.
+
+Examples:
+  babysit update
+  babysit update --auto`,
 
     usage: () => usage_help,
     effort: () => effort_help,
