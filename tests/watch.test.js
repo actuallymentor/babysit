@@ -428,7 +428,7 @@ describe( `cmd_watch`, () => {
         } )
 
         it( `ignores the digits inside key escape sequences`, async () => {
-            const { opened } = await interactive_run( [ `\x1b[3~`, `\x1b[5~`, `\x1b[1;5A`, `\x03` ], { numbers: [ 1, 3, 5 ] } )
+            const { opened } = await interactive_run( [ `\x1b[3~`, `\x1b[5~`, `\x1b[1;5A`, `\x1b1`, `\x03` ], { numbers: [ 1, 3, 5 ] } )
             expect( opened ).toEqual( [] )
         } )
 
