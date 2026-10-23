@@ -174,6 +174,12 @@ export const parse_args = ( argv ) => {
     // babysit init [file.yaml] — write the commented default config
     if( verb === `init` ) return { verb: `init`, agent: null, session_id: positionals[1] || null, flags, passthrough: [] }
 
+    // babysit freeze|unfreeze <number|session_id|name|all>...
+    if( verb === `freeze` || verb === `unfreeze` ) {
+        if( !positionals[1] && !flags.help ) throw new Error( `Usage: babysit ${ verb } <number|session_id|name|all>...` )
+        return { verb, agent: null, session_ids: positionals.slice( 1 ).map( String ), flags, passthrough: [] }
+    }
+
     // babysit archive <number|session_id|name>...
     if( verb === `archive` ) {
         const selector = positionals[1] || null

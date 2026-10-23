@@ -302,6 +302,33 @@ Examples:
   babysit archive 2 5 6
   babysit archive "feature 1"`,
 
+    freeze: () => `Usage: babysit freeze <number|session_id|name|all>...
+
+Pauses session containers in place with docker pause: every process stops
+mid-step and nothing is killed. babysit unfreeze resumes them where they left
+off. Host only (see babysit mode), Docker sessions only. The monitor stands
+down while frozen (no idle nudges, watchdog or auto-approvals) and restarts its
+timers on unfreeze. babysit list shows frozen; the tmux bar says FROZEN.
+
+Caveats: keys typed into a frozen pane arrive on unfreeze. Agents retry API
+calls that timed out while frozen; a tool command's own timeout can fire on
+resume. Freezing ends at reboot or a Docker restart. close works on frozen
+sessions.
+
+Examples:
+  babysit freeze 2
+  babysit freeze all
+  babysit unfreeze all`,
+
+    unfreeze: () => `Usage: babysit unfreeze <number|session_id|name|all>...
+
+Resumes sessions paused by babysit freeze; all means every frozen session.
+See babysit help freeze.
+
+Examples:
+  babysit unfreeze 2
+  babysit unfreeze all`,
+
     prune: () => `Usage: babysit prune [--list]
 
 Interactive cleanup. Docker: stopped containers, images no saved session

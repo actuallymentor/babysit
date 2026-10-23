@@ -21,7 +21,7 @@ import { judge_session } from '../babysit/judge.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { capture_history } from '../tmux/capture.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
-import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import { inspect_docker_container_state, remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
 import { start_usage_sampler } from '../docker/stats.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
@@ -290,6 +290,16 @@ export const cmd_monitor = async ( cmd ) => {
         status: `active`,
     } )
 
+    // A freeze ends with a reboot, a Docker restart or an outside `docker
+    // unpause`; a mark left behind would keep this monitor standing down forever
+    if( session.frozen_at ) {
+        const state = await inspect_docker_container_state( session.container_id ).catch( () => null )
+        if( state !== `paused` ) {
+            log.info( `Session ${ session.babysit_id } is no longer paused; clearing its frozen mark` )
+            update_session( session.babysit_id, { frozen_at: null } )
+        }
+    }
+
     const existing_tmpfiles = session.creds_tmpfiles || (
         session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {}
     )
@@ -520,6 +530,7 @@ export const cmd_monitor = async ( cmd ) => {
                 }
             },
             input_allowed: () => ![ `pending`, `sending`, `blocked` ].includes( load_session( session.babysit_id )?.continuation ),
+            is_frozen: () => Boolean( load_session( session.babysit_id )?.frozen_at ),
             on_session_id: ( id ) => {
                 if( session.agent_session_id_source !== `structured` ) update_session( session.babysit_id, { agent_session_id: id } )
             },
