@@ -192,8 +192,8 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.on_status] - Callback with each tick's agent status
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
  * @param {Object|null} [options.watchdog] - Stall watchdog from create_watchdog
- * @param {Function} [options.is_frozen] - Async: whether `babysit freeze` asked this session to freeze
- * @param {Function} [options.on_frozen] - Called with true once the monitor stood down (freeze waits for it), false on thaw
+ * @param {Function} [options.is_frozen] - Async: the current `babysit freeze` mark, falsy when not frozen
+ * @param {Function} [options.on_frozen] - Called with each mark once the monitor stood down for it (freeze waits for that), null on thaw
  * @param {Function} [options.on_exit] - Callback when session ends
  * @returns {Promise<void>}
  */
@@ -242,6 +242,7 @@ export const start_monitor = async ( {
     let logout_check_ready_at = 0
     let limit_check_ready_at = 0
     let frozen = false
+    let acked_mark = null
 
     const begin_action = ( rule, now ) => {
 
@@ -294,7 +295,8 @@ export const start_monitor = async ( {
             // A babysit action still typing finishes first and nothing new starts;
             // then the monitor stands down, acknowledges (freeze pauses only
             // after that) and only watches for the session ending.
-            if( await is_frozen() ) {
+            const frozen_mark = await is_frozen()
+            if( frozen_mark ) {
                 if( !frozen && action_busy ) {
                     await wait_fn( POLL_INTERVAL_MS )
                     continue
@@ -302,7 +304,12 @@ export const start_monitor = async ( {
                 if( !frozen ) {
                     log.info( `Session frozen; monitor standing down until babysit unfreeze` )
                     frozen = true
-                    await on_frozen?.( true )
+                }
+                // Every freeze waits for its own mark: a quick unfreeze + freeze
+                // between ticks must not go unanswered
+                if( frozen_mark !== acked_mark ) {
+                    acked_mark = frozen_mark
+                    await on_frozen?.( frozen_mark )
                 }
                 if( await session_gone() ) {
                     log.info( `Session ended while frozen: ${ session_name }` )
@@ -317,7 +324,8 @@ export const start_monitor = async ( {
             if( frozen ) {
                 log.info( `Session unfrozen; monitor resumed` )
                 frozen = false
-                await on_frozen?.( false )
+                acked_mark = null
+                await on_frozen?.( null )
                 idle_tracker.reset()
                 watchdog?.restart()
                 approval_ready_at = Date.now() + APPROVAL_COOLDOWN_MS

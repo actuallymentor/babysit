@@ -531,12 +531,12 @@ export const cmd_monitor = async ( cmd ) => {
             // unpause, a freeze killed before its pause), the first time at once
             is_frozen: async () => {
                 const latest = load_session( session.babysit_id )
-                if( !latest?.frozen_at ) return false
-                if( Date.now() - frozen_checked_at < FROZEN_RECHECK_MS ) return true
+                if( !latest?.frozen_at ) return null
+                if( Date.now() - frozen_checked_at < FROZEN_RECHECK_MS ) return latest.frozen_at
                 frozen_checked_at = Date.now()
-                return reconcile_frozen( latest )
+                return await reconcile_frozen( latest ) ? load_session( session.babysit_id )?.frozen_at : null
             },
-            on_frozen: standing => update_session( session.babysit_id, { frozen_ack: standing ? load_session( session.babysit_id )?.frozen_at ?? null : null } ),
+            on_frozen: mark => update_session( session.babysit_id, { frozen_ack: mark } ),
             on_session_id: ( id ) => {
                 if( session.agent_session_id_source !== `structured` ) update_session( session.babysit_id, { agent_session_id: id } )
             },

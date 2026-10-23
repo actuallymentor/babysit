@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.55.2 — 2026-10-23
+
+### Fixed
+- `babysit freeze`: an interrupt after the pause was sent keeps the mark (reconciliation settles it) instead of leaving a paused container unmarked.
+- A quick unfreeze + freeze between monitor ticks is acknowledged; stale-mark cleanup never erases a newer freeze; overlapping freeze batches wait for each other's locks instead of deadlocking.
+
 ## 1.55.1 — 2026-10-23
 
 ### Fixed
