@@ -16,6 +16,8 @@ const SETTLE_MS = 100
 // With 1 and 12 on screen, how long `1` waits for a second digit
 const CHORD_MS = 700
 const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
+// CSI (ESC [ … final) and SS3 (ESC O x) key sequences
+const ESCAPE_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S])/g
 export const USAGE_REFRESH_MS = 5 * 60_000
 const BAR_CELLS = 10
 
@@ -379,11 +381,12 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             shown = frame
         }
 
-        // Idempotent, and it disarms a pending chord so ctrl+c always wins
-        const stop = number => {
-            if( stopped ) return
+        // Cancelling always wins: it clears a selection queued behind a slow
+        // frame, and no later selection overrides it
+        const stop = session_id => {
             clearTimeout( chord )
-            chosen = number ?? null
+            if( session_id === undefined ) chosen = null
+            else if( !stopped ) chosen = session_id
             stopped = true
             wake()
         }
@@ -394,9 +397,8 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         // with 1 and 12 on screen, `1` waits CHORD_MS for a second digit
         const on_key = key => {
 
-            if( stopped ) return
             if( key === `\x03` || key === `q` ) return stop()
-            if( !interactive ) return
+            if( stopped || !interactive ) return
 
             clearTimeout( chord )
             if( key === `\r` ) return choose( Number( typed ) )
@@ -418,8 +420,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         }
 
         // Redraw early on registry changes and resizes; bursts settle first
-        // Pastes and buffered SSH input arrive as one chunk: one key at a time
-        const on_data = data => [ ...data.toString() ].forEach( on_key )
+        // Pastes and buffered SSH input arrive as one chunk: one key at a time.
+        // Escape sequences (Delete is ESC[3~, Page Up ESC[5~) go first, so
+        // their digits never pick a session; a lone ESC still clears the input.
+        const on_data = data => [ ...data.toString().replace( ESCAPE_SEQUENCE, `` ) ].forEach( on_key )
 
         let settle = null
         const nudge = () => {
@@ -470,7 +474,13 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                     return rendered
                 } )
 
-                targets = frame.result?.targets || new Map()
+                // A half-typed number must not resolve against a list that changed under it
+                const next_targets = frame.result?.targets || new Map()
+                if( JSON.stringify( [ ...next_targets ] ) !== JSON.stringify( [ ...targets ] ) ) {
+                    clearTimeout( chord )
+                    typed = ``
+                }
+                targets = next_targets
                 body = frame.lines
                 if( !stopped ) show()
 

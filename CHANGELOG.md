@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.53.2 — 2026-10-23
+
+### Fixed
+- `watch --interactive`: keys that send escape sequences (Delete, Page Up, modified arrows) no longer open the session matching their digits.
+- Ctrl+C (or SIGTERM) cancels a selection still waiting on a redraw; a half-typed number resets when the list changes under it.
+
 ## 1.53.1 — 2026-10-23
 
 ### Fixed
