@@ -190,6 +190,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit auth accounts [remove NAME]` | Claude subscriptions; see [Claude accounts](#claude-accounts) |
 | `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
+| `babysit mode` | Print `container` inside a babysit agent container, `host` otherwise |
 | `babysit update` | Update Babysit, agent tools, image; show image version |
 | `babysit update --auto` | Ask `Enable automatic updates? Y/n`; when on, a newer release triggers one background `babysit update` (log `~/.babysit/auto-update.log`, retried daily on failure) |
 

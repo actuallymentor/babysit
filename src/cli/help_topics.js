@@ -356,6 +356,15 @@ defaults, auth checker, web bridge, and boot recovery status.
 Example:
   babysit config`,
 
+    mode: () => `Usage: babysit mode
+
+Prints \`container\` inside a babysit agent container, \`host\` anywhere else
+(including unrelated Docker containers). Lets scripts branch on where they run.
+
+Example:
+  babysit mode
+  [ "$(babysit mode)" = container ] && echo "inside babysit"`,
+
     doctor: () => `Usage: babysit doctor --auth [agent|all] [--refresh]
 
 Real model-backed login check for every installed agent (or one): each runs a

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.54.0 — 2026-10-23
+
+### Added
+- `babysit mode` prints `container` inside a babysit agent container and `host` everywhere else (keys off `BABYSIT_MODIFIERS`, not `/.dockerenv`).
+
 ## 1.53.2 — 2026-10-23
 
 ### Fixed

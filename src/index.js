@@ -37,6 +37,7 @@ import { cmd_prune } from './cli/prune.js'
 import { cmd_web } from './cli/web.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
+import { detect_mode } from './utils/platform.js'
 import { run_effort, run_model, run_exit, run_stuck, run_loop } from './docker/assets/effort/command.mjs'
 import { run_usage } from './cli/usage.js'
 import { cmd_shell_init } from './cli/shell_init.js'
@@ -49,8 +50,8 @@ const is_directory = path => {
     }
 }
 
-// Machine-run (monitor, boot recovery) or self-updating verbs never start a background update
-const QUIET_VERBS = new Set( [ `update`, `__monitor`, `shell-init`, `recover` ] )
+// Machine-run (monitor, boot recovery, scripted `mode`) or self-updating verbs never start a background update
+const QUIET_VERBS = new Set( [ `update`, `__monitor`, `shell-init`, `recover`, `mode` ] )
 
 // Subcommands that need a dep check before they run. `help` and `--version`
 // are pure metadata reads, `__monitor` is a background daemon that inherits
@@ -221,6 +222,10 @@ const main = async () => {
 
     case `shell-init`:
         cmd_shell_init( cmd )
+        break
+
+    case `mode`:
+        console.log( detect_mode() )
         break
 
     case `prune`:

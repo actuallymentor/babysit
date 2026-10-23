@@ -106,6 +106,13 @@ describe( `parse_args`, () => {
         expect( cmd.flags.auth_check_agents ).toBe( `codex,claude` )
     } )
 
+    it( `recognises babysit mode`, () => {
+        const cmd = parse_args( [ `mode` ] )
+        expect( cmd.verb ).toBe( `mode` )
+        expect( cmd.agent ).toBeNull()
+        expect( cmd.passthrough ).toEqual( [] )
+    } )
+
     it( `parses a forced single-agent auth check`, () => {
 
         expect( parse_args( [ `auth`, `check`, `claude`, `--force` ] ) ).toMatchObject( { verb: `auth`, auth_verb: `check`, agent: `claude`, flags: { force: true } } )

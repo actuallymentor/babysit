@@ -209,6 +209,9 @@ export const parse_args = ( argv ) => {
         return { verb: `shell-init`, agent: null, shell, flags, passthrough: [] }
     }
 
+    // babysit mode — prints host or container
+    if( verb === `mode` ) return { verb: `mode`, agent: null, flags, passthrough: [] }
+
     // babysit config
     if( verb === `config` ) return { verb: `config`, agent: null, flags, passthrough: [] }
 
