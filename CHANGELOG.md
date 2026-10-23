@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.54.1 — 2026-10-23
+
+### Fixed
+- `watch --interactive`: Alt+digit no longer opens a session.
+
 ## 1.54.0 — 2026-10-23
 
 ### Added

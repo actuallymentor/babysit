@@ -16,8 +16,8 @@ const SETTLE_MS = 100
 // With 1 and 12 on screen, how long `1` waits for a second digit
 const CHORD_MS = 700
 const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
-// CSI (ESC [ … final) and SS3 (ESC O x) key sequences
-const ESCAPE_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S])/g
+// CSI (ESC [ … final), SS3 (ESC O x) and Alt+key (ESC x) sequences
+const ESCAPE_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S]|[ -~])/g
 export const USAGE_REFRESH_MS = 5 * 60_000
 const BAR_CELLS = 10
 
