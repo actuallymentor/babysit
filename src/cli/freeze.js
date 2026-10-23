@@ -111,9 +111,18 @@ export const reconcile_frozen = async ( session, {
     }
     if( state === `paused` ) return true
 
-    log.info( `Session ${ session.babysit_id } is no longer paused; clearing its frozen mark` )
-    update( session.babysit_id, { frozen_at: null, frozen_ack: null } )
-    return false
+    // Clear only the mark that was inspected: an unfreeze and a fresh freeze
+    // may have replaced it meanwhile, and the current record decides then
+    let still_frozen = false
+    update( session.babysit_id, current => {
+        if( current.frozen_at !== session.frozen_at ) {
+            still_frozen = Boolean( current.frozen_at )
+            return null
+        }
+        log.info( `Session ${ session.babysit_id } is no longer paused; clearing its frozen mark` )
+        return { frozen_at: null, frozen_ack: null }
+    } )
+    return still_frozen
 
 }
 
@@ -138,6 +147,26 @@ const monitor_stood_down = async ( babysit_id, frozen_at, { load, monitor_alive,
 }
 
 /**
+ * Take a session's freeze lock without blocking the event loop, so other
+ * sessions in the same batch keep moving (and release their locks) meanwhile.
+ * @param {string} babysit_id - Session id
+ * @param {Object} deps - lock_fn and wait_fn seams
+ * @returns {Promise<Function>} Release
+ */
+const take_lock = async ( babysit_id, { lock_fn, wait_fn } ) => {
+
+    for( let waited = 0; ; waited += ACK_POLL_MS ) {
+        try {
+            return lock_fn( babysit_id )
+        } catch ( error ) {
+            if( waited >= 2 * ACK_TIMEOUT_MS ) throw new Error( `another freeze or unfreeze is still working on it`, { cause: error } )
+            await wait_fn( ACK_POLL_MS )
+        }
+    }
+
+}
+
+/**
  * `babysit freeze` / `babysit unfreeze`: pause session containers in place and
  * resume them later, mid-turn included. Host only, Docker sessions only.
  *
@@ -157,7 +186,7 @@ export const cmd_freeze = async ( cmd, {
     list_stored_sessions_fn = list_stored_sessions,
     load_session_fn = load_session,
     update_session_fn = update_session,
-    lock_fn = id => acquire_session_lock( id, { namespace: `freeze`, wait_ms: 2 * ACK_TIMEOUT_MS } ),
+    lock_fn = id => acquire_session_lock( id, { namespace: `freeze` } ),
     monitor_alive = is_monitor_alive,
     pause_fn = set_container_paused,
     label_fn = set_status_label,
@@ -198,8 +227,11 @@ export const cmd_freeze = async ( cmd, {
             return false
         }
 
-        const release = lock_fn( session.babysit_id )
+        let release = () => {}
+        let pausing = false
         try {
+
+            release = await take_lock( session.babysit_id, { lock_fn, wait_fn } )
 
             // Another freeze or unfreeze may have run while this one waited
             const latest = load_session_fn( session.babysit_id ) || session
@@ -215,8 +247,11 @@ export const cmd_freeze = async ( cmd, {
                 if( !await monitor_stood_down( session.babysit_id, frozen_at, { load: load_session_fn, monitor_alive, wait_fn } ) ) {
                     throw new Error( `its monitor is still running a babysit action; try again shortly` )
                 }
-                await pause_fn( session.container_id, true )
+                // Docker may pause before the call returns: from here on an
+                // interrupt keeps the mark, and reconciliation settles it
                 unbacked.delete( session.babysit_id )
+                pausing = true
+                await pause_fn( session.container_id, true )
             } else {
                 await pause_fn( session.container_id, false )
                 update_session_fn( session.babysit_id, { frozen_at: null, frozen_ack: null } )
@@ -224,7 +259,7 @@ export const cmd_freeze = async ( cmd, {
 
         } catch ( error ) {
             // A freeze that did not happen must not leave the monitor standing down
-            if( unbacked.delete( session.babysit_id ) ) update_session_fn( session.babysit_id, { frozen_at: null, frozen_ack: null } )
+            if( unbacked.delete( session.babysit_id ) || pausing ) update_session_fn( session.babysit_id, { frozen_at: null, frozen_ack: null } )
             print( `Could not ${ cmd.verb } ${ label( session ) }: ${ error.message }` )
             return false
         } finally {

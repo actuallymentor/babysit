@@ -106,7 +106,12 @@ describe( `babysit freeze`, () => {
         const updates = []
         const old = { babysit_id: `a`, container_id: `ca`, frozen_at: new Date( 0 ).toISOString() }
         const now = FREEZE_GRACE_MS * 10
-        const update = ( id, values ) => updates.push( [ id, values.frozen_at ] )
+        // update_session's atomic form: the callback sees the current record
+        let current = old
+        const update = ( id, change ) => {
+            const values = change( current )
+            if( values ) updates.push( [ id, values.frozen_at ] )
+        }
         expect( await reconcile_frozen( old, { inspect: async () => `paused`, update, now } ) ).toBe( true )
         expect( await reconcile_frozen( old, { inspect: async () => {
             throw new Error( `timeout` )
@@ -115,6 +120,65 @@ describe( `babysit freeze`, () => {
         expect( updates ).toEqual( [] )
         expect( await reconcile_frozen( old, { inspect: async () => `running`, update, now } ) ).toBe( false )
         expect( updates ).toEqual( [ [ `a`, null ] ] )
+
+        // An unfreeze and a fresh freeze landed while Docker was being asked
+        current = { ...old, frozen_at: new Date( now ).toISOString() }
+        expect( await reconcile_frozen( old, { inspect: async () => `running`, update, now } ) ).toBe( true )
+        expect( updates ).toHaveLength( 1 )
+    } )
+
+    it( `waits for a busy freeze lock without failing the batch`, async () => {
+        let held = 2
+        const events = []
+        const records = new Map( [ [ `a`, stored_session( `a` ) ] ] )
+        const code = await cmd_freeze( { verb: `freeze`, session_ids: [ `1` ] }, {
+            mode: () => `host`,
+            list_sessions_fn: async () => [ { name: `babysit_a`, attached: false } ],
+            list_stored_sessions_fn: () => [ ...records.values() ],
+            load_session_fn: id => ( { ...records.get( id ) } ),
+            lock_fn: () => {
+                if( held-- > 0 ) throw new Error( `locked` )
+                return () => events.push( `release` )
+            },
+            monitor_alive: () => false,
+            update_session_fn: ( id, updates ) => Object.assign( records.get( id ), updates ),
+            pause_fn: async () => events.push( `pause` ),
+            label_fn: async () => {},
+            wait_fn: async () => events.push( `wait` ),
+            print: () => {},
+        } )
+        expect( code ).toBe( 0 )
+        expect( events ).toEqual( [ `wait`, `wait`, `pause`, `release` ] )
+    } )
+
+    it( `keeps the mark when an interrupt lands after the pause was sent`, async () => {
+        const records = new Map( [ [ `a`, stored_session( `a` ) ] ] )
+        let interrupt = null
+        const run = cmd_freeze( { verb: `freeze`, session_ids: [ `1` ] }, {
+            mode: () => `host`,
+            list_sessions_fn: async () => [ { name: `babysit_a`, attached: false } ],
+            list_stored_sessions_fn: () => [ ...records.values() ],
+            load_session_fn: id => ( { ...records.get( id ) } ),
+            lock_fn: () => () => {},
+            monitor_alive: () => false,
+            update_session_fn: ( id, updates ) => Object.assign( records.get( id ), updates ),
+            // Docker is mid-pause when the signal arrives
+            pause_fn: () => new Promise( resolve => interrupt = resolve ),
+            label_fn: async () => {},
+            wait_fn: async () => {},
+            print: () => {},
+        } )
+        const original_exit = process.exit
+        process.exit = () => {}
+        try {
+            await new Promise( resolve => setTimeout( resolve, 0 ) )
+            process.emit( `SIGINT`, `SIGINT` )
+            expect( records.get( `a` ).frozen_at ).toBeTruthy()
+        } finally {
+            process.exit = original_exit
+            interrupt?.()
+            await run
+        }
     } )
 
     it( `only runs on the host`, async () => {
@@ -164,7 +228,7 @@ describe( `monitor while frozen`, () => {
                 rules: [ { on: { type: `idle` }, do: `nudge`, timeout_s: 10, last_fired_at: 0 } ],
                 agent: { name: `codex` },
                 // Frozen for ticks 1–4: twenty quiet seconds that must not count
-                is_frozen: async () => tick >= 1 && tick <= 4,
+                is_frozen: async () => tick >= 1 && tick <= 4 ? `mark` : null,
                 on_frozen: standing => acks.push( [ tick, standing ] ),
                 has_session_fn: async () => tick < 8,
                 capture_pane_fn: async () => {
@@ -184,7 +248,7 @@ describe( `monitor while frozen`, () => {
             Date.now = original_now
         }
         expect( captured.filter( at => at >= 1 && at <= 4 ) ).toEqual( [] )
-        expect( acks ).toEqual( [ [ 1, true ], [ 5, false ] ] )
+        expect( acks ).toEqual( [ [ 1, `mark` ], [ 5, null ] ] )
         // Thawed at tick 5: the 10s idle rule needs two more quiet ticks, not zero
         expect( fired[0] ).toBeGreaterThanOrEqual( 7 )
     } )
@@ -192,6 +256,28 @@ describe( `monitor while frozen`, () => {
 } )
 
 describe( `monitor asked to freeze mid-action`, () => {
+
+    it( `acknowledges a fresh freeze that replaced the one it stood down for`, async () => {
+        let tick = 0
+        const acks = []
+        await start_monitor( {
+            session_name: `babysit_refreeze`,
+            config: {},
+            rules: [],
+            agent: { name: `codex` },
+            // Unfreeze + freeze landed between ticks 2 and 3: never seen unfrozen
+            is_frozen: async () => tick < 3 ? `first` : `second`,
+            on_frozen: mark => acks.push( mark ),
+            has_session_fn: async () => tick < 5,
+            capture_pane_fn: async () => `› screen`,
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            write_loop_deadline_fn: () => {},
+            wait_fn: async () => {
+                tick++
+            },
+        } )
+        expect( acks ).toEqual( [ `first`, `second` ] )
+    } )
 
     it( `acknowledges only after the running action finished`, async () => {
         let tick = 0
@@ -206,7 +292,7 @@ describe( `monitor asked to freeze mid-action`, () => {
                 config: { idle_timeout_s: 1 },
                 rules: [ { on: { type: `idle` }, do: `nudge`, timeout_s: 1, last_fired_at: 0 } ],
                 agent: { name: `codex` },
-                is_frozen: async () => tick >= 2,
+                is_frozen: async () => tick >= 2 ? `mark` : null,
                 on_frozen: standing => acks.push( [ tick, standing ] ),
                 has_session_fn: async () => tick < 8,
                 capture_pane_fn: async () => `› same screen`,
