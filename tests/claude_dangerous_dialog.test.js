@@ -11,6 +11,8 @@ const glob = fixture( `dangerous-rm-glob.txt` )
 const substitution = fixture( `dangerous-rm-substitution.txt` )
 // Claude Code 2.1.296, subagent Bash call, unparseable `sh -c` script (live layout, command anonymised)
 const shell_c = fixture( `dangerous-rm-shell-c-subagent.txt` )
+// Claude Code 2.1.309 slots a right-aligned edited-files notice above the footer
+const notice = fixture( `dangerous-rm-glob-edited-notice.txt` )
 const composer = `────\n❯ \n────\n  yolo·docker\n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
 
 // Builds a bottom-anchored Claude dialog: question, options, footer
@@ -31,6 +33,17 @@ describe( `Claude YOLO dialog`, () => {
         expect( find_yolo_dialog( substitution ) ).toMatchObject( { answer: `Yes` } )
         expect( find_yolo_dialog( shell_c ) ).toMatchObject( { title: `Bash command · from the general-purpose agent`, answer: `Yes` } )
         expect( claude.yolo_dialog ).toBe( find_yolo_dialog )
+    } )
+
+    test( `looks past status notices between options and footer`, () => {
+        expect( find_yolo_dialog( notice ) ).toMatchObject( { title: `Bash command · from the general-purpose agent`, answer: `Yes` } )
+
+        // Two notices at most, and notices are vetted like the options
+        const footer = ` Esc to cancel · Tab to amend · ctrl+x ctrl+k twice to stop background agents`
+        const stacked = extra => notice.replace( footer, `${ extra.join( `\n` ) }\n${ footer }` )
+        expect( find_yolo_dialog( stacked( [ `   2 background tasks` ] ) ) ).not.toBeNull()
+        expect( find_yolo_dialog( stacked( [ `   2 background tasks`, `   3 more` ] ) ) ).toBeNull()
+        expect( find_yolo_dialog( stacked( [ `   Switching to Sonnet` ] ) ) ).toBeNull()
     } )
 
     test( `accepts any wording whose default approves`, () => {

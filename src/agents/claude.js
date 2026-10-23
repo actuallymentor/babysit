@@ -65,6 +65,7 @@ export const YOLO_DIALOG = {
     veto: /\b(?:models?|fallback|opus|sonnet|haiku|fable|downgrade|api key|billing|credits?|extra usage|purchase|upgrade|subscribe|pay)\b/i,
     denied: /A permission rule denies/,
     rule: /^\s*─{4,}\s*$/,
+    max_notices: 2,
 }
 
 /**
@@ -79,11 +80,18 @@ export const find_yolo_dialog = screen => {
     const lines = screen.split( `\n` ).filter( line => line.trim() ).slice( -40 )
     if( !YOLO_DIALOG.footer.test( lines.at( -1 ) || `` ) ) return null
 
-    // Options stack directly on the footer; the question sits directly on them.
-    // Anchoring on the bottom keeps history from supplying any of them.
-    let top = lines.length - 1
+    // Claude may slot status notices between options and footer (2.1.309:
+    // a right-aligned `+1 file edited before this session (show)`). Allow a
+    // couple, never more: the bottom anchor is what keeps history out.
+    let bottom = lines.length - 1
+    const lowest = bottom - YOLO_DIALOG.max_notices
+    while( bottom > lowest && !YOLO_DIALOG.option.test( lines[ bottom - 1 ] || `` ) ) bottom--
+    const notices = lines.slice( bottom, -1 )
+
+    // Options stack up from there; the question sits directly on them
+    let top = bottom
     while( top > 0 && YOLO_DIALOG.option.test( lines[ top - 1 ] ) ) top--
-    const options = lines.slice( top, -1 ).map( line => line.match( YOLO_DIALOG.option ) )
+    const options = lines.slice( top, bottom ).map( line => line.match( YOLO_DIALOG.option ) )
     const question = lines[ top - 1 ]?.trim() || ``
     if( options.length < 2 || !YOLO_DIALOG.question.test( question ) ) return null
     if( options.some( ( option, index ) => Number( option[ 2 ] ) !== index + 1 ) ) return null
@@ -92,7 +100,7 @@ export const find_yolo_dialog = screen => {
     const selected = options.filter( option => option[ 1 ] )
     const answer = selected[ 0 ]?.[ 3 ] || ``
     if( selected.length !== 1 || !YOLO_DIALOG.approve.test( answer ) ) return null
-    if( [ question, ...options.map( option => option[ 3 ] ) ].some( text => YOLO_DIALOG.veto.test( text ) ) ) return null
+    if( [ question, ...options.map( option => option[ 3 ] ), ...notices ].some( text => YOLO_DIALOG.veto.test( text ) ) ) return null
 
     // A person's deny rule matched: never approve on their behalf
     const opened = lines.findLastIndex( ( line, index ) => index < top && YOLO_DIALOG.rule.test( line ) )
