@@ -289,6 +289,23 @@ describe( `interactive launch menu`, () => {
         auto.input.write( `\r` )
         expect( ( await auto.result ).flags.account ).toBe( false )
 
+        // A typo stays selected so the launch can reject it; a failed probe reads as unknown
+        const typo = await open_menu( { ...accounts, initial: { account: `wrok` }, probe_usage: async () => [ { name: `default`, status: `error`, headroom: null } ] } )
+        typo.input.write( `${ down.repeat( 15 ) }${ right }` )
+        await new Promise( resolve => setTimeout( resolve, 20 ) )
+        expect( typo.rendered() ).toContain( `most headroom` )
+        expect( typo.rendered() ).not.toContain( `→ default` )
+        typo.input.write( `${ left }\r` )
+        expect( ( await typo.result ).flags.account ).toBe( `wrok` )
+
+        // A fork's auto keeps the parent's account, and says so
+        const fork = await open_menu( { ...accounts, submit: `fork` } )
+        fork.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 6 ) }` )
+        await new Promise( resolve => setTimeout( resolve, 20 ) )
+        expect( fork.rendered() ).toContain( `‹ inherit ›  parent's account` )
+        fork.input.write( `\x03` )
+        await fork.result
+
         const save = await open_menu( { ...accounts, submit: `save` } )
         save.input.write( `${ down.repeat( 8 ) } ` )
         await new Promise( resolve => setTimeout( resolve, 20 ) )
