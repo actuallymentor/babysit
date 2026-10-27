@@ -20,7 +20,8 @@ beforeEach( () => {
     root = mkdtempSync( join( tmpdir(), `babysit-launcher-` ) )
     const cwd = join( root, `project` )
     mkdirSync( cwd )
-    options = { cwd, defaults_path: join( root, `defaults.json` ) }
+    // No real subscriptions or quota probes leak into menu tests
+    options = { cwd, defaults_path: join( root, `defaults.json` ), list_accounts: () => [], cached_usage: () => ( {} ), probe_usage: async () => [] }
 
 } )
 
@@ -252,6 +253,48 @@ describe( `interactive launch menu`, () => {
         expect( chosen.flags ).toMatchObject( { devices: true, adb: true, ios: true } )
         save_launch_defaults( chosen, options )
         expect( read_launch_defaults( options ) ).toMatchObject( { devices: true } )
+
+    } )
+
+    it( `picks a Claude subscription under Advanced and shows its usage`, async () => {
+
+        await save_launch_defaults( parse_args( [ `claude` ] ), options )
+        const probed = []
+        const accounts = {
+            list_accounts: () => [ { name: `default`, token: `a` }, { name: `work`, token: `b` } ],
+            cached_usage: () => ( { default: { headroom: 90 } } ),
+            probe_usage: async list => {
+                probed.push( list.map( ( { name } ) => name ) )
+                return [ { name: `default`, status: `ok`, headroom: 70 }, { name: `work`, status: `ok`, headroom: 25 } ]
+            },
+        }
+
+        // Advanced, then the Account row after Args; probe once, cached value first
+        const menu = await open_menu( accounts )
+        expect( menu.rendered() ).not.toContain( `Account` )
+        menu.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 7 ) }` )
+        await new Promise( resolve => setTimeout( resolve, 20 ) )
+        expect( menu.rendered() ).toContain( `most headroom → default, 10% used` )
+        expect( menu.rendered() ).toContain( `most headroom → default, 30% used` )
+
+        menu.input.write( `${ right }${ right }` )
+        await new Promise( resolve => setTimeout( resolve, 20 ) )
+        expect( menu.rendered() ).toContain( `‹ work ›  75% used` )
+        menu.input.write( `\r` )
+        expect( ( await menu.result ).flags.account ).toBe( `work` )
+        expect( probed ).toEqual( [ [ `default`, `work` ] ] )
+
+        // Auto adds no flag; other agents and `init` get no row
+        const auto = await open_menu( accounts )
+        auto.input.write( `\r` )
+        expect( ( await auto.result ).flags.account ).toBe( false )
+
+        const save = await open_menu( { ...accounts, submit: `save` } )
+        save.input.write( `${ down.repeat( 8 ) } ` )
+        await new Promise( resolve => setTimeout( resolve, 20 ) )
+        expect( save.rendered() ).not.toContain( `Account` )
+        save.input.write( `\x03` )
+        await save.result
 
     } )
 

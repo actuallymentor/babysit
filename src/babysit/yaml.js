@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, realpathSync } from 'fs'
-import { dirname, isAbsolute, relative, resolve } from 'path'
+import { basename, dirname, isAbsolute, relative, resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
@@ -225,6 +225,28 @@ export const load_config = ( dir = process.cwd(), {
     return { config, rules }
 
 }
+
+// 1800 → 30m, 90 → 90s: the shortest exact unit
+const short_duration = seconds => seconds % 3600 === 0 ? `${ seconds / 3600 }h` : seconds % 60 === 0 ? `${ seconds / 60 }m` : `${ seconds }s`
+
+/**
+ * Short labels for a session's FLAGS column: the --config file name, then
+ * each rule's trigger (`on:idle/30m`, `on:/error/i`, `on:"Continue?"`).
+ * @param {Array} rules - Rules from load_config
+ * @param {string|null} [config_path] - Explicit --config file
+ * @returns {string[]}
+ */
+export const config_flags = ( rules = [], config_path = null ) => [
+    ...config_path ? [ `config:${ basename( config_path ) }` ] : [],
+    ...rules.map( ( { on, timeout_s } ) => {
+        if( on.type === `idle` ) return `on:idle${ timeout_s ? `/${ short_duration( timeout_s ) }` : `` }`
+        if( on.type === `regex` ) return `on:${ on.value }`
+
+        // Long literals are cut so one rule cannot swallow the column
+        const text = on.value.length > 20 ? `${ on.value.slice( 0, 19 ) }…` : on.value
+        return `on:"${ text }"`
+    } ),
+]
 
 /**
  * Map a directory inside `from` to the same relative spot inside `to`.

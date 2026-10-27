@@ -8,7 +8,7 @@ import { wait } from 'mentie'
 import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
-import { load_config, load_clone_config } from '../babysit/yaml.js'
+import { config_flags, load_config, load_clone_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import {
     clear_credential_recovery,
@@ -1572,7 +1572,8 @@ async function start_session( cmd ) {
     } )
 
     base_session_data.launch_spec.config_hash = workspace_config_hash( workspace, config_path )
-    update_session( babysit_id, { launch_spec: base_session_data.launch_spec } )
+    // The yaml's rules as list/watch FLAGS; --loop's rule is already the `loop` modifier
+    update_session( babysit_id, { launch_spec: base_session_data.launch_spec, config_flags: config_flags( rules, config_path ) } )
 
     // Initialize the loop deadline file before docker mounts it.
     // "idle" tells the statusline there's no active countdown yet.

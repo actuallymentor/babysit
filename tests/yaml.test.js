@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { parse } from 'yaml'
-import { load_config, get_default_yaml, write_default_config } from '../src/babysit/yaml.js'
+import { config_flags, load_config, get_default_yaml, write_default_config } from '../src/babysit/yaml.js'
 import { default_launch, validate_launch } from '../src/babysit/launch_config.js'
 import { base } from '../src/system_prompt/index.js'
 
@@ -193,6 +193,15 @@ babysit:
     it( `returns default yaml with a caller-supplied prompt`, () => {
         const yaml = get_default_yaml( { initial_prompt: `custom default prompt` } )
         expect( yaml ).toContain( `custom default prompt` )
+    } )
+
+    it( `summarises rules as FLAGS labels`, () => {
+        writeFileSync( join( tmpdir_path, `api.yaml` ), `babysit:\n    - on: idle\n      do: enter\n      timeout: 30:00\n    - on: idle\n      do: enter\n      timeout: 90\n    - on: /error/i\n      do: enter\n    - on: "Do you want to proceed with this?"\n      do: enter\n` )
+        const config_path = join( tmpdir_path, `api.yaml` )
+        const { rules } = load_config( tmpdir_path, { config_path } )
+
+        expect( config_flags( rules, config_path ) ).toEqual( [ `config:api.yaml`, `on:idle/30m`, `on:idle/90s`, `on:/error/i`, `on:"Do you want to proc…"` ] )
+        expect( config_flags( [] ) ).toEqual( [] )
     } )
 
 } )
