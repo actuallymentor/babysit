@@ -79,17 +79,19 @@ export const launch_menu = async ( {
     // Claude subscriptions: `auto` (false) lets the launch pick by headroom.
     // A saved config has no account key, so `init` gets no row.
     const account_names = submit === `save` ? [] : list_accounts().map( ( { name } ) => name )
-    const accounts = [ false, ...account_names ]
+    state.account = state.account || false
+
+    // An unknown --account stays selectable, so the launch reports the typo instead of picking another
+    const accounts = [ false, ...account_names, ...state.account && !account_names.includes( state.account ) ? [ state.account ] : [] ]
     const usage = cached_usage()
     let readings = `cached`
     let closed = false
-    if( !accounts.includes( state.account ) ) state.account = false
 
-    // Cached readings show at once; one probe per menu refreshes them in place
+    // Cached readings show at once; one probe per menu replaces them, failures as unknown
     const refresh_usage = () => {
         readings = `checking`
         probe_usage( list_accounts() )
-            .then( fresh => fresh.filter( ( { status } ) => status === `ok` ).forEach( reading => usage[ reading.name ] = reading ) )
+            .then( fresh => fresh.forEach( reading => usage[ reading.name ] = reading ) )
             .catch( () => {} )
             .finally( () => {
                 readings = `fresh`
@@ -100,6 +102,9 @@ export const launch_menu = async ( {
     const account_label = () => {
         const checking = readings === `checking` ? ` (checking…)` : ``
         if( state.account ) return `‹ ${ state.account } ›  ${ used_text( usage[ state.account ] ) }${ checking }`
+
+        // A fork without --account keeps the parent's subscription
+        if( submit === `fork` ) return `‹ inherit ›  parent's account`
 
         // Auto previews the account the launch would pick
         const best = account_names

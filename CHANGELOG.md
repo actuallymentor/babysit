@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.56.1 — 2026-10-27
+
+### Fixed
+- Launch menu Account row: a mistyped `--account` stays selected so the launch rejects it (it fell back to auto); a failed quota probe shows `usage unknown` instead of a stale reading; a fork's auto reads `inherit` (it keeps the parent's account).
+
 ## 1.56.0 — 2026-10-27
 
 ### Added
