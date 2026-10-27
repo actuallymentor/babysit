@@ -40,3 +40,4 @@
 - 2026-10-20: Published v1.47.0 from `3d087fc` via release run 39404940212 (all jobs green; regression run 39404940240 green). Four binaries + checksums; web and agent images built.
 - 2026-10-23: Published [v1.55.3](https://github.com/actuallymentor/babysit/releases/tag/v1.55.3) from `f84056f` (release run 40026533333 green, 8 assets; regression run 40026533264 green on rerun after a Codex initial-prompt-marker e2e timeout flake). YOLO dialog notice fix; running sessions need `babysit restart`.
 - 2026-10-27: Published [v1.56.0](https://github.com/actuallymentor/babysit/releases/tag/v1.56.0) from `fae3ade` via release run 40513994215; regression run 40513994143 green. 8 assets. Launch-menu Account row + yaml rules in FLAGS. Pushed via HTTPS with GH_TOKEN credential helper.
+- 2026-10-27: Published [v1.56.1](https://github.com/actuallymentor/babysit/releases/tag/v1.56.1) from `fce307e`; Build & Release + regression green, 8 assets. Account-row review fixes.
