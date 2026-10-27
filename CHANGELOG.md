@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.56.0 — 2026-10-27
+
+### Added
+- Launch menu: Advanced → Account row picks the Claude subscription (`auto` or a named one) and shows its % used; cached reading first, refreshed by one probe the launch reuses.
+- `babysit list` / `watch` FLAGS show the session's yaml rules (`on:idle/30m`, `on:/error/i`, `on:"text"`) and `--config` file name; recorded at launch/resume.
+
 ## 1.55.3 — 2026-10-23
 
 ### Fixed

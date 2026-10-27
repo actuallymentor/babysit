@@ -144,6 +144,14 @@ describe( `launch: consumers`, () => {
         } )
         expect( opened.initial ).toEqual( { yolo: true, mode: `sandbox`, ports: [ `5173:5173` ], log: `run.log` } )
 
+        // A typed --account prefills the Account row and survives the launch round trip
+        const account = await launch_from_menu( {
+            flags: parse_args( [ `--account`, `work` ] ).flags,
+            menu: async options => ( opened = options, parse_args( [ `claude`, `--account=work` ] ) ),
+        } )
+        expect( opened.initial ).toEqual( { account: `work` } )
+        expect( account.flags.account ).toBe( `work` )
+
         // --devices shows as the one Devices switch; a lone --ios sits under Advanced
         await launch_from_menu( { flags: parse_args( [ `--devices` ] ).flags, menu: async options => ( opened = options, null ) } )
         expect( opened.initial ).toEqual( { devices: true } )

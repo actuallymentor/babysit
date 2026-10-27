@@ -66,6 +66,7 @@ describe( `print_active_sessions_table`, () => {
                 agent: `antigravity`,
                 babysit_id: `baby-3`,
                 modifiers: [],
+                config_flags: [ `on:idle/30m` ],
                 pwd: `/workspace/solo`,
             },
         ]
@@ -85,7 +86,7 @@ describe( `print_active_sessions_table`, () => {
         // from the monitor's cache: fresh, stale (ignored), and absent.
         expect( output ).toMatch( /\n {2}ping\/pong\n {2}└─ 1\s+feature 1\s+running\s+codex\s+12\.5%\s+240 MiB\s+yolo,docker\n/ )
         expect( output ).toMatch( /\n {2}ding\/dong\n {2}└─ 2\s+native-2\s+idle\s+claude\s+-\s+-\s+-\n/ )
-        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+antigravity\s+-\s+-\s+-\n/ )
+        expect( output ).toMatch( /\n {2}workspace\/solo\n {2}└─ 3\s+baby-3\s+running\s+antigravity\s+-\s+-\s+on:idle\/30m\n/ )
         // Totals sit under the CPU/MEM columns and ignore stale samples
         expect( output ).toMatch( /\n\s+Total\s+12\.5%\s+240 MiB\n/ )
         expect( output ).not.toContain( `detached` )

@@ -37,13 +37,14 @@ Claude defaults to `default` (Claude Code's recommended model), effort `medium`;
 | Input | Action |
 |---|---|
 | ↑/↓ | Navigate rows |
-| ←/→ | Select agent CLI (Model) or Mode |
+| ←/→ | Select agent CLI (Model), Mode, or Claude Account (Advanced) |
 | Type on Name / Ports / Log / Args | Set session name, ports (`5173, 3000:80`), log (`on` = default path, or a path), agent arguments (`--model "opus 4"`) |
 | Space | Toggle Docker, Devices, YOLO, Clone, Loop; open/close Advanced; toggle ADB, iOS, Ignore host AGENTS.md inside it |
 | Enter / Esc / Ctrl+C | Launch / cancel / cancel |
 
 Mode: Regular → Sandbox → Mudbox. Clone forces Regular.
-Devices = ADB + iOS. Advanced (ADB or iOS alone, ignore host AGENTS.md, Ports, Log, Args) opens by itself when flags or `--config` prefill it.
+Devices = ADB + iOS. Advanced (ADB or iOS alone, ignore host AGENTS.md, Ports, Log, Args, Account) opens by itself when flags or `--config` prefill it.
+Account (Claude, with [accounts](#claude-accounts)): `auto` (most headroom) or a named subscription, each with % of its tightest rate window used; `--account` prefills it, forks show the parent's.
 Agent, Mode and the top-level switches (Docker, Devices, YOLO, Clone, Loop) persist per workspace; new workspaces inherit the latest global selection. Advanced values are never remembered.
 Names never persist. Menu requires a TTY; explicit agent commands ignore defaults.
 Use explicit commands in scripts.
@@ -171,7 +172,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached, compose-style; see [Directory launch](#directory-launch) |
 | `babysit audit --config FILE\|DIR/ [--yes]` | Fix yaml so `--config DIR/` accepts it; see [Audit](#audit) |
 | `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip full-line comments and blank lines from config yaml, keep inline comments; see [Clean](#clean) |
-| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
+| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with colored status and container CPU (share of the host) / MEM, totals row, FLAGS (launch modifiers + the session's yaml rules, e.g. `on:idle/30m`, `on:/error/i`, `config:api.yaml`), orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
 | `babysit watch [--usage\|--all] [--interactive]` | Live dashboard (panes sampled every second, instant redraw on session start/close/archive, changed frames only): the `list` tree minus archived sessions (numbers unchanged), USAGE column = usage bar for the session's worst rate window. `--usage`: only the account usage panel, one metered row per limit (bar, % used, reset or used / limit); `--all`: tree + panel. Balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. `--interactive`: type a session number to open it, ctrl+c to close; detaching or the session closing returns here, and `open`/start/`fork` land here after a detach in a terminal. Replaces `list --watch` |
 | `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
 | `babysit open [id\|name\|number]` | Attach; your shell moves to the session's base directory (where it was started, never its `--clone` copy) before attaching, so detaching leaves you there; needs `eval "$(babysit shell-init)"` in your rc, else the `cd` line is printed. `fork` does the same |

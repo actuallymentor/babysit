@@ -139,12 +139,15 @@ export const format_session_directory = ( pwd ) => {
 }
 
 /**
- * Format stored launch modifiers for the active-session table.
+ * Format stored launch modifiers and babysit.yaml labels for the active-session table.
  * @param {string[]} modifiers - Session launch modifiers
+ * @param {string[]} [config] - Session config_flags (yaml rules, --config name)
  * @returns {string} Comma-separated flags, or "-" when none were recorded
  */
-export const format_session_flags = ( modifiers ) =>
-    Array.isArray( modifiers ) && modifiers.length ? modifiers.join( `,` ) : `-`
+export const format_session_flags = ( modifiers, config = [] ) => {
+    const flags = [ modifiers, config ].filter( Array.isArray ).flat()
+    return flags.length ? flags.join( `,` ) : `-`
+}
 
 /**
  * Replace terminal controls and tmux style markers before storing display text.
@@ -549,7 +552,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
                     ? `stuck`
                     : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.exited ? `exited` : tmux.attached ? `attached` : `detached`
-        const flags = format_session_flags( stored?.modifiers )
+        const flags = format_session_flags( stored?.modifiers, stored?.config_flags )
         const usage = show_usage && !tmux.exited ? cached_usage( stored, now ) : null
         const archived = Boolean( stored?.archived_at )
 

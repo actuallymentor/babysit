@@ -7,6 +7,7 @@ import { log } from '../utils/log.js'
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
 import { FORK_NEGATABLE_FLAGS, parse_args } from './parse.js'
+import { cached_account_usage, list_claude_accounts, probe_accounts } from './claude_accounts.js'
 import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './list.js'
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
 
@@ -22,6 +23,9 @@ const ADVANCED_TEXT = [ `ports`, `log`, `args` ]
 const LABELS = { adb: `ADB`, ios: `iOS`, yolo: `YOLO`, devices: `Devices`, ignore_host_agents_md: `Ignore host AGENTS.md` }
 const TEXT_LABELS = { name: `Name`, ports: `Ports`, log: `Log`, args: `Args` }
 const TEXT_HINTS = { name: `(optional)`, ports: `(e.g. 5173, 3000:80)`, log: `(off; "on" for the default path)`, args: `(agent arguments, e.g. --model opus)` }
+
+// Share of the tightest rate window spent, from a probe reading's headroom
+const used_text = reading => typeof reading?.headroom === `number` ? `${ 100 - reading.headroom }% used` : `usage unknown`
 
 const cycle = ( choices, value, direction ) =>
     choices[ ( choices.indexOf( value ) + direction + choices.length ) % choices.length ]
@@ -42,10 +46,15 @@ const as_text = {
  * @param {Object} [options.initial] - Menu values that override the remembered defaults
  * @param {string} [options.submit] - What Enter does, for the key hint
  * @param {boolean} [options.fork_key=false] - Offer `f` to fork a running session instead
+ * @param {Function} [options.list_accounts] - Claude account seam (names only are kept)
+ * @param {Function} [options.cached_usage] - Cached per-account readings, free
+ * @param {Function} [options.probe_usage] - Quota probe, reused for 5 min by the launch itself
  * @returns {Promise<Object|null>} Parsed launch, `{ verb: 'fork_menu' }`, or null when cancelled
  */
 export const launch_menu = async ( {
-    name = ``, initial = {}, submit = `launch`, fork_key = false, input = process.stdin, output = process.stdout, ...defaults_options
+    name = ``, initial = {}, submit = `launch`, fork_key = false, input = process.stdin, output = process.stdout,
+    list_accounts = list_claude_accounts, cached_usage = cached_account_usage, probe_usage = probe_accounts,
+    ...defaults_options
 } = {} ) => {
 
     if( !input.isTTY || !output.isTTY || typeof input.setRawMode !== `function` ) {
@@ -58,7 +67,7 @@ export const launch_menu = async ( {
     // Text rows keep their own value and cursor; Advanced starts open only when it was prefilled
     const text = { name, ports: as_text.ports( initial.ports ), log: as_text.log( initial.log ), args: as_text.args( initial.args ) }
     const cursors = Object.fromEntries( Object.entries( text ).map( ( [ key, value ] ) => [ key, Array.from( value ).length ] ) )
-    let open = [ ...ADVANCED_TOGGLES, ...ADVANCED_TEXT ].some( key => initial[ key ] )
+    let open = [ ...ADVANCED_TOGGLES, ...ADVANCED_TEXT, `account` ].some( key => initial[ key ] )
     let row = 0
     let error = ``
     const was_raw = Boolean( input.isRaw )
@@ -66,6 +75,39 @@ export const launch_menu = async ( {
 
     // A fork takes its agent arguments from the parent, so it has no Args row
     const advanced_text = ADVANCED_TEXT.filter( key => key !== `args` || submit !== `fork` )
+
+    // Claude subscriptions: `auto` (false) lets the launch pick by headroom.
+    // A saved config has no account key, so `init` gets no row.
+    const account_names = submit === `save` ? [] : list_accounts().map( ( { name } ) => name )
+    const accounts = [ false, ...account_names ]
+    const usage = cached_usage()
+    let readings = `cached`
+    let closed = false
+    if( !accounts.includes( state.account ) ) state.account = false
+
+    // Cached readings show at once; one probe per menu refreshes them in place
+    const refresh_usage = () => {
+        readings = `checking`
+        probe_usage( list_accounts() )
+            .then( fresh => fresh.filter( ( { status } ) => status === `ok` ).forEach( reading => usage[ reading.name ] = reading ) )
+            .catch( () => {} )
+            .finally( () => {
+                readings = `fresh`
+                if( !closed ) render()
+            } )
+    }
+
+    const account_label = () => {
+        const checking = readings === `checking` ? ` (checking…)` : ``
+        if( state.account ) return `‹ ${ state.account } ›  ${ used_text( usage[ state.account ] ) }${ checking }`
+
+        // Auto previews the account the launch would pick
+        const best = account_names
+            .filter( name => typeof usage[ name ]?.headroom === `number` )
+            .reduce( ( top, name ) => !top || usage[ name ].headroom > usage[ top ].headroom ? name : top, null )
+        return `‹ auto ›  ${ best ? `most headroom → ${ best }, ${ used_text( usage[ best ] ) }` : `most headroom` }${ checking }`
+    }
+
     const visible_rows = () => [
         { type: `cycle`, key: `agent` },
         { type: `text`, key: `name` },
@@ -75,12 +117,17 @@ export const launch_menu = async ( {
         ...open ? [
             ...ADVANCED_TOGGLES.map( key => ( { type: `toggle`, key } ) ),
             ...advanced_text.map( key => ( { type: `text`, key } ) ),
+            ...state.agent === `claude` && account_names.length ? [ { type: `cycle`, key: `account` } ] : [],
         ] : [],
     ]
 
     const render = () => {
 
         const rows = visible_rows().map( ( { type, key }, index ) => {
+            if( key === `account` ) {
+                if( readings === `cached` ) refresh_usage()
+                return `  Account ${ account_label() }`
+            }
             if( type === `cycle` ) return `${ key === `agent` ? `Model` : `Mode ` }   ‹ ${ state[ key ] } ›`
             if( type === `expand` ) return `Advanced ${ open ? `▾` : `▸` }`
             if( type === `toggle` ) return `${ open && ADVANCED_TOGGLES.includes( key ) ? `  ` : `` }[${ state[ key ] ? `x` : ` ` }] ${ LABELS[ key ] || key[0].toUpperCase() + key.slice( 1 ) }`
@@ -109,6 +156,7 @@ export const launch_menu = async ( {
         if( text.name.trim() ) argv.push( `--name=${ text.name }` )
         for( const port of text.ports.split( /[,\s]+/ ).filter( Boolean ) ) argv.push( `--port=${ port }` )
         if( text.log.trim() ) argv.push( text.log.trim() === `on` ? `--log=` : `--log=${ text.log.trim() }` )
+        if( state.agent === `claude` && state.account ) argv.push( `--account=${ state.account }` )
 
         // Agent arguments skip Babysit's parser so they can never be read as Babysit flags
         return { ...parse_args( argv ), passthrough: submit === `fork` ? [] : words( text.args ) }
@@ -167,7 +215,8 @@ export const launch_menu = async ( {
                     text[ current.key ] = letters.join( `` )
                     cursors[ current.key ] = cursor
                 } else if( current.type === `cycle` && [ `left`, `right` ].includes( key.name ) ) {
-                    state[ current.key ] = cycle( current.key === `agent` ? SUPPORTED_AGENTS : MODES, state[ current.key ], key.name === `right` ? 1 : -1 )
+                    const choices = { agent: SUPPORTED_AGENTS, mode: MODES, account: accounts }[ current.key ]
+                    state[ current.key ] = cycle( choices, state[ current.key ], key.name === `right` ? 1 : -1 )
                     if( state.mode !== `regular` ) state.clone = false
                 } else if( current.type === `expand` && [ `space`, `left`, `right` ].includes( key.name ) ) {
                     open = key.name === `left` ? false : key.name === `right` ? true : !open
@@ -187,6 +236,7 @@ export const launch_menu = async ( {
 
         } )
     } finally {
+        closed = true
         if( handle_key ) input.removeListener( `keypress`, handle_key )
         if( handle_end ) input.removeListener( `end`, handle_end )
         if( handle_error ) input.removeListener( `error`, handle_error )
@@ -331,6 +381,8 @@ export const fork_from_menu = async ( {
             ios: Boolean( inherited.ios && !inherited.adb ),
             ignore_host_agents_md: Boolean( inherited.ignore_host_agents_md ),
             clone: filesystem === `clone`,
+            // Shown as the parent's subscription rather than auto, which a fork would not do
+            account: parent.agent === `claude` && parent.claude_account || false,
         },
         submit: `fork`,
     } )
@@ -374,6 +426,7 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
         ...flags.sandbox ? { mode: `sandbox` } : flags.mudbox ? { mode: `mudbox` } : {},
         ...flags.ports?.length ? { ports: flags.ports } : {},
         ...typeof flags.log === `string` ? { log: flags.log || true } : {},
+        ...flags.account ? { account: flags.account } : {},
     }
 
     const keys = [ `agent`, `mode`, ...TOGGLES, ...ADVANCED_TOGGLES, ...ADVANCED_TEXT ]
@@ -381,7 +434,8 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
     if( !chosen ) return null
     if( chosen.verb === `fork_menu` ) return fork( { menu } )
 
-    // Every launch key has a row now, so the menu's choice is the whole launch
-    return launch_to_command( command_to_launch( chosen ), { config_path: config || null } )
+    // The menu's choice is the whole launch; the account is per launch, not a config key
+    const cmd = launch_to_command( command_to_launch( chosen ), { config_path: config || null } )
+    return { ...cmd, flags: { ...cmd.flags, account: chosen.flags.account } }
 
 }
