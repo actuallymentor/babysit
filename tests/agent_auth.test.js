@@ -26,6 +26,7 @@ import {
     unauthenticated_agent_names,
 } from '../src/agents/auth.js'
 import {
+    OPENCODE_FREE_DEFAULT_MODEL,
     OPENCODE_OPENROUTER_DEFAULT_MODEL,
     resolve_opencode_model,
 } from '../src/agents/opencode.js'
@@ -146,6 +147,7 @@ describe( `host agent auth checks`, () => {
                 `run`,
                 `--print-logs`,
                 `--log-level`, `ERROR`,
+                `--model`, OPENCODE_FREE_DEFAULT_MODEL,
                 `--agent`, `babysit-auth`,
                 prompt,
             ] )
@@ -184,11 +186,12 @@ describe( `host agent auth checks`, () => {
             env: {},
             path_exists: () => false,
         } ) ).toBeNull()
+        // Nothing signed in or configured: only OpenCode's free models remain
         expect( resolve_opencode_model( [], {
             route: {},
             env: {},
             path_exists: () => false,
-        } ) ).toBeNull()
+        } ) ).toBe( OPENCODE_FREE_DEFAULT_MODEL )
         expect( resolve_opencode_model( [], {
             route: {},
             env: {

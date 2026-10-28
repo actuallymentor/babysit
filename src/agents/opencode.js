@@ -9,6 +9,11 @@ import { resolve_opencode_route_config } from './opencode_config.js'
 
 export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
 export const OPENCODE_OPENROUTER_DEFAULT_MODEL = `openrouter/openai/gpt-5.6-sol`
+
+// Best of OpenCode's free (`opencode/*`) models by Artificial Analysis coding
+// index, checked 2026-10-28: GLM-5.3-Flash 71.5, MiMo-V2.6-Flash and the rest
+// lower or unscored. Re-rank with `babysit model --benchmarks` when the free list changes.
+export const OPENCODE_FREE_DEFAULT_MODEL = `opencode/glm-5.3-flash-free`
 export const OPENCODE_CREDENTIAL_FILE = `~/.local/share/opencode/auth.json`
 export const OPENCODE_AUTH_AGENT = `babysit-auth`
 export const OPENCODE_AUTH_PROFILE_VERSION = `tool-free-v1`
@@ -93,10 +98,16 @@ export const resolve_opencode_default_model = ( options = {} ) => {
         && !disabled_providers.has( candidate )
     )
 
-    // Host environment keys are not forwarded into the container. Keys sourced
-    // there through ~/.babysitrc, a project .env, or config templates resolve
-    // only at exec time, so leave those routes unpinned for OpenCode.
-    return PROVIDER_DEFAULT_MODELS[ provider ] || null
+    if( provider ) return PROVIDER_DEFAULT_MODELS[ provider ]
+
+    // Keys sourced through ~/.babysitrc, a project .env, config templates or
+    // the host environment resolve only at exec time, and any provider setting
+    // hints at a route we cannot see: leave those unpinned for OpenCode.
+    // With nothing signed in or configured, OpenCode only has its free models.
+    const env_keys = Object.keys( options.env || process.env ).some( name => /_API_KEY$/.test( name ) )
+    const configured = [ route.provider, route.providers ].some( table => Object.keys( table || {} ).length )
+        || enabled_providers || disabled_providers.size
+    return providers.size || env_keys || configured ? null : OPENCODE_FREE_DEFAULT_MODEL
 
 }
 
