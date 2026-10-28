@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.57.0 — 2026-10-28
+
+### Changed
+- OpenCode with nothing signed in or configured (no stored login, provider config or `*_API_KEY`) now launches on `opencode/glm-5.3-flash-free`, the top free model by Artificial Analysis coding index, instead of OpenCode's own pick. Any login, provider setting or API key keeps the old behaviour; `--model` still wins.
+
 ## 1.56.1 — 2026-10-27
 
 ### Fixed
