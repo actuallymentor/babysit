@@ -45,6 +45,7 @@ Usage:
   babysit exit [--yes]                 Inside a session: end it gracefully after the current turn (asks first)
   babysit stuck                        Inside a session: show "stuck" in babysit list until the user types
   babysit loop                         Inside a session: toggle --loop (list flags and tmux bar follow)
+  babysit reset                        Inside a session: clear context and resend the initial prompt
   babysit usage [--json]               Account usage and limits, on host or in container
   babysit web init                     Initialize or rotate babysit-web access
   babysit web key add|list|remove      Read-only API keys for the babysit-web JSON API

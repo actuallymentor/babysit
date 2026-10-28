@@ -100,6 +100,16 @@ export const run_exit = async ( args, { confirm = ask, request = session_request
 /** Flag this session as blocked on the user. */
 export const run_stuck = args => session_request( `stuck`, stuck_help, args )
 
+export const reset_help = `Usage: babysit reset [--status <request-id>]
+Clears this session's context and types the configured initial prompt again.
+Runs once the current turn ends. Claude, Codex and OpenCode only.
+
+Example:
+  babysit reset`
+
+/** Clear the context and resend the initial prompt. */
+export const run_reset = args => session_request( `reset`, reset_help, args )
+
 export const loop_help = `Usage: babysit loop [--status <request-id>]
 Toggles --loop for this session: when idle, Babysit types LOOP.md (or "Keep going").
 

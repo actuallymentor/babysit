@@ -232,6 +232,9 @@ export const opencode = {
     // the background, so reject their stable headings before sending.
     initial_prompt_ready_pattern: /^(?![\s\S]*(?:Connect a provider|Select auth method|Manually enter API Key|Model .+ is not valid))[\s\S]*Ask anything(?:\.\.\.|…)/i,
 
+    // `babysit reset`: new conversation in the same process
+    reset_command: `/new`,
+
     extra_env: () => ( {} ),
 
     update: {

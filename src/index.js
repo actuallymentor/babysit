@@ -39,7 +39,7 @@ import { cmd_web } from './cli/web.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
 import { detect_mode } from './utils/platform.js'
-import { run_effort, run_model, run_exit, run_stuck, run_loop } from './docker/assets/effort/command.mjs'
+import { run_effort, run_model, run_exit, run_stuck, run_loop, run_reset } from './docker/assets/effort/command.mjs'
 import { run_usage } from './cli/usage.js'
 import { cmd_shell_init } from './cli/shell_init.js'
 
@@ -87,6 +87,10 @@ const main = async () => {
     }
     if( process.argv[2] === `stuck` ) {
         console.log( await run_stuck( process.argv.slice( 3 ) ) )
+        return
+    }
+    if( process.argv[2] === `reset` ) {
+        console.log( await run_reset( process.argv.slice( 3 ) ) )
         return
     }
     if( process.argv[2] === `loop` ) {

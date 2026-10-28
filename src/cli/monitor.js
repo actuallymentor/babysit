@@ -29,6 +29,7 @@ import { create_control_bridge } from '../control/bridge.js'
 import { create_exit_controller } from '../control/exit.js'
 import { create_stuck_controller } from '../control/stuck.js'
 import { create_loop_controller } from '../control/loop.js'
+import { create_reset_controller } from '../control/reset.js'
 import { send_text } from '../tmux/send.js'
 import {
     clear_host_auth_cache,
@@ -473,6 +474,21 @@ export const cmd_monitor = async ( cmd ) => {
             load_rules: () => load_monitor_config( session ).rules,
         } )
 
+        // `babysit reset`: new conversation, then the configured initial prompt again.
+        // The yaml is re-read so edits since launch apply.
+        const reset_controller = create_reset_controller( session, {
+            clear_command: agent.reset_command || null,
+            prompt: async () => {
+                const { resolve_initial_prompt, ensure_clone_safety_prompt } = await import( './start.js' )
+                return ensure_clone_safety_prompt( resolve_initial_prompt( load_monitor_config( session ).config ), mode_from_modifiers( session.modifiers ) )
+            },
+            send_text,
+            wait_ready: async () => {
+                const { wait_for_initial_prompt_ready } = await import( './start.js' )
+                return wait_for_initial_prompt_ready( session.tmux_session, agent )
+            },
+        } )
+
         // Nudge agents that went quiet mid-task. Judging runs in the session
         // container, so containerless sessions are left alone.
         const tmux_target = session.pane_id || session.tmux_session
@@ -500,9 +516,11 @@ export const cmd_monitor = async ( cmd ) => {
                 exit: () => exit_controller.request(),
                 stuck: () => stuck_controller.request(),
                 loop: () => loop_controller.toggle(),
+                reset: () => reset_controller.request(),
             } } ),
             on_status: async status => {
                 await exit_controller.on_status( status )
+                await reset_controller.on_status( status )
                 await stuck_controller.tick()
             },
             on_user_input: () => stuck_controller.clear(),

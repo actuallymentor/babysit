@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.58.0 — 2026-10-28
+
+### Added
+- `babysit reset` (inside a session): once the current turn ends, clears the agent's context (`/clear` for Claude, `/new` for Codex and OpenCode) and types the configured initial prompt again, re-read from the yaml. Antigravity is refused.
+
 ## 1.57.0 — 2026-10-28
 
 ### Changed
