@@ -431,7 +431,7 @@ headers (per-model weekly scopes are not in those headers).
 config:
     idle_timeout_s: 300
     watchdog_idle_s: 1800    # stall watchdog, see below; 0 disables
-    watchdog_waiting_s: 3600
+    watchdog_waiting_s: 900
     yolo_approve_dangerous_commands: true # YOLO accepts blocking prompts whose default is yes (not model swaps/billing); false: leave them to a person
 
 babysit:
@@ -490,12 +490,10 @@ launch:
 keys without a menu row (`ports`, `log`, `args`, `ignore_host_agents_md`) are carried into the launch.
 `babysit <agent> --config FILE` ignores `launch:`.
 
-**Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes.
-After `watchdog_idle_s` idle (30 min) or `watchdog_waiting_s` waiting (60 min), Claude Haiku reads the last 150 terminal lines
-inside the session container (Codex as fallback) and decides: parked on purpose (finished, asked you something, real work still running)
-or stalled. Stalled → types a nudge: collect finished background work, resume, or reply `idle`. One judgment per quiet stretch, so a session left alone for days gets one cheap check
-and no message unless it stalled. Skipped while `stuck`, and for idle when an idle rule or `--loop` already nudges. Typing restarts the stretch.
-Verdicts are in the monitor log.
+**Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes, or sit behind a background poll that hung.
+- **Idle** for `watchdog_idle_s` (30 min): Claude Haiku reads the last 150 terminal lines inside the session container (Codex as fallback) and decides: parked on purpose (finished, asked you something) or stalled. Stalled → types a nudge: collect finished background work, resume, or reply `idle`. One judgment per quiet stretch, so a session left alone for days gets one cheap check and no message unless it stalled. Skipped when an idle rule or `--loop` already nudges.
+- **Waiting** on background shells/subagents for `watchdog_waiting_s` (15 min): no judge. The agent is asked to check in on its background jobs (alive and progressing? deal with stuck ones). Repeats every interval until the agent runs again; a screen cannot tell a hung poll from a healthy one, the agent can.
+- Skipped while `stuck`. Typing restarts the stretch. Verdicts and check-ins are in the monitor log.
 
 ## Mobile web companion
 
