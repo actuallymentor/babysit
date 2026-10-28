@@ -289,6 +289,7 @@ babysit effort --status <id>
 babysit exit [--yes]          # End this session gracefully after the current turn; asks for confirmation first
 babysit stuck                 # Mark this session "stuck" in babysit list until the user types into it
 babysit loop                  # Toggle --loop for this session; prints "Looping is now enabled/disabled"
+babysit reset                 # Clear this session's context and type the initial prompt again (after the current turn)
 ```
 
 `babysit exit` first asks `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n`;

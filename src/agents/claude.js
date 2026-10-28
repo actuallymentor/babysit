@@ -224,6 +224,9 @@ export const claude = {
     // The shortcuts footer appears only with the interactive composer.
     initial_prompt_ready: is_initial_prompt_ready,
 
+    // `babysit reset`: new conversation in the same process
+    reset_command: `/clear`,
+
     // YOLO monitors answer this bypass-immune prompt with Enter on "Yes".
     yolo_dialog: find_yolo_dialog,
 

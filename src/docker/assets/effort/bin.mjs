@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { run_effort, run_model, run_exit, run_stuck, run_loop, effort_help, model_help, exit_help, stuck_help, loop_help } from './command.mjs'
+import { run_effort, run_model, run_exit, run_stuck, run_loop, run_reset, effort_help, model_help, exit_help, stuck_help, loop_help, reset_help } from './command.mjs'
 import { run_usage, usage_help } from '../usage/command.mjs'
 import { run_adb, adb_help } from '../adb/command.mjs'
 import { run_ios, ios_help } from '../ios/command.mjs'
 
 const mode_help = `Usage: babysit mode\nPrints "container" here; the host CLI prints "host".`
-const HELP = { effort: effort_help, model: model_help, exit: exit_help, stuck: stuck_help, loop: loop_help, usage: usage_help, adb: adb_help, ios: ios_help, mode: mode_help }
+const HELP = { effort: effort_help, model: model_help, exit: exit_help, stuck: stuck_help, loop: loop_help, reset: reset_help, usage: usage_help, adb: adb_help, ios: ios_help, mode: mode_help }
 const ALL_HELP = `In-session Babysit commands (host-only commands such as list or resume run outside the container).\n\n${ Object.values( HELP ).join( `\n\n` ) }`
 
 try {
@@ -25,6 +25,7 @@ try {
     else if( command === `model` ) console.log( await run_model( args ) )
     else if( command === `exit` ) console.log( await run_exit( args ) )
     else if( command === `stuck` ) console.log( await run_stuck( args ) )
+    else if( command === `reset` ) console.log( await run_reset( args ) )
     else if( command === `loop` ) console.log( await run_loop( args ) )
     else throw new Error( ALL_HELP )
 } catch ( error ) {

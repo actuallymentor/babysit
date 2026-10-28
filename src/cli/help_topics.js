@@ -1,11 +1,11 @@
 import { SUPPORTED_AGENTS, is_agent } from '../agents/index.js'
-import { effort_help, exit_help, loop_help, model_help, stuck_help } from '../docker/assets/effort/command.mjs'
+import { effort_help, exit_help, loop_help, model_help, reset_help, stuck_help } from '../docker/assets/effort/command.mjs'
 import { usage_help } from '../docker/assets/usage/command.mjs'
 
 /*
  * Per-command help: `babysit <command> [sub] --help` or `babysit help <command> [sub]`.
  * Each topic is plain text: usage, how it works, options, examples. The
- * in-session commands (effort, model, exit, stuck, loop, usage) keep their
+ * in-session commands (effort, model, exit, stuck, loop, reset, usage) keep their
  * text in the container assets so the image's helper prints the same thing.
  */
 
@@ -572,6 +572,7 @@ Examples:
     exit: () => exit_help,
     stuck: () => stuck_help,
     loop: () => loop_help,
+    reset: () => reset_help,
 
 }
 
