@@ -27,11 +27,12 @@ ${ comment_block( initial_prompt ) }
 #     # Seconds without new output before the agent counts as idle (on: idle, --loop).
 #     idle_timeout_s: 300
 #
-#     # Seconds an agent may sit idle, or waiting on background work, before a cheap
-#     # LLM reads its screen and nudges it to resume if it stalled mid-task.
-#     # Judged once per quiet stretch; typing into the session restarts it. 0 disables.
+#     # Idle: seconds before a cheap LLM reads the screen and nudges the agent to
+#     # resume if it stalled mid-task (judged once per quiet stretch).
+#     # Waiting on background work: every this many seconds the agent is asked to
+#     # check its background jobs, until it runs again. Typing restarts both. 0 disables.
 #     watchdog_idle_s: 1800
-#     watchdog_waiting_s: 3600
+#     watchdog_waiting_s: 900
 #
 #     # YOLO only: accept any Claude prompt that still blocks (rm safety checks, folder trust, …) when its default is yes.
 #     # Model swaps, billing and deny-rule prompts always stay with a person. false leaves every prompt to a person.
@@ -91,7 +92,7 @@ export const DEFAULT_CONFIG = {
     initial_prompt: null,
     idle_timeout_s: 300,
     watchdog_idle_s: 1_800,
-    watchdog_waiting_s: 3_600,
+    watchdog_waiting_s: 900,
     yolo_approve_dangerous_commands: true,
     claude_account_auto_switch: true,
     commands: {},

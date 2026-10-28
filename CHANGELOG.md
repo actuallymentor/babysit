@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.59.0 — 2026-10-28
+
+### Changed
+- Stall watchdog: an agent waiting on background shells or subagents is no longer judged from its screen (a hung poll looks identical to a healthy one, and one "parked" verdict silenced two 10-hour stalls). Every `watchdog_waiting_s` (now 15 min, was 60) it is asked to check in on its background jobs, repeating until it runs again. Idle agents keep the Haiku judge. Running sessions need `babysit restart` to pick it up.
+
 ## 1.58.0 — 2026-10-28
 
 ### Added

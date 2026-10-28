@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { create_watchdog, WATCHDOG_NUDGE } from '../src/babysit/watchdog.js'
+import { create_watchdog, CHECK_IN_NUDGE, WATCHDOG_NUDGE } from '../src/babysit/watchdog.js'
 import { build_judge_prompt, judge_session, parse_verdict } from '../src/babysit/judge.js'
 import { start_monitor } from '../src/babysit/monitor.js'
 
@@ -13,7 +13,7 @@ const make_watchdog = ( overrides = {} ) => {
     const watchdog = create_watchdog( {
         session_name: `babysit_test`,
         idle_s: 1_800,
-        waiting_s: 3_600,
+        waiting_s: 900,
         judge: async input => {
             calls.push( input )
             return { nudge: true, reason: `stalled`, judge: `claude` }
@@ -42,8 +42,8 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         expect( calls ).toEqual( [ { status: `idle`, quiet_minutes: 30 } ] )
-        expect( await watchdog.take( `idle` ) ).toBe( true )
-        expect( await watchdog.take( `idle` ) ).toBe( false )
+        expect( await watchdog.take( `idle` ) ).toBe( WATCHDOG_NUDGE )
+        expect( await watchdog.take( `idle` ) ).toBeNull()
 
         // Judged once per stretch, however long it stays quiet
         clock.now = 99_000_000
@@ -52,19 +52,55 @@ describe( `watchdog`, () => {
         expect( calls ).toHaveLength( 1 )
     } )
 
-    it( `gives waiting agents the longer threshold`, async () => {
+    it( `checks in on a waiting agent without a judge, and again every threshold`, async () => {
         const { watchdog, clock, calls } = make_watchdog()
 
         watchdog.observe( `waiting` )
+        clock.now = 899_000
+        watchdog.observe( `waiting` )
+        await settle()
+        expect( await watchdog.take( `waiting` ) ).toBeNull()
+
+        clock.now = 900_000
+        watchdog.observe( `waiting` )
+        await settle()
+        expect( await watchdog.take( `waiting` ) ).toBe( CHECK_IN_NUDGE )
+        expect( await watchdog.take( `waiting` ) ).toBeNull()
+
+        // Still waiting and silent: the next check-in is a full threshold away
+        clock.now = 1_799_000
+        watchdog.observe( `waiting` )
+        await settle()
+        expect( await watchdog.take( `waiting` ) ).toBeNull()
         clock.now = 1_800_000
         watchdog.observe( `waiting` )
         await settle()
-        expect( calls ).toHaveLength( 0 )
+        expect( await watchdog.take( `waiting` ) ).toBe( CHECK_IN_NUDGE )
 
-        clock.now = 3_600_000
-        watchdog.observe( `waiting` )
-        await settle()
-        expect( calls[ 0 ].status ).toBe( `waiting` )
+        expect( calls ).toHaveLength( 0 )
+    } )
+
+    it( `drops a check-in once the agent stopped waiting, is stuck, or the user typed`, async () => {
+        const due = async overrides => {
+            const made = make_watchdog( overrides )
+            made.watchdog.observe( `waiting` )
+            made.clock.now = 900_000
+            made.watchdog.observe( `waiting` )
+            await settle()
+            return made.watchdog
+        }
+
+        expect( await ( await due() ).take( `idle` ) ).toBeNull()
+
+        let stuck = false
+        const stuck_dog = await due( { is_stuck: () => stuck } )
+        stuck = true
+        expect( await stuck_dog.take( `waiting` ) ).toBeNull()
+
+        let typed = null
+        const typing_dog = await due( { typed_at: async () => typed } )
+        typed = 950_000
+        expect( await typing_dog.take( `waiting` ) ).toBeNull()
     } )
 
     it( `starts a fresh stretch after the agent runs, dropping a stale nudge`, async () => {
@@ -75,7 +111,7 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         watchdog.observe( `running` )
-        expect( await watchdog.take( `idle` ) ).toBe( false )
+        expect( await watchdog.take( `idle` ) ).toBeNull()
 
         watchdog.observe( `idle` )
         clock.now = 3_599_000
@@ -95,7 +131,7 @@ describe( `watchdog`, () => {
         clock.now = 1_800_000
         watchdog.observe( `idle` )
         await settle()
-        expect( await watchdog.take( `idle` ) ).toBe( false )
+        expect( await watchdog.take( `idle` ) ).toBeNull()
     } )
 
     it( `skips stuck sessions, disabled thresholds, and idle agents an idle rule already nudges`, async () => {
@@ -109,12 +145,12 @@ describe( `watchdog`, () => {
         }
 
         // An idle rule does not cover waiting
-        const { watchdog, clock, calls } = make_watchdog( { skips_idle: () => true } )
+        const { watchdog, clock } = make_watchdog( { skips_idle: () => true } )
         watchdog.observe( `waiting` )
-        clock.now = 3_600_000
+        clock.now = 900_000
         watchdog.observe( `waiting` )
         await settle()
-        expect( calls ).toHaveLength( 1 )
+        expect( await watchdog.take( `waiting` ) ).toBe( CHECK_IN_NUDGE )
     } )
 
     it( `restarts the stretch when the user typed, and retries after a failed judgment`, async () => {
@@ -156,7 +192,7 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         expect( calls ).toHaveLength( 2 )
-        expect( await watchdog.take( `idle` ) ).toBe( true )
+        expect( await watchdog.take( `idle` ) ).toBe( WATCHDOG_NUDGE )
     } )
 
     it( `drops a verdict when the user typed while the judge was thinking`, async () => {
@@ -175,7 +211,7 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         expect( calls ).toHaveLength( 1 )
-        expect( await watchdog.take( `idle` ) ).toBe( false )
+        expect( await watchdog.take( `idle` ) ).toBeNull()
 
         // The stretch restarted at the keypress, so it is judged again later
         typed = null
@@ -183,7 +219,7 @@ describe( `watchdog`, () => {
         watchdog.observe( `idle` )
         await settle()
         expect( calls ).toHaveLength( 2 )
-        expect( await watchdog.take( `idle` ) ).toBe( true )
+        expect( await watchdog.take( `idle` ) ).toBe( WATCHDOG_NUDGE )
     } )
 
     it( `cancels a queued nudge when the user started typing before delivery`, async () => {
@@ -195,7 +231,7 @@ describe( `watchdog`, () => {
         await settle()
 
         typed = 1_800_500
-        expect( await watchdog.take( `idle` ) ).toBe( false )
+        expect( await watchdog.take( `idle` ) ).toBeNull()
     } )
 
     it( `cancels a queued nudge when the session became stuck or covered by an idle rule`, async () => {
@@ -207,7 +243,7 @@ describe( `watchdog`, () => {
             watchdog.observe( `waiting` )
             await settle()
             Object.assign( state, late )
-            expect( await watchdog.take( `idle` ) ).toBe( false )
+            expect( await watchdog.take( `idle` ) ).toBeNull()
         }
     } )
 
@@ -309,7 +345,7 @@ describe( `monitor watchdog wiring`, () => {
             take: () => {
                 const value = queued
                 queued = false
-                return value
+                return value ? WATCHDOG_NUDGE : null
             },
         }
 

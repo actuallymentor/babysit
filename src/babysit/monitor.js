@@ -506,7 +506,9 @@ export const start_monitor = async ( {
             const now = Date.now()
 
             // A stalled verdict outranks rules: the stretch it judged is still quiet
-            if( await watchdog?.take( agent_status ) ) {
+            const watchdog_text = await watchdog?.take( agent_status )
+            if( watchdog_text ) {
+                watchdog_rule.do = watchdog_text
                 begin_action( watchdog_rule, now )
                 await wait_fn( POLL_INTERVAL_MS )
                 continue
