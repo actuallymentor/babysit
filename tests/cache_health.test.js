@@ -38,7 +38,7 @@ describe( `docker build cache health`, () => {
         const check = () => refresh_cache_health( { run_command, command_prefix: [ `docker` ], now: () => clock, path } )
 
         expect( await check() ).toEqual( { checked_at: 0, build_cache_bytes: 235_400_000_000 } )
-        expect( calls ).toEqual( [ { args: [ `buildx`, `du` ], timeout_ms: 120_000 } ] )
+        expect( calls ).toEqual( [ { args: [ `buildx`, `du`, `--builder`, `default` ], timeout_ms: 120_000 } ] )
 
         clock += 30 * 60_000
         await check()

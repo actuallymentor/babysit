@@ -87,7 +87,8 @@ export const refresh_cache_health = async ( {
 
     try {
         const [ command, ...prefix_args ] = command_prefix
-        const output = await run_command( command, [ ...prefix_args, `buildx`, `du` ], {}, CHECK_TIMEOUT_MS )
+        // The daemon's own builder: the cache `babysit prune` (docker builder prune) clears
+        const output = await run_command( command, [ ...prefix_args, `buildx`, `du`, `--builder`, `default` ], {}, CHECK_TIMEOUT_MS )
         const build_cache_bytes = parse_build_cache_total( output )
         if( build_cache_bytes === null ) return health
         return save( { checked_at: now(), build_cache_bytes } )
