@@ -21,8 +21,8 @@ import { judge_session } from '../babysit/judge.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { capture_history } from '../tmux/capture.js'
 import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
-import { remove_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
-import { reconcile_frozen } from './freeze.js'
+import { remove_docker_container, stop_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
+import { reconcile_frozen, set_container_paused } from './freeze.js'
 import { start_usage_sampler } from '../docker/stats.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
@@ -30,7 +30,8 @@ import { create_exit_controller } from '../control/exit.js'
 import { create_stuck_controller } from '../control/stuck.js'
 import { create_loop_controller } from '../control/loop.js'
 import { create_reset_controller } from '../control/reset.js'
-import { send_text } from '../tmux/send.js'
+import { send_keys, send_text } from '../tmux/send.js'
+import { kill_session } from '../tmux/session.js'
 import {
     clear_host_auth_cache,
     refresh_file_credential_parts,
@@ -459,10 +460,17 @@ export const cmd_monitor = async ( cmd ) => {
         // the turn finish, then ask the agent to quit; force it after a grace period.
         exit_controller = create_exit_controller( session, {
             send_text,
+            send_keys,
             update: update_session,
+            // This monitor owns the launch, so it stops its own container and
+            // pane directly: the user-facing close adds workspace-lock and
+            // ownership checks that can refuse a session closing itself
             force_close: async () => {
-                const { close_session } = await import( './recover.js' )
-                await close_session( session )
+                if( load_session( session.babysit_id )?.frozen_at ) {
+                    await set_container_paused( session.container_id, false ).catch( error => log.debug( `Unpause before forced close failed: ${ error.message }` ) )
+                }
+                await stop_docker_container( session.container_id || session.container_name )
+                await kill_session( session.tmux_session )
             },
         } )
 
@@ -518,8 +526,8 @@ export const cmd_monitor = async ( cmd ) => {
                 loop: () => loop_controller.toggle(),
                 reset: () => reset_controller.request(),
             } } ),
-            on_status: async status => {
-                await exit_controller.on_status( status )
+            on_status: async ( status, screen ) => {
+                await exit_controller.on_status( status, screen )
                 await reset_controller.on_status( status )
                 await stuck_controller.tick()
             },

@@ -294,8 +294,9 @@ babysit reset                 # Clear this session's context and type the initia
 
 `babysit exit` first asks `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n`;
 without a terminal on stdin it refuses and points at `--yes`. Confirmed, it marks the session intentionally
-closed (recovery will not relaunch it), waits for the agent's composer to be idle, sends `/exit`, and forces a
-close if the agent has not quit after 30 seconds.
+closed (recovery will not relaunch it), waits for the agent's composer to be idle, sends `/exit`, answers Claude's
+"Background work is running" menu with "Exit and stop tasks", and forces a close if the agent has not quit 30 seconds
+after `/exit` (or 10 minutes after the request if the turn never ends). Monitor diagnostics: `~/.babysit/monitor-logs/<id>.log`.
 
 Changes affect this session, not future launch defaults. Claude subagent calls
 control the main session; they do not change the subagent's private model.
