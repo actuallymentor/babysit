@@ -85,3 +85,6 @@
 - Research only; see RESEARCH.md "Latency audit". User to pick from: per-container swap off, zswap, pre-created/hot-standby containers, ping instead of info, cached image identity, async account probe, early attach, BuildKit cache prune/GC policy, zfs_txg_timeout, ext4 data-root/second daemon, monitor exec reduction, tmux-socket bypass.
 - Host-level options (txg, zswap, data-root, build cache) change the whole server, not just babysit.
 - Host edits made: /etc/tmpfiles.d/zswap.conf (zswap on), /etc/docker/daemon.json builder.gc (backup .bak-2026-10-29, effective at next dockerd restart; live-restore off). K1 untested on Docker Desktop macOS (limit = Mac RAM may exceed VM RAM).
+- 2026-10-29: Incident caused by me (docker0 deleted by a host-netns test dockerd). User doing cleanup by hand. S7 = dataset `internalnvme/docker-babysit` exists; second babysit daemon not built; zfs driver judged not worth it vs overlay2 on the quiet dataset (unmeasured).
+- Open: `babysit prune` network prune + global unused image removal is risky on shared hosts — user to decide whether to scope it to babysit resources.
+

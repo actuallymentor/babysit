@@ -72,9 +72,12 @@ export const prune_unused_docker = async ( {
     }
 
     await docker( [ `network`, `prune`, `--force` ] )
-    await docker( [ `builder`, `prune`, `--force` ], 10 * 60_000 )
+    // Without --all only dangling cache goes, and old-but-referenced cache grew
+    // to 425 GB on one host. Seven days keeps recent builds warm; deleting
+    // hundreds of GB on ZFS took 30 min, so the deadline is generous.
+    await docker( [ `builder`, `prune`, `--force`, `--all`, `--filter`, `until=168h` ], 60 * 60_000 )
 
-    return `Docker: removed ${ removed_containers } stopped containers and ${ removed_images } images; pruned unused networks and build cache. Volumes kept.`
+    return `Docker: removed ${ removed_containers } stopped containers and ${ removed_images } images; pruned unused networks and build cache older than 7 days. Volumes kept.`
 
 }
 

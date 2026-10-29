@@ -210,6 +210,8 @@ describe( `cmd_watch`, () => {
         const frames = []
         await cmd_watch( { flags }, {
             accounts_fn: () => ``,
+            cache_health_fn: async () => ( {} ),
+            cache_read_fn: () => ( {} ),
             watch_fn: () => () => {},
             input: null,
             output: null,
@@ -220,6 +222,24 @@ describe( `cmd_watch`, () => {
         return frames
     }
     const plain = text => text.replace( /\x1b\[[\d;?]*[a-zA-Z]/g, `` )
+
+    it( `warns about an oversized build cache without waiting on the check`, async () => {
+        let checks = 0
+        const frames = await run_watch( { usage: true }, {
+            rounds: 2,
+            collect_fn: async () => report,
+            cache_read_fn: () => ( { build_cache_bytes: 235e9 } ),
+            // A check that never answers must not hold a frame
+            cache_health_fn: () => {
+                checks++
+                return new Promise( () => {} )
+            },
+        } )
+        const text = plain( frames.join( `` ) )
+        expect( text ).toContain( `Docker build cache is 235 GB` )
+        expect( text ).toContain( `babysit prune` )
+        expect( checks ).toBe( 1 )
+    } )
 
     it( `redraws sessions plus usage, refreshing usage on its own cadence`, async () => {
         let now = NOW
