@@ -246,6 +246,11 @@ describe( `account usage cache`, () => {
         await new Promise( resolve => setTimeout( resolve, 10 ) )
         expect( cached_account_usage( { cache_path } ).work ).toMatchObject( { headroom: 95 } )
 
+        // No reading at all: the deadline still holds and the account reads as unknown
+        const { usage_path: empty_cache } = scratch()
+        const [ unknown ] = await probe_accounts( accounts.slice( 1 ), { request: () => new Promise( () => {} ), cache_path: empty_cache, now, deadline_ms: 10 } )
+        expect( unknown ).toMatchObject( { name: `work`, status: `error`, headroom: null } )
+
     } )
 
     it( `usage report: one claude entry per account, labelled claude / <account>`, async () => {

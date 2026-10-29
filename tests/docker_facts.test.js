@@ -21,11 +21,26 @@ describe( `within_deadline`, () => {
 
 describe( `docker facts`, () => {
 
-    it( `keys the identity cache on the endpoint Docker would use`, () => {
+    it( `keys the cache on the endpoint Docker would use, in Docker's precedence`, () => {
 
-        expect( docker_endpoint_key( { DOCKER_HOST: `tcp://box:2375` } ) ).toBe( `host:tcp://box:2375` )
-        expect( docker_endpoint_key( { DOCKER_CONTEXT: `remote` } ) ).toBe( `context:remote` )
+        expect( docker_endpoint_key( { DOCKER_HOST: `tcp://box:2375`, DOCKER_CONFIG: `/cfg` } ) ).toBe( `host:tcp://box:2375` )
+        expect( docker_endpoint_key( { DOCKER_CONTEXT: `remote`, DOCKER_HOST: `tcp://box:2375`, DOCKER_CONFIG: `/cfg` } ) ).toBe( `context:/cfg:remote` )
         expect( docker_endpoint_key( { DOCKER_CONFIG: `/nonexistent` } ) ).toBe( `context:default` )
+
+    } )
+
+    it( `serves an expired daemon ID when docker info stalls or fails`, async () => {
+
+        const path = temp_path()
+        let clock = 0
+        const base = { command_prefix: [ `docker` ], endpoint: `context:default`, path, remembers: true, now: () => clock }
+        await cached_docker_id( { ...base, run_command: async () => `OLD:ID` } )
+
+        clock += 48 * 3_600_000
+        expect( await cached_docker_id( { ...base, run_command: never } ) ).toBe( `OLD:ID` )
+        expect( await cached_docker_id( { ...base, run_command: async () => {
+            throw new Error( `timed out` )
+        } } ) ).toBe( `OLD:ID` )
 
     } )
 
@@ -58,18 +73,19 @@ describe( `docker facts`, () => {
         expect( await image_facts( options ) ).toEqual( { id: `sha256:abc`, gate: true } )
         expect( await image_facts( options ) ).toEqual( { id: `sha256:abc`, gate: true } )
         expect( calls ).toEqual( [ `image inspect babysit:facts-a` ] )
-        expect( JSON.parse( readFileSync( path, `utf8` ) ).images[ `babysit:facts-a` ] ).toMatchObject( { id: `sha256:abc`, gate: true } )
+        const remembered = Object.entries( JSON.parse( readFileSync( path, `utf8` ) ).images )
+        expect( remembered ).toEqual( [ [ expect.stringMatching( / babysit:facts-a$/ ), { id: `sha256:abc`, at: expect.any( Number ) } ] ] )
 
     } )
 
-    it( `falls back to remembered facts when the daemon stalls`, async () => {
+    it( `falls back to the remembered ID, never an unverified gate, when the daemon stalls`, async () => {
 
         const path = temp_path()
         const image = `babysit:facts-b`
         await image_facts( { run_command: async () => `sha256:old 1`, image, command_prefix: [ `docker` ], path, remembers: true } )
 
         const stalled = await image_facts( { run_command: never, image, command_prefix: [ `docker` ], path, remembers: true, deadline_ms: 10 } )
-        expect( stalled ).toEqual( { id: `sha256:old`, gate: true } )
+        expect( stalled ).toEqual( { id: `sha256:old`, gate: false } )
 
     } )
 
@@ -82,7 +98,7 @@ describe( `docker facts`, () => {
         expect( await image_facts( { run_command: slow, image, command_prefix: [ `docker` ], path, remembers: true, deadline_ms: 1 } ) ).toEqual( { id: `sha256:new`, gate: false } )
 
         forget_image_facts( image, path )
-        expect( JSON.parse( readFileSync( path, `utf8` ) ).images[ image ] ).toBeUndefined()
+        expect( JSON.parse( readFileSync( path, `utf8` ) ).images ).toEqual( {} )
 
     } )
 

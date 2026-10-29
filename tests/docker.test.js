@@ -570,6 +570,9 @@ describe( `build_docker_command`, () => {
         const args = build_docker_command_args( make_options() )
         const memory = args.find( arg => arg.startsWith( `--memory=` ) )
 
+        // macOS: totalmem() is the Mac, not Docker Desktop's VM, so no limit is set
+        if( process.platform !== `linux` ) return expect( memory ).toBeUndefined()
+
         // Equal memory and memory-swap limits mean zero swap allowance
         expect( memory ).toBe( `--memory=${ Math.floor( totalmem() / 1_048_576 ) }m` )
         expect( args ).toContain( memory.replace( `--memory=`, `--memory-swap=` ) )

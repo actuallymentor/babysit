@@ -194,11 +194,11 @@ export const probe_accounts = async ( accounts, {
                 return { name, token_hash: hash, fetched_at, ...reading }
             } )
 
-        // With a deadline, a slow or failed probe falls back to the last known reading
-        if( !deadline_ms || !cached ) return fetching
-        const last_known = () => ( { name, ...cached } )
-        const reading = await within_deadline( fetching, deadline_ms, last_known )
-        return reading.status === `ok` ? reading : last_known()
+        // With a deadline, a slow or failed probe falls back to the last known reading, else to unknown headroom
+        if( !deadline_ms ) return fetching
+        const fallback = () => cached ? { name, ...cached } : { name, status: `error`, limits: [], message: `Usage probe still running`, fetched_at }
+        const reading = await within_deadline( fetching, deadline_ms, fallback )
+        return reading.status === `ok` ? reading : fallback()
 
     } ) )
 
