@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.60.1 — 2026-10-29
+
+### Fixed
+- `babysit exit` left sessions open: Claude answers `/exit` with a "Background work is running" menu while shells or tasks run, and nothing answered it. Babysit now picks "Exit and stop tasks". The 30 s forced close counts from `/exit` (was from the request, so a long final turn could be cut off), stops the session's own container and pane directly instead of through the user close (whose workspace lock and ownership checks could refuse it), and retries 4 times instead of failing once. A turn that never ends is forced after 10 min.
+- Detached monitors log to `~/.babysit/monitor-logs/<id>.log` (was `/dev/null`, which hid the failed forced close). Running sessions need `babysit restart` to pick both up.
+
 ## 1.60.0 — 2026-10-29
 
 ### Changed

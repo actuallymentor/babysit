@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import { randomUUID } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync } from 'fs'
 import { join, relative, resolve } from 'path'
 import { createInterface } from 'readline/promises'
 import { wait } from 'mentie'
@@ -1916,6 +1916,22 @@ async function start_session( cmd ) {
 }
 
 /**
+ * Append-only log for one session's detached monitor.
+ * @param {string} babysit_id - The session id
+ * @param {Object} [options]
+ * @param {string} [options.babysit_dir] - Base Babysit state directory
+ * @returns {string} Absolute log path
+ */
+export const monitor_log_path = ( babysit_id, { babysit_dir = BABYSIT_DIR } = {} ) => {
+
+    const dir = join( babysit_dir, `monitor-logs` )
+    mkdirSync( dir, { recursive: true, mode: 0o700 } )
+
+    return join( dir, `${ babysit_id.replace( /[^a-zA-Z0-9_.-]/g, `_` ) }.log` )
+
+}
+
+/**
  * Spawn `babysit __monitor <id>` as a detached background process.
  * Works for both `node src/index.js` and bun-compiled binaries by detecting
  * which one is running and re-spawning accordingly.
@@ -1938,11 +1954,14 @@ export function spawn_monitor_daemon( babysit_id, monitor_token = null ) {
             ? [ `__monitor`, babysit_id, monitor_token ].filter( Boolean )
             : [ argv1, `__monitor`, babysit_id, monitor_token ].filter( Boolean )
 
+        // Warnings and errors land in a per-session log instead of /dev/null
+        const log_fd = openSync( monitor_log_path( babysit_id ), `a`, 0o600 )
         const child = spawn( cmd, args, {
             detached: true,
-            stdio: `ignore`,
+            stdio: [ `ignore`, log_fd, log_fd ],
             env: { ...process.env },
         } )
+        closeSync( log_fd )
 
         const handle_error = error => reject_spawn( error )
         child.once( `error`, handle_error )

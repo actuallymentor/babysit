@@ -189,7 +189,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.on_session_id] - Callback when agent session ID is captured
  * @param {Function} [options.on_logout_screen] - Callback with the agent name and { alertable } when the pane shows a lost login
  * @param {Function} [options.on_limit_screen] - Callback when the pane shows a subscription limit
- * @param {Function} [options.on_status] - Callback with each tick's agent status
+ * @param {Function} [options.on_status] - Callback with each tick's agent status and ANSI-stripped screen
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
  * @param {Object|null} [options.watchdog] - Stall watchdog from create_watchdog
  * @param {Function} [options.is_frozen] - Async: the current `babysit freeze` mark, falsy when not frozen
@@ -379,7 +379,7 @@ export const start_monitor = async ( {
             // Background terminals are unfinished work, even when their pane
             // is static. Restart the idle timer once their footer disappears.
             if( agent_status === `waiting` ) idle_tracker.reset()
-            if( on_status ) await on_status( agent_status )
+            if( on_status ) await on_status( agent_status, clean_output )
             watchdog?.observe( agent_status )
 
             // Store activity with the tmux session itself. Only transitions issue
