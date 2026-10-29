@@ -218,3 +218,4 @@
 - 2026-10-28: 1.58.0 — `babysit reset` (clear context + resend initial prompt), deployed together with 1.57.0 free OpenCode default.
 - 2026-10-28: 1.59.0 — watchdog: waiting agents get a repeating check-in (15 min, no judge); idle keeps the judge. Live-verified with real Claude + monitor.
 - 2026-10-29 — 1.59.1: containers inherit host timezone via `-e TZ` (were always UTC). Env over `/etc/localtime` mount: works on Docker Desktop.
+- 2026-10-29 — Latency audit (research only, nothing built): freezes = swapped agent memory (34 s first key reproduced); create = overlay umount waiting on ZFS txg; daemon lock cascades from BuildKit GC on 425 GB cache. Options presented to user, awaiting pick. See RESEARCH.md.

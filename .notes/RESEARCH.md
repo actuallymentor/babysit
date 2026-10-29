@@ -1,5 +1,18 @@
 # Operational Research
 
+## Latency audit — 2026-10-29 (measured on dev host, nothing built)
+
+Host: 4 cores, load ~11-25, CPU PSI ~30-60%, IO PSI ~25-56%, 75 containers, 18 GB in disk swap (nvme0n1p1), docker data-root = overlay2 on ZFS `internalnvme/docker`.
+
+- **Keystroke freezes = swap.** Real authenticated Claude session pushed to swap (cgroup `memory.reclaim`): first key 34.3 s, then 0.65-3.2 s; resident 17-52 ms. Live sessions hold 50-300 MB swapped each. Real Claude under parent-slice reclaim: default 0.23-25.7 s; `--memory-reservation` (memory.low) no help under proactive reclaim; `--memory=X --memory-swap=X` (swap.max=0) 2 ms-1.7 s (residual = file-backed binary pages); host zswap (zstd) 71-797 ms. `docker update --memory X --memory-swap X` applies live (0.16 s) but pages already swapped stay until touched.
+- Not the cause: shared host tmux server (p99 47 ms), dockerd attach stream in clean 20-min run (max 103 ms; tmux-socket bypass p99 19 vs 77 ms), CPU weight (`--cpu-shares` 10240 → p99 59→54 ms, noise). Earlier 1-1.4 s attach stalls coincided with my SIGUSR1 goroutine dumps / lock storms.
+- **`docker create` 5-11 s = overlay umount → `ovl_sync_fs` → `sync_inodes_sb` on the ZFS dataset**, waiting for mmap page writeback that ZFS only ends at txg commit (≈2 × `zfs_txg_timeout`). Dirty mmaps come from other containers on the same dataset (JVM hsperfdata, chromium caches, sqlite -shm, samba tdb). `zfs_txg_timeout=1` → create 2.05 s flat. Overlay umount: docker dataset 0.75-9.3 s, quiet ZFS dataset 75-100 ms, ext4 15-40 ms, ext4-on-zvol 0.5-1.5 s (20 MB dirty). Throwaway dind with ext4 data-root: create 0.1 s, start 0.6 s, rm -f 0.45 s.
+- **Daemon lock cascades**: rm holds layerStore mutex across the slow umount; BuildKit auto-GC (`Controller.gc`) deleting from a 425 GB build cache holds it for minutes. 5-min sample: `image inspect` p50 0.66 s max 117 s, `info` max 92 s (aborted a launch: "Docker is not running", 5 s timeout), `ps` max 3.9 s, `_ping` max 0.37 s.
+- Real launches (BABYSIT_DEBUG=1, auth cache hit): 16 s and 38.5 s to attach. Big items: create 6.5/11.1 s, TUI readiness 4.3/5.3 s (blank pane), auth-cache check 5.8 s (image inspect), watchtower `docker ps` 3 s, account usage probe 1.3 s (usage endpoint 429 → cache miss each launch). start 0.86 s, upload+release 0.3 s.
+- Claude boot to composer: 1.1-1.4 s warm (idle-ish), 1.8-4.2 s in a babysit container under load. Pre-booted pane attach: 19-128 ms. Host `babysit --version` 70-90 ms.
+- Steady load: ~7.9 `docker exec`/s, ~95 % from monitors (one per ~1.8 s per session; control-store take + identity), each spawning node in the container.
+- Harness: python pty key→echo timers, privileged `--pid=host --cgroupns=host` helper for reclaim/bpftrace/nsenter. Bind-mount sources are host paths: pipe scripts via stdin. `pgrep -f` in wait loops self-matches.
+
 ## "preparing container" latency — 2026-10-07
 
 - Phase = `docker create` + one tar `docker cp` into the stopped container. Measured from inside a babysit container on the dev host: create 3-10s (raw API 3.2s, CLI 6-10s, one lucky burst 0.2s each), first cp 5-10s, rm <0.3s. Image size irrelevant (node:24-slim same). Three concurrent creates each take ~6.4s: latency, not throughput.
