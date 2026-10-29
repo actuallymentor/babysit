@@ -142,7 +142,7 @@ try {
         `container ls --all --filter status=created --filter status=exited --filter status=dead --no-trunc --format {{.ID}}\t{{.Names}}`,
         `image ls --all --no-trunc --quiet`,
         `network prune --force`,
-        `builder prune --force`,
+        `builder prune --force --all --filter until=168h`,
     ] )
     console.log( `PASS confirmed Docker cleanup inspects resources and prunes networks/cache without volumes` )
 } finally {
