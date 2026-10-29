@@ -94,6 +94,21 @@ describe( `babysit exit controller`, () => {
         expect( calls.keys ).toEqual( [] )
     } )
 
+    it( `keeps the forced close armed when typing into the pane fails`, async () => {
+        const fail = async () => {
+            throw new Error( `tmux timed out` )
+        }
+        const { controller, calls } = make( { send_text: fail, send_keys: fail } )
+        controller.request()
+
+        await controller.on_status( `idle` )
+        await controller.on_status( `running`, EXIT_MENU )
+        expect( calls.timers.map( timer => timer.ms ) ).toEqual( [ EXIT_FALLBACK_MS ] )
+
+        await calls.timers[0].fn()
+        expect( calls.forced ).toBe( 1 )
+    } )
+
     it( `retries a failing forced close, then gives up`, async () => {
         let attempts = 0
         const { controller, calls } = make( { force_close: async () => {

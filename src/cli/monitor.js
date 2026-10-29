@@ -31,7 +31,7 @@ import { create_stuck_controller } from '../control/stuck.js'
 import { create_loop_controller } from '../control/loop.js'
 import { create_reset_controller } from '../control/reset.js'
 import { send_keys, send_text } from '../tmux/send.js'
-import { kill_session } from '../tmux/session.js'
+import { has_session, kill_session } from '../tmux/session.js'
 import {
     clear_host_auth_cache,
     refresh_file_credential_parts,
@@ -471,6 +471,8 @@ export const cmd_monitor = async ( cmd ) => {
                 }
                 await stop_docker_container( session.container_id || session.container_name )
                 await kill_session( session.tmux_session )
+                // kill_session swallows tmux errors; a survivor earns a retry
+                if( await has_session( session.tmux_session ) ) throw new Error( `tmux session ${ session.tmux_session } is still open` )
             },
         } )
 

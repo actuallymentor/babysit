@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.60.2 — 2026-10-29
+
+### Fixed
+- `babysit exit`: a failed keystroke into the pane (tmux timeout) no longer stops the monitor and cancels the forced close; a forced close that leaves the tmux session open is retried.
+
 ## 1.60.1 — 2026-10-29
 
 ### Fixed
