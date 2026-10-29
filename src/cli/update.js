@@ -17,6 +17,7 @@ import { newer_version_available } from './version_check.js'
 import { get_image_name } from '../docker/update.js'
 import { SUPPORTED_AGENTS, get_agent } from '../agents/index.js'
 import { build_update_strategies } from '../deps/agent_update.js'
+import { forget_image_facts } from '../docker/facts.js'
 
 // Keep each remote operation bounded so a hung update cannot hold the user
 // hostage indefinitely.
@@ -285,6 +286,9 @@ export const update_docker_image = async ( run_command = run ) => {
         console.log( `      ✗ docker pull failed: ${ e.message }\n` )
         return
     }
+
+    // Launches fall back to remembered image facts while the daemon stalls; a pull makes them stale
+    forget_image_facts( image )
 
     const current = await inspect_image()
     if( !current?.Id ) {

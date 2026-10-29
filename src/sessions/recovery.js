@@ -4,6 +4,7 @@ import { resolve, join } from 'path'
 import { hostname } from 'os'
 import { run } from '../utils/exec.js'
 import { docker_command_prefix } from '../docker/run.js'
+import { cached_docker_id } from '../docker/facts.js'
 import { load_session, list_stored_sessions, session_workspace } from './store.js'
 
 export const RECOVERY_PROMPT = `You were interrupted. Check the current state, then continue unfinished work.`
@@ -28,8 +29,7 @@ export const workspace_config_hash = ( workspace, config_path = null ) => {
 /** Identify the Docker daemon, including remote contexts, without persisting credentials. */
 export const docker_identity = async ( { id: known_id = null } = {} ) => {
 
-    const [ command, ...prefix ] = docker_command_prefix()
-    const id = known_id || await run( command, [ ...prefix, `info`, `--format`, `{{.ID}}` ], {}, 15_000 )
+    const id = known_id || await cached_docker_id()
     if( !id ) throw new Error( `Docker did not provide its identity` )
     return { host: hostname(), docker_id: id }
 

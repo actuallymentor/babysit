@@ -88,11 +88,11 @@ describe( `Watchtower Docker inspection`, () => {
 
     } )
 
-    it( `inspects running containers through the Docker CLI`, () => {
+    it( `inspects running containers through the Docker CLI`, async () => {
 
-        const inspection = inspect_running_watchtower_containers( {
+        const inspection = await inspect_running_watchtower_containers( {
             env: {},
-            spawn_sync: ( cmd, args, options ) => {
+            spawn_command: ( cmd, args, options ) => {
                 expect( cmd ).toBe( `docker` )
                 expect( args ).toEqual( [ `ps`, `--format`, DOCKER_PS_FORMAT ] )
                 expect( options.stdio ).toEqual( [ `ignore`, `pipe`, `pipe` ] )
@@ -115,11 +115,11 @@ describe( `Watchtower Docker inspection`, () => {
 
     } )
 
-    it( `honors sudo-routed Docker hosts`, () => {
+    it( `honors sudo-routed Docker hosts`, async () => {
 
-        inspect_running_watchtower_containers( {
+        await inspect_running_watchtower_containers( {
             env: { BABYSIT_DOCKER_USE_SUDO: `1` },
-            spawn_sync: ( cmd, args ) => {
+            spawn_command: ( cmd, args ) => {
                 expect( cmd ).toBe( `sudo` )
                 expect( args ).toEqual( [ `docker`, `ps`, `--format`, DOCKER_PS_FORMAT ] )
                 return { status: 0, stdout: `` }
@@ -128,10 +128,10 @@ describe( `Watchtower Docker inspection`, () => {
 
     } )
 
-    it( `treats Docker inspection failures as nonfatal`, () => {
+    it( `treats Docker inspection failures as nonfatal`, async () => {
 
-        expect( inspect_running_watchtower_containers( {
-            spawn_sync: () => ( {
+        expect( await inspect_running_watchtower_containers( {
+            spawn_command: () => ( {
                 status: 1,
                 stderr: `daemon unavailable\n`,
             } ),
@@ -143,16 +143,16 @@ describe( `Watchtower Docker inspection`, () => {
 
     } )
 
-    it( `logs an unmistakable warning for unknown Watchtower containers`, () => {
+    it( `logs an unmistakable warning for unknown Watchtower containers`, async () => {
 
         const warnings = []
         const debug = []
-        const containers = warn_if_unrecognized_watchtower_is_running( {
+        const containers = await warn_if_unrecognized_watchtower_is_running( {
             logger: {
                 warn: message => warnings.push( message ),
                 debug: message => debug.push( message ),
             },
-            spawn_sync: () => ( {
+            spawn_command: () => ( {
                 status: 0,
                 stdout: docker_row( `mystery-watchtower`, `vendor/mystery:latest` ),
             } ),
@@ -170,16 +170,16 @@ describe( `Watchtower Docker inspection`, () => {
 
     } )
 
-    it( `logs inspection problems only at debug level`, () => {
+    it( `logs inspection problems only at debug level`, async () => {
 
         const warnings = []
         const debug = []
-        const containers = warn_if_unrecognized_watchtower_is_running( {
+        const containers = await warn_if_unrecognized_watchtower_is_running( {
             logger: {
                 warn: message => warnings.push( message ),
                 debug: message => debug.push( message ),
             },
-            spawn_sync: () => ( {
+            spawn_command: () => ( {
                 error: new Error( `docker timed out` ),
             } ),
         } )

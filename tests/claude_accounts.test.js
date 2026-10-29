@@ -222,6 +222,32 @@ describe( `account usage cache`, () => {
 
     } )
 
+    it( `with a deadline, slow or failed probes fall back to the last known reading`, async () => {
+
+        const { usage_path: cache_path } = scratch()
+        let clock = Date.parse( `2026-10-17T12:00:00Z` )
+        const now = () => clock
+        await probe_accounts( accounts, { request: async () => limits( 40, 10 ), cache_path, now } )
+
+        // Stale cache, throttled endpoint: the launch keeps the old headroom instead of an error
+        clock += 60 * 60_000
+        const throttled = async () => {
+            throw new Error( `HTTP 429` )
+        }
+        const failed = await probe_accounts( accounts, { request: throttled, cache_path, now, deadline_ms: 50 } )
+        expect( failed.map( ( { status, headroom } ) => [ status, headroom ] ) ).toEqual( [ [ `ok`, 60 ], [ `ok`, 60 ] ] )
+
+        // A probe past the deadline still refreshes the cache when it lands
+        let land = null
+        const slow = () => new Promise( resolve => land = () => resolve( limits( 5, 5 ) ) )
+        const waited = await probe_accounts( accounts.slice( 1 ), { request: slow, cache_path, now, deadline_ms: 10 } )
+        expect( waited[ 0 ] ).toMatchObject( { name: `work`, headroom: 60 } )
+        land()
+        await new Promise( resolve => setTimeout( resolve, 10 ) )
+        expect( cached_account_usage( { cache_path } ).work ).toMatchObject( { headroom: 95 } )
+
+    } )
+
     it( `usage report: one claude entry per account, labelled claude / <account>`, async () => {
 
         const probe = async list => list.map( ( { name } ) => ( { name, status: `ok`, limits: limits( 10, 20 ), headroom: 80, fetched_at: `2026-10-17T12:00:00.000Z` } ) )

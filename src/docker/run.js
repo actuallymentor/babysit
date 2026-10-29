@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
 import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
-import { homedir } from 'os'
+import { homedir, totalmem } from 'os'
 import { dirname, join } from 'path'
 import { log } from '../utils/log.js'
 import { get_image_name } from './update.js'
@@ -177,10 +177,11 @@ export const docker_command_prefix = ( { env = process.env } = {} ) => env.BABYS
 
 /**
  * Check whether the Docker CLI can talk to the daemon before Babysit creates
- * a tmux session around `docker run`.
+ * a tmux session around `docker run`. `docker version` answers without the
+ * daemon-wide locks that stall `docker info` for minutes on a busy host.
  * @param {Object} [options]
  * @param {Function} [options.spawn_sync=spawnSync] - Test seam for process spawn
- * @returns {{ available: boolean, reason?: string, version?: string }} Docker daemon status
+ * @returns {{ available: boolean, reason?: string, id?: null, version?: string }} Docker daemon status
  */
 export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
 
@@ -190,9 +191,9 @@ export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
     try {
         result = spawn_sync( cmd, [
             ...prefix_args,
-            `info`,
+            `version`,
             `--format`,
-            `{{.ID}} {{.ServerVersion}}`,
+            `{{.Server.Version}}`,
         ], {
             encoding: `utf8`,
             stdio: [ `ignore`, `pipe`, `pipe` ],
@@ -217,17 +218,15 @@ export const docker_daemon_status = ( { spawn_sync = spawnSync } = {} ) => {
 
         return {
             available: false,
-            reason: diagnostic || `${ cmd } ${ prefix_args.concat( `info` ).join( ` ` ) } exited with code ${ result.status }`,
+            reason: diagnostic || `${ cmd } ${ prefix_args.concat( `version` ).join( ` ` ) } exited with code ${ result.status }`,
         }
     }
 
-    // One daemon round trip answers both reachability and identity; launch
-    // reuses the ID instead of asking `docker info` a second time.
-    const [ id = ``, ...version ] = String( result.stdout || `` ).trim().split( /\s+/ )
+    // The daemon ID comes from the identity cache, not this probe
     return {
         available: true,
-        id: id || null,
-        version: version.join( ` ` ),
+        id: null,
+        version: String( result.stdout || `` ).trim(),
     }
 
 }
@@ -518,6 +517,12 @@ export const build_docker_command_args = ( options ) => {
         `--security-opt`,
         `seccomp=${ chrome_seccomp_profile_path }`
     )
+
+    // Agents idle for hours, and swapped-out memory then pages back in on the
+    // first keystroke (measured: 34 s). A limit of host RAM with zero swap
+    // allowance keeps the agent resident without capping it below the host.
+    const memory_limit = `${ Math.floor( totalmem() / 1_048_576 ) }m`
+    flags.push( `--memory=${ memory_limit }`, `--memory-swap=${ memory_limit }` )
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
     // Agent sessions are stateful, interactive workloads. An unattended image

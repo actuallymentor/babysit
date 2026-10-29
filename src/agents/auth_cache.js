@@ -14,6 +14,7 @@ import { get_image_name } from '../docker/update.js'
 import { docker_command_prefix } from '../docker/run.js'
 import { run } from '../utils/exec.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
+import { image_facts } from '../docker/facts.js'
 
 export const HOST_AUTH_CACHE_PATH = join( BABYSIT_DIR, `host-auth-cache.json` )
 export const HOST_AUTH_CACHE_TTL_MS = 12 * 60 * 60 * 1_000
@@ -289,19 +290,9 @@ export const resolve_auth_image_identity = async ( {
     command_prefix = docker_command_prefix(),
 } = {} ) => {
 
-    const [ command, ...prefix_args ] = command_prefix
-
-    try {
-        const identity = await run_command(
-            command,
-            [ ...prefix_args, `image`, `inspect`, image, `--format`, `{{.Id}}` ],
-            {},
-            30_000
-        )
-        return identity || null
-    } catch {
-        return null
-    }
+    // Shared with the bootstrap-gate check: one inspect, cached across launches
+    const { id } = await image_facts( { run_command, image, command_prefix } )
+    return id
 
 }
 

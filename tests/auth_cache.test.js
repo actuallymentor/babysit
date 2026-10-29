@@ -221,7 +221,7 @@ describe( `host authentication cache`, () => {
         expect( identity ).toBe( `sha256:resolved-image` )
         expect( calls ).toEqual( [ {
             command: `sudo`,
-            args: [ `docker`, `image`, `inspect`, `babysit:test`, `--format`, `{{.Id}}` ],
+            args: [ `docker`, `image`, `inspect`, `babysit:test`, `--format`, `{{.Id}} {{index .Config.Labels "babysit.bootstrap-gate"}}` ],
             options: {},
             timeout_ms: 30_000,
         } ] )
