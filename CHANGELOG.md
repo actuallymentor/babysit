@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.60.0 — 2026-10-29
+
+### Changed
+- Agent containers no longer swap: memory limit = host RAM, zero swap allowance. An idle session pushed to swap took up to 34 s to show the first keystroke. Running sessions need `babysit restart` to pick it up.
+- Launch no longer queues behind a busy Docker daemon: reachability uses `docker version` (was `docker info`, which stalled up to 92 s and aborted launches as "Docker is not running"), the daemon ID is cached for a day, the image ID and bootstrap-gate label come from one shared inspect that falls back to the last known value after 1.5 s, and the Watchtower check runs alongside the launch.
+- Multi-account launches wait at most 1 s for usage headers, then pick from the last known reading (a throttled usage endpoint cost every launch a round trip).
+
 ## 1.59.1 — 2026-10-29
 
 ### Fixed

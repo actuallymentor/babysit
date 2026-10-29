@@ -17,10 +17,10 @@ import {
     docker_command_prefix,
     shell_quote,
 } from './run.js'
-import { get_image_name } from './update.js'
 import { create_chrome_seccomp_profile } from './chrome-seccomp.js'
 import { build_tar_archive } from './tar.js'
 import { time_phase } from '../utils/timing.js'
+import { image_facts } from './facts.js'
 
 const DOCKER_CREATE_TIMEOUT_MS = 5 * 60 * 1_000
 const DOCKER_COPY_TIMEOUT_MS = 60_000
@@ -29,7 +29,6 @@ const DOCKER_INSPECT_TIMEOUT_MS = 15_000
 const DOCKER_START_TIMEOUT_MS = 60_000
 const DOCKER_START_POLL_MS = 100
 const DOCKER_RELEASE_TIMEOUT_MS = 30_000
-const BOOTSTRAP_GATE_LABEL = `babysit.bootstrap-gate`
 const BOOTSTRAP_GATE_FILE = `/run/babysit-bootstrap/ready`
 const DOCKER_CONTAINER_ID_PATTERN = /^[0-9a-f]{12,64}$/
 const LAUNCH_SIGNALS = [ `SIGHUP`, `SIGINT`, `SIGTERM` ]
@@ -204,16 +203,9 @@ const wait = ms => new Promise( resolve_wait => setTimeout( resolve_wait, ms ) )
  */
 const image_supports_bootstrap_gate = async run_command => {
 
-    const [ command, ...prefix_args ] = docker_command_prefix()
-    try {
-        const label = await run_command( command, [
-            ...prefix_args, `image`, `inspect`, `--format`, `{{index .Config.Labels "${ BOOTSTRAP_GATE_LABEL }"}}`, get_image_name(),
-        ], {}, DOCKER_INSPECT_TIMEOUT_MS )
-        return String( label ).trim() === `1`
-    } catch ( error ) {
-        log.debug( `Could not read the bootstrap gate label: ${ error.message }` )
-        return false
-    }
+    // One shared inspect; a stalled daemon falls back to the last known label
+    const { gate } = await image_facts( { run_command } )
+    return gate
 
 }
 

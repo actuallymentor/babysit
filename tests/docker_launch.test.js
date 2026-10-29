@@ -71,7 +71,7 @@ const fake_signals = () => new EventEmitter()
 describe( `prepared Docker launch`, () => {
 
     const gate_label = supported => ( args ) =>
-        args.includes( `image` ) && args.includes( `inspect` ) ?  supported ? `1` : ``  : null
+        args.includes( `image` ) && args.includes( `inspect` ) ? `sha256:test ${ supported ? `1` : `` }` : null
 
     it( `defers the upload into the running container when the image has the gate`, async () => {
 

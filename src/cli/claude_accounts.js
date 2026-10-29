@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { BABYSIT_DIR } from '../utils/paths.js'
+import { within_deadline } from '../utils/deadline.js'
 import { write_atomic_json } from '../web_bridge/files.js'
 import { claude_header_request } from '../docker/assets/usage/providers.mjs'
 import { collect_usage } from '../docker/assets/usage/command.mjs'
@@ -22,6 +23,9 @@ export const ACCOUNT_USAGE_PATH = join( BABYSIT_DIR, `claude-account-usage.json`
 
 // Quota headers cost one output token per account, so launches reuse a recent read
 export const ACCOUNT_USAGE_TTL_MS = 5 * 60_000
+
+// A launch picks from the last known reading rather than wait longer on a slow or throttled endpoint
+const LAUNCH_PROBE_DEADLINE_MS = 1_000
 
 const ACCOUNT_NAME = /^[a-z0-9][a-z0-9_.-]{0,31}$/i
 const YEAR_MS = 365 * 24 * 3600_000
@@ -155,6 +159,7 @@ export const account_headroom = ( limits = [] ) => {
  * @param {Array<Object>} accounts - From list_claude_accounts
  * @param {Object} [options]
  * @param {number} [options.max_age_ms] - Cache tolerance; 0 always probes
+ * @param {number|null} [options.deadline_ms] - Wait at most this long, then use the last known reading
  * @param {Function} [options.request] - Header probe seam (claude_header_request)
  * @param {string} [options.cache_path] - Usage cache path
  * @param {Function} [options.now] - Clock seam
@@ -162,36 +167,41 @@ export const account_headroom = ( limits = [] ) => {
  */
 export const probe_accounts = async ( accounts, {
     max_age_ms = ACCOUNT_USAGE_TTL_MS,
+    deadline_ms = null,
     request = token => claude_header_request( token, { timeout_ms: 10_000 } ),
     cache_path = ACCOUNT_USAGE_PATH,
     now = () => Date.now(),
 } = {} ) => {
 
     const cache = read_json( cache_path ) || {}
-    let changed = false
+
+    // Each reading lands on its own, so one that outlives a deadline still refreshes the cache
+    const remember = ( name, reading ) => write_private_json( cache_path, { ...read_json( cache_path ), [ name ]: reading } )
 
     const readings = await Promise.all( accounts.map( async ( { name, token } ) => {
 
         const hash = token_hash( token )
-        const cached = cache[ name ]
-        const fresh = cached?.token_hash === hash && now() - Date.parse( cached.fetched_at ) < max_age_ms
-        if( fresh ) return { name, ...cached }
+        const cached = cache[ name ]?.token_hash === hash ? cache[ name ] : null
+        if( cached && now() - Date.parse( cached.fetched_at ) < max_age_ms ) return { name, ...cached }
 
         const fetched_at = new Date( now() ).toISOString()
-        const reading = await request( token )
+        const fetching = request( token )
             .then( limits => ( { status: `ok`, limits, message: null } ) )
             .catch( error => ( { status: `error`, limits: [], message: error.message } ) )
+            .then( reading => {
+                // Errors are not cached: the next launch retries instead of trusting a blip
+                if( reading.status === `ok` ) remember( name, { token_hash: hash, fetched_at, ...reading } )
+                return { name, token_hash: hash, fetched_at, ...reading }
+            } )
 
-        // Errors are not cached: the next launch retries instead of trusting a blip
-        if( reading.status === `ok` ) {
-            cache[ name ] = { token_hash: hash, fetched_at, ...reading }
-            changed = true
-        }
-        return { name, token_hash: hash, fetched_at, ...reading }
+        // With a deadline, a slow or failed probe falls back to the last known reading
+        if( !deadline_ms || !cached ) return fetching
+        const last_known = () => ( { name, ...cached } )
+        const reading = await within_deadline( fetching, deadline_ms, last_known )
+        return reading.status === `ok` ? reading : last_known()
 
     } ) )
 
-    if( changed ) write_private_json( cache_path, cache )
     return readings.map( ( { token_hash: _hash, ...reading } ) => ( { ...reading, headroom: account_headroom( reading.limits ) } ) )
 
 }
@@ -261,7 +271,7 @@ export const resolve_launch_account = async ( { requested = false, stored = null
     // One account is used as is; the default one mounts nothing, a lone named one must
     if( accounts.length < 2 ) return { account: accounts[ 0 ] || null, reason: `single account` }
 
-    const best = pick_account( await probe( accounts ) )
+    const best = pick_account( await probe( accounts, { deadline_ms: LAUNCH_PROBE_DEADLINE_MS } ) )
     return best
         ? { account: find( best.name ), reason: `most headroom (${ best.headroom }% left)` }
         : { account: accounts[ 0 ], reason: `no readable quota; using the first account` }

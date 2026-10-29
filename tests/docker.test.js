@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import { createHash } from 'crypto'
 import { chmodSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { tmpdir } from 'os'
+import { tmpdir, totalmem } from 'os'
 import { fileURLToPath } from 'url'
 import { parse } from 'yaml'
 import { get_image_name } from '../src/docker/update.js'
@@ -564,6 +564,15 @@ describe( `build_docker_command`, () => {
         expect( interactive_args ).not.toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
         expect( build_docker_command_args( make_options( { bootstrap_gate: true } ) ) ).toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
         expect( build_docker_command_args( make_options( { interactive: false, bootstrap_gate: true } ) ) ).not.toContain( `BABYSIT_BOOTSTRAP_WAIT=1` )
+    } )
+
+    it( `keeps agents out of swap without capping them below host RAM`, () => {
+        const args = build_docker_command_args( make_options() )
+        const memory = args.find( arg => arg.startsWith( `--memory=` ) )
+
+        // Equal memory and memory-swap limits mean zero swap allowance
+        expect( memory ).toBe( `--memory=${ Math.floor( totalmem() / 1_048_576 ) }m` )
+        expect( args ).toContain( memory.replace( `--memory=`, `--memory-swap=` ) )
     } )
 
     it( `supports Chrome's sandbox without granting SYS_ADMIN`, () => {
@@ -1269,14 +1278,14 @@ describe( `build_docker_command`, () => {
         const status = docker_daemon_status( {
             spawn_sync: ( cmd, args, options ) => {
                 expect( cmd ).toBe( `docker` )
-                expect( args ).toEqual( [ `info`, `--format`, `{{.ID}} {{.ServerVersion}}` ] )
+                expect( args ).toEqual( [ `version`, `--format`, `{{.Server.Version}}` ] )
                 expect( options.stdio ).toEqual( [ `ignore`, `pipe`, `pipe` ] )
 
-                return { status: 0, stdout: `ABCD:1234 26.1.0\n` }
+                return { status: 0, stdout: `26.1.0\n` }
             },
         } )
 
-        expect( status ).toEqual( { available: true, id: `ABCD:1234`, version: `26.1.0` } )
+        expect( status ).toEqual( { available: true, id: null, version: `26.1.0` } )
 
     } )
 

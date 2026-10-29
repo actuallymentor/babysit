@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process'
+import { spawn } from 'child_process'
 
 import { log } from '../utils/log.js'
 import { docker_command_prefix } from './run.js'
@@ -104,15 +104,43 @@ export const find_unrecognized_watchtower_containers = ( containers = [] ) => co
     .filter( ( { image } ) => !is_compatible_watchtower_image( image ) )
 
 /**
+ * Run a command to completion and report it in spawnSync's result shape,
+ * without blocking the event loop (`docker ps` can take seconds when busy).
+ * @param {string} cmd - Command
+ * @param {string[]} args - Arguments
+ * @param {Object} options - spawn options plus `timeout` in milliseconds
+ * @returns {Promise<{ status?: number, stdout?: string, stderr?: string, error?: Error }>}
+ */
+const spawn_capture = ( cmd, args, { timeout, encoding: _encoding, ...options } ) => new Promise( resolve => {
+
+    const child = spawn( cmd, args, options )
+    let stdout = ``
+    let stderr = ``
+    const timer = setTimeout( () => child.kill( `SIGKILL` ), timeout )
+
+    child.stdout.on( `data`, chunk => stdout += chunk )
+    child.stderr.on( `data`, chunk => stderr += chunk )
+    child.on( `error`, error => {
+        clearTimeout( timer )
+        resolve( { error } )
+    } )
+    child.on( `close`, ( status, signal ) => {
+        clearTimeout( timer )
+        resolve( signal ? { error: new Error( `${ cmd } timed out after ${ timeout }ms` ) } : { status, stdout, stderr } )
+    } )
+
+} )
+
+/**
  * Inspect running Docker containers for Watchtower-like names and images.
  * Detection is best-effort so a diagnostic failure never blocks Babysit.
  * @param {Object} [options]
- * @param {Function} [options.spawn_sync=spawnSync] - Test seam for process spawn
+ * @param {Function} [options.spawn_command=spawn_capture] - Test seam for process spawn
  * @param {Object} [options.env=process.env] - Environment controlling sudo use
- * @returns {{ containers: Array<{ name: string, image: string }>, invalid_rows: number, error: string|null }} Inspection result
+ * @returns {Promise<{ containers: Array<{ name: string, image: string }>, invalid_rows: number, error: string|null }>} Inspection result
  */
-export const inspect_running_watchtower_containers = ( {
-    spawn_sync = spawnSync,
+export const inspect_running_watchtower_containers = async ( {
+    spawn_command = spawn_capture,
     env = process.env,
 } = {} ) => {
 
@@ -120,7 +148,7 @@ export const inspect_running_watchtower_containers = ( {
     let result
 
     try {
-        result = spawn_sync( cmd, [
+        result = await spawn_command( cmd, [
             ...prefix_args,
             `ps`,
             `--format`,
@@ -128,7 +156,8 @@ export const inspect_running_watchtower_containers = ( {
         ], {
             encoding: `utf8`,
             stdio: [ `ignore`, `pipe`, `pipe` ],
-            timeout: 3_000,
+            // Off the launch's critical path, so a busy daemon may take its time
+            timeout: 10_000,
         } )
     } catch ( error ) {
         return { containers: [], invalid_rows: 0, error: error.message }
@@ -160,14 +189,14 @@ export const inspect_running_watchtower_containers = ( {
  * exclusion-label behavior has not been confirmed.
  * @param {Object} [options]
  * @param {Object} [options.logger=log] - Logger with warn/debug methods
- * @returns {Array<{ name: string, image: string }>} Containers that caused warnings
+ * @returns {Promise<Array<{ name: string, image: string }>>} Containers that caused warnings
  */
-export const warn_if_unrecognized_watchtower_is_running = ( {
+export const warn_if_unrecognized_watchtower_is_running = async ( {
     logger = log,
     ...inspection_options
 } = {} ) => {
 
-    const { containers, invalid_rows, error } = inspect_running_watchtower_containers( inspection_options )
+    const { containers, invalid_rows, error } = await inspect_running_watchtower_containers( inspection_options )
 
     if( error ) {
         logger.debug( `Could not inspect running containers for Watchtower: ${ error }` )

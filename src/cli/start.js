@@ -31,6 +31,7 @@ import {
     stop_docker_container,
 } from '../docker/file_transport.js'
 import { warn_if_unrecognized_watchtower_is_running } from '../docker/watchtower.js'
+import { image_facts } from '../docker/facts.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { clone as clone_prompt } from '../system_prompt/index.js'
 import {
@@ -1221,8 +1222,12 @@ async function start_session( cmd ) {
 
     // Confirmed Watchtower releases either honor Babysit's opt-out label or
     // require explicit targets. Warn loudly when a similarly named daemon has
-    // not been confirmed safe, before credentials or session state are created.
-    time_phase_sync( `watchtower inspection`, warn_if_unrecognized_watchtower_is_running )
+    // not been confirmed safe. `docker ps` can take seconds on a busy daemon,
+    // so it runs alongside the launch and is awaited before tmux appears.
+    const watchtower_check = time_phase( `watchtower inspection`, warn_if_unrecognized_watchtower_is_running, { slow_ms: Infinity } )
+
+    // Start the image inspect now so it overlaps credential and account work
+    image_facts()
 
     // A directory launch already showed this warning in its overview and was confirmed.
     if( should_confirm_docker_restricted_mode( mode ) && !cmd.recovering && !cmd.batch ) {
@@ -1689,6 +1694,8 @@ async function start_session( cmd ) {
         base_session_data.container_id = prepared_launch.container_id
         base_session_data.image_id = await container_image( prepared_launch.container_id )
         record_launch_progress( babysit_id, base_session_data )
+
+        await watchtower_check
 
         startup_status.set( `creating tmux session` )
         const { pipe_started: started_pipe } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
