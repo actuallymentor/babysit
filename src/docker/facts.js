@@ -16,8 +16,9 @@ export const DOCKER_FACTS_PATH = join( BABYSIT_DIR, `docker-facts.json` )
 // The daemon ID only changes when Docker is reinstalled
 const DAEMON_ID_TTL_MS = 24 * 3_600_000
 
-// A healthy daemon answers an image inspect in well under a second
+// A healthy daemon answers these in well under a second
 export const IMAGE_FACTS_DEADLINE_MS = 1_500
+const DAEMON_ID_DEADLINE_MS = 2_000
 
 const BOOTSTRAP_GATE_LABEL = `babysit.bootstrap-gate`
 
@@ -43,19 +44,22 @@ const write_fact = ( section, key, value, path = DOCKER_FACTS_PATH ) => {
 }
 
 /**
- * Which daemon the CLI talks to, from the same inputs Docker resolves.
+ * Which daemon the CLI talks to, in Docker's precedence: DOCKER_CONTEXT,
+ * then DOCKER_HOST, then the CLI config's current context.
  * @param {Object} [env=process.env] - Environment to inspect
- * @returns {string} Endpoint key for the identity cache
+ * @returns {string} Endpoint key for the fact cache
  */
 export const docker_endpoint_key = ( env = process.env ) => {
 
+    // Context names are only unique within one CLI config directory
+    const config_dir = env.DOCKER_CONFIG || join( homedir(), `.docker` )
+
+    if( env.DOCKER_CONTEXT ) return `context:${ config_dir }:${ env.DOCKER_CONTEXT }`
     if( env.DOCKER_HOST ) return `host:${ env.DOCKER_HOST }`
-    if( env.DOCKER_CONTEXT ) return `context:${ env.DOCKER_CONTEXT }`
 
     try {
-        const config_dir = env.DOCKER_CONFIG || join( homedir(), `.docker` )
         const { currentContext } = JSON.parse( readFileSync( join( config_dir, `config.json` ), `utf8` ) )
-        if( currentContext ) return `context:${ currentContext }`
+        if( currentContext ) return `context:${ config_dir }:${ currentContext }`
     } catch {
         // No CLI config means the default context
     }
@@ -64,7 +68,8 @@ export const docker_endpoint_key = ( env = process.env ) => {
 }
 
 /**
- * The daemon's ID: cached for a day, else asked once via `docker info`.
+ * The daemon's ID: cached for a day, else asked via `docker info`. When that
+ * stalls or fails, an expired ID still beats aborting the launch.
  * @param {Object} [options] - Seams
  * @returns {Promise<string>} Daemon ID (empty when Docker gave none)
  */
@@ -82,9 +87,14 @@ export const cached_docker_id = async ( {
     if( cached?.id && now() - cached.at < DAEMON_ID_TTL_MS ) return cached.id
 
     const [ command, ...prefix_args ] = command_prefix
-    const id = String( await run_command( command, [ ...prefix_args, `info`, `--format`, `{{.ID}}` ], {}, 15_000 ) ).trim()
-    if( id && remembers ) write_fact( `daemons`, endpoint, { id, at: now() }, path )
-    return id
+    const asking = run_command( command, [ ...prefix_args, `info`, `--format`, `{{.ID}}` ], {}, 15_000 ).then( output => {
+        const id = String( output ).trim()
+        if( id && remembers ) write_fact( `daemons`, endpoint, { id, at: now() }, path )
+        return id
+    } )
+
+    if( !cached?.id ) return asking
+    return within_deadline( asking.catch( () => cached.id ), DAEMON_ID_DEADLINE_MS, () => cached.id )
 
 }
 
@@ -93,8 +103,10 @@ const inspections = new WeakMap()
 
 /**
  * Image ID and bootstrap-gate support from one `docker image inspect`. When
- * the daemon stalls past the deadline, the last known facts for this image
- * stand in; the inspect finishes in the background and refreshes them.
+ * the daemon stalls past the deadline, the last known ID for this image on
+ * this daemon stands in, and the gate reads as unsupported: an unverified
+ * image must never start before its credentials land. The inspect finishes
+ * in the background and refreshes the cache.
  * @param {Object} [options] - Seams
  * @returns {Promise<{ id: string|null, gate: boolean }>} Unknown image → { id: null, gate: false }
  */
@@ -109,6 +121,7 @@ export const image_facts = ( {
     remembers = run_command === run,
 } = {} ) => {
 
+    const key = `${ docker_endpoint_key() } ${ image }`
     const per_runner = inspections.get( run_command ) || new Map()
     inspections.set( run_command, per_runner )
 
@@ -120,7 +133,7 @@ export const image_facts = ( {
             .then( output => {
                 const [ id = ``, label = `` ] = String( output ).trim().split( /\s+/ )
                 const facts = { id: id || null, gate: label === `1` }
-                if( facts.id && remembers ) write_fact( `images`, image, { ...facts, at: now() }, path )
+                if( facts.id && remembers ) write_fact( `images`, key, { id: facts.id, at: now() }, path )
                 return facts
             } )
             .catch( () => ( { id: null, gate: false } ) )
@@ -130,23 +143,24 @@ export const image_facts = ( {
     }
 
     const inspection = per_runner.get( image )
-    const known = remembers ? read_facts( path ).images?.[ image ] : null
+    const known = remembers ? read_facts( path ).images?.[ key ] : null
     if( !known?.id ) return inspection
 
-    return within_deadline( inspection, deadline_ms, () => ( { id: known.id, gate: known.gate === true } ) )
+    return within_deadline( inspection, deadline_ms, () => ( { id: known.id, gate: false } ) )
 
 }
 
 /**
- * Drop remembered facts for an image, e.g. after pulling a new version.
+ * Drop remembered facts for an image on every daemon, e.g. after a pull.
  * @param {string} [image=get_image_name()] - Image reference
  * @param {string} [path=DOCKER_FACTS_PATH] - Cache path
  */
 export const forget_image_facts = ( image = get_image_name(), path = DOCKER_FACTS_PATH ) => {
 
     const facts = read_facts( path )
-    if( !facts.images?.[ image ] ) return
-    delete facts.images[ image ]
+    const stale = Object.keys( facts.images || {} ).filter( key => key.endsWith( ` ${ image }` ) )
+    if( !stale.length ) return
+    stale.forEach( key => delete facts.images[ key ] )
     try {
         write_atomic_json( path, facts )
     } catch {

@@ -92,18 +92,15 @@ describe( `Watchtower Docker inspection`, () => {
 
         const inspection = await inspect_running_watchtower_containers( {
             env: {},
-            spawn_command: ( cmd, args, options ) => {
+            run_command: async ( cmd, args, options, timeout_ms ) => {
                 expect( cmd ).toBe( `docker` )
                 expect( args ).toEqual( [ `ps`, `--format`, DOCKER_PS_FORMAT ] )
-                expect( options.stdio ).toEqual( [ `ignore`, `pipe`, `pipe` ] )
+                expect( timeout_ms ).toBe( 10_000 )
 
-                return {
-                    status: 0,
-                    stdout: [
-                        docker_row( `watchtower`, `containrrr/watchtower:latest` ),
-                        docker_row( `other-watchtower`, `vendor/updater:latest` ),
-                    ].join( `\n` ),
-                }
+                return [
+                    docker_row( `watchtower`, `containrrr/watchtower:latest` ),
+                    docker_row( `other-watchtower`, `vendor/updater:latest` ),
+                ].join( `\n` )
             },
         } )
 
@@ -119,10 +116,10 @@ describe( `Watchtower Docker inspection`, () => {
 
         await inspect_running_watchtower_containers( {
             env: { BABYSIT_DOCKER_USE_SUDO: `1` },
-            spawn_command: ( cmd, args ) => {
+            run_command: async ( cmd, args ) => {
                 expect( cmd ).toBe( `sudo` )
                 expect( args ).toEqual( [ `docker`, `ps`, `--format`, DOCKER_PS_FORMAT ] )
-                return { status: 0, stdout: `` }
+                return ``
             },
         } )
 
@@ -131,10 +128,9 @@ describe( `Watchtower Docker inspection`, () => {
     it( `treats Docker inspection failures as nonfatal`, async () => {
 
         expect( await inspect_running_watchtower_containers( {
-            spawn_command: () => ( {
-                status: 1,
-                stderr: `daemon unavailable\n`,
-            } ),
+            run_command: async () => {
+                throw new Error( `daemon unavailable` )
+            },
         } ) ).toEqual( {
             containers: [],
             invalid_rows: 0,
@@ -152,10 +148,7 @@ describe( `Watchtower Docker inspection`, () => {
                 warn: message => warnings.push( message ),
                 debug: message => debug.push( message ),
             },
-            spawn_command: () => ( {
-                status: 0,
-                stdout: docker_row( `mystery-watchtower`, `vendor/mystery:latest` ),
-            } ),
+            run_command: async () => docker_row( `mystery-watchtower`, `vendor/mystery:latest` ),
         } )
 
         expect( containers ).toEqual( [
@@ -179,9 +172,9 @@ describe( `Watchtower Docker inspection`, () => {
                 warn: message => warnings.push( message ),
                 debug: message => debug.push( message ),
             },
-            spawn_command: () => ( {
-                error: new Error( `docker timed out` ),
-            } ),
+            run_command: async () => {
+                throw new Error( `docker timed out` )
+            },
         } )
 
         expect( containers ).toEqual( [] )

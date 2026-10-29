@@ -521,8 +521,11 @@ export const build_docker_command_args = ( options ) => {
     // Agents idle for hours, and swapped-out memory then pages back in on the
     // first keystroke (measured: 34 s). A limit of host RAM with zero swap
     // allowance keeps the agent resident without capping it below the host.
-    const memory_limit = `${ Math.floor( totalmem() / 1_048_576 ) }m`
-    flags.push( `--memory=${ memory_limit }`, `--memory-swap=${ memory_limit }` )
+    // Linux only: on macOS totalmem() is the Mac, not Docker Desktop's VM.
+    if( process.platform === `linux` ) {
+        const memory_limit = `${ Math.floor( totalmem() / 1_048_576 ) }m`
+        flags.push( `--memory=${ memory_limit }`, `--memory-swap=${ memory_limit }` )
+    }
     if( interactive ) flags.push( `-it` )
     flags.push( `--name`, container_name || `babysit-${ agent.name }-${ randomUUID() }` )
     // Agent sessions are stateful, interactive workloads. An unattended image
