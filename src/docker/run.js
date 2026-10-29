@@ -311,6 +311,23 @@ const add_ios_flags = flags => {
 const get_docker_run_prefix = () => [ ...docker_command_prefix(), `run` ]
 
 /**
+ * Resolve the host's timezone: an explicit TZ wins (the runtime caches its
+ * zone at first use), else the IANA zone behind /etc/localtime.
+ * @returns {string|null} Zone name (e.g. Europe/Amsterdam), or null when unknown
+ */
+export const get_host_timezone = () => {
+
+    if( process.env.TZ ) return process.env.TZ
+
+    try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || null
+    } catch {
+        return null
+    }
+
+}
+
+/**
  * Build a stable Docker volume name for agent state scoped to a workspace.
  * @param {string} agent_name - Agent adapter name
  * @param {string} label - State label, e.g. sessions/sqlite/tmp
@@ -679,6 +696,12 @@ export const build_docker_command_args = ( options ) => {
             }
         }
     }
+
+    // Host timezone. The image ships tzdata but defaults to UTC, so pass the
+    // host's zone through TZ. An env var works where mounting /etc/localtime
+    // cannot (Docker Desktop VMs on macOS/Windows).
+    const host_timezone = get_host_timezone()
+    if( host_timezone ) flags.push( `-e`, `TZ=${ host_timezone }` )
 
     // Git identity from host (override defaults in Dockerfile)
     const git_vars = [ `GIT_AUTHOR_NAME`, `GIT_COMMITTER_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_EMAIL` ]

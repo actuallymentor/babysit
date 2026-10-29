@@ -533,6 +533,15 @@ describe( `build_docker_command`, () => {
         expect( args ).toContain( `babysit-uv-cache:/home/node/.cache:nocopy` )
     } )
 
+    it( `inherits the host timezone`, async () => {
+
+        const args = await with_env( { TZ: `Europe/Amsterdam` }, () => build_docker_command_args( make_options() ) )
+
+        expect( args ).toContain( `TZ=Europe/Amsterdam` )
+        expect( args.indexOf( `TZ=Europe/Amsterdam` ) ).toBeLessThan( args.indexOf( get_image_name() ) )
+
+    } )
+
     it( `prevents Watchtower from replacing active agent containers`, () => {
 
         const args = build_docker_command_args( make_options() )

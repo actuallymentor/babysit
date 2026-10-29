@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.59.1 — 2026-10-29
+
+### Fixed
+- Containers now inherit the host timezone (`TZ` set to the host's IANA zone) instead of always running in UTC. Running sessions need `babysit restart` to pick it up.
+
 ## 1.59.0 — 2026-10-28
 
 ### Changed
