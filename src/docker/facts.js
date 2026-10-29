@@ -54,7 +54,8 @@ export const docker_endpoint_key = ( env = process.env ) => {
     // Context names are only unique within one CLI config directory
     const config_dir = env.DOCKER_CONFIG || join( homedir(), `.docker` )
 
-    if( env.DOCKER_CONTEXT ) return `context:${ config_dir }:${ env.DOCKER_CONTEXT }`
+    // The `default` context still resolves its endpoint from DOCKER_HOST
+    if( env.DOCKER_CONTEXT && env.DOCKER_CONTEXT !== `default` ) return `context:${ config_dir }:${ env.DOCKER_CONTEXT }`
     if( env.DOCKER_HOST ) return `host:${ env.DOCKER_HOST }`
 
     try {
@@ -98,7 +99,7 @@ export const cached_docker_id = async ( {
 
 }
 
-// One inspect per image per process, shared by every caller
+// One inspect per daemon and image per process, shared by every caller
 const inspections = new WeakMap()
 
 /**
@@ -125,7 +126,7 @@ export const image_facts = ( {
     const per_runner = inspections.get( run_command ) || new Map()
     inspections.set( run_command, per_runner )
 
-    if( !per_runner.has( image ) ) {
+    if( !per_runner.has( key ) ) {
 
         const [ command, ...prefix_args ] = command_prefix
         const format = `{{.Id}} {{index .Config.Labels "${ BOOTSTRAP_GATE_LABEL }"}}`
@@ -138,11 +139,11 @@ export const image_facts = ( {
             } )
             .catch( () => ( { id: null, gate: false } ) )
 
-        per_runner.set( image, inspection )
+        per_runner.set( key, inspection )
 
     }
 
-    const inspection = per_runner.get( image )
+    const inspection = per_runner.get( key )
     const known = remembers ? read_facts( path ).images?.[ key ] : null
     if( !known?.id ) return inspection
 
