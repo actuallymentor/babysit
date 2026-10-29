@@ -81,3 +81,6 @@
 - Pre-existing: the rc default token reaches containers as `docker run -e CLAUDE_CODE_OAUTH_TOKEN=…` (inspectable). Named accounts never do. Moving the default to the staged file too is a one-line change in `account_credential_mounts` plus dropping the env mount; not done to keep single-token behaviour identical.
 - Auto-switch restarts the session detached: an attached terminal gets dropped; reopen with `babysit open`. A failed continuation leaves the session `blocked` like recovery does (`babysit recover <id> --no-continue` clears it).
 - `babysit watch` per-account rows are wired through `collect_account_usage`; the USAGE-column lane should key `session_usage_limits` on `session.claude_account` against `account_usage_report()` entries (`agent: claude, account: <name>`).
+## 2026-10-29 — Latency options awaiting choice
+- Research only; see RESEARCH.md "Latency audit". User to pick from: per-container swap off, zswap, pre-created/hot-standby containers, ping instead of info, cached image identity, async account probe, early attach, BuildKit cache prune/GC policy, zfs_txg_timeout, ext4 data-root/second daemon, monitor exec reduction, tmux-socket bypass.
+- Host-level options (txg, zswap, data-root, build cache) change the whole server, not just babysit.
