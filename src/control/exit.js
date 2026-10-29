@@ -71,6 +71,10 @@ export const create_exit_controller = ( session, {
     let attempts = 0
     let timer = null
 
+    // A failed keystroke must not escape into the monitor loop: its teardown
+    // would cancel the forced close. The fallback finishes the job instead.
+    const typing_failed = error => log.warn( `Exit input failed, the forced close follows: ${ error.message }` )
+
     // One pending deadline at a time; a later stage replaces the earlier one
     const schedule = ( fn, ms ) => {
         if( timer ) clear_timer( timer )
@@ -126,7 +130,7 @@ export const create_exit_controller = ( session, {
                 sent = true
                 schedule( force, fallback_ms )
                 log.info( `Agent idle; sending ${ EXIT_COMMAND }` )
-                await send_text( target, EXIT_COMMAND )
+                await send_text( target, EXIT_COMMAND ).catch( typing_failed )
                 return
             }
 
@@ -136,7 +140,7 @@ export const create_exit_controller = ( session, {
 
             answered_at = now()
             log.info( `Exit menu shown; choosing to exit and stop background work` )
-            await send_keys( target, DIALOG_ANSWER )
+            await send_keys( target, DIALOG_ANSWER ).catch( typing_failed )
 
         },
 
