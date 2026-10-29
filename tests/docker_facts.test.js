@@ -25,6 +25,7 @@ describe( `docker facts`, () => {
 
         expect( docker_endpoint_key( { DOCKER_HOST: `tcp://box:2375`, DOCKER_CONFIG: `/cfg` } ) ).toBe( `host:tcp://box:2375` )
         expect( docker_endpoint_key( { DOCKER_CONTEXT: `remote`, DOCKER_HOST: `tcp://box:2375`, DOCKER_CONFIG: `/cfg` } ) ).toBe( `context:/cfg:remote` )
+        expect( docker_endpoint_key( { DOCKER_CONTEXT: `default`, DOCKER_HOST: `tcp://box:2375` } ) ).toBe( `host:tcp://box:2375` )
         expect( docker_endpoint_key( { DOCKER_CONFIG: `/nonexistent` } ) ).toBe( `context:default` )
 
     } )
