@@ -3,7 +3,7 @@
 ## 1.61.0 — 2026-10-30
 
 ### Added
-- `babysit update` also pulls a running `babysit-web` container's image and, when it changed, recreates the container through its own Compose project. Automatic updates do the same. Stopped containers stay stopped, `:local` builds are skipped, containers not started by Compose are pulled and need a manual recreate.
+- `babysit update` also pulls a running `babysit-web` container's image and, when it changed, recreates the container through its own Compose project. Automatic updates do the same. Tag, bridge dir, proxy network, UID/GID and `BABYSIT_WEB_*` are recovered from the running container, so a fresh shell cannot fall back to defaults. Stopped containers stay stopped, `:local` builds are skipped, containers not started by Compose are pulled and need a manual recreate.
 
 ## 1.60.2 — 2026-10-29
 

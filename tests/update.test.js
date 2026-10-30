@@ -219,8 +219,10 @@ describe( `update_web_container`, () => {
     const web_container = ( overrides = {} ) => ( {
         Name: `/babysit-web`,
         Image: `sha256:old`,
+        Mounts: [ { Source: `/srv/bridge/access`, Destination: `/bridge/access` } ],
+        NetworkSettings: { Networks: { stack_default: {}, traefik: {} } },
         Config: {
-            Image: `actuallymentor/babysit-web:latest`,
+            Image: `actuallymentor/babysit-web:stable`,
             User: `1000:1001`,
             Env: [ `PATH=/bin`, `BABYSIT_WEB_PUBLIC_ORIGIN=https://x.test/?a=b` ],
             Labels: compose_labels,
@@ -268,6 +270,9 @@ describe( `update_web_container`, () => {
         expect( env.BABYSIT_WEB_UID ).toBe( `1000` )
         expect( env.BABYSIT_WEB_GID ).toBe( `1001` )
         expect( env.BABYSIT_WEB_PUBLIC_ORIGIN ).toBe( `https://x.test/?a=b` )
+        expect( env.BABYSIT_WEB_TAG ).toBe( `stable` )
+        expect( env.BABYSIT_WEB_BRIDGE_DIR ).toBe( `/srv/bridge` )
+        expect( env.BABYSIT_WEB_PROXY_NETWORK ).toBe( `traefik` )
     } )
 
     it( `leaves a container on the current image alone`, async () => {
