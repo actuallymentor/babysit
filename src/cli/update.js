@@ -330,9 +330,9 @@ const find_web_containers = async run_command => {
  * @param {Function} run_command - Command runner
  * @returns {Promise<boolean>} False when Compose does not manage this container
  */
-const recreate_web_container = async ( { Config }, run_command ) => {
+const recreate_web_container = async ( { Config, Mounts = [], NetworkSettings = {} }, run_command ) => {
 
-    const { Labels: labels = {}, Env: container_env = [], User: user = `` } = Config
+    const { Image: image, Labels: labels = {}, Env: container_env = [], User: user = `` } = Config
     const project = labels[ `com.docker.compose.project` ]
     const service = labels[ `com.docker.compose.service` ]
     const config_files = labels[ `com.docker.compose.project.config_files` ]
@@ -341,10 +341,22 @@ const recreate_web_container = async ( { Config }, run_command ) => {
 
     if( !project || !service || !config_files || !working_dir ) return false
 
-    // The documented compose file requires variables that were only in the shell that started it
+    // The documented compose file reads variables that were only in the shell that started it.
+    // Recover them from the container, so a fresh shell cannot fall back to the wrong tag, bridge or network.
     const [ uid, gid ] = user.split( `:` )
-    const web_env = container_env.filter( entry => entry.startsWith( `BABYSIT_WEB_` ) )
-    const started_env = [ ...web_env, `BABYSIT_WEB_UID=${ uid }`, `BABYSIT_WEB_GID=${ gid }` ].map( entry => entry.split( /=(.*)/s ) )
+    const [ , tag ] = image.match( /:([^:/]+)$/ ) || []
+    const access_mount = Mounts.find( ( { Destination } ) => Destination === `/bridge/access` )
+    const [ proxy_network ] = Object.keys( NetworkSettings.Networks || {} ).filter( name => !name.startsWith( `${ project }_` ) )
+
+    const web_env = container_env.filter( entry => entry.startsWith( `BABYSIT_WEB_` ) ).map( entry => entry.split( /=(.*)/s ) )
+    const started_env = [
+        ...web_env,
+        [ `BABYSIT_WEB_UID`, uid ],
+        [ `BABYSIT_WEB_GID`, gid ],
+        [ `BABYSIT_WEB_TAG`, tag ],
+        [ `BABYSIT_WEB_BRIDGE_DIR`, access_mount && dirname( access_mount.Source ) ],
+        [ `BABYSIT_WEB_PROXY_NETWORK`, proxy_network ],
+    ].filter( ( [ , value ] ) => value )
 
     const files = config_files.split( `,` ).flatMap( file => [ `-f`, file ] )
     const environment_files = env_files ? env_files.split( `,` ).flatMap( file => [ `--env-file`, file ] ) : []
