@@ -48,7 +48,8 @@ const AUTO_UPDATE_RETRY_MS = 24 * 60 * 60_000
  *      for compiled installs — see scripts/install.sh)
  *   2. ~/.agents (git pull, if it's a git repo)
  *   3. the docker image (docker pull)
- *   4. host-installed coding agent CLIs (claude / codex / antigravity / opencode)
+ *   4. a running babysit web container (docker pull, Compose recreate on a new image)
+ *   5. host-installed coding agent CLIs (claude / codex / antigravity / opencode)
  *      using each agent's declared strategy chain — see deps/agent_update.js
  *
  * Steps run sequentially (not in parallel) so the output reads top-to-bottom,
@@ -71,6 +72,7 @@ export const cmd_update = async ( { flags = {} } = {} ) => {
     await update_self()
     await update_agents_repo()
     await update_docker_image()
+    await update_web_container()
     await update_host_agent_clis()
 
     console.log( `\nUpdate complete.\n` )
@@ -82,7 +84,7 @@ export const cmd_update = async ( { flags = {} } = {} ) => {
  *   - source checkout (.git in repo root)  → `git pull --ff-only`
  *   - compiled binary (bun-compiled)       → download latest GitHub release
  *
- * Both modes report what they did with the same `[1/4] babysit ...` header
+ * Both modes report what they did with the same `[1/5] babysit ...` header
  * so the output shape is consistent regardless of how babysit was installed.
  */
 const update_self = async () => {
@@ -101,7 +103,7 @@ const update_self = async () => {
     // node-installed copy run via `node src/index.js` from a non-git dir, or
     // an unusual install layout. We can't safely auto-update either, so
     // surface the situation rather than silently skipping.
-    console.log( `[1/4] babysit` )
+    console.log( `[1/5] babysit` )
     console.log( `      ${ process.execPath }` )
     console.log( `      → skipped (not a git checkout and not a compiled binary — install method unknown)\n` )
 
@@ -109,7 +111,7 @@ const update_self = async () => {
 
 const update_babysit_source = async () => {
 
-    console.log( `[1/4] babysit source` )
+    console.log( `[1/5] babysit source` )
     console.log( `      ${ BABYSIT_REPO_ROOT }` )
 
     try {
@@ -138,7 +140,7 @@ const update_babysit_binary = async () => {
     const target = in_place ? running : USER_INSTALL_PATH
     const platform_tag = binary_platform_tag()
 
-    console.log( `[1/4] babysit binary` )
+    console.log( `[1/5] babysit binary` )
     console.log( `      running: ${ running }` )
     if( !in_place ) console.log( `      target:  ${ target } (running binary lives in a non-user-writable dir)` )
     console.log( `      platform: ${ platform_tag }` )
@@ -233,7 +235,7 @@ const update_agents_repo = async () => {
 
     const has_git = existsSync( join( AGENTS_DIR, `.git` ) )
 
-    console.log( `[2/4] ~/.agents (per-agent prompts and skills)` )
+    console.log( `[2/5] ~/.agents (per-agent prompts and skills)` )
     console.log( `      ${ AGENTS_DIR }` )
 
     if( !has_git ) {
@@ -263,7 +265,7 @@ export const update_docker_image = async ( run_command = run ) => {
 
     const image = get_image_name()
 
-    console.log( `[3/4] docker image` )
+    console.log( `[3/5] docker image` )
     console.log( `      ${ image }` )
 
     // Missing images are normal on first install. Metadata failures must not
@@ -303,13 +305,118 @@ export const update_docker_image = async ( run_command = run ) => {
 
 }
 
+// `babysit web init` and examples/compose.web.yml run this image; `:local` is built, not pulled
+const WEB_IMAGE_PATTERN = /^(docker\.io\/)?actuallymentor\/babysit-web(?!:local$)([:@]|$)/
+
+/**
+ * Find running web containers by the image reference they were started from.
+ * The Image column of `docker ps` turns into a bare ID once the tag moves, so read Config.Image.
+ * @param {Function} run_command - Command runner
+ * @returns {Promise<Object[]>} docker inspect records
+ */
+const find_web_containers = async run_command => {
+
+    const ids = ( await run_command( `docker`, [ `ps`, `-q` ], {}, STEP_TIMEOUT_MS ) ).split( /\s+/ ).filter( Boolean )
+    if( !ids.length ) return []
+
+    const containers = JSON.parse( await run_command( `docker`, [ `inspect`, ...ids ], {}, STEP_TIMEOUT_MS ) )
+    return containers.filter( ( { Config } ) => WEB_IMAGE_PATTERN.test( Config.Image ) )
+
+}
+
+/**
+ * Recreate a container through the Compose project that started it, found via its labels.
+ * @param {Object} container - docker inspect record
+ * @param {Function} run_command - Command runner
+ * @returns {Promise<boolean>} False when Compose does not manage this container
+ */
+const recreate_web_container = async ( { Config }, run_command ) => {
+
+    const { Labels: labels = {}, Env: container_env = [], User: user = `` } = Config
+    const project = labels[ `com.docker.compose.project` ]
+    const service = labels[ `com.docker.compose.service` ]
+    const config_files = labels[ `com.docker.compose.project.config_files` ]
+    const working_dir = labels[ `com.docker.compose.project.working_dir` ]
+    const env_files = labels[ `com.docker.compose.project.environment_file` ]
+
+    if( !project || !service || !config_files || !working_dir ) return false
+
+    // The documented compose file requires variables that were only in the shell that started it
+    const [ uid, gid ] = user.split( `:` )
+    const web_env = container_env.filter( entry => entry.startsWith( `BABYSIT_WEB_` ) )
+    const started_env = [ ...web_env, `BABYSIT_WEB_UID=${ uid }`, `BABYSIT_WEB_GID=${ gid }` ].map( entry => entry.split( /=(.*)/s ) )
+
+    const files = config_files.split( `,` ).flatMap( file => [ `-f`, file ] )
+    const environment_files = env_files ? env_files.split( `,` ).flatMap( file => [ `--env-file`, file ] ) : []
+    const args = [ `compose`, `-p`, project, `--project-directory`, working_dir, ...files, ...environment_files, `up`, `-d`, `--no-deps`, service ]
+
+    // Set values still win, as they would in the shell
+    const env = { ...Object.fromEntries( started_env ), ...process.env }
+    await run_command( `docker`, args, { env }, DOCKER_PULL_TIMEOUT_MS )
+    return true
+
+}
+
+/**
+ * Pull one web container's image and move the container onto it when the image changed.
+ * @param {Object} container - docker inspect record
+ * @param {Function} run_command - Command runner
+ * @returns {Promise<void>}
+ */
+const refresh_web_container = async ( container, run_command ) => {
+
+    const { Name: name, Image: running_id, Config: { Image: image } } = container
+    console.log( `      ${ name.replace( /^\//, `` ) } (${ image })` )
+
+    try {
+
+        await run_command( `docker`, [ `pull`, image ], {}, DOCKER_PULL_TIMEOUT_MS )
+        const [ { Id: pulled_id } ] = JSON.parse( await run_command( `docker`, [ `image`, `inspect`, image ], {}, STEP_TIMEOUT_MS ) )
+
+        if( pulled_id === running_id ) return console.log( `      ✓ already up to date` )
+
+        const recreated = await recreate_web_container( container, run_command )
+        console.log( recreated
+            ? `      ✓ restarted on the new image`
+            : `      → pulled, not started by Compose: recreate it by hand to use the new image` )
+
+    } catch ( e ) {
+        console.log( `      ✗ web update failed: ${ e.message }` )
+    }
+
+}
+
+/**
+ * Step 4 — pull the image of each running babysit web container and restart it
+ * when that image changed. Stopped containers stay stopped.
+ * @param {Function} [run_command] - Command runner
+ * @returns {Promise<void>}
+ */
+export const update_web_container = async ( run_command = run ) => {
+
+    console.log( `[4/5] babysit web` )
+
+    try {
+
+        const containers = await find_web_containers( run_command )
+        if( !containers.length ) console.log( `      → skipped (no running babysit web container)` )
+        for( const container of containers ) await refresh_web_container( container, run_command )
+
+    } catch ( e ) {
+        console.log( `      ✗ listing containers failed: ${ e.message }` )
+    }
+
+    console.log( `` )
+
+}
+
 // Per-agent host CLI upgrade is network-bound (npm registry, brew bottle
 // download, agent self-update endpoint). Generous ceiling — a stuck `claude
 // update` shouldn't gate the next agent.
 const AGENT_UPDATE_TIMEOUT_MS = 60_000
 
 /**
- * Step 4 — upgrade each supported coding agent CLI on the host
+ * Step 5 — upgrade each supported coding agent CLI on the host
  * (claude / codex / antigravity / opencode). Per-agent narration: skip cleanly
  * when the binary isn't on PATH, otherwise try the registered strategies in
  * order (self_update → npm → brew, gated by realpath detection so an
@@ -318,7 +425,7 @@ const AGENT_UPDATE_TIMEOUT_MS = 60_000
  */
 const update_host_agent_clis = async () => {
 
-    console.log( `[4/4] host coding agent CLIs` )
+    console.log( `[5/5] host coding agent CLIs` )
 
     for( const name of SUPPORTED_AGENTS ) {
 

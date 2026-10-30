@@ -56,7 +56,7 @@ Usage:
                                        Linux: also enables user lingering; --no-linger opts out
                                        Offers a one-year Claude token (claude setup-token) when none is set
   babysit auth accounts [remove NAME]  Claude subscriptions; add one with auth init --claude-token --name NAME
-  babysit update                       Refresh babysit, ~/.agents, and the docker image (verbose)
+  babysit update                       Refresh babysit, ~/.agents, docker image, running web (verbose)
   babysit update --auto                Ask to turn background updates on new releases on or off
 
 Agents: ${ agents }
