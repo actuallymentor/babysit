@@ -220,7 +220,7 @@ describe( `update_web_container`, () => {
         Name: `/babysit-web`,
         Image: `sha256:old`,
         Mounts: [ { Source: `/srv/bridge/access`, Destination: `/bridge/access` } ],
-        NetworkSettings: { Networks: { stack_default: {}, traefik: {} } },
+        NetworkSettings: { Networks: { stack_proxy: {} } },
         Config: {
             Image: `actuallymentor/babysit-web:stable`,
             User: `1000:1001`,
@@ -272,7 +272,13 @@ describe( `update_web_container`, () => {
         expect( env.BABYSIT_WEB_PUBLIC_ORIGIN ).toBe( `https://x.test/?a=b` )
         expect( env.BABYSIT_WEB_TAG ).toBe( `stable` )
         expect( env.BABYSIT_WEB_BRIDGE_DIR ).toBe( `/srv/bridge` )
-        expect( env.BABYSIT_WEB_PROXY_NETWORK ).toBe( `traefik` )
+        expect( env.BABYSIT_WEB_PROXY_NETWORK ).toBe( `stack_proxy` )
+    } )
+
+    it( `does not guess the proxy among several networks`, async () => {
+        const multihomed = web_container( { NetworkSettings: { Networks: { database: {}, traefik: {} } } } )
+        const { recreate: { options: { env } } } = await update( [ multihomed ] )
+        expect( env.BABYSIT_WEB_PROXY_NETWORK ).toBeUndefined()
     } )
 
     it( `leaves a container on the current image alone`, async () => {
