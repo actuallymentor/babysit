@@ -346,7 +346,10 @@ const recreate_web_container = async ( { Config, Mounts = [], NetworkSettings = 
     const [ uid, gid ] = user.split( `:` )
     const [ , tag ] = image.match( /:([^:/]+)$/ ) || []
     const access_mount = Mounts.find( ( { Destination } ) => Destination === `/bridge/access` )
-    const [ proxy_network ] = Object.keys( NetworkSettings.Networks || {} ).filter( name => !name.startsWith( `${ project }_` ) )
+
+    // The documented compose file joins one network; with several, nothing says which is the proxy
+    const networks = Object.keys( NetworkSettings.Networks || {} )
+    const proxy_network = networks.length === 1 ? networks[0] : undefined
 
     const web_env = container_env.filter( entry => entry.startsWith( `BABYSIT_WEB_` ) ).map( entry => entry.split( /=(.*)/s ) )
     const started_env = [
