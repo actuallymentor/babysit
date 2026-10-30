@@ -193,7 +193,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
 | `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
 | `babysit mode` | Print `container` inside a babysit agent container, `host` otherwise |
-| `babysit update` | Update Babysit, agent tools, image; show image version |
+| `babysit update` | Update Babysit, agent tools, image, running web container; show image version |
 | `babysit update --auto` | Ask `Enable automatic updates? Y/n`; when on, a newer release triggers one background `babysit update` (log `~/.babysit/auto-update.log`, retried daily on failure) |
 
 Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
@@ -580,6 +580,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf, adb/fastboot, Python uiautomator2, pymobiledevice3 + facebook-wda (iOS via WebDriverAgent).
 - Image builds refresh agent CLIs on every run/attempt and log installed versions.
 - `babysit update` allows 120 seconds for image pulls and reports the image version.
+- `babysit update` pulls a running `babysit-web` container's image and, on a new image, recreates it via its Compose project (labels give project, files, env file). Stopped containers stay stopped; `:local` builds are skipped; containers not started by Compose are pulled but need a manual recreate.
   Older/unlabelled images show `version unavailable`.
 - Launch prompts contain brief mode boundaries and browser/session-control hints.
 - `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.

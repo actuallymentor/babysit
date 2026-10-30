@@ -555,7 +555,8 @@ Examples:
 
 Updates Babysit itself, the ~/.agents repository, the Docker image (120s pull
 limit), and the host agent CLIs, then shows the image version. Running sessions
-keep their image; babysit restart moves one over.
+keep their image; babysit restart moves one over. A running babysit web container
+is pulled too and, on a new image, recreated through its Compose project.
 
 --auto asks "Enable automatic updates? Y/n". When on, any babysit command that
 knows of a newer release (checked at most every 6 hours) runs babysit update in

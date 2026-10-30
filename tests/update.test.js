@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { is_compiled_binary, binary_platform_tag, is_on_path, update_docker_image, configure_auto_update, maybe_auto_update } from '../src/cli/update.js'
+import { is_compiled_binary, binary_platform_tag, is_on_path, update_docker_image, update_web_container, configure_auto_update, maybe_auto_update } from '../src/cli/update.js'
 
 // is_compiled_binary reads process.argv[1] live, so we save/restore around each
 // case. Same heuristic the real spawn-monitor-daemon path uses; if this drifts
@@ -202,6 +202,100 @@ describe( `automatic updates`, () => {
         expect( started ).toBe( 2 )
         expect( JSON.parse( readFileSync( state_path, `utf8` ) ).version ).toBe( `9.9.9` )
         rmSync( directory, { recursive: true, force: true } )
+    } )
+
+} )
+
+describe( `update_web_container`, () => {
+
+    const compose_labels = {
+        'com.docker.compose.project': `stack`,
+        'com.docker.compose.service': `babysit-web`,
+        'com.docker.compose.project.config_files': `/stack/a.yml,/stack/b.yml`,
+        'com.docker.compose.project.working_dir': `/stack`,
+        'com.docker.compose.project.environment_file': `/stack/.env`,
+    }
+
+    const web_container = ( overrides = {} ) => ( {
+        Name: `/babysit-web`,
+        Image: `sha256:old`,
+        Config: {
+            Image: `actuallymentor/babysit-web:latest`,
+            User: `1000:1001`,
+            Env: [ `PATH=/bin`, `BABYSIT_WEB_PUBLIC_ORIGIN=https://x.test/?a=b` ],
+            Labels: compose_labels,
+        },
+        ...overrides,
+    } )
+
+    const update = async ( containers, { pulled_id = `sha256:new`, fail } = {} ) => {
+
+        const calls = []
+        const messages = []
+        const original_log = console.log
+        console.log = message => messages.push( message )
+
+        try {
+            await update_web_container( async ( command, args, options ) => {
+                calls.push( { args, options } )
+                if( fail?.( args ) ) throw new Error( `docker said no` )
+                if( args[0] === `ps` ) return containers.length ? `abc\n` : ``
+                if( args[0] === `inspect` ) return JSON.stringify( containers )
+                if( args[0] === `image` ) return JSON.stringify( [ { Id: pulled_id } ] )
+                return ``
+            } )
+        } finally {
+            console.log = original_log
+        }
+
+        return { calls, output: messages.join( `\n` ), recreate: calls.find( ( { args } ) => args[0] === `compose` ) }
+
+    }
+
+    it( `recreates through the original Compose project when the image changed`, async () => {
+        const { recreate, output, calls } = await update( [ web_container() ] )
+        expect( calls.map( ( { args } ) => args[0] ) ).toEqual( [ `ps`, `inspect`, `pull`, `image`, `compose` ] )
+        expect( recreate.args ).toEqual( [
+            `compose`, `-p`, `stack`, `--project-directory`, `/stack`,
+            `-f`, `/stack/a.yml`, `-f`, `/stack/b.yml`, `--env-file`, `/stack/.env`,
+            `up`, `-d`, `--no-deps`, `babysit-web`,
+        ] )
+        expect( output ).toContain( `restarted on the new image` )
+    } )
+
+    it( `replays the variables the shell supplied at start`, async () => {
+        const { recreate: { options: { env } } } = await update( [ web_container() ] )
+        expect( env.BABYSIT_WEB_UID ).toBe( `1000` )
+        expect( env.BABYSIT_WEB_GID ).toBe( `1001` )
+        expect( env.BABYSIT_WEB_PUBLIC_ORIGIN ).toBe( `https://x.test/?a=b` )
+    } )
+
+    it( `leaves a container on the current image alone`, async () => {
+        const { recreate, output } = await update( [ web_container() ], { pulled_id: `sha256:old` } )
+        expect( recreate ).toBeUndefined()
+        expect( output ).toContain( `already up to date` )
+    } )
+
+    it( `skips hosts without a web container and locally built images`, async () => {
+        const agent = web_container( { Config: { Image: `actuallymentor/babysit:latest` } } )
+        const local = web_container( { Config: { Image: `actuallymentor/babysit-web:local` } } )
+        const { calls, output } = await update( [ agent, local ] )
+        expect( calls.map( ( { args } ) => args[0] ) ).toEqual( [ `ps`, `inspect` ] )
+        expect( output ).toContain( `no running babysit web container` )
+    } )
+
+    it( `does not touch a container Compose did not start`, async () => {
+        const plain = web_container( { Config: { ...web_container().Config, Labels: {} } } )
+        const { recreate, output } = await update( [ plain ] )
+        expect( recreate ).toBeUndefined()
+        expect( output ).toContain( `recreate it by hand` )
+    } )
+
+    it( `reports failures without throwing`, async () => {
+        const { output: pull } = await update( [ web_container() ], { fail: args => args[0] === `pull` } )
+        expect( pull ).toContain( `✗ web update failed: docker said no` )
+        const { output: list } = await update( [], { fail: args => args[0] === `ps` } )
+        expect( list ).toContain( `✗ listing containers failed` )
     } )
 
 } )
