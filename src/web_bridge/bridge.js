@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import {
     closeSync,
     constants,
@@ -280,6 +280,8 @@ export const create_web_bridge = ( {
             ? session.modifiers.filter( value => typeof value === `string` ).slice( 0, 16 ).map( sanitize_display_text )
             : [],
         directory: compact_directory( session.original_pwd || session.pwd ),
+        // Full paths stay on the host; this only tells equal compact labels apart
+        workspace: createHash( `sha256` ).update( String( session.original_pwd || session.pwd || `` ) ).digest( `hex` ).slice( 0, 16 ),
         container,
         last_message,
         raw_screen,

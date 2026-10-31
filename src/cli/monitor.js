@@ -1,5 +1,5 @@
 import { create_identity_reader } from '../sessions/identity.js'
-import { continue_recovered_session } from '../sessions/continuation.js'
+import { continuation_awaits_person, continue_recovered_session } from '../sessions/continuation.js'
 import { get_boot_id } from '../sessions/lock.js'
 import { read_durable_exit } from '../sessions/transcript.js'
 import { spawn } from 'child_process'
@@ -123,6 +123,9 @@ export const create_session_logout_handler = ( session, {
 
 // While frozen, how often the monitor asks Docker whether the container is still paused
 const FROZEN_RECHECK_MS = 30_000
+
+// Recovery owns the pane until its continuation settles
+const input_allowed = session => ![ `pending`, `sending`, `blocked` ].includes( session?.continuation )
 
 const log_shutdown_timing = message => process.env.BABYSIT_DEBUG === `1`
     ? log.info( message )
@@ -535,8 +538,8 @@ export const cmd_monitor = async ( cmd ) => {
             },
             on_user_input: () => {
                 stuck_controller.clear()
-                // A person took over: an undelivered continuation is settled, rules may resume
-                update_session( session.babysit_id, latest => [ `blocked`, `sending` ].includes( latest.continuation )
+                // A person took over: the undelivered continuation is settled, rules may resume
+                update_session( session.babysit_id, latest => continuation_awaits_person( latest )
                     ? { continuation: `skipped`, recovery_error: null } : null )
             },
             watchdog,
@@ -558,10 +561,12 @@ export const cmd_monitor = async ( cmd ) => {
                     update_session( session.babysit_id, { agent_session_id: identity.session_id, agent_session_id_source: `structured` } )
                 }
             },
-            input_allowed: () => ![ `pending`, `sending`, `blocked` ].includes( load_session( session.babysit_id )?.continuation ),
-            // Delivery finished before this loop began, so `blocked`/`sending` here are
-            // stale records that await a person, and a web message is a person
-            web_input_allowed: () => load_session( session.babysit_id )?.continuation !== `pending`,
+            input_allowed: () => input_allowed( load_session( session.babysit_id ) ),
+            // Only people may answer a failed readiness probe; rules stay held
+            web_input_allowed: () => {
+                const latest = load_session( session.babysit_id )
+                return input_allowed( latest ) || continuation_awaits_person( latest )
+            },
             // The record decides each tick; Docker is asked at most every
             // FROZEN_RECHECK_MS whether a mark is stale (reboot, outside
             // unpause, a freeze killed before its pause), the first time at once

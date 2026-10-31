@@ -249,7 +249,7 @@ export function SessionPage( { role } ) {
             <SectionHeading><h2>Reply</h2></SectionHeading>
             <Panel>
                 { role === `read` && <Notice>This access key is read-only.</Notice> }
-                { session.busy && <Notice>Babysit is handling another action.{ role === `write` && ` You can draft while sending is paused.` }</Notice> }
+                { session.busy && <Notice>Babysit is holding this session's input for an action or unresolved recovery.{ role === `write` && ` You can draft while sending is paused.` }</Notice> }
                 { role === `write` && !session.busy && !error && session.activity === `running` && <Notice $warning>The agent is running. Sending now types into its active turn.</Notice> }
                 { send_error && <Notice $error role="alert">{ send_error }</Notice> }
 

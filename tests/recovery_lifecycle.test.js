@@ -4,7 +4,7 @@ import { tmpdir, hostname } from 'os'
 import { join } from 'path'
 import { parse_args } from '../src/cli/parse.js'
 import { recover_session, recovery_blocker } from '../src/cli/recover.js'
-import { continue_recovered_session } from '../src/sessions/continuation.js'
+import { continuation_awaits_person, continue_recovered_session } from '../src/sessions/continuation.js'
 import { get_boot_id } from '../src/sessions/lock.js'
 import { workspace_config_hash } from '../src/sessions/recovery.js'
 
@@ -151,4 +151,15 @@ describe( `continuation crash boundary`, () => {
             expect( sends ).toBe( 0 )
         } finally { f.dispose() }
     } )
+} )
+
+describe( `continuation awaiting a person`, () => {
+
+    it( `covers only the failed readiness probe`, () => {
+        expect( continuation_awaits_person( { continuation: `blocked`, recovery_error: `Agent input did not become ready` } ) ).toBe( true )
+        expect( continuation_awaits_person( { continuation: `blocked`, recovery_error: `Recovery pane identity changed` } ) ).toBe( false )
+        expect( continuation_awaits_person( { continuation: `sending`, recovery_error: `Agent input did not become ready` } ) ).toBe( false )
+        expect( continuation_awaits_person( null ) ).toBe( false )
+    } )
+
 } )
