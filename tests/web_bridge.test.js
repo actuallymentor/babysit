@@ -168,7 +168,7 @@ describe( `per-session web bridge`, () => {
         const state = JSON.parse( readFileSync( state_path, `utf8` ) )
 
         expect( Object.keys( state ).sort() ).toEqual( [
-            `activity`, `agent`, `attachment`, `busy`, `container`, `directory`, `epoch`, `last_message`, `workspace`,
+            `activity`, `agent`, `attachment`, `container`, `directory`, `epoch`, `last_message`, `workspace`,
             `modifiers`, `name`, `protocol`, `raw_screen`, `results`, `revision`, `session_id`, `updated_at`,
         ].sort() )
         expect( state ).toMatchObject( {
@@ -179,7 +179,6 @@ describe( `per-session web bridge`, () => {
             agent: `codex`,
             activity: `idle`,
             attachment: `detached`,
-            busy: false,
             directory: `projects/babysit`,
             last_message: null,
             raw_screen: `# Result\n\nDone`,
@@ -255,10 +254,8 @@ describe( `per-session web bridge`, () => {
         await bridge.publish( { output, activity: `waiting` } )
         expect( read_state().activity ).toBe( `waiting` )
         expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
-        expect( read_state().busy ).toBe( false )
 
-
-        await bridge.publish( { output, activity: `running`, busy: true } )
+        await bridge.publish( { output, activity: `running` } )
         expect( read_state().last_message ).toBe( `# New reply\n\nDone` )
         expect( read_state().revision ).toBe( revision )
         bridge.close()
@@ -311,15 +308,16 @@ describe( `per-session web bridge`, () => {
         }
     } )
 
-    it( `reports observed activity while the input lock is held`, async () => {
-        const { bridge, directory } = setup()
-        await bridge.publish( { output: `ready`, activity: `idle`, busy: true } )
-        const state = JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
-        expect( state ).toMatchObject( { activity: `idle`, busy: true } )
+    it( `delivers a person's message while the agent runs`, async () => {
+        const { bridge, directory, sent } = setup()
+        await bridge.publish( { output: `working`, activity: `running` } )
+        write_request( directory, make_request() )
+        await bridge.process_requests()
+        expect( sent ).toHaveLength( 1 )
         bridge.close()
     } )
 
-    it( `rejects controls, stale files, extra schema, busy input, and retained hard links`, async () => {
+    it( `rejects controls, stale files, extra schema, and retained hard links`, async () => {
         const cases = [
             { request: make_request( { text: `unsafe\u001binput` } ), expected: `unsafe control` },
             { request: make_request( { request_id: `expired`, text: `old` } ), mtime: new Date( Date.now() - 21_000 ), expected: `expired` },
@@ -339,12 +337,6 @@ describe( `per-session web bridge`, () => {
             expect( state.results.at( -1 ).status ).toBe( `rejected` )
             expect( state.results.at( -1 ).message.toLowerCase() ).toContain( test_case.expected )
         }
-
-        const busy = setup()
-        await busy.bridge.publish( { output: `ready`, activity: `running`, busy: true } )
-        write_request( busy.directory, make_request() )
-        await busy.bridge.process_requests( { busy: true } )
-        expect( busy.sent ).toEqual( [] )
 
         const linked = setup()
         await linked.bridge.publish( { output: `ready`, activity: `idle` } )

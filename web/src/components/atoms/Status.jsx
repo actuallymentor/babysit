@@ -1,4 +1,4 @@
-import { Activity, CircleHelp, CirclePause, Hourglass, Moon } from 'lucide-react'
+import { Activity, CircleHelp, Hourglass, Moon } from 'lucide-react'
 import styled, { css } from 'styled-components'
 
 const VISUALLY_HIDDEN = `clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px;`
@@ -45,14 +45,13 @@ const ACTIVITY = {
 }
 
 /**
- * Keeps observed agent activity separate from the send lock.
- * `compact` shrinks both pills for phone rows.
+ * Observed agent activity as a pill.
+ * `compact` shrinks it for phone rows.
  */
-export function Status( { activity, busy, compact } ) {
+export function Status( { activity, compact } ) {
     const { icon: Icon, label, text, tone } = ACTIVITY[ activity ] || ACTIVITY.unknown
 
     return <Pills>
         <Pill $iconic={ compact && activity !== `running` } $text={ text } $tone={ tone }><Icon aria-hidden="true" strokeWidth={ 1.5 } /><span>{ label }</span></Pill>
-        { busy && <Pill $iconic={ compact } $text="var(--muted)" $tone="var(--muted)" title="Sending paused"><CirclePause aria-hidden="true" strokeWidth={ 1.5 } /><span>Sending paused</span></Pill> }
     </Pills>
 }

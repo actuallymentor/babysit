@@ -8,7 +8,7 @@ const INPUT_NOT_READY = `Agent input did not become ready`
 
 /**
  * Nothing was typed and no identity check failed, only the readiness probe
- * gave up. A person's message is safe here; `sending` may have left a pasted
+ * gave up, so a person's message settles it. `sending` may have left a pasted
  * prompt behind, and identity failures need `babysit recover`.
  * @param {Object} [session] - Stored session record
  * @returns {boolean}

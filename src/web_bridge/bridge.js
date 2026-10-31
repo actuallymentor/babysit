@@ -266,16 +266,14 @@ export const create_web_bridge = ( {
             .catch( error => log.debug( `Web account usage refresh failed: ${ error.message }` ) )
     }
 
-    const state_value = busy => ( {
+    const state_value = () => ( {
         protocol: WEB_BRIDGE_PROTOCOL,
         session_id,
         epoch,
         name: typeof session.name === `string` && session.name ? sanitize_display_text( session.name ) : null,
         agent: sanitize_display_text( session.agent || `unknown` ),
-        // Observed agent state only: `busy` is Babysit's input lock, a separate fact
         activity: current_activity,
         attachment,
-        busy,
         modifiers: Array.isArray( session.modifiers )
             ? session.modifiers.filter( value => typeof value === `string` ).slice( 0, 16 ).map( sanitize_display_text )
             : [],
@@ -290,7 +288,7 @@ export const create_web_bridge = ( {
         results: [ ...results ],
     } )
 
-    const write_state = busy => write_atomic_json( state_path, state_value( busy ) )
+    const write_state = () => write_atomic_json( state_path, state_value() )
 
     const add_result = ( request_id, status, message ) => {
         results.push( {
@@ -312,9 +310,8 @@ export const create_web_bridge = ( {
          * @param {Object} snapshot - Current monitor snapshot
          * @param {string} snapshot.output - ANSI-cleaned pane output
          * @param {'idle'|'running'|'waiting'} snapshot.activity - Agent activity
-         * @param {boolean} [snapshot.busy=false] - Whether a Babysit action owns input
          */
-        async publish( { output, activity, busy = false } ) {
+        async publish( { output, activity } ) {
 
             const next_screen = sanitize_display_text( output )
             if( next_screen !== raw_screen ) {
@@ -339,16 +336,14 @@ export const create_web_bridge = ( {
                 attachment = `unknown`
             }
 
-            write_state( busy )
+            write_state()
         },
 
         /**
          * Claim and handle a bounded request batch before monitor rules run.
-         * @param {Object} [options]
-         * @param {boolean} [options.busy=false] - Whether a Babysit action owns input
          * @returns {Promise<{ sent: boolean, processed: number }>} Batch outcome
          */
-        async process_requests( { busy = false } = {} ) {
+        async process_requests() {
 
             // Preserve the cursor across bounded scans. Restarting at entry one
             // lets requests for other sessions starve this monitor indefinitely.
@@ -403,8 +398,6 @@ export const create_web_bridge = ( {
                         { session_id, epoch, request_id }
                     )
 
-                    if( busy ) throw new RejectedRequest( `Session is busy with a Babysit action` )
-
                     await send_text_fn( tmux_target, request.text, { redact: true } )
                     add_result( request_id, `accepted`, `Message sent` )
                     sent = true
@@ -418,7 +411,7 @@ export const create_web_bridge = ( {
                 } finally {
                     rmSync( claimed_path, { recursive: true, force: true } )
                     try {
-                        write_state( busy )
+                        write_state()
                     } catch {
                         // Delivery already happened. A state write failure must
                         // not hide `sent: true` and let a rule submit again.

@@ -209,7 +209,6 @@ const api_route = async ( request, response, pathname, stores, config ) => {
 
         const state = bridge.session( message_match[ 1 ] )
         if( !state ) return json( response, 404, { error: `Session is unavailable or stale` } )
-        if( state.busy ) return json( response, 409, { error: `Session is busy` } )
 
         const body = await request_body( request )
         return json( response, 202, bridge.send( { session: state, text: body.text } ) )

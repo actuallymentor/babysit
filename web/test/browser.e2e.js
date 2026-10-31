@@ -33,7 +33,6 @@ writeFileSync( state_file, JSON.stringify( {
     activity: `idle`,
     agent: `codex`,
     attachment: `detached`,
-    busy: false,
     directory: `~/babysit`,
     epoch: `browser-epoch`,
     last_message: `## Ready\n\n- Built the bridge\n- Tested the app\n\n\`npm test\`\n\n\`\`\`js\nconst long_message = "${ `Readable code with horizontal scrolling. `.repeat( 8 ) }"\n\`\`\`\n\n${ `A completed reply stays readable while you prepare the next instruction. `.repeat( 35 ) }\n\n![blocked](https://example.com/private.png)\n\n<script>window.evil = true</script>`,
@@ -269,14 +268,16 @@ try {
     await page.waitForFunction( () => document.body.textContent.includes( `The agent is running` ) )
     await page.type( `textarea[aria-label="Message"]`, `Steer` )
     assert.equal( await page.$eval( `button[type="submit"]`, element => element.disabled ), false )
+    assert.match( await page.$eval( `button[type="submit"]`, element => element.textContent ), /Interrupt/ )
     await page.$eval( `textarea[aria-label="Message"]`, element => element.select() )
     await page.keyboard.press( `Backspace` )
 
-    writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `active`, busy: true, raw_screen: `Working on the next turn` } ) )
-    await page.waitForFunction( () => document.body.textContent.includes( `You can draft while sending is paused` ) )
-    assert.equal( await page.$eval( `textarea`, element => element.disabled ), false )
+    // The legacy `busy` field from older monitors never locks the composer
+    writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `idle`, busy: true, raw_screen: `Working on the next turn` } ) )
+    await page.waitForFunction( () => !document.body.textContent.includes( `The agent is running` ) )
     await page.type( `textarea[aria-label="Message"]`, `Draft while the agent works` )
-    assert.equal( await page.$eval( `button[type="submit"]`, element => element.disabled ), true )
+    assert.equal( await page.$eval( `button[type="submit"]`, element => element.disabled ), false )
+    assert.match( await page.$eval( `button[type="submit"]`, element => element.textContent ), /Send/ )
     assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )
     writeFileSync( state_file, JSON.stringify( { ...completed_state, last_message: `` } ) )
     await page.waitForFunction( () => document.body.textContent.includes( `No completed reply captured yet.` ) )

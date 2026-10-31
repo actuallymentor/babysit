@@ -130,8 +130,10 @@ process.stdin.on('data', data => {
     } )
 
     busy = true
-    await until( `busy session remains visible`, async () => ( await ( await request( `sessions` ) ).json() ).sessions[0]?.busy )
-    assert.equal( ( await request( `sessions/${ session.babysit_id }/messages`, { text: `blocked` } ) ).status, 409 )
+    assert.equal( ( await request( `sessions/${ session.babysit_id }/messages`, { text: `while rules are held` } ) ).status, 202 )
+    await until( `held session still receives a person's message`, () =>
+        readFileSync( receipt, `utf8` ).trim().split( `\n` ).map( JSON.parse ).includes( `while rules are held` )
+    )
     busy = false
     await delay( 3_500 )
     assert.equal( ( await ( await request( `sessions` ) ).json() ).sessions.length, 1, `monitor keeps heartbeat fresh` )
@@ -139,7 +141,7 @@ process.stdin.on('data', data => {
     await monitor
     monitor = null
     assert.deepEqual( ( await ( await request( `sessions` ) ).json() ).sessions, [] )
-    console.log( `PASS: CLI web init/list, late discovery, HTTP/browser→tmux single/multiline delivery, acknowledgements, busy rejection, heartbeat, exit cleanup` )
+    console.log( `PASS: CLI web init/list, late discovery, HTTP/browser→tmux single/multiline delivery, acknowledgements, delivery while rules are held, heartbeat, exit cleanup` )
 } finally {
     await tmux( [ `kill-server` ] ).catch( () => null )
     if( monitor ) await monitor

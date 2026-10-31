@@ -174,7 +174,8 @@ export function SessionPage( { role } ) {
     const session = data?.session?.session_id === session_id ? data.session : null
     const byte_count = new TextEncoder().encode( message ).length
     const has_unsupported_characters = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test( message )
-    const can_send = role === `write` && session && !error && !session.busy && message.trim().length > 0 && byte_count <= 16_384 && !has_unsupported_characters && !is_sending
+    const is_running = !error && session?.activity === `running`
+    const can_send = role === `write` && session && !error && message.trim().length > 0 && byte_count <= 16_384 && !has_unsupported_characters && !is_sending
 
     // Keep the shortcut out of the way once the actual reply controls are visible.
     useEffect( () => {
@@ -223,7 +224,7 @@ export function SessionPage( { role } ) {
         <Heading>
             <div>
                 <h1>{ session.name }</h1>
-                <Status activity={ error ? `unknown` : session.activity } busy={ role === `write` && session.busy } />
+                <Status activity={ error ? `unknown` : session.activity } />
             </div>
             <Meta>
                 <span><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</span>
@@ -249,8 +250,7 @@ export function SessionPage( { role } ) {
             <SectionHeading><h2>Reply</h2></SectionHeading>
             <Panel>
                 { role === `read` && <Notice>This access key is read-only.</Notice> }
-                { session.busy && <Notice>Babysit is holding this session's input for an action or unresolved recovery.{ role === `write` && ` You can draft while sending is paused.` }</Notice> }
-                { role === `write` && !session.busy && !error && session.activity === `running` && <Notice $warning>The agent is running. Sending now types into its active turn.</Notice> }
+                { role === `write` && is_running && <Notice $warning>The agent is running. Your message goes into its active turn.</Notice> }
                 { send_error && <Notice $error role="alert">{ send_error }</Notice> }
 
                 { role === `write` && <Composer onSubmit={ send_message }>
@@ -266,7 +266,7 @@ export function SessionPage( { role } ) {
                     />
                     <ComposerFooter>
                         <small id="message-help" role="status">{ has_unsupported_characters ? `Unsupported control characters` : byte_count >= 14_746 ? `${ byte_count.toLocaleString() } / 16,384 bytes${ byte_count > 16_384 ? ` — message too long` : `` }` : `` }</small>
-                        <Button disabled={ !can_send } type="submit"><Send aria-hidden="true" strokeWidth={ 1.5 } />{ is_sending ? `Sending…` : `Send` }</Button>
+                        <Button disabled={ !can_send } type="submit"><Send aria-hidden="true" strokeWidth={ 1.5 } />{ is_sending ? `Sending…` : is_running ? `Interrupt` : `Send` }</Button>
                     </ComposerFooter>
                 </Composer> }
 
