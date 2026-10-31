@@ -272,7 +272,8 @@ export const create_web_bridge = ( {
         epoch,
         name: typeof session.name === `string` && session.name ? sanitize_display_text( session.name ) : null,
         agent: sanitize_display_text( session.agent || `unknown` ),
-        activity: busy ? `running` : current_activity,
+        // Observed agent state only: `busy` is Babysit's input lock, a separate fact
+        activity: current_activity,
         attachment,
         busy,
         modifiers: Array.isArray( session.modifiers )

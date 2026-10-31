@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, Clock, Cpu, Folder, Inbox } from 'lucide-react'
+import { Bot, ChevronRight, Cpu, Folder, Inbox } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import styled, { keyframes } from 'styled-components'
 import { Status } from '../atoms/Status.jsx'
@@ -12,13 +12,45 @@ import { container_label } from '../../modules/usage.js'
 
 const WIDE = `@media (min-width: 48rem)`
 
-const List = styled( Surface ).attrs( { as: `ul` } )`
-    list-style: none;
-    margin: 0;
+const COLUMNS = `minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) 13.5rem 1rem`
+
+const Repositories = styled.div`
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr);
+`
+
+const List = styled( Surface ).attrs( { as: `section` } )`
     overflow: hidden;
     padding: 0;
+`
 
-    > li + li { border-top: 1px solid var(--line); }
+// Repository banner, the web twin of a `babysit list` trunk
+const Banner = styled.h2`
+    align-items: center;
+    background: var(--soft);
+    color: var(--muted);
+    display: flex;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    gap: 0.375rem;
+    margin: 0;
+    min-width: 0;
+    padding: 0.375rem 0.75rem;
+
+    svg { flex-shrink: 0; height: 0.875rem; width: 0.875rem; }
+    span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    small { flex-shrink: 0; font-size: inherit; font-weight: 400; margin-left: auto; }
+
+    ${ WIDE } { padding: 0.5rem 1rem; }
+`
+
+const Sessions = styled.ul`
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    > li { border-top: 1px solid var(--line); }
 `
 
 // Desktop column labels for the row grid below; rows carry their own text
@@ -30,19 +62,21 @@ const Columns = styled.div`
         display: grid;
         font-size: 0.8125rem;
         gap: 1rem;
-        grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) 10rem 1rem;
+        grid-template-columns: ${ COLUMNS };
         padding: 0 1rem 0.5rem;
     }
 `
 
-// Phone: name + status, then details. Desktop: one table-like line per session.
+// Phone: one tappable line, details live on the session page. Desktop: one table-like line.
 const Row = styled( Link )`
+    align-items: center;
     color: inherit;
     display: grid;
-    gap: 0.375rem 0.75rem;
-    grid-template-areas: 'name chevron' 'status chevron' 'details chevron';
-    grid-template-columns: minmax(0, 1fr) 1rem;
-    padding: 0.875rem 1rem;
+    gap: 0.5rem;
+    grid-template-areas: 'name status chevron';
+    grid-template-columns: minmax(0, 1fr) auto 1rem;
+    min-height: 2.75rem;
+    padding: 0.25rem 0.75rem;
     text-decoration: none;
     transition: background 160ms ease;
 
@@ -50,49 +84,49 @@ const Row = styled( Link )`
     &:focus-visible { box-shadow: inset 0 0 0 3px var(--halo); }
 
     ${ WIDE } {
-        align-items: center;
         gap: 1rem;
         grid-template-areas: 'name agent resources status chevron';
-        grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) 10rem 1rem;
+        grid-template-columns: ${ COLUMNS };
+        padding: 0.625rem 1rem;
     }
 `
 
 const Name = styled.div`
-    display: grid;
-    gap: 0.125rem;
+    align-items: baseline;
+    display: flex;
+    gap: 0.5rem;
     grid-area: name;
     min-width: 0;
 
-    strong { font-weight: 600; overflow-wrap: anywhere; }
+    strong { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    span { color: var(--muted); flex-shrink: 0; font-size: 0.8125rem; }
+
+    ${ WIDE } {
+        strong { overflow: visible; overflow-wrap: anywhere; white-space: normal; }
+        span { display: none; }
+    }
 `
 
-// Detail lines: muted, each with a fine icon in the same color
+// Desktop-only cells: phones show these on the session page
 const Detail = styled.span`
     align-items: center;
     color: var(--muted);
-    display: inline-flex;
+    display: none;
     font-size: 0.875rem;
     gap: 0.375rem;
     min-width: 0;
 
     svg { flex-shrink: 0; height: 1rem; width: 1rem; }
-`
 
-const Details = styled.div`
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem 1rem;
-    grid-area: details;
-
-    ${ WIDE } { display: contents; }
+    ${ WIDE } { display: inline-flex; }
 `
 
 const Agent = styled( Detail )`
-    ${ WIDE } { grid-area: agent; }
+    grid-area: agent;
 `
 
 const Resources = styled( Detail )`
-    ${ WIDE } { grid-area: resources; }
+    grid-area: resources;
 `
 
 const State = styled.div`
@@ -100,7 +134,7 @@ const State = styled.div`
     display: flex;
     grid-area: status;
 
-    ${ WIDE } { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
+    ${ WIDE } { flex-direction: column; gap: 0.25rem; }
 `
 
 const Chevron = styled( ChevronRight )`
@@ -109,17 +143,6 @@ const Chevron = styled( ChevronRight )`
     grid-area: chevron;
     height: 1rem;
     width: 1rem;
-`
-
-// Desktop-only detail: phones show these inside the details line instead
-const WideDetail = styled( Detail )`
-    display: none;
-    ${ WIDE } { display: inline-flex; }
-`
-
-const PhoneOnly = styled.span`
-    display: contents;
-    ${ WIDE } { display: none; }
 `
 
 const Empty = styled( Surface )`
@@ -165,21 +188,30 @@ function SessionRow( { session, role, offline } ) {
         <Row to={ `/sessions/${ session.session_id }` }>
             <Name>
                 <strong>{ session.name }</strong>
-                <WideDetail><Folder aria-hidden="true" strokeWidth={ 1.5 } />{ session.directory || `Directory unavailable` }</WideDetail>
+                <span>{ session.agent }</span>
             </Name>
-            <Details>
-                <Agent><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</Agent>
-                <PhoneOnly><Detail><Folder aria-hidden="true" strokeWidth={ 1.5 } />{ session.directory || `Directory unavailable` }</Detail></PhoneOnly>
-                <Resources><Cpu aria-hidden="true" strokeWidth={ 1.5 } />{ container_label( session.container ) }</Resources>
-                <PhoneOnly>{ seen && <Detail title={ `${ session.attachment } · last heartbeat ${ seen }` }><Clock aria-hidden="true" strokeWidth={ 1.5 } />{ seen }</Detail> }</PhoneOnly>
-            </Details>
+            <Agent><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</Agent>
+            <Resources><Cpu aria-hidden="true" strokeWidth={ 1.5 } />{ container_label( session.container ) }</Resources>
             <State>
-                <Status activity={ offline ? `unknown` : session.activity } busy={ role === `write` && session.busy } />
-                <WideDetail>{ session.attachment } · { seen || `no heartbeat` }</WideDetail>
+                <Status activity={ offline ? `unknown` : session.activity } busy={ role === `write` && session.busy } compact />
+                <Detail>{ session.attachment } · { seen || `no heartbeat` }</Detail>
             </State>
             <Chevron aria-hidden="true" strokeWidth={ 1.5 } />
         </Row>
     </li>
+}
+
+/**
+ * Group sessions per workspace, alphabetically so banners hold still between
+ * polls while activity reorders the rows inside them.
+ */
+const by_repository = sessions => {
+    const groups = new Map()
+    sessions.forEach( session => {
+        const directory = session.directory || `Directory unavailable`
+        groups.set( directory, [ ...groups.get( directory ) || [], session ] )
+    } )
+    return [ ...groups ].sort( ( [ first ], [ second ] ) => first.localeCompare( second ) )
 }
 
 /** Active bridge sessions first, then host and account overview, from one status poll. */
@@ -196,7 +228,7 @@ export function SessionsPage( { role } ) {
         { error && <Notice $error role="alert">{ error.message }. Reconnecting…</Notice> }
 
         { is_loading && <List aria-busy="true" aria-label="Loading sessions">
-            { [ 0, 1, 2 ].map( index => <Skeleton key={ index }><span /><span /><span /></Skeleton> ) }
+            <Sessions>{ [ 0, 1, 2 ].map( index => <Skeleton key={ index }><span /><span /><span /></Skeleton> ) }</Sessions>
         </List> }
 
         { !is_loading && !error && sessions.length === 0 && <Empty>
@@ -207,9 +239,14 @@ export function SessionsPage( { role } ) {
 
         { sessions.length > 0 && <>
             <Columns aria-hidden="true"><span>Session</span><span>Agent</span><span>Container</span><span>Status</span></Columns>
-            <List>
-                { sessions.map( session => <SessionRow key={ session.session_id } offline={ Boolean( error ) } role={ role } session={ session } /> ) }
-            </List>
+            <Repositories>
+                { by_repository( sessions ).map( ( [ directory, members ] ) => <List aria-label={ directory } key={ directory }>
+                    <Banner><Folder aria-hidden="true" strokeWidth={ 1.5 } /><span>{ directory }</span><small>{ members.length }</small></Banner>
+                    <Sessions>
+                        { members.map( session => <SessionRow key={ session.session_id } offline={ Boolean( error ) } role={ role } session={ session } /> ) }
+                    </Sessions>
+                </List> ) }
+            </Repositories>
         </> }
 
         { data && <Overview status={ data } /> }

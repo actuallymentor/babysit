@@ -88,3 +88,8 @@
 - 2026-10-29: Incident caused by me (docker0 deleted by a host-netns test dockerd). User doing cleanup by hand. S7 = dataset `internalnvme/docker-babysit` exists; second babysit daemon not built; zfs driver judged not worth it vs overlay2 on the quiet dataset (unmeasured).
 - Open: `babysit prune` network prune + global unused image removal is risky on shared hosts — user to decide whether to scope it to babysit resources.
 
+
+## 2026-10-31 — Recovery readiness probe (not changed)
+- Suspected cause of every Docker session reporting "Agent input did not become ready" on 10-29: Claude's `is_initial_prompt_ready` requires `Claude Code v\d` in the visible pane; a resumed conversation can scroll the banner off. Unverified. Suggested fix: on recovery require only the composer footer and no startup blocker.
+- Also unsurfaced: sessions in `blocked` silently skip rules/loops. Consider a `babysit list` status for it.
+- Segmented Babysit actions still pause web sending (up to 10 min per wait, to avoid interleaved keystrokes). Could narrow the lock to actual typing.

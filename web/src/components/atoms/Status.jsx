@@ -1,5 +1,7 @@
 import { Activity, CircleHelp, CirclePause, Hourglass, Moon } from 'lucide-react'
-import styled from 'styled-components'
+import styled, { css } from 'styled-components'
+
+const VISUALLY_HIDDEN = `clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px;`
 
 const Pills = styled.span`
     align-items: flex-start;
@@ -10,7 +12,8 @@ const Pills = styled.span`
     max-width: 100%;
 `
 
-// Tint from the tone, text in its readable shade; the icon carries meaning too
+// Tint from the tone, text in its readable shade; the icon carries meaning too.
+// Iconic pills on phones keep the semantic icon, the words stay for screen readers.
 const Pill = styled.span`
     align-items: center;
     background: color-mix(in srgb, ${ ( { $tone } ) => $tone } 16%, transparent);
@@ -24,7 +27,14 @@ const Pill = styled.span`
     padding: 0.15rem 0.55rem 0.15rem 0.45rem;
     white-space: nowrap;
 
-    svg { height: 0.875rem; width: 0.875rem; }
+    svg { flex-shrink: 0; height: 0.875rem; width: 0.875rem; }
+
+    ${ ( { $iconic } ) => $iconic && css`
+        @media (max-width: 47.99rem) {
+            padding: 0.2rem;
+            span { ${ VISUALLY_HIDDEN } }
+        }
+    ` }
 `
 
 const ACTIVITY = {
@@ -34,12 +44,15 @@ const ACTIVITY = {
     unknown: { icon: CircleHelp, label: `Activity unknown`, text: `var(--muted)`, tone: `var(--muted)` },
 }
 
-/** Keeps observed agent activity separate from the send lock. */
-export function Status( { activity, busy } ) {
+/**
+ * Keeps observed agent activity separate from the send lock.
+ * `compact` shrinks both pills for phone rows.
+ */
+export function Status( { activity, busy, compact } ) {
     const { icon: Icon, label, text, tone } = ACTIVITY[ activity ] || ACTIVITY.unknown
 
     return <Pills>
-        <Pill $text={ text } $tone={ tone }><Icon aria-hidden="true" strokeWidth={ 1.5 } />{ label }</Pill>
-        { busy && <Pill $text="var(--muted)" $tone="var(--muted)"><CirclePause aria-hidden="true" strokeWidth={ 1.5 } />Sending paused</Pill> }
+        <Pill $iconic={ compact && activity !== `running` } $text={ text } $tone={ tone }><Icon aria-hidden="true" strokeWidth={ 1.5 } /><span>{ label }</span></Pill>
+        { busy && <Pill $iconic={ compact } $text="var(--muted)" $tone="var(--muted)" title="Sending paused"><CirclePause aria-hidden="true" strokeWidth={ 1.5 } /><span>Sending paused</span></Pill> }
     </Pills>
 }

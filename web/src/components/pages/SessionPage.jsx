@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import styled from 'styled-components'
 import { api } from '../../modules/api.js'
 import { heartbeat_label } from '../../modules/freshness.js'
-import { ArrowDown, Bot, ChevronDown, ChevronLeft, Clock, Folder, Send, SquareTerminal } from 'lucide-react'
+import { container_label } from '../../modules/usage.js'
+import { ArrowDown, Bot, ChevronDown, ChevronLeft, Clock, Cpu, Folder, Send, SquareTerminal } from 'lucide-react'
 import { Section, SectionHeading, Surface } from '../atoms/Layout.jsx'
 import { use_poll } from '../../hooks/use_poll.js'
 import { Button } from '../atoms/Button.jsx'
@@ -227,7 +228,8 @@ export function SessionPage( { role } ) {
             <Meta>
                 <span><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</span>
                 <span><Folder aria-hidden="true" strokeWidth={ 1.5 } />{ session.directory || `Directory unavailable` }</span>
-                <span title={ session.updated_at || undefined }><Clock aria-hidden="true" strokeWidth={ 1.5 } />{ error ? `Connection interrupted` : `Connected` } · { heartbeat_label( session.updated_at ) }</span>
+                <span><Cpu aria-hidden="true" strokeWidth={ 1.5 } />{ container_label( session.container ) }</span>
+                <span title={ session.updated_at || undefined }><Clock aria-hidden="true" strokeWidth={ 1.5 } />{ error ? `Connection interrupted` : `Connected` } · { session.attachment } · { heartbeat_label( session.updated_at ) }</span>
             </Meta>
         </Heading>
         { error && <Notice $error role="alert">{ error.message }. Showing the last received state; sending is paused until the connection recovers.</Notice> }
@@ -248,6 +250,7 @@ export function SessionPage( { role } ) {
             <Panel>
                 { role === `read` && <Notice>This access key is read-only.</Notice> }
                 { session.busy && <Notice>Babysit is handling another action.{ role === `write` && ` You can draft while sending is paused.` }</Notice> }
+                { role === `write` && !session.busy && !error && session.activity === `running` && <Notice $warning>The agent is running. Sending now types into its active turn.</Notice> }
                 { send_error && <Notice $error role="alert">{ send_error }</Notice> }
 
                 { role === `write` && <Composer onSubmit={ send_message }>

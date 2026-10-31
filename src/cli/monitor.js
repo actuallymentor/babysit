@@ -533,7 +533,12 @@ export const cmd_monitor = async ( cmd ) => {
                 await reset_controller.on_status( status )
                 await stuck_controller.tick()
             },
-            on_user_input: () => stuck_controller.clear(),
+            on_user_input: () => {
+                stuck_controller.clear()
+                // A person took over: an undelivered continuation is settled, rules may resume
+                update_session( session.babysit_id, latest => [ `blocked`, `sending` ].includes( latest.continuation )
+                    ? { continuation: `skipped`, recovery_error: null } : null )
+            },
             watchdog,
             // A newer host login wins the sync tick, so this re-stages it
             on_logout_screen: create_session_logout_handler( session, {
@@ -554,6 +559,9 @@ export const cmd_monitor = async ( cmd ) => {
                 }
             },
             input_allowed: () => ![ `pending`, `sending`, `blocked` ].includes( load_session( session.babysit_id )?.continuation ),
+            // Delivery finished before this loop began, so `blocked`/`sending` here are
+            // stale records that await a person, and a web message is a person
+            web_input_allowed: () => load_session( session.babysit_id )?.continuation !== `pending`,
             // The record decides each tick; Docker is asked at most every
             // FROZEN_RECHECK_MS whether a mark is stale (reboot, outside
             // unpause, a freeze killed before its pause), the first time at once
