@@ -12,7 +12,7 @@ const SessionRoute = ( { role } ) => {
 /** Maps authenticated application routes. */
 export function Routes( { role } ) {
     return <RouterRoutes>
-        <Route element={ <SessionsPage role={ role } /> } path="/" />
+        <Route element={ <SessionsPage /> } path="/" />
         <Route element={ <SessionRoute role={ role } /> } path="/sessions/:session_id" />
         <Route element={ <ApiDocsPage /> } path="/api-docs" />
         <Route element={ <Navigate replace to="/" /> } path="*" />

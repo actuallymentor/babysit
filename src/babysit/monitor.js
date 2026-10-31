@@ -191,7 +191,6 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.on_limit_screen] - Callback when the pane shows a subscription limit
  * @param {Function} [options.on_status] - Callback with each tick's agent status and ANSI-stripped screen
  * @param {Function} [options.on_user_input] - Callback when the web companion delivered user input
- * @param {Function} [options.web_input_allowed] - Whether a person's web message may reach the pane; defaults to input_allowed
  * @param {Object|null} [options.watchdog] - Stall watchdog from create_watchdog
  * @param {Function} [options.is_frozen] - Async: the current `babysit freeze` mark, falsy when not frozen
  * @param {Function} [options.on_frozen] - Called with each mark once the monitor stood down for it (freeze waits for that), null on thaw
@@ -216,7 +215,6 @@ export const start_monitor = async ( {
     on_user_input = null,
     watchdog = null,
     input_allowed = () => true,
-    web_input_allowed = input_allowed,
     is_frozen = async () => false,
     on_frozen = null,
     on_exit,
@@ -456,9 +454,8 @@ export const start_monitor = async ( {
                 continue
             }
 
-            // Publish first, then claim a bounded request batch. An in-flight
-            // Babysit action keeps ownership of the pane and rejects web input
-            // explicitly instead of interleaving keystrokes.
+            // Publish first, then claim a bounded request batch. A person's web
+            // message is never refused: it may interrupt the agent or a rule.
             let bridge_sent = false
             control_bridge?.tick( { blocked: action_busy || !input_allowed(), busy: agent_status === `running` } )
             if( web_bridge ) {
@@ -466,12 +463,11 @@ export const start_monitor = async ( {
                     await web_bridge.publish( {
                         output: clean_output,
                         activity: agent_status,
-                        busy: action_busy || !!control_bridge?.applying || !web_input_allowed(),
                     } )
                     // Polls reserve input briefly; leave web requests queued rather
                     // than claiming and rejecting them during an empty poll.
                     if( !control_bridge?.busy ) {
-                        const bridge_result = await web_bridge.process_requests( { busy: action_busy || !web_input_allowed() } )
+                        const bridge_result = await web_bridge.process_requests()
                         bridge_sent = bridge_result.sent
                     }
                 } catch ( error ) {

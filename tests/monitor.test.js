@@ -497,9 +497,9 @@ describe( `web bridge coordination`, () => {
     } )
 
 
-    it( `keeps publishing while an action runs and rejects interleaved web input`, async () => {
-        const busy_states = []
-        const request_states = []
+    it( `keeps publishing and taking web input while an action runs`, async () => {
+        const published = []
+        let requests = 0
         let action_done
         let alive_checks = 0
         let wait_count = 0
@@ -510,12 +510,12 @@ describe( `web bridge coordination`, () => {
             action_done = resolve
         } )
         const web_bridge = {
-            publish: async ( { busy } ) => busy_states.push( busy ),
-            process_requests: async ( { busy } ) => {
-                request_states.push( busy )
+            publish: async ( { output } ) => published.push( output ),
+            process_requests: async () => {
+                requests += 1
                 return { sent: false, processed: 0 }
             },
-            close: async () => busy_states.push( `closed` ),
+            close: async () => published.push( `closed` ),
             tmux_target: `%42`,
         }
 
@@ -542,13 +542,13 @@ describe( `web bridge coordination`, () => {
             },
         } )
 
-        expect( busy_states ).toEqual( [ false, true, `closed` ] )
-        expect( request_states ).toEqual( [ false, true ] )
+        expect( published ).toEqual( [ `error`, `error`, `closed` ] )
+        expect( requests ).toBe( 2 )
         expect( capture_targets ).toEqual( [ `%42`, `%42` ] )
         expect( action_targets ).toEqual( [ `%42` ] )
     } )
 
-    it( `defers web input during control polls without publishing false busy state`, async () => {
+    it( `defers web input during control polls while still publishing`, async () => {
         let checks = 0
         let requests = 0
         const published = []
@@ -557,7 +557,7 @@ describe( `web bridge coordination`, () => {
             session_name: `babysit_test`, config: {}, rules: [],
             control_bridge,
             web_bridge: {
-                publish: async ( { busy } ) => published.push( busy ),
+                publish: async ( { output } ) => published.push( output ),
                 process_requests: async () => {
                     requests++; return { sent: true } 
                 },
@@ -571,7 +571,7 @@ describe( `web bridge coordination`, () => {
                 control_bridge.busy = false 
             },
         } )
-        expect( published ).toEqual( [ false, false ] )
+        expect( published ).toEqual( [ `ready`, `ready` ] )
         expect( requests ).toBe( 1 )
     } )
 

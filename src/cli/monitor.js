@@ -562,11 +562,6 @@ export const cmd_monitor = async ( cmd ) => {
                 }
             },
             input_allowed: () => input_allowed( load_session( session.babysit_id ) ),
-            // Only people may answer a failed readiness probe; rules stay held
-            web_input_allowed: () => {
-                const latest = load_session( session.babysit_id )
-                return input_allowed( latest ) || continuation_awaits_person( latest )
-            },
             // The record decides each tick; Docker is asked at most every
             // FROZEN_RECHECK_MS whether a mark is stale (reboot, outside
             // unpause, a freeze killed before its pause), the first time at once

@@ -83,7 +83,6 @@ const state_summary = state => ( {
     activity: state.activity,
     agent: state.agent,
     attachment: state.attachment,
-    busy: state.busy,
     container: state.container,
     directory: state.directory,
     workspace: state.workspace,
@@ -102,7 +101,6 @@ const normalize_state = parsed => {
         activity: [ `idle`, `running`, `waiting` ].includes( parsed.activity ) ? parsed.activity : `unknown`,
         agent: typeof parsed.agent === `string` ? parsed.agent : `agent`,
         attachment: [ `attached`, `detached`, `unknown` ].includes( parsed.attachment ) ? parsed.attachment : `unknown`,
-        busy: parsed.busy === true,
         container: normalize_container( parsed.container ),
         directory: typeof parsed.directory === `string` ? parsed.directory : ``,
         workspace: typeof parsed.workspace === `string` ? parsed.workspace : ``,
@@ -180,7 +178,6 @@ export class BridgeStore {
             } )
 
         return states.sort( ( first, second ) => {
-            if( first.busy !== second.busy ) return first.busy ? -1 : 1
             const activity_order = { running: 0, waiting: 1, idle: 2, unknown: 3 }
             if( first.activity !== second.activity ) return activity_order[ first.activity ] - activity_order[ second.activity ]
             return first.name.localeCompare( second.name )

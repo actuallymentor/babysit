@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.63.0 — 2026-11-01
+
+### Changed
+- Web: sending is never blocked. The Send button reads "Interrupt" while the agent runs, the message goes into the active turn. The "Sending paused" pill, the `busy` API field and the 409 are gone. Running sessions need `babysit restart`: older monitors still reject messages during Babysit actions.
+
 ## 1.62.0 — 2026-10-31
 
 ### Added

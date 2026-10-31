@@ -16,7 +16,6 @@ const session_document = ( overrides={} ) => ( {
     activity: `idle`,
     agent: `codex`,
     attachment: `detached`,
-    busy: false,
     directory: `~/project`,
     epoch: `epoch-1`,
     last_message: `## Finished\n\n- one\n- two`,
@@ -127,7 +126,6 @@ test( `authenticated bridge API`, async () => {
         assert.equal( waiting_detail.body.session.activity, `waiting` )
         assert.equal( waiting_list.body.sessions[ 0 ].activity, `waiting` )
         assert.equal( waiting_detail.body.session.last_message, detail.body.session.last_message )
-        assert.equal( waiting_detail.body.session.busy, false )
 
         writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { activity: `unknown` } ) ) )
         const unknown_detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
@@ -143,20 +141,14 @@ test( `authenticated bridge API`, async () => {
         writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { busy: true } ) ) )
         const busy_detail = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
         assert.equal( busy_detail.body.session.last_message, detail.body.session.last_message )
-        const busy_send = await api_request( origin, `/api/sessions/session-1/messages`, {
-            body: { text: `Wait for the action` },
-            cookie: login.cookie,
-            method: `POST`,
-        } )
-        assert.equal( busy_send.status, 409 )
-        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document() ) )
-
+        // Monitors from before 1.63.0 still publish `busy`; it never refuses a person
         const sent = await api_request( origin, `/api/sessions/session-1/messages`, {
             body: { text: `Continue\ncarefully` },
             cookie: login.cookie,
             method: `POST`,
         } )
         assert.equal( sent.status, 202 )
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document() ) )
         const queued = await api_request( origin, `/api/sessions/session-1`, { cookie: login.cookie } )
         assert.deepEqual( queued.body.pending, [ { request_id: sent.body.request_id, status: `pending` } ] )
         const request_filename = readdirSync( request_dir ).find( filename => filename.startsWith( `session-1--` ) )

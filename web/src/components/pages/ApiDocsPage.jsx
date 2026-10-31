@@ -57,7 +57,7 @@ curl -H "Authorization: Bearer $BABYSIT_KEY" ${ origin }/api/status
 \`\`\`
 {
   generated_at,
-  sessions: [ { session_id, name, agent, modifiers, directory, activity, busy, attachment, updated_at, container } ],
+  sessions: [ { session_id, name, agent, modifiers, directory, activity, attachment, updated_at, container } ],
   containers: { sessions, sampled, cpu_percent, memory_bytes, host_cpus, host_memory_bytes },
   usage: { fetched_at, stale, agents: [ { agent, provider, status, message, limits[] } ] } | null
 }

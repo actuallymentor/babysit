@@ -181,7 +181,7 @@ const Skeleton = styled.li`
 `
 
 /** One session as a list row linking to its page. */
-function SessionRow( { session, role, offline } ) {
+function SessionRow( { session, offline } ) {
     const seen = age_label( session.updated_at )
 
     return <li>
@@ -193,7 +193,7 @@ function SessionRow( { session, role, offline } ) {
             <Agent><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</Agent>
             <Resources><Cpu aria-hidden="true" strokeWidth={ 1.5 } />{ container_label( session.container ) }</Resources>
             <State>
-                <Status activity={ offline ? `unknown` : session.activity } busy={ role === `write` && session.busy } compact />
+                <Status activity={ offline ? `unknown` : session.activity } compact />
                 <Detail>{ session.attachment } · { seen || `no heartbeat` }</Detail>
             </State>
             <Chevron aria-hidden="true" strokeWidth={ 1.5 } />
@@ -216,7 +216,7 @@ const by_repository = sessions => {
 }
 
 /** Active bridge sessions first, then host and account overview, from one status poll. */
-export function SessionsPage( { role } ) {
+export function SessionsPage() {
     const { data, error, is_loading } = use_poll( () => api( `/api/status` ) )
     const sessions = data?.sessions || []
 
@@ -244,7 +244,7 @@ export function SessionsPage( { role } ) {
                 { by_repository( sessions ).map( ( { key, directory, members } ) => <List aria-label={ directory } key={ key }>
                     <Banner><Folder aria-hidden="true" strokeWidth={ 1.5 } /><span>{ directory }</span><small>{ members.length }</small></Banner>
                     <Sessions>
-                        { members.map( session => <SessionRow key={ session.session_id } offline={ Boolean( error ) } role={ role } session={ session } /> ) }
+                        { members.map( session => <SessionRow key={ session.session_id } offline={ Boolean( error ) } session={ session } /> ) }
                     </Sessions>
                 </List> ) }
             </Repositories>
