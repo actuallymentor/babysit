@@ -7,7 +7,7 @@
 - Web: a running agent shows a warning above the composer and sending stays enabled.
 
 ### Fixed
-- Web: idle sessions showed "Running · Sending paused" indefinitely. A recovered session whose continuation failed (`blocked`) or was left uncertain (`sending`) held the input lock, and the lock was published as `running`. Activity is now always the observed state, stale continuations no longer block web messages, and a delivered web message settles the continuation so rules resume. Running sessions need `babysit restart` to pick up the monitor change.
+- Web: idle sessions showed "Running · Sending paused" indefinitely. A recovered session whose continuation failed (`blocked`) or was left uncertain (`sending`) held the input lock, and the lock was published as `running`. Activity is now always the observed state, a failed readiness probe no longer blocks web messages, and a delivered message settles it so rules resume. Uncertain deliveries and identity mismatches stay paused until `babysit recover <id> --no-continue`. Running sessions need `babysit restart` to pick up the monitor change.
 
 ## 1.61.0 — 2026-10-30
 

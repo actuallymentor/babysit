@@ -168,7 +168,7 @@ describe( `per-session web bridge`, () => {
         const state = JSON.parse( readFileSync( state_path, `utf8` ) )
 
         expect( Object.keys( state ).sort() ).toEqual( [
-            `activity`, `agent`, `attachment`, `busy`, `container`, `directory`, `epoch`, `last_message`,
+            `activity`, `agent`, `attachment`, `busy`, `container`, `directory`, `epoch`, `last_message`, `workspace`,
             `modifiers`, `name`, `protocol`, `raw_screen`, `results`, `revision`, `session_id`, `updated_at`,
         ].sort() )
         expect( state ).toMatchObject( {

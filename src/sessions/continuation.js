@@ -4,6 +4,17 @@ import { RECOVERY_PROMPT } from './recovery.js'
 import { get_session_pane } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
 
+const INPUT_NOT_READY = `Agent input did not become ready`
+
+/**
+ * Nothing was typed and no identity check failed, only the readiness probe
+ * gave up. A person's message is safe here; `sending` may have left a pasted
+ * prompt behind, and identity failures need `babysit recover`.
+ * @param {Object} [session] - Stored session record
+ * @returns {boolean}
+ */
+export const continuation_awaits_person = session => session?.continuation === `blocked` && session.recovery_error === INPUT_NOT_READY
+
 /**
  * Submit once per recovery attempt, before monitor rules/web input can run.
  * A crash after the durable sending marker requires manual reconciliation.
@@ -19,7 +30,7 @@ export const continue_recovered_session = async ( session, {
 
     if( session.continuation !== `pending` ) return session.continuation
     try {
-        if( !await ready( session.tmux_session ) ) throw new Error( `Agent input did not become ready` )
+        if( !await ready( session.tmux_session ) ) throw new Error( INPUT_NOT_READY )
         const identity = await read_identity()
         if( identity && identity.session_id !== ( session.recovery_native_id || session.agent_session_id ) ) {
             throw new Error( `Resumed conversation differs from the saved conversation` )

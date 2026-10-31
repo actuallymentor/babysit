@@ -208,10 +208,11 @@ function SessionRow( { session, role, offline } ) {
 const by_repository = sessions => {
     const groups = new Map()
     sessions.forEach( session => {
-        const directory = session.directory || `Directory unavailable`
-        groups.set( directory, [ ...groups.get( directory ) || [], session ] )
+        const key = session.workspace || session.directory
+        const { members = [] } = groups.get( key ) || {}
+        groups.set( key, { key, directory: session.directory || `Directory unavailable`, members: [ ...members, session ] } )
     } )
-    return [ ...groups ].sort( ( [ first ], [ second ] ) => first.localeCompare( second ) )
+    return [ ...groups.values() ].sort( ( first, second ) => first.directory.localeCompare( second.directory ) )
 }
 
 /** Active bridge sessions first, then host and account overview, from one status poll. */
@@ -240,7 +241,7 @@ export function SessionsPage( { role } ) {
         { sessions.length > 0 && <>
             <Columns aria-hidden="true"><span>Session</span><span>Agent</span><span>Container</span><span>Status</span></Columns>
             <Repositories>
-                { by_repository( sessions ).map( ( [ directory, members ] ) => <List aria-label={ directory } key={ directory }>
+                { by_repository( sessions ).map( ( { key, directory, members } ) => <List aria-label={ directory } key={ key }>
                     <Banner><Folder aria-hidden="true" strokeWidth={ 1.5 } /><span>{ directory }</span><small>{ members.length }</small></Banner>
                     <Sessions>
                         { members.map( session => <SessionRow key={ session.session_id } offline={ Boolean( error ) } role={ role } session={ session } /> ) }
