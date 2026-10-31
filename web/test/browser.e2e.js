@@ -185,7 +185,13 @@ try {
     await page.click( `[aria-label="Decrease text size"]` )
     await page.click( `[aria-label="Close menu"]` )
 
+    // Sessions tree under a repository banner; phone rows stay one line, usage waits for the session page
+    assert.equal( await page.$eval( `main h2`, element => element.textContent.includes( `~/babysit` ) ), true )
+    assert.ok( await page.$eval( `a[href="/sessions/mobile-session"]`, element => element.offsetHeight ) <= 48, `Phone rows stay condensed` )
+    assert.equal( await page.$eval( `a[href="/sessions/mobile-session"]`, element => element.innerText.includes( `CPU` ) || element.innerText.includes( `pending` ) ), false )
+
     await Promise.all( [ page.waitForSelector( `[data-testid="markdown-message"]` ), page.click( `a[href="/sessions/mobile-session"]` ) ] )
+    assert.match( await page.$eval( `main`, element => element.textContent ), /Container usage pending/ )
     assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )
     assert.equal( await page.$$eval( `[data-testid="markdown-message"] li`, elements => elements.length ), 2 )
     assert.equal( await page.$$eval( `[data-testid="markdown-message"] img`, elements => elements.length ), 0 )
@@ -257,6 +263,14 @@ try {
     assert.match( await page.$eval( `body`, element => element.textContent ), /Waiting/ )
     assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )
     assert.equal( await page.$eval( `textarea`, element => element.disabled ), false )
+
+    // A running agent warns without pausing the send
+    writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `running` } ) )
+    await page.waitForFunction( () => document.body.textContent.includes( `The agent is running` ) )
+    await page.type( `textarea[aria-label="Message"]`, `Steer` )
+    assert.equal( await page.$eval( `button[type="submit"]`, element => element.disabled ), false )
+    await page.$eval( `textarea[aria-label="Message"]`, element => element.select() )
+    await page.keyboard.press( `Backspace` )
 
     writeFileSync( state_file, JSON.stringify( { ...completed_state, activity: `active`, busy: true, raw_screen: `Working on the next turn` } ) )
     await page.waitForFunction( () => document.body.textContent.includes( `You can draft while sending is paused` ) )

@@ -311,6 +311,14 @@ describe( `per-session web bridge`, () => {
         }
     } )
 
+    it( `reports observed activity while the input lock is held`, async () => {
+        const { bridge, directory } = setup()
+        await bridge.publish( { output: `ready`, activity: `idle`, busy: true } )
+        const state = JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
+        expect( state ).toMatchObject( { activity: `idle`, busy: true } )
+        bridge.close()
+    } )
+
     it( `rejects controls, stale files, extra schema, busy input, and retained hard links`, async () => {
         const cases = [
             { request: make_request( { text: `unsafe\u001binput` } ), expected: `unsafe control` },
