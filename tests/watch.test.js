@@ -210,8 +210,8 @@ describe( `cmd_watch`, () => {
         const frames = []
         await cmd_watch( { flags }, {
             accounts_fn: () => ``,
-            cache_health_fn: async () => ( {} ),
-            cache_read_fn: () => ( {} ),
+            disk_health_fn: async () => ( {} ),
+            disk_read_fn: () => ( {} ),
             watch_fn: () => () => {},
             input: null,
             output: null,
@@ -228,9 +228,9 @@ describe( `cmd_watch`, () => {
         const frames = await run_watch( { usage: true }, {
             rounds: 2,
             collect_fn: async () => report,
-            cache_read_fn: () => ( { build_cache_bytes: 235e9 } ),
+            disk_read_fn: () => ( { build_cache_bytes: 235e9 } ),
             // A check that never answers must not hold a frame
-            cache_health_fn: () => {
+            disk_health_fn: () => {
                 checks++
                 return new Promise( () => {} )
             },
@@ -239,6 +239,23 @@ describe( `cmd_watch`, () => {
         expect( text ).toContain( `Docker build cache is 235 GB` )
         expect( text ).toContain( `babysit prune` )
         expect( checks ).toBe( 1 )
+    } )
+
+    it( `warns when a disk runs low and Babysit holds a real share of it`, async () => {
+        const health = { clones_dir: `/clones`, clones_bytes: 300e9, docker_root_dir: `/docker`, build_cache_bytes: 60e9 }
+        const disk_seams = {
+            stat: () => ( { dev: 7 } ),
+            statfs: () => ( { bsize: 1_000, blocks: 1e9, bavail: 9e7, type: 0 } ),
+        }
+        const frames = await run_watch( { usage: true }, {
+            rounds: 1,
+            collect_fn: async () => report,
+            disk_read_fn: () => health,
+            disk_seams,
+        } )
+        const text = plain( frames.join( `` ) )
+        expect( text ).toContain( `is 91% full (90 GB free)` )
+        expect( text ).toContain( `clones 300 GB, Docker build cache 60 GB` )
     } )
 
     it( `redraws sessions plus usage, refreshing usage on its own cadence`, async () => {

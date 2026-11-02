@@ -1,8 +1,8 @@
 import { createInterface } from 'readline/promises'
 import { realpathSync } from 'fs'
-import { resolve } from 'path'
+import { join, resolve } from 'path'
 
-import { clone_lock_status } from '../clone.js'
+import { clone_lock_status, STATE_DIR_NAME } from '../clone.js'
 import {
     clone_directory_size,
     list_managed_clones,
@@ -11,7 +11,9 @@ import {
     recover_prune_operations,
 } from '../prune.js'
 import { inspect_docker_container_state } from '../docker/file_transport.js'
-import { prune_unused_docker, remove_tree_as_root } from '../docker/prune.js'
+import { plan_docker_prune, prune_unused_docker, remove_tree_as_root } from '../docker/prune.js'
+import { directory_bytes, format_bytes, group_by_filesystem, tilde } from '../disk.js'
+import { read_disk_health } from '../disk_health.js'
 import { inspect_stored_sessions, update_session } from '../sessions/store.js'
 import { list_sessions } from '../tmux/session.js'
 import { CLONES_DIR, SESSIONS_DIR } from '../utils/paths.js'
@@ -284,24 +286,6 @@ export const parse_prune_days = value => {
 
 }
 
-const format_size = bytes => {
-
-    if( !Number.isFinite( bytes ) ) return `unknown`
-    if( bytes < 1_024 ) return `${ bytes } B`
-
-    const units = [ `KiB`, `MiB`, `GiB`, `TiB` ]
-    let value = bytes / 1_024
-    let [ unit ] = units
-
-    for( let index = 1; index < units.length && value >= 1_024; index++ ) {
-        value /= 1_024
-        unit = units[index]
-    }
-
-    return `${ value >= 10 ? value.toFixed( 0 ) : value.toFixed( 1 ) } ${ unit }`
-
-}
-
 const format_last_used = milliseconds => Number.isFinite( milliseconds )
     ? new Date( milliseconds ).toISOString().slice( 0, 10 )
     : `unknown`
@@ -343,7 +327,7 @@ const print_clone_table = ( clones, output, now = Date.now() ) => {
             format_last_used( clone.last_used_at ),
             format_age( clone.last_used_at, now ),
             clone.status,
-            format_size( clone.size_bytes ),
+            format_bytes( clone.size_bytes ),
             clone.clone_path,
         ] )
     )
@@ -356,12 +340,93 @@ const print_clone_table = ( clones, output, now = Date.now() ) => {
 
 }
 
-const choose_policy = async ( question, output ) => {
+const clone_total = clones => clones.reduce( ( total, { size_bytes } ) => total + ( size_bytes ?? 0 ), 0 )
+
+// `3 clones, 84 GB` for one retention policy
+const policy_summary = ( clones, policy, now ) => {
+
+    const candidates = select_prune_candidates( clones, policy, now )
+    const noun = candidates.length === 1 ? `clone` : `clones`
+    return `${ candidates.length } ${ noun }, ${ format_bytes( clone_total( candidates ) ) }`
+
+}
+
+// `3.0 GB to 9.0 GB`, or `up to 9.0 GB` when the lower bound is unknown
+const range_text = ( low, high ) => Number.isFinite( low ) && low < high
+    ? `${ format_bytes( low ) } to ${ format_bytes( high ) }`
+    : `up to ${ format_bytes( high ) }`
+
+// Shared layers make image sizes a range: bytes no other image uses go for
+// sure, the rest only when every image sharing them goes too
+const image_estimate = ( { image_bytes, image_unique_bytes } ) => range_text( image_unique_bytes, image_bytes )
+
+const docker_rows = plan => {
+
+    if( plan.error ) return [ [ `Docker`, `unavailable: ${ plan.error.message }` ] ]
+
+    const cache = Number.isFinite( plan.build_cache_bytes )
+        ? `${ format_bytes( plan.build_cache_bytes ) }${ Number.isFinite( plan.build_cache_total_bytes ) ? ` of ${ format_bytes( plan.build_cache_total_bytes ) }` : `` }`
+        : `unknown`
+
+    return [
+        [ `Docker build cache unused 7+ days`, cache ],
+        [ `Docker images, ${ plan.images.length } unused`, image_estimate( plan ) ],
+        [ `Docker stopped containers, ${ plan.containers.length }`, `size not measured` ],
+    ]
+
+}
+
+/**
+ * Print where reclaimable space is, before anything is deleted.
+ * @param {Object} report - `{ docker_plan, clones, trash_bytes, filesystems, now }`
+ * @param {NodeJS.WritableStream} output
+ */
+export const print_reclaimable = ( { docker_plan, clones, trash_bytes, filesystems, now }, output ) => {
+
+    const rows = [
+        ...docker_plan ? docker_rows( docker_plan ) : [],
+        [ `Clones unused ${ DEFAULT_UNUSED_DAYS }+ days`, policy_summary( clones, { mode: `days`, days: DEFAULT_UNUSED_DAYS }, now ) ],
+        [ `Clones not in use`, policy_summary( clones, { mode: `all` }, now ) ],
+        ...trash_bytes > 0 ? [ [ `Interrupted prune leftovers`, format_bytes( trash_bytes ) ] ] : [],
+    ]
+    const table = format_table( [ `RECLAIMABLE`, `ESTIMATE` ], rows )
+
+    write_line( output )
+    write_line( output, `  ${ table.header }` )
+    write_line( output, `  ${ table.divider }` )
+    table.rows.forEach( row => write_line( output, `  ${ row }` ) )
+
+    for( const { path, total_bytes, free_bytes } of filesystems ) {
+        write_line( output, `  Disk holding ${ tilde( path ) }: ${ format_bytes( total_bytes - free_bytes ) } of ${ format_bytes( total_bytes ) } used, ${ format_bytes( free_bytes ) } free.` )
+    }
+
+}
+
+/**
+ * Space freed per filesystem, from free space before and after. Truthful
+ * where estimates are not: shared layers and hard links count once.
+ * @param {Object[]} before - group_by_filesystem result before pruning
+ * @param {Object[]} after - The same, after
+ * @returns {string[]} One line per filesystem
+ */
+export const freed_lines = ( before, after ) => before.flatMap( previous => {
+
+    const current = after.find( ( { dev } ) => dev === previous.dev )
+    if( !current ) return []
+
+    const freed = Math.max( 0, current.free_bytes - previous.free_bytes )
+    // ZFS releases deleted blocks in the background, so free space trails deletion
+    const lag = previous.zfs ? ` (ZFS frees space in the background; more may follow)` : ``
+    return [ `Freed ${ format_bytes( freed ) } on the disk holding ${ tilde( previous.path ) }${ lag }.` ]
+
+} )
+
+const choose_policy = async ( question, output, clones, now ) => {
 
     write_line( output )
     write_line( output, `Which clone copies should be pruned?` )
-    write_line( output, `  1. Unused for 30 days (default)` )
-    write_line( output, `  2. All not in use` )
+    write_line( output, `  1. Unused for ${ DEFAULT_UNUSED_DAYS } days (default): ${ policy_summary( clones, { mode: `days`, days: DEFAULT_UNUSED_DAYS }, now ) }` )
+    write_line( output, `  2. All not in use: ${ policy_summary( clones, { mode: `all` }, now ) }` )
     write_line( output, `  3. Custom amount of days` )
 
     while( true ) {
@@ -394,7 +459,8 @@ const session_marker = sessions_dir => async ( session_ids, pruned_at ) => {
 }
 
 /**
- * List clone usage or interactively prune unused Docker data and managed workspaces.
+ * Show what can be reclaimed and where, then interactively prune unused
+ * Docker data and managed workspaces and report the space actually freed.
  * @param {Object} cmd - Parsed prune command
  * @param {Object} [dependencies]
  * @param {NodeJS.ReadableStream} [dependencies.input] - Interactive input
@@ -406,6 +472,10 @@ const session_marker = sessions_dir => async ( session_ids, pruned_at ) => {
  * @param {Function} [dependencies.recover_prunes] - Interrupted prune recovery
  * @param {Function} [dependencies.ask] - Prompt reader, injectable for tests
  * @param {Function} [dependencies.prune_docker] - Docker cleanup runner
+ * @param {Function} [dependencies.plan_docker] - Docker cleanup planner, deletes nothing
+ * @param {Function} [dependencies.measure_directory] - Directory size reader for leftovers
+ * @param {Function} [dependencies.read_health] - Cached storage health, for Docker's data path
+ * @param {Object} [dependencies.disk_seams] - statfs/stat seams for free space
  * @param {Function} [dependencies.now] - Epoch millisecond reader
  * @returns {Promise<void>}
  */
@@ -418,7 +488,11 @@ export const cmd_prune = async ( cmd, {
     prune_clone = prune_managed_clone,
     recover_prunes = recover_prune_operations,
     prune_docker = prune_unused_docker,
+    plan_docker = plan_docker_prune,
     remove_as_root = remove_tree_as_root,
+    measure_directory = directory_bytes,
+    read_health = read_disk_health,
+    disk_seams = undefined,
     ask = null,
     now = Date.now,
 } = {} ) => {
@@ -429,11 +503,22 @@ export const cmd_prune = async ( cmd, {
 
     const inventory_options = { clones_dir, sessions_dir }
     const mark_sessions = session_marker( sessions_dir )
+
+    // Free space before anything is deleted, recovery included
+    const storage = [
+        { path: clones_dir, label: `clones` },
+        { path: read_health().docker_root_dir, label: `Docker` },
+    ]
+    const measure_filesystems = () => group_by_filesystem( storage, disk_seams )
+    const filesystems_before = measure_filesystems()
+    let deleted = false
+
     if( !cmd.flags.list ) {
         // Finish prunes that were confirmed earlier but never fully deleted.
         // A quarantine with root-owned files is reported with the fix and skipped.
         const recovery = await recover_prunes( { clones_dir, mark_sessions, remove_as_root } )
         recovery.recovered.forEach( clone_id => write_line( output, `Finished interrupted prune: ${ clone_id }` ) )
+        deleted = recovery.recovered.length > 0
         recovery.failed.forEach( ( { path, clone_id, error } ) => write_line( output, error.code === `EFOREIGN`
             ? `Skipping quarantined clone ${ clone_id }: it has files owned by another user and Docker could not delete them. Run: sudo rm -rf ${ error.path }`
             : `Could not finish interrupted prune ${ path }: ${ error.message }` ) )
@@ -441,6 +526,15 @@ export const cmd_prune = async ( cmd, {
 
     const initial = await inspect_inventory( inventory_options )
     print_inventory_summary( initial, output )
+
+    // Plan everything before asking anything, so every question carries its size
+    write_line( output, `Measuring reclaimable space...` )
+    const [ docker_plan, trash_bytes ] = await Promise.all( [
+        plan_docker( { sessions_dir } ).catch( error => ( { error } ) ),
+        // An empty quarantine still has a directory's few kB; only journals mean leftovers
+        initial.pending_prunes.length ? measure_directory( join( initial.clone_root, STATE_DIR_NAME, `trash` ) ).catch( () => null ) : 0,
+    ] )
+    print_reclaimable( { docker_plan, clones: initial.clones, trash_bytes, filesystems: filesystems_before, now: now() }, output )
 
     if( cmd.flags.list ) {
         if( !initial.clones.length ) write_line( output, `No clone workspaces found.` )
@@ -452,16 +546,26 @@ export const cmd_prune = async ( cmd, {
     const question = ask || ( prompt => rl.question( prompt ) )
 
     try {
-        const clean_docker = /^(?:y|yes)$/i.test( ( await question(
-            `Prune unused Docker containers, networks, images, and build cache (all projects; volumes kept)? [y/N] `
-        ) ).trim() )
+        write_line( output )
 
-        if( clean_docker ) {
-            try {
-                write_line( output, `Pruning unused Docker resources...` )
-                write_line( output, await prune_docker( { sessions_dir } ) )
-            } catch ( error ) {
-                write_line( output, `Could not prune Docker: ${ error.message }` )
+        // The planner's listing is the cleanup's safety check: no plan, no cleanup
+        if( docker_plan.error ) write_line( output, `Skipping Docker cleanup: ${ docker_plan.error.message }` )
+        else {
+            const cache_bytes = docker_plan.build_cache_bytes ?? 0
+            const unique_bytes = Number.isFinite( docker_plan.image_unique_bytes ) ? cache_bytes + docker_plan.image_unique_bytes : null
+            const estimate = range_text( unique_bytes, cache_bytes + docker_plan.image_bytes )
+            const clean_docker = /^(?:y|yes)$/i.test( ( await question(
+                `Prune unused Docker containers, networks, images, and build cache (${ estimate }; all projects; volumes kept)? [y/N] `
+            ) ).trim() )
+
+            if( clean_docker ) {
+                try {
+                    write_line( output, `Pruning unused Docker resources...` )
+                    deleted = true
+                    write_line( output, await prune_docker( { sessions_dir, plan: docker_plan } ) )
+                } catch ( error ) {
+                    write_line( output, `Could not prune Docker: ${ error.message }` )
+                }
             }
         }
 
@@ -470,7 +574,7 @@ export const cmd_prune = async ( cmd, {
             return
         }
 
-        const policy = await choose_policy( question, output )
+        const policy = await choose_policy( question, output, initial.clones, now() )
         const candidates = select_prune_candidates( initial.clones, policy, now() )
 
         if( !candidates.length ) {
@@ -479,9 +583,9 @@ export const cmd_prune = async ( cmd, {
         }
 
         print_clone_table( candidates, output, now() )
-        const total_bytes = candidates.reduce( ( total, clone ) => total + clone.size_bytes, 0 )
+        const total_bytes = clone_total( candidates )
         const confirmed = /^(?:y|yes)$/i.test( ( await question(
-            `Prune ${ candidates.length } clone workspaces (${ format_size( total_bytes ) })? [y/N] `
+            `Prune ${ candidates.length } clone workspaces (${ format_bytes( total_bytes ) })? [y/N] `
         ) ).trim() )
         if( !confirmed ) {
             write_line( output, `Prune cancelled.` )
@@ -519,6 +623,7 @@ export const cmd_prune = async ( cmd, {
 
                 if( result.pruned ) {
                     pruned++
+                    deleted = true
                     write_line( output, `Pruned ${ clone.clone_id }` )
                 } else write_line( output, `Skipped ${ clone.clone_id }: ${ result.reason }` )
             } catch ( error ) {
@@ -529,6 +634,7 @@ export const cmd_prune = async ( cmd, {
         write_line( output, `Pruned ${ pruned } of ${ candidates.length } clone workspaces.` )
     } finally {
         rl?.close()
+        if( deleted ) freed_lines( filesystems_before, measure_filesystems() ).forEach( line => write_line( output, line ) )
     }
 
 }

@@ -331,13 +331,16 @@ Examples:
 
     prune: () => `Usage: babysit prune [--list]
 
-Interactive cleanup. Docker: stopped containers, images no saved session
-needs, unused networks, and build cache (Babysit containers, in-use images,
-and volumes stay). Clones: managed clone workspaces by age. Each part asks
-for its own confirmation.
+Interactive cleanup. First shows what is reclaimable and where (Docker build
+cache, images, stopped containers, clones per age policy) with estimates and
+free disk space; after deleting, reports the space actually freed.
+Docker: stopped containers, images no saved session needs, unused networks,
+and build cache unused for 7 days (Babysit containers, in-use images, and
+volumes stay). Clones: managed clone workspaces by age. Each part asks for
+its own confirmation.
 
 Options:
-  --list    Only list clone workspaces and their sizes (no prompts)
+  --list    Only show the reclaimable estimates and clone workspaces (no prompts)
 
 Examples:
   babysit prune

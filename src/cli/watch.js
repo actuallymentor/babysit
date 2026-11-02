@@ -9,7 +9,7 @@ import { render_active_sessions, track_session_activity } from './list.js'
 import { cmd_open } from './open.js'
 import { foreground_attach_count } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
-import { cache_warning, read_cache_health, refresh_cache_health } from '../docker/cache_health.js'
+import { disk_warnings, read_disk_health, refresh_disk_health } from '../disk_health.js'
 
 const FRAME_MS = 1_000
 // Registry writes come in bursts; redraw once they settle
@@ -21,8 +21,8 @@ const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
 const ESCAPE_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S]|[ -~])/g
 export const USAGE_REFRESH_MS = 5 * 60_000
 
-// The cache check itself runs at most hourly; this is only how often to ask
-const CACHE_HEALTH_POLL_MS = 60_000
+// The storage check itself runs at most hourly; this is only how often to ask
+const DISK_HEALTH_POLL_MS = 60_000
 const BAR_CELLS = 10
 
 const visible_length = text => text.replace( /\x1b\[[\d;]*m/g, `` ).length
@@ -297,8 +297,9 @@ const watch_registry = on_change => {
  * @param {Object} [cmd] - Parsed command
  * @param {Object} [deps]
  * @param {Function} [deps.collect_fn] - Usage collector seam
- * @param {Function} [deps.cache_health_fn] - Background build-cache check, resolves to its health record
- * @param {Function} [deps.cache_read_fn] - Last cached build-cache health, read once at start
+ * @param {Function} [deps.disk_health_fn] - Background storage check, resolves to its health record
+ * @param {Function} [deps.disk_read_fn] - Last cached storage health, read once at start
+ * @param {Object} [deps.disk_seams] - statfs/stat seams for live free space
  * @param {Function} [deps.accounts_fn] - Registered Claude account names, as one comparable string
  * @param {Function} [deps.render_sessions_fn] - Session tree renderer
  * @param {Function} [deps.observe_activity_fn] - Pane activity observer, kept across frames
@@ -314,8 +315,9 @@ const watch_registry = on_change => {
  */
 export const cmd_watch = async ( { flags = {} } = {}, {
     collect_fn = collect_account_usage,
-    cache_health_fn = refresh_cache_health,
-    cache_read_fn = read_cache_health,
+    disk_health_fn = refresh_disk_health,
+    disk_read_fn = read_disk_health,
+    disk_seams = undefined,
     accounts_fn = () => list_claude_accounts().map( ( { name } ) => name ).join( `,` ),
     render_sessions_fn = render_active_sessions,
     observe_activity_fn = track_session_activity(),
@@ -336,9 +338,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     let pending = null
     let accounts_seen = null
     let round = 0
-    let cache_health = cache_read_fn()
-    let cache_asked_at = -Infinity
-    let cache_pending = null
+    let disk_health = disk_read_fn()
+    let disk_asked_at = -Infinity
+    let disk_pending = null
+    let pressured = new Set()
 
     // Refresh on the 5-min cadence, or at once when Claude accounts are added
     // or removed: the old report has no row for a new account's sessions
@@ -362,14 +365,14 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     }
 
     // Never awaited by a frame: the check can wait minutes on a busy daemon
-    const refresh_cache = () => {
-        if( cache_pending || now_fn() - cache_asked_at < CACHE_HEALTH_POLL_MS ) return
-        cache_asked_at = now_fn()
-        cache_pending = Promise.resolve()
-            .then( () => cache_health_fn() )
-            .then( health => cache_health = health || cache_health )
-            .catch( failure => log.debug( `watch cache check failed: ${ failure.message }` ) )
-            .finally( () => cache_pending = null )
+    const refresh_disk = () => {
+        if( disk_pending || now_fn() - disk_asked_at < DISK_HEALTH_POLL_MS ) return
+        disk_asked_at = now_fn()
+        disk_pending = Promise.resolve()
+            .then( () => disk_health_fn() )
+            .then( health => disk_health = health || disk_health )
+            .catch( failure => log.debug( `watch disk check failed: ${ failure.message }` ) )
+            .finally( () => disk_pending = null )
     }
 
     const show_sessions = !flags.usage || flags.all
@@ -485,7 +488,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
                 round++
                 refresh_usage()
-                refresh_cache()
+                refresh_disk()
 
                 const frame = await collect_lines( async () => {
                     const rendered = show_sessions ? await render_sessions_fn( {
@@ -496,8 +499,9 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                         extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],
                     } ) : null
                     if( show_panel ) format_usage_panel( report, { now: now_fn(), error } ).forEach( line => console.log( line ) )
-                    const warning = cache_warning( cache_health )
-                    if( warning ) console.log( paint( `⚠ ${ warning }`, `yellow` ) )
+                    const { lines: warnings, pressured: now_pressured } = disk_warnings( disk_health, { pressured, seams: disk_seams } )
+                    pressured = now_pressured
+                    warnings.forEach( line => console.log( paint( `⚠ ${ line }`, `yellow` ) ) )
                     return rendered
                 } )
 
