@@ -37,7 +37,7 @@ import {
 } from '../src/cli/prune.js'
 import { load_session, save_session, update_session } from '../src/sessions/store.js'
 import { list_sessions } from '../src/tmux/session.js'
-import { prune_unused_docker } from '../src/docker/prune.js'
+import { plan_docker_prune, prune_unused_docker } from '../src/docker/prune.js'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
 
@@ -77,21 +77,60 @@ describe( `Docker cleanup`, () => {
                 command_prefix: [ `sudo`, `docker` ],
                 run_command: async ( command, args ) => {
                     calls.push( [ command, ...args ] )
+                    if( args[1] === `container` && args[2] === `ls` && args.includes( `--quiet` ) ) return `held-id\nexternal-id\nother-id\nrunning-id`
                     if( args[1] === `container` && args[2] === `ls` ) return `held-id\theld-name\nexternal-id\tbabysit-external\nother-id\tother-name`
-                    if( args[1] === `image` && args[2] === `ls` ) return `sha256:held\nsha256:other\nsha256:old`
+                    if( args[1] === `container` && args[2] === `inspect` ) return `sha256:held\nsha256:held\nsha256:busy`
+                    if( args[1] === `image` && args[2] === `ls` ) return `sha256:held\t1GB\nsha256:other\t2GB\nsha256:old\t512MB\nsha256:busy\t4GB\nsha256:other\t2GB`
                     return ``
                 },
             } )
 
             expect( calls.every( call => call[0] === `sudo` && call[1] === `docker` ) ).toBe( true )
             expect( calls.map( call => call.slice( 2, 4 ) ) ).toEqual( [
-                [ `container`, `ls` ], [ `image`, `ls` ], [ `container`, `rm` ],
-                [ `image`, `rm` ], [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
+                [ `container`, `ls` ], [ `image`, `ls` ], [ `container`, `ls` ], [ `container`, `inspect` ], [ `buildx`, `du` ],
+                [ `container`, `rm` ], [ `image`, `rm` ], [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
             ] )
+            // The container being removed no longer pins its image; running ones do
+            expect( calls.find( call => call[3] === `inspect` ).slice( 6 ) ).toEqual( [ `held-id`, `external-id`, `running-id` ] )
             expect( calls.find( call => call[2] === `container` && call[3] === `rm` )[4] ).toBe( `other-id` )
-            expect( calls.find( call => call[2] === `image` && call[3] === `rm` )[4] ).toBe( `sha256:other` )
+            expect( calls.filter( call => call[2] === `image` && call[3] === `rm` ).map( call => call[4] ) ).toEqual( [ `sha256:other`, `sha256:old` ] )
             expect( calls.find( call => call[4] === `external-id` ) ).toBeUndefined()
             expect( summary ).toContain( `removed 1 stopped containers and 2 images` )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `plans without deleting, counting each image once and only images nothing still uses`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-docker-plan-` ) )
+        const calls = []
+
+        try {
+            const plan = await plan_docker_prune( {
+                sessions_dir: directory,
+                command_prefix: [ `docker` ],
+                run_command: async ( command, args ) => {
+                    calls.push( args.slice( 0, 2 ) )
+                    if( args[0] === `container` && args.includes( `--quiet` ) ) return `stopped-id\nrunning-id`
+                    if( args[0] === `container` && args[1] === `ls` ) return `stopped-id\tstopped`
+                    if( args[0] === `container` ) return `sha256:busy`
+                    if( args[0] === `image` ) return `sha256:free\t2GB\nsha256:free\t2GB\nsha256:busy\t4GB`
+                    return `x  true  3GB  9 days ago\nTotal: 5GB`
+                },
+                shared_sizes: async () => new Map( [ [ `sha256:free`, 1.5e9 ], [ `sha256:busy`, 1.5e9 ] ] ),
+            } )
+
+            expect( plan ).toEqual( {
+                containers: [ { id: `stopped-id`, name: `stopped` } ],
+                images: [ { id: `sha256:free`, bytes: 2e9 } ],
+                image_bytes: 2e9,
+                image_unique_bytes: 0.5e9,
+                build_cache_bytes: 3e9,
+                build_cache_total_bytes: 5e9,
+            } )
+            expect( calls.some( ( [ , verb ] ) => verb === `rm` || verb === `prune` ) ).toBe( false )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
@@ -638,6 +677,15 @@ describe( `prune command interaction`, () => {
         tmux_error: null,
     }
 
+    // Nothing to reclaim from Docker, and no real daemon or disk is consulted
+    const docker_plan = { containers: [], images: [], image_bytes: 0, build_cache_bytes: 0, build_cache_total_bytes: 0 }
+    const offline = {
+        plan_docker: async () => docker_plan,
+        measure_directory: async () => 0,
+        read_health: () => ( {} ),
+        clones_dir: `/tmp/clones`,
+    }
+
     it( `parses whole custom day amounts`, () => {
         expect( parse_prune_days( `0` ) ).toBe( 0 )
         expect( parse_prune_days( `45` ) ).toBe( 45 )
@@ -651,13 +699,92 @@ describe( `prune command interaction`, () => {
         const { output, rendered } = output_collector()
         await cmd_prune( { flags: { list: true } }, {
             output,
+            ...offline,
             inspect_inventory: async () => inventory,
             now: () => now,
         } )
 
         expect( rendered() ).toContain( `1 clone currently in /tmp/clones` )
-        expect( rendered() ).toContain( `2.0 KiB` )
+        expect( rendered() ).toContain( `2.0 kB` )
         expect( rendered() ).toContain( `/tmp/clones/old-clone` )
+
+    } )
+
+    it( `shows where reclaimable space is before asking, and sizes every question`, async () => {
+
+        const { output, rendered } = output_collector()
+        const prompts = []
+        const answers = [ `n`, ``, `` ]
+        await cmd_prune( { flags: {} }, {
+            input: { isTTY: true },
+            output,
+            ask: async prompt => ( prompts.push( prompt ), answers.shift() ),
+            ...offline,
+            plan_docker: async () => ( {
+                containers: [ { id: `c1`, name: `old` } ],
+                images: [ { id: `sha256:a`, bytes: 9e9 } ],
+                image_bytes: 9e9,
+                image_unique_bytes: 3e9,
+                build_cache_bytes: 180e9,
+                build_cache_total_bytes: 240e9,
+            } ),
+            measure_directory: async () => 6e9,
+            clones_dir: `/tmp/clones`,
+            inspect_inventory: async () => ( { ...inventory, pending_prunes: [ `/tmp/clones/.babysit-state/prune-journals/x.json` ] } ),
+            recover_prunes: async () => ( { recovered: [], failed: [] } ),
+            prune_clone: async () => ( { pruned: false, reason: `kept` } ),
+            now: () => now,
+        } )
+
+        const text = rendered()
+        expect( text ).toMatch( /Docker build cache unused 7\+ days\s+180 GB of 240 GB/ )
+        expect( text ).toMatch( /Docker images, 1 unused\s+3.0 GB to 9.0 GB/ )
+        expect( text ).toMatch( /Clones unused 30\+ days\s+1 clone, 2.0 kB/ )
+        expect( text ).toMatch( /Interrupted prune leftovers\s+6.0 GB/ )
+        expect( text ).toContain( `1. Unused for 30 days (default): 1 clone, 2.0 kB` )
+        expect( prompts[0] ).toContain( `183 GB to 189 GB` )
+        // Nothing was deleted, so nothing claims to be freed
+        expect( text ).not.toContain( `Freed` )
+
+    } )
+
+    it( `skips Docker cleanup when it cannot be planned, and reports space actually freed`, async () => {
+
+        const { output, rendered } = output_collector()
+        const answers = [ `2`, `yes` ]
+        let free_bytes = 100e9
+        let docker_calls = 0
+        await cmd_prune( { flags: {} }, {
+            input: { isTTY: true },
+            output,
+            ask: async () => answers.shift(),
+            ...offline,
+            clones_dir: `/tmp/clones`,
+            plan_docker: async () => {
+                throw new Error( `daemon unreachable` )
+            },
+            prune_docker: async () => {
+                docker_calls++
+            },
+            disk_seams: {
+                stat: () => ( { dev: 3 } ),
+                statfs: () => ( { bsize: 1, blocks: 1e12, bavail: free_bytes, type: 0x2fc12fc1 } ),
+            },
+            inspect_inventory: async () => inventory,
+            recover_prunes: async () => ( { recovered: [], failed: [] } ),
+            prune_clone: async () => {
+                free_bytes += 12e9
+                return { pruned: true }
+            },
+            now: () => now,
+        } )
+
+        const text = rendered()
+        expect( docker_calls ).toBe( 0 )
+        expect( text ).toMatch( /Docker\s+unavailable: daemon unreachable/ )
+        expect( text ).toContain( `Skipping Docker cleanup: daemon unreachable` )
+        expect( text ).toContain( `Disk holding /tmp/clones: 900 GB of 1.0 TB used, 100 GB free.` )
+        expect( text ).toContain( `Freed 12 GB on the disk holding /tmp/clones (ZFS frees space in the background; more may follow).` )
 
     } )
 
@@ -669,6 +796,7 @@ describe( `prune command interaction`, () => {
             input: { isTTY: true },
             output,
             ask: async () => `n`,
+            ...offline,
             inspect_inventory: async () => ( { ...inventory, clones: [] } ),
             recover_prunes: async () => ( { recovered: [], failed: [ { path: `/j.json`, clone_id: `old`, error } ] } ),
             prune_docker: async () => ``,
@@ -688,6 +816,7 @@ describe( `prune command interaction`, () => {
             input: { isTTY: true },
             output,
             ask: async () => `yes`,
+            ...offline,
             inspect_inventory: async () => ( { ...inventory, clones: [] } ),
             recover_prunes: async () => ( { recovered: [], failed: [] } ),
             prune_docker: async () => {
@@ -714,6 +843,7 @@ describe( `prune command interaction`, () => {
                 input: { isTTY: true },
                 output,
                 ask: async () => answers.shift(),
+                ...offline,
                 inspect_inventory: async () => inventory,
                 recover_prunes: async () => ( { recovered: [], failed: [] } ),
                 prune_docker: async () => {
@@ -743,6 +873,7 @@ describe( `prune command interaction`, () => {
             input: { isTTY: true },
             output,
             ask: async () => answers.shift(),
+            ...offline,
             inspect_inventory: async () => inventory,
             recover_prunes: async () => ( { recovered: [], failed: [] } ),
             prune_clone: async options => {
@@ -767,6 +898,7 @@ describe( `prune command interaction`, () => {
                 input: { isTTY: true },
                 output,
                 ask: async () => answers.shift(),
+                ...offline,
                 inspect_inventory: async () => inventory,
                 recover_prunes: async () => ( { recovered: [], failed: [] } ),
                 prune_clone: async options => {
@@ -798,6 +930,7 @@ describe( `prune command interaction`, () => {
             input: { isTTY: true },
             output,
             ask: async () => answers.shift(),
+            ...offline,
             inspect_inventory: async options => {
                 inventory_calls.push( options )
                 return inventory_calls.length === 1
@@ -824,6 +957,7 @@ describe( `prune command interaction`, () => {
         await expect( cmd_prune( { flags: {} }, {
             input: { isTTY: false },
             output,
+            ...offline,
             inspect_inventory: async () => inventory,
             prune_clone: async () => { calls++ },
         } ) ).rejects.toThrow( `requires an interactive terminal` )
@@ -833,6 +967,7 @@ describe( `prune command interaction`, () => {
             input: { isTTY: true },
             output,
             ask: async () => answers.shift(),
+            ...offline,
             inspect_inventory: async () => inventory,
             recover_prunes: async () => ( { recovered: [], failed: [] } ),
             prune_clone: async () => { calls++ },

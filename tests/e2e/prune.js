@@ -20,7 +20,11 @@ const sessions_dir = join( root, `.babysit/sessions` )
 const source = join( root, `source` )
 const socket = `babysit-prune-e2e-${ process.pid }`
 const tmux = args => run( `tmux`, [ `-L`, socket, ...args ] )
-const env = { ...process.env, HOME: root, BABYSIT_HOME: ``, BABYSIT_TMUX_SOCKET: socket, TERM: `xterm-256color` }
+// Prune now plans Docker cleanup on every run; a recording stub keeps the
+// real daemon out of it and shows exactly what would have been called
+const bin = join( root, `bin` )
+const docker_calls = join( root, `docker-calls` )
+const env = { ...process.env, PATH: `${ bin }:${ process.env.PATH }`, HOME: root, BABYSIT_HOME: ``, BABYSIT_TMUX_SOCKET: socket, TERM: `xterm-256color` }
 
 // Drive the actual readline prompts through a PTY. Sending all answers up front
 // can lose input between questions and does not reproduce interactive usage.
@@ -81,6 +85,8 @@ let release_lock
 
 try {
     mkdirSync( source )
+    mkdirSync( bin )
+    writeFileSync( join( bin, `docker` ), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${ docker_calls }'\n`, { mode: 0o755 } )
     writeFileSync( join( source, `payload.txt` ), `Keep original workspace intact\n` )
 
     for( const clone_id of [ `unused-one`, `unused-two`, `active`, `protected`, `locked` ] ) {
@@ -101,6 +107,9 @@ try {
     assert.match( listing.stdout, /active: tmux/ )
     assert.match( listing.stdout, /active: launch/ )
     assert.match( listing.stdout, /protected: recovery pending/ )
+    assert.match( listing.stdout, /RECLAIMABLE\s+ESTIMATE/ )
+    assert.match( listing.stdout, /Clones not in use\s+2 clones, / )
+    assert.doesNotMatch( readFileSync( docker_calls, `utf8` ), /\brm\b|prune/ )
     console.log( `PASS prune --list identifies real tmux and clone locks plus recovery intent` )
 
     const cancelled = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `` ] ] )
@@ -128,19 +137,17 @@ try {
     assert.equal( readFileSync( join( source, `payload.txt` ), `utf8` ), `Keep original workspace intact\n` )
     console.log( `PASS select 2 + confirm y removes inactive clones and preserves active/protected clones and source` )
 
-    const bin = join( root, `bin` )
-    mkdirSync( bin )
-    const docker_calls = join( root, `docker-calls` )
-    const docker = join( bin, `docker` )
-    writeFileSync( docker, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${ docker_calls }'\n`, { mode: 0o755 } )
+    writeFileSync( docker_calls, `` )
     const cleaned = await interactive( [
         [ `volumes kept)? [y/N] `, `yes` ],
         [ `Choose [1]: `, `` ],
-    ], { PATH: `${ bin }:${ process.env.PATH }` } )
+    ] )
     assert.match( cleaned, /Docker: removed 0 stopped containers and 0 images/ )
     assert.deepEqual( readFileSync( docker_calls, `utf8` ).trim().split( `\n` ), [
         `container ls --all --filter status=created --filter status=exited --filter status=dead --no-trunc --format {{.ID}}\t{{.Names}}`,
-        `image ls --all --no-trunc --quiet`,
+        `image ls --all --no-trunc --format {{.ID}}\t{{.Size}}`,
+        `container ls --all --no-trunc --quiet`,
+        `buildx du --builder default`,
         `network prune --force`,
         `builder prune --force --all --filter until=168h`,
     ] )

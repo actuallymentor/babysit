@@ -26,7 +26,7 @@ import { log } from './utils/log.js'
 import { CLONES_DIR } from './utils/paths.js'
 import { DEFAULT_CLONE_CONFIG } from './babysit/yaml.js'
 
-const STATE_DIR_NAME = `.babysit-state`
+export const STATE_DIR_NAME = `.babysit-state`
 export const CLONE_STATE_MAGIC = `babysit-clone`
 export const CLONE_STATE_VERSION = 1
 const DEFAULT_STALE_PARTIAL_MS = 24 * 60 * 60 * 1_000
