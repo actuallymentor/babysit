@@ -144,6 +144,7 @@ try {
     ] )
     assert.match( cleaned, /Docker: removed 0 stopped containers and 0 images/ )
     assert.deepEqual( readFileSync( docker_calls, `utf8` ).trim().split( `\n` ), [
+        `info --format {{.DockerRootDir}}`,
         `container ls --all --filter status=created --filter status=exited --filter status=dead --no-trunc --format {{.ID}}\t{{.Names}}`,
         `image ls --all --no-trunc --format {{.ID}}\t{{.Size}}`,
         `container ls --all --no-trunc --quiet`,

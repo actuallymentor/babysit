@@ -128,16 +128,21 @@ export const disk_warnings = ( health = {}, { pressured = new Set(), seams } = {
     const parts = [
         { path: health.clones_dir, label: `clones`, bytes: health.clones_bytes },
         { path: health.docker_root_dir, label: `Docker build cache`, bytes: health.build_cache_bytes },
-    ].filter( ( { bytes } ) => Number.isFinite( bytes ) )
+    ]
 
+    // Unmeasured parts still put their disk under watch: the nearly-full
+    // rule needs only free space, never Babysit's share
     for( const filesystem of group_by_filesystem( parts, seams ) ) {
-        const babysit_bytes = filesystem.parts.reduce( ( sum, { bytes } ) => sum + bytes, 0 )
+        const measured = filesystem.parts.filter( ( { bytes } ) => Number.isFinite( bytes ) )
+        const babysit_bytes = measured.reduce( ( sum, { bytes } ) => sum + bytes, 0 )
         if( !under_pressure( { ...filesystem, babysit_bytes }, pressured.has( filesystem.dev ) ) ) continue
 
         now_pressured.add( filesystem.dev )
         const used_percent = Math.round( 100 * ( 1 - filesystem.free_bytes / filesystem.total_bytes ) )
-        const breakdown = filesystem.parts.map( ( { label, bytes } ) => `${ label } ${ format_bytes( bytes ) }` ).join( `, ` )
-        lines.push( `Disk holding ${ tilde( filesystem.path ) } is ${ used_percent }% full (${ format_bytes( filesystem.free_bytes ) } free); Babysit stores ${ breakdown }. Run \`babysit prune\` to see what can go.` )
+        const breakdown = measured.length
+            ? `Babysit stores ${ measured.map( ( { label, bytes } ) => `${ label } ${ format_bytes( bytes ) }` ).join( `, ` ) }`
+            : `Babysit's share is not measured yet`
+        lines.push( `Disk holding ${ tilde( filesystem.path ) } is ${ used_percent }% full (${ format_bytes( filesystem.free_bytes ) } free); ${ breakdown }. Run \`babysit prune\` to see what can go.` )
     }
 
     if( health.build_cache_bytes > BUILD_CACHE_WARN_BYTES ) {

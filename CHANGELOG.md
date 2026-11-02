@@ -6,6 +6,9 @@
 - `babysit watch` warns on disk pressure instead of a flat build-cache size: a disk holding clones or Docker data that is under 15% free while Babysit's clones plus build cache take over 20% of it (clears at 20% free), or that is under 10 GB and under 15% free. The warning names the disk, its free space, and the split between clones and build cache. Clone sizes are now measured too (hourly, in the background, with `du`); free space is read live. The build-cache warning remains for caches over 200 GB (was 100 GB) since those stall launches whatever the disk size.
 - `babysit prune` first shows what is reclaimable and where: build cache unused for 7 days, unused images (as a range: bytes no other image shares to the summed sizes), stopped containers, clones per age policy, interrupted-prune leftovers, and free space per disk. The Docker question and each clone policy carry their size; afterwards it reports the space actually freed per disk. `prune --list` shows the same table without prompts. Docker cleanup is skipped when Docker cannot be listed.
 
+### Fixed
+- `babysit prune` re-reads saved sessions right before deleting Docker containers and images, so a session saved while the confirmation prompt waited keeps its resources. Images tagged in several repositories (which `docker image rm <id>` refuses) are no longer attempted or counted.
+
 ## 1.63.0 — 2026-11-01
 
 ### Changed

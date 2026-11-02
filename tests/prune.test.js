@@ -88,14 +88,15 @@ describe( `Docker cleanup`, () => {
             expect( calls.every( call => call[0] === `sudo` && call[1] === `docker` ) ).toBe( true )
             expect( calls.map( call => call.slice( 2, 4 ) ) ).toEqual( [
                 [ `container`, `ls` ], [ `image`, `ls` ], [ `container`, `ls` ], [ `container`, `inspect` ], [ `buildx`, `du` ],
-                [ `container`, `rm` ], [ `image`, `rm` ], [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
+                [ `container`, `rm` ], [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
             ] )
             // The container being removed no longer pins its image; running ones do
             expect( calls.find( call => call[3] === `inspect` ).slice( 6 ) ).toEqual( [ `held-id`, `external-id`, `running-id` ] )
             expect( calls.find( call => call[2] === `container` && call[3] === `rm` )[4] ).toBe( `other-id` )
-            expect( calls.filter( call => call[2] === `image` && call[3] === `rm` ).map( call => call[4] ) ).toEqual( [ `sha256:other`, `sha256:old` ] )
+            // `other` has two tags, which `image rm <id>` refuses: never planned
+            expect( calls.filter( call => call[2] === `image` && call[3] === `rm` ).map( call => call[4] ) ).toEqual( [ `sha256:old` ] )
             expect( calls.find( call => call[4] === `external-id` ) ).toBeUndefined()
-            expect( summary ).toContain( `removed 1 stopped containers and 2 images` )
+            expect( summary ).toContain( `removed 1 stopped containers and 1 images` )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
@@ -116,8 +117,8 @@ describe( `Docker cleanup`, () => {
                     if( args[0] === `container` && args.includes( `--quiet` ) ) return `stopped-id\nrunning-id`
                     if( args[0] === `container` && args[1] === `ls` ) return `stopped-id\tstopped`
                     if( args[0] === `container` ) return `sha256:busy`
-                    if( args[0] === `image` ) return `sha256:free\t2GB\nsha256:free\t2GB\nsha256:busy\t4GB`
-                    return `x  true  3GB  9 days ago\nTotal: 5GB`
+                    if( args[0] === `image` ) return `sha256:free\t2GB\nsha256:tagged\t8GB\nsha256:tagged\t8GB\nsha256:busy\t4GB`
+                    return `x  true  3GB  9 days ago\ny  true  1GB*  9 days ago\nTotal: 5GB`
                 },
                 shared_sizes: async () => new Map( [ [ `sha256:free`, 1.5e9 ], [ `sha256:busy`, 1.5e9 ] ] ),
             } )
@@ -127,10 +128,41 @@ describe( `Docker cleanup`, () => {
                 images: [ { id: `sha256:free`, bytes: 2e9 } ],
                 image_bytes: 2e9,
                 image_unique_bytes: 0.5e9,
-                build_cache_bytes: 3e9,
+                build_cache_bytes: 4e9,
+                build_cache_private_bytes: 3e9,
                 build_cache_total_bytes: 5e9,
             } )
             expect( calls.some( ( [ , verb ] ) => verb === `rm` || verb === `prune` ) ).toBe( false )
+        } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `re-reads saved sessions before deleting, so a waiting plan cannot remove what was saved since`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-docker-stale-` ) )
+        const removed = []
+
+        try {
+            const plan = {
+                containers: [ { id: `c-old`, name: `old` }, { id: `c-new`, name: `new` } ],
+                images: [ { id: `sha256:old`, bytes: 1 }, { id: `sha256:new`, bytes: 1 } ],
+            }
+            // Saved while prune waited for the y/N answer
+            save_session( { babysit_id: `late`, container_id: `c-new`, image_id: `sha256:new` }, { directory } )
+
+            await prune_unused_docker( {
+                plan,
+                sessions_dir: directory,
+                command_prefix: [ `docker` ],
+                run_command: async ( command, args ) => {
+                    if( args[1] === `rm` ) removed.push( args[2] )
+                    return ``
+                },
+            } )
+
+            expect( removed ).toEqual( [ `c-old`, `sha256:old` ] )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
@@ -683,6 +715,7 @@ describe( `prune command interaction`, () => {
         plan_docker: async () => docker_plan,
         measure_directory: async () => 0,
         read_health: () => ( {} ),
+        find_root_dir: async () => null,
         clones_dir: `/tmp/clones`,
     }
 
@@ -726,6 +759,7 @@ describe( `prune command interaction`, () => {
                 image_bytes: 9e9,
                 image_unique_bytes: 3e9,
                 build_cache_bytes: 180e9,
+                build_cache_private_bytes: 100e9,
                 build_cache_total_bytes: 240e9,
             } ),
             measure_directory: async () => 6e9,
@@ -737,12 +771,12 @@ describe( `prune command interaction`, () => {
         } )
 
         const text = rendered()
-        expect( text ).toMatch( /Docker build cache unused 7\+ days\s+180 GB of 240 GB/ )
+        expect( text ).toMatch( /Docker build cache unused 7\+ days\s+100 GB to 180 GB of 240 GB/ )
         expect( text ).toMatch( /Docker images, 1 unused\s+3.0 GB to 9.0 GB/ )
         expect( text ).toMatch( /Clones unused 30\+ days\s+1 clone, 2.0 kB/ )
         expect( text ).toMatch( /Interrupted prune leftovers\s+6.0 GB/ )
         expect( text ).toContain( `1. Unused for 30 days (default): 1 clone, 2.0 kB` )
-        expect( prompts[0] ).toContain( `183 GB to 189 GB` )
+        expect( prompts[0] ).toContain( `103 GB to 189 GB` )
         // Nothing was deleted, so nothing claims to be freed
         expect( text ).not.toContain( `Freed` )
 

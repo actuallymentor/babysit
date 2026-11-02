@@ -29,6 +29,20 @@ const images_in_use = async ( docker, removed_ids ) => {
 
 }
 
+// Containers and images saved sessions still need for resume and recovery
+const saved_resources = sessions_dir => {
+
+    const stored = inspect_stored_sessions( { directory: sessions_dir } )
+    if( stored.invalid_files.length ) throw new Error( `Session registry unreadable; Docker cleanup skipped.` )
+
+    const sessions = stored.records.map( ( { session } ) => session )
+    return {
+        containers: new Set( sessions.flatMap( session => [ session.container_id, session.container_name ] ).filter( Boolean ) ),
+        images: new Set( sessions.filter( session => !session.clone_pruned_at ).map( session => session.image_id ).filter( Boolean ) ),
+    }
+
+}
+
 /**
  * Decide what Docker cleanup would remove, and roughly how much it frees,
  * without deleting anything. Saved sessions keep their containers and images.
@@ -38,7 +52,7 @@ const images_in_use = async ( docker, removed_ids ) => {
  * @param {string[]} [options.command_prefix] - Docker executable and optional sudo prefix
  * @param {Function} [options.measure_cache] - Build cache measurement
  * @param {Function} [options.shared_sizes] - Per-image shared bytes, or null when unavailable
- * @returns {Promise<Object>} `{ containers, images, image_bytes, image_unique_bytes, build_cache_bytes, build_cache_total_bytes }`
+ * @returns {Promise<Object>} `{ containers, images, image_bytes, image_unique_bytes, build_cache_bytes, build_cache_private_bytes, build_cache_total_bytes }`
  */
 export const plan_docker_prune = async ( {
     sessions_dir = SESSIONS_DIR,
@@ -48,13 +62,7 @@ export const plan_docker_prune = async ( {
     shared_sizes = () => image_shared_sizes( { command_prefix } ),
 } = {} ) => {
 
-    const stored = inspect_stored_sessions( { directory: sessions_dir } )
-    if( stored.invalid_files.length ) throw new Error( `Session registry unreadable; Docker cleanup skipped.` )
-
-    const sessions = stored.records.map( ( { session } ) => session )
-    const saved_containers = new Set( sessions.flatMap( session => [ session.container_id, session.container_name ] ).filter( Boolean ) )
-    const saved_images = new Set( sessions.filter( session => !session.clone_pruned_at )
-        .map( session => session.image_id ).filter( Boolean ) )
+    const { containers: saved_containers, images: saved_images } = saved_resources( sessions_dir )
     const docker = docker_runner( run_command, command_prefix )
 
     // Enumerate before deleting anything; a failed Docker inspection must not
@@ -77,11 +85,14 @@ export const plan_docker_prune = async ( {
         .filter( ( [ id, name ] ) => !name.startsWith( `babysit-` ) && !saved_containers.has( id ) && !saved_containers.has( name ) )
         .map( ( [ id, name ] ) => ( { id, name } ) )
 
-    // One image appears once per tag
-    const sizes = new Map( image_rows.map( ( [ id, size ] ) => [ id, parse_docker_size( size ) ?? 0 ] ) )
+    // One row per tag. `image rm <id>` refuses an image with several tags,
+    // so those are neither planned nor counted
+    const tags = new Map()
+    image_rows.forEach( ( [ id, size ] ) => tags.set( id, { bytes: parse_docker_size( size ) ?? 0, count: ( tags.get( id )?.count ?? 0 ) + 1 } ) )
     const in_use = await images_in_use( docker, new Set( containers.map( ( { id } ) => id ) ) )
-    const images = [ ...sizes ]
-        .filter( ( [ id ] ) => !saved_images.has( id ) && !in_use.has( id ) )
+    const images = [ ...tags ]
+        .filter( ( [ id, { count } ] ) => count === 1 && !saved_images.has( id ) && !in_use.has( id ) )
+        .map( ( [ id, { bytes } ] ) => [ id, bytes ] )
         .map( ( [ id, bytes ] ) => ( { id, bytes } ) )
 
     // Unmeasurable sizes only cost the estimate, never the cleanup
@@ -102,6 +113,7 @@ export const plan_docker_prune = async ( {
         image_bytes: images.reduce( ( sum, { bytes } ) => sum + bytes, 0 ),
         image_unique_bytes: unique_bytes,
         build_cache_bytes: cache?.prunable_bytes ?? null,
+        build_cache_private_bytes: cache?.private_prunable_bytes ?? null,
         build_cache_total_bytes: cache?.total_bytes ?? null,
     }
 
@@ -124,7 +136,13 @@ export const prune_unused_docker = async ( {
     plan = null,
 } = {} ) => {
 
-    const { containers, images } = plan || await plan_docker_prune( { sessions_dir, run_command, command_prefix } )
+    const planned = plan || await plan_docker_prune( { sessions_dir, run_command, command_prefix } )
+
+    // A plan can wait minutes for confirmation while sessions start and end.
+    // Re-read the registry now, so anything saved meanwhile is kept.
+    const saved = saved_resources( sessions_dir )
+    const containers = planned.containers.filter( ( { id, name } ) => !saved.containers.has( id ) && !saved.containers.has( name ) )
+    const images = planned.images.filter( ( { id } ) => !saved.images.has( id ) )
     const docker = docker_runner( run_command, command_prefix )
     let removed_containers = 0
     let removed_images = 0

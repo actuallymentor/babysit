@@ -46,32 +46,39 @@ export const parse_docker_age = text => {
  * last access. Shared rows (`12GB*`) overlap, so that sum is an estimate.
  * @param {string} output - Default `docker buildx du` table
  * @param {number} [keep_ms] - Cache used more recently than this is kept
- * @returns {{ total_bytes: number|null, prunable_bytes: number }}
+ * @returns {{ total_bytes: number|null, prunable_bytes: number, private_prunable_bytes: number }}
  */
 export const parse_build_cache = ( output, keep_ms = BUILD_CACHE_KEEP_MS ) => {
 
     const text = String( output )
     const [ , total ] = text.match( /^Total:\s*(\S+)\s*$/m ) || []
     let prunable_bytes = 0
+    // Shared rows (`12GB*`) back layers other records or images still use:
+    // pruning them may only drop metadata, so they never count toward the minimum
+    let private_prunable_bytes = 0
 
     for( const line of text.split( `\n` ) ) {
-        const [ , reclaimable, size, age ] = line.match( /^\S+\s+(true|false)\s+(\S+?)\*?\s+(.+)$/ ) || []
+        const [ , reclaimable, size, shared, age ] = line.match( /^\S+\s+(true|false)\s+(\S+?)(\*?)\s+(.+)$/ ) || []
         if( reclaimable !== `true` ) continue
 
         // Never-used rows have no age; buildkit then falls back to creation
         // time, which is at least as old as last use would be
         const age_ms = parse_docker_age( age )
-        if( age_ms === null || age_ms >= keep_ms ) prunable_bytes += parse_docker_size( size ) ?? 0
+        if( age_ms !== null && age_ms < keep_ms ) continue
+
+        const bytes = parse_docker_size( size ) ?? 0
+        prunable_bytes += bytes
+        if( !shared ) private_prunable_bytes += bytes
     }
 
-    return { total_bytes: total ? parse_docker_size( total ) : null, prunable_bytes }
+    return { total_bytes: total ? parse_docker_size( total ) : null, prunable_bytes, private_prunable_bytes }
 
 }
 
 /**
  * Measure the daemon's own build cache, the one `babysit prune` clears.
  * @param {Object} [options] - Seams
- * @returns {Promise<{ total_bytes: number|null, prunable_bytes: number }>}
+ * @returns {Promise<{ total_bytes: number|null, prunable_bytes: number, private_prunable_bytes: number }>}
  */
 export const measure_build_cache = async ( {
     run_command = run,
