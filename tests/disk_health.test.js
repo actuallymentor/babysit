@@ -50,8 +50,8 @@ describe( `disk usage parsing`, () => {
     } )
 
     it( `sums reclaimable build cache unused for seven days`, () => {
-        expect( parse_build_cache( BUILDX_DU ) ).toEqual( { total_bytes: 120_600_000_000, prunable_bytes: 15_659_000_000 } )
-        expect( parse_build_cache( `` ) ).toEqual( { total_bytes: null, prunable_bytes: 0 } )
+        expect( parse_build_cache( BUILDX_DU ) ).toEqual( { total_bytes: 120_600_000_000, prunable_bytes: 15_659_000_000, private_prunable_bytes: 7_829_000_000 } )
+        expect( parse_build_cache( `` ) ).toEqual( { total_bytes: null, prunable_bytes: 0, private_prunable_bytes: 0 } )
     } )
 
     it( `formats decimal sizes`, () => {
@@ -143,6 +143,13 @@ describe( `disk health`, () => {
 
         expect( disk_warnings( health, { seams: disk( 170e9 ) } ).lines ).toEqual( [] )
         expect( disk_warnings( health, { seams: disk( 170e9 ), pressured: new Set( [ 1 ] ) } ).lines.length ).toBe( 1 )
+    } )
+
+    it( `warns about a nearly full disk even before Babysit's share is measured`, () => {
+        const { lines } = disk_warnings( { clones_dir: `/clones` }, { seams: disk( 5e9 ) } )
+        expect( lines ).toEqual( [
+            `Disk holding /clones is 100% full (5.0 GB free); Babysit's share is not measured yet. Run \`babysit prune\` to see what can go.`,
+        ] )
     } )
 
     it( `still flags a launch-stalling build cache on a roomy disk`, () => {

@@ -14,6 +14,7 @@ import { inspect_docker_container_state } from '../docker/file_transport.js'
 import { plan_docker_prune, prune_unused_docker, remove_tree_as_root } from '../docker/prune.js'
 import { directory_bytes, format_bytes, group_by_filesystem, tilde } from '../disk.js'
 import { read_disk_health } from '../disk_health.js'
+import { docker_root_dir } from '../docker/disk_usage.js'
 import { inspect_stored_sessions, update_session } from '../sessions/store.js'
 import { list_sessions } from '../tmux/session.js'
 import { CLONES_DIR, SESSIONS_DIR } from '../utils/paths.js'
@@ -364,8 +365,9 @@ const docker_rows = plan => {
 
     if( plan.error ) return [ [ `Docker`, `unavailable: ${ plan.error.message }` ] ]
 
+    // Shared cache rows may only drop metadata, so they only raise the upper bound
     const cache = Number.isFinite( plan.build_cache_bytes )
-        ? `${ format_bytes( plan.build_cache_bytes ) }${ Number.isFinite( plan.build_cache_total_bytes ) ? ` of ${ format_bytes( plan.build_cache_total_bytes ) }` : `` }`
+        ? `${ range_text( plan.build_cache_private_bytes, plan.build_cache_bytes ) }${ Number.isFinite( plan.build_cache_total_bytes ) ? ` of ${ format_bytes( plan.build_cache_total_bytes ) }` : `` }`
         : `unknown`
 
     return [
@@ -475,6 +477,7 @@ const session_marker = sessions_dir => async ( session_ids, pruned_at ) => {
  * @param {Function} [dependencies.plan_docker] - Docker cleanup planner, deletes nothing
  * @param {Function} [dependencies.measure_directory] - Directory size reader for leftovers
  * @param {Function} [dependencies.read_health] - Cached storage health, for Docker's data path
+ * @param {Function} [dependencies.find_root_dir] - Docker data path lookup when nothing is cached
  * @param {Object} [dependencies.disk_seams] - statfs/stat seams for free space
  * @param {Function} [dependencies.now] - Epoch millisecond reader
  * @returns {Promise<void>}
@@ -492,6 +495,7 @@ export const cmd_prune = async ( cmd, {
     remove_as_root = remove_tree_as_root,
     measure_directory = directory_bytes,
     read_health = read_disk_health,
+    find_root_dir = () => docker_root_dir( { timeout_ms: 20_000 } ),
     disk_seams = undefined,
     ask = null,
     now = Date.now,
@@ -507,7 +511,9 @@ export const cmd_prune = async ( cmd, {
     // Free space before anything is deleted, recovery included
     const storage = [
         { path: clones_dir, label: `clones` },
-        { path: read_health().docker_root_dir, label: `Docker` },
+        // Without a cached answer from `watch`, ask once: Docker cleanup may
+        // free space on a disk other than the clones
+        { path: read_health().docker_root_dir ?? await find_root_dir().catch( () => null ), label: `Docker` },
     ]
     const measure_filesystems = () => group_by_filesystem( storage, disk_seams )
     const filesystems_before = measure_filesystems()
@@ -551,9 +557,12 @@ export const cmd_prune = async ( cmd, {
         // The planner's listing is the cleanup's safety check: no plan, no cleanup
         if( docker_plan.error ) write_line( output, `Skipping Docker cleanup: ${ docker_plan.error.message }` )
         else {
-            const cache_bytes = docker_plan.build_cache_bytes ?? 0
-            const unique_bytes = Number.isFinite( docker_plan.image_unique_bytes ) ? cache_bytes + docker_plan.image_unique_bytes : null
-            const estimate = range_text( unique_bytes, cache_bytes + docker_plan.image_bytes )
+            // Unknown is not zero: an unmeasured cache is named, never counted as 0 B
+            const { build_cache_bytes, build_cache_private_bytes, image_bytes, image_unique_bytes } = docker_plan
+            const cache_known = Number.isFinite( build_cache_bytes )
+            const low = cache_known && Number.isFinite( image_unique_bytes ) ? ( build_cache_private_bytes ?? 0 ) + image_unique_bytes : null
+            const high = ( cache_known ? build_cache_bytes : 0 ) + image_bytes
+            const estimate = `${ range_text( low, high ) }${ cache_known ? `` : ` plus build cache of unknown size` }`
             const clean_docker = /^(?:y|yes)$/i.test( ( await question(
                 `Prune unused Docker containers, networks, images, and build cache (${ estimate }; all projects; volumes kept)? [y/N] `
             ) ).trim() )
