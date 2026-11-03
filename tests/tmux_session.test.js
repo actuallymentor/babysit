@@ -178,8 +178,8 @@ describe( `list_sessions format compatibility`, () => {
 
     it( `preserves session identity and status when tmux sanitizes control characters`, async () => {
         const rows = [
-            { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle`, unread_since: `200` },
-            { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running`, last_attached: `200`, unread_since: `200` },
+            { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle`, unread_since: `200`, next_turn: `1800` },
+            { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running`, last_attached: `200`, unread_since: `200`, next_turn: `running` },
             { session_name: `babysit_waiting`, session_created: `125`, babysit_agent_status: `waiting` },
         ]
         const result = await list_sessions( {
@@ -196,15 +196,16 @@ describe( `list_sessions format compatibility`, () => {
                     .replaceAll( `#{session_last_attached}`, row.last_attached ?? `` )
                     .replaceAll( `#{@babysit_unread_since}`, row.unread_since ?? `` )
                     .replaceAll( `#{@babysit_idle_since}`, row.unread_since ?? `` )
+                    .replaceAll( `#{@babysit_next_turn}`, row.next_turn ?? `` )
                 ).join( `\n` )
             },
         } )
 
         expect( result ).toEqual( [
             // Never attached since the stamp: unread. Attached the same second: read.
-            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200 },
-            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200 },
-            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null },
+            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: 1800 },
+            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200, next_turn: null },
+            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null, next_turn: null },
         ] )
     } )
 

@@ -202,7 +202,9 @@ Examples:
 Live dashboard: the babysit list tree without archived sessions (numbers
 unchanged) with a USAGE column. Panes are sampled every second and the list
 redraws the moment a session starts, closes or is archived; only changed
-frames are drawn. Usage refreshes every 5 min.
+frames are drawn. Usage refreshes every 5 min. Idle sessions with an idle
+rule (on: idle, --loop) show hh:mm to their next turn as status; config: and
+on: flags show only with --all.
 
 --interactive: type a session number to open it (Enter or a short pause
 settles multi-digit numbers), ctrl+c to close. Detaching (ctrl+b d) or the

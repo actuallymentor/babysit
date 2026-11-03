@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.66.0 — 2026-11-03
+
+### Changed
+- `babysit watch`: sessions with an idle rule (`on: idle`, `--loop`) show the time to their next automated turn as grey `hh:mm` in STATUS while idle. Launch-yaml flags (`config:`, `on:`) are hidden unless `--all`; `babysit list` keeps them. Running sessions need `babysit restart` for the countdown.
+- `frozen` status is grey, like `idle`.
+
 ## 1.65.0 — 2026-11-03
 
 ### Added

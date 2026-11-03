@@ -309,6 +309,14 @@ describe( `cmd_watch`, () => {
         expect( frames.at( -1 ) ).toBe( `\x1b[?25h\x1b[?1049l` )
     } )
 
+    it( `asks for countdowns, and rule flags only with --all`, async () => {
+        const seen = []
+        const render_sessions_fn = async options => seen.push( [ options.countdowns, options.rule_flags ] )
+        await run_watch( {}, { rounds: 1, collect_fn: async () => report, render_sessions_fn } )
+        await run_watch( { all: true }, { rounds: 1, collect_fn: async () => report, render_sessions_fn } )
+        expect( seen ).toEqual( [ [ true, false ], [ true, true ] ] )
+    } )
+
     it( `clears the terminal when quit with Ctrl+C`, async () => {
         const input = new EventEmitter()
         Object.assign( input, { isTTY: true, setRawMode: () => {}, resume: () => {}, pause: () => {} } )

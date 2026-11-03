@@ -7,6 +7,7 @@ import {
     format_session_tree,
     print_active_sessions_table,
     session_dot,
+    format_countdown,
 } from '../src/cli/list.js'
 
 const capture_console = async ( fn ) => {
@@ -63,6 +64,29 @@ describe( `print_active_sessions_table`, () => {
         expect( output ).toMatch( /└─ {3}again\s+running\s+codex/ )
         const lines = output.split( `\n` )
         expect( lines.find( line => line.includes( `done` ) ).indexOf( `done` ) ).toBe( lines.find( line => line.includes( `NAME` ) ).indexOf( `NAME` ) )
+    } )
+
+    it( `counts down to an idle rule's next turn and hides rule flags on request`, async () => {
+        const now = 1_800_000_000_000
+        const output = await capture_console( () => print_active_sessions_table(
+            [
+                { name: `babysit_loop`, attached: false, agent_status: `idle`, next_turn: now / 1_000 + 2 * 3_600 + 5 * 60 + 30 },
+                { name: `babysit_busy`, attached: false, agent_status: `running`, next_turn: now / 1_000 + 60 },
+                { name: `babysit_plain`, attached: false, agent_status: `idle` },
+            ],
+            [
+                { tmux_session: `babysit_loop`, agent: `claude`, name: `loop`, modifiers: [ `yolo` ], config_flags: [ `config:api.yaml`, `on:idle/30m` ] },
+                { tmux_session: `babysit_busy`, agent: `claude`, name: `busy` },
+                { tmux_session: `babysit_plain`, agent: `claude`, name: `plain`, config_flags: [ `on:idle/30m` ] },
+            ],
+            { now, countdowns: true, rule_flags: false, show_flags: true }
+        ) )
+
+        expect( output ).toMatch( /loop\s+02:05\s+claude\s+yolo\n/ )
+        expect( output ).toMatch( /busy\s+running/ )
+        expect( output ).toMatch( /plain\s+idle\s+claude\s+-\n/ )
+        expect( output ).not.toContain( `on:idle` )
+        expect( format_countdown( now / 1_000 - 5, now ) ).toBe( `00:00` )
     } )
 
     it( `paints the unread dot blue and the stale dot grey`, () => {
