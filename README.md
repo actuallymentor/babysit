@@ -493,7 +493,7 @@ keys without a menu row (`ports`, `log`, `args`, `ignore_host_agents_md`) are ca
 
 **Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes, or sit behind a background poll that hung.
 - **Idle** for `watchdog_idle_s` (30 min): Claude Haiku reads the last 150 terminal lines inside the session container (Codex as fallback) and decides: parked on purpose (finished, asked you something) or stalled. Stalled → types a nudge: collect finished background work, resume, or reply `idle`. One judgment per quiet stretch, so a session left alone for days gets one cheap check and no message unless it stalled. Skipped when an idle rule or `--loop` already nudges.
-- **Waiting** on background shells/subagents for `watchdog_waiting_s` (15 min): no judge. The agent is asked to check in on its background jobs (alive and progressing? deal with stuck ones). Repeats every interval until the agent runs again; a screen cannot tell a hung poll from a healthy one, the agent can.
+- **Waiting** on background shells/subagents for `watchdog_waiting_s` (15 min): no judge. The agent is asked to audit its full process tree, subagents and their output (what is each waiting for, can it still happen? kill what can't), or reply `idle`. Repeats every interval until the agent runs again; a screen cannot tell a hung poll from a healthy one, the agent can.
 - Skipped while `stuck`. Typing restarts the stretch. Verdicts and check-ins are in the monitor log.
 
 ## Mobile web companion

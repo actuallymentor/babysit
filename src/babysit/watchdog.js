@@ -8,9 +8,11 @@ export const WATCHDOG_NUDGE = `You look stalled. Check for background agents/she
 
 // Waiting agents get no verdict, only a periodic look at their background work:
 // the screen cannot tell a healthy wait from a hung poll, the agent can.
-export const CHECK_IN_NUDGE = `Check in on your background jobs: are they still running and making progress? `
-    + `Look at the actual processes and output rather than assuming, since a wait or poll can hang without failing. `
-    + `If something is stuck or already finished, deal with it and carry on; if all is well, just say so in a line.`
+// Enumerate, don't recall: agents grep for the job they remember and miss the rest.
+export const CHECK_IN_NUDGE = `Audit your background work without filtering by name: list the full process tree under your own process `
+    + `(e.g. ps -eo pid,ppid,etime,args), any subagents you started, and the output or log files they write to. `
+    + `For each one still alive, say what it's waiting for and whether that can still happen; kill it if not. `
+    + `Collect the results of anything that finished and carry on. If all is well, reply "idle" and nothing else.`
 
 /**
  * Watch for agents that went quiet without reason. A quiet stretch starts at
