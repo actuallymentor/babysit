@@ -4,6 +4,7 @@
 
 ### Added
 - `babysit list`/`watch`: a dot before idle session names. Blue ●: the agent finished a turn (running or waiting → idle) while no client was attached; it clears on the next attach, so the dashboard shows which sessions want a check-in. Grey ●: idle over 24 hours with nothing unread. Running sessions need `babysit restart` to load the markers.
+- `babysit watch` clears the terminal when quit with Ctrl+C or q, leaving a clean prompt; opening a session is unchanged.
 - `babysit archive` without selectors lists the grey-dot sessions and asks `Archive N sessions? [Y/n]`; `--yes` skips the question (required without a terminal).
 
 ### Fixed
