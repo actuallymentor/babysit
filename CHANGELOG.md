@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.65.0 — 2026-11-03
+
+### Added
+- `babysit list`/`watch`: `unread` status (blue). An agent that finishes a turn (running or waiting → idle) while no client is attached reads `unread` instead of `idle` until the next attach, so the dashboard shows which sessions want a check-in. Running sessions need `babysit restart` to load the marker.
+
 ## 1.64.0 — 2026-11-02
 
 ### Changed

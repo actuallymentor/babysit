@@ -4,6 +4,7 @@ const CODES = {
     dim: `2;38;5;242`,
     grey: `38;5;245`,
     green: `32`,
+    blue: `38;5;39`,
     yellow: `33`,
     orange: `38;5;208`,
     red: `31`,
