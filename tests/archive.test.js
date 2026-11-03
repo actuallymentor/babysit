@@ -142,9 +142,79 @@ describe( `archived sessions`, () => {
         expect( closed ).toEqual( [ `a1` ] )
     } )
 
-    it( `parses the archive verb with a required selector`, () => {
+    it( `parses the archive verb with or without selectors`, () => {
         expect( parse_args( [ `archive`, `3` ] ) ).toMatchObject( { verb: `archive`, session_id: `3` } )
-        expect( () => parse_args( [ `archive` ] ) ).toThrow( /Usage: babysit archive/ )
+        expect( parse_args( [ `archive` ] ) ).toMatchObject( { verb: `archive`, session_id: null, session_ids: [] } )
+        expect( parse_args( [ `archive`, `--yes` ] ).flags.yes ).toBe( true )
+    } )
+
+
+} )
+
+
+describe( `archive without selectors`, () => {
+
+    const now = 1_800_000_000_000
+    const hours_ago = hours => now / 1_000 - hours * 3_600
+    const active = [
+        { name: `babysit_old`, attached: false, agent_status: `idle`, idle_since: hours_ago( 30 ) },
+        { name: `babysit_fresh`, attached: false, agent_status: `idle`, idle_since: hours_ago( 2 ) },
+        { name: `babysit_unread`, attached: false, agent_status: `idle`, unread: true, idle_since: hours_ago( 30 ) },
+        { name: `babysit_busy`, attached: false, agent_status: `running`, idle_since: hours_ago( 30 ) },
+        { name: `babysit_stuck`, attached: false, agent_status: `idle`, idle_since: hours_ago( 30 ) },
+        { name: `babysit_put_away`, attached: false, agent_status: `idle`, idle_since: hours_ago( 30 ) },
+        { name: `babysit_older`, attached: false, agent_status: `idle`, idle_since: hours_ago( 72 ) },
+    ]
+    const records = [
+        { tmux_session: `babysit_old`, babysit_id: `old`, name: `old one`, pwd: `/w` },
+        { tmux_session: `babysit_fresh`, babysit_id: `fresh`, pwd: `/w` },
+        { tmux_session: `babysit_unread`, babysit_id: `unread`, pwd: `/w` },
+        { tmux_session: `babysit_busy`, babysit_id: `busy`, pwd: `/w` },
+        { tmux_session: `babysit_stuck`, babysit_id: `stuck`, pwd: `/w`, stuck_at: `2026-11-01T00:00:00.000Z` },
+        { tmux_session: `babysit_put_away`, babysit_id: `put_away`, pwd: `/w`, archived_at: `2026-11-01T00:00:00.000Z` },
+        { tmux_session: `babysit_older`, babysit_id: `older`, name: `older one`, pwd: `/w` },
+    ]
+
+    const run = async ( { answer = true, yes = false, interactive = true } = {} ) => {
+        const updates = []
+        const printed = []
+        const asked = []
+        await cmd_archive( { session_id: null, session_ids: [], flags: { yes } }, {
+            list_sessions_fn: async () => active,
+            list_stored_sessions_fn: () => records,
+            update_session_fn: ( id, patch ) => updates.push( [ id, patch ] ),
+            ask_fn: async question => ( asked.push( question ), answer ),
+            interactive,
+            now,
+            print: message => printed.push( message ),
+        } )
+        return { updates, printed, asked }
+    }
+
+    it( `offers only grey-dot sessions and archives them on yes`, async () => {
+        const { updates, printed, asked } = await run()
+
+        expect( asked ).toEqual( [ `Archive 2 sessions? [Y/n] ` ] )
+        expect( updates.map( ( [ id ] ) => id ) ).toEqual( [ `old`, `older` ] )
+        expect( updates[0][1].archived_at ).toBe( new Date( now ).toISOString() )
+        expect( printed.some( line => /old one\s+idle 1d 6h/.test( line ) ) ).toBe( true )
+        expect( printed.at( -1 ) ).toMatch( /Archived 2 sessions/ )
+    } )
+
+    it( `archives nothing on no`, async () => {
+        const { updates } = await run( { answer: false } )
+        expect( updates ).toEqual( [] )
+    } )
+
+    it( `skips the question with --yes and refuses scripts without it`, async () => {
+        expect( ( await run( { yes: true, interactive: false } ) ).updates ).toHaveLength( 2 )
+
+        const exit_code = process.exitCode
+        const { updates, printed, asked } = await run( { interactive: false } )
+        process.exitCode = exit_code
+        expect( updates ).toEqual( [] )
+        expect( asked ).toEqual( [] )
+        expect( printed.at( -1 ) ).toMatch( /pass --yes/ )
     } )
 
 } )

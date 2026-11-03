@@ -9,7 +9,26 @@ import { newer_version_available } from './version_check.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
-const STATUS_COLORS = { idle: `grey`, unread: `blue`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey`, frozen: `yellow` }
+const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey`, frozen: `yellow` }
+
+// Idle this long without anything unread: offered to `babysit archive`
+export const STALE_AFTER_MS = 24 * 60 * 60_000
+
+/**
+ * The dot before a session's name: blue for a turn that finished while nobody
+ * watched (until the next attach), grey for an agent idle over 24 hours.
+ * @param {Object} tmux - Active tmux session ({ unread, idle_since } from list_sessions)
+ * @param {string} status - Displayed status; only `idle` earns a dot
+ * @param {number} [now=Date.now()] - Epoch ms
+ * @returns {'unread'|'stale'|null}
+ */
+export const session_dot = ( tmux, status, now = Date.now() ) => {
+    if( status !== `idle` ) return null
+    if( tmux.unread ) return `unread`
+    return tmux.idle_since && now - tmux.idle_since * 1_000 > STALE_AFTER_MS ? `stale` : null
+}
+
+const DOT_COLORS = { unread: `blue`, stale: `grey` }
 
 /**
  * Color for a share of host capacity: calm below half, warning below 70%, red above.
@@ -478,7 +497,7 @@ export const usage_totals_row = ( headers, usages ) => {
     const host_memory = Math.max( 0, ...samples.map( usage => usage.host_memory_bytes || 0 ) )
 
     const row = headers.map( () => `` )
-    row[ headers.indexOf( `NAME` ) ] = `Total`
+    row[ headers.findIndex( header => header.trim() === `NAME` ) ] = `  Total`
     row[ headers.indexOf( `CPU` ) ] = samples.length
         ? { text: format_cpu( cpu ), color: host_cpus ? load_color( cpu / 100 ) : null }
         : `-`
@@ -520,7 +539,8 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
 
     const headers = [
         ... numbered ? [ `#` ] : [] ,
-        `NAME`,
+        // Indented past the dot gutter, over the names themselves
+        `  NAME`,
         `STATUS`,
         `AGENT`,
         ... show_usage ? [ `CPU`, `MEM` ] : [],
@@ -543,20 +563,27 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const name = stored?.name || session_id
         // An exited fork parent has no activity; a frozen container (`babysit
         // freeze`) has none either; a `babysit stuck` flag outranks observed
-        // activity until the user types. An idle agent that finished a turn
-        // nobody has seen since reads `unread` until the next attach.
-        const activity = AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
+        // activity until the user types.
         const status = tmux.exited
             ? `exited`
             : stored?.frozen_at
                 ? `frozen`
                 : stored?.stuck_at
                     ? `stuck`
-                    : activity === `idle` && tmux.unread ? `unread` : activity
+                    : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.exited ? `exited` : tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers, stored?.config_flags )
         const usage = show_usage && !tmux.exited ? cached_usage( stored, now ) : null
         const archived = Boolean( stored?.archived_at )
+        // Dots get their own gutter ahead of fork prefixes, so they stack in one
+        // column and names stay aligned. Archived rows are dimmed whole: no
+        // stale dot (already put away), an uncolored unread one.
+        const dot = session_dot( tmux, status, now )
+        const shown_dot = archived && dot === `stale` ? null : dot
+        const label = `${ prefixes[index] }${ name }`
+        const name_cell = shown_dot
+            ? { text: `● ${ label }`, rendered: `${ archived ? `●` : paint( `●`, DOT_COLORS[ shown_dot ] ) } ${ label }` }
+            : `  ${ label }`
 
         return {
             pwd: stored_for( tmux_sessions[ roots[index] ] )?.pwd || null,
@@ -564,7 +591,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
             archived,
             leaf: [
                 ... numbered ? [ numbers[index] ] : [] ,
-                `${ prefixes[index] }${ name }`,
+                name_cell,
                 // Archived rows are dimmed as a whole, so the status keeps no color of its own.
                 { text: status, color: archived ? null : STATUS_COLORS[ status ] },
                 agent,

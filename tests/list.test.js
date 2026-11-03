@@ -6,6 +6,7 @@ import {
     format_session_status_label,
     format_session_tree,
     print_active_sessions_table,
+    session_dot,
 } from '../src/cli/list.js'
 
 const capture_console = async ( fn ) => {
@@ -36,21 +37,41 @@ describe( `print_active_sessions_table`, () => {
         expect( output ).toMatch( /background tasks\s+waiting\s+claude/ )
     } )
 
-    it( `shows unread for an idle agent with an unseen finished turn`, async () => {
+    it( `dots unread and day-old idle sessions, keeping names aligned`, async () => {
+        const now = 1_800_000_000_000
+        const day_ago = now / 1_000 - 25 * 3_600
         const output = await capture_console( () => print_active_sessions_table(
             [
-                { name: `babysit_done`, attached: false, agent_status: `idle`, unread: true },
-                // A stale flag never outranks fresh activity
-                { name: `babysit_again`, attached: false, agent_status: `running`, unread: true },
+                { name: `babysit_done`, attached: false, agent_status: `idle`, unread: true, idle_since: day_ago },
+                { name: `babysit_old`, attached: false, agent_status: `idle`, idle_since: day_ago },
+                { name: `babysit_fresh`, attached: false, agent_status: `idle`, idle_since: now / 1_000 - 60 },
+                // A leftover stamp never outranks fresh activity
+                { name: `babysit_again`, attached: false, agent_status: `running`, unread: true, idle_since: day_ago },
             ],
             [
                 { tmux_session: `babysit_done`, agent: `claude`, name: `done` },
+                { tmux_session: `babysit_old`, agent: `claude`, name: `old` },
+                { tmux_session: `babysit_fresh`, agent: `claude`, name: `fresh` },
                 { tmux_session: `babysit_again`, agent: `codex`, name: `again` },
-            ]
+            ],
+            { now }
         ) )
 
-        expect( output ).toMatch( /done\s+unread\s+claude/ )
-        expect( output ).toMatch( /again\s+running\s+codex/ )
+        expect( output ).toMatch( /├─ ● done\s+idle\s+claude/ )
+        expect( output ).toMatch( /├─ ● old\s+idle/ )
+        expect( output ).toMatch( /├─ {3}fresh\s+idle/ )
+        expect( output ).toMatch( /└─ {3}again\s+running\s+codex/ )
+        const lines = output.split( `\n` )
+        expect( lines.find( line => line.includes( `done` ) ).indexOf( `done` ) ).toBe( lines.find( line => line.includes( `NAME` ) ).indexOf( `NAME` ) )
+    } )
+
+    it( `paints the unread dot blue and the stale dot grey`, () => {
+        const now = 1_800_000_000_000
+        expect( session_dot( { unread: true, idle_since: 1 }, `idle`, now ) ).toBe( `unread` )
+        expect( session_dot( { idle_since: now / 1_000 - 25 * 3_600 }, `idle`, now ) ).toBe( `stale` )
+        expect( session_dot( { idle_since: now / 1_000 - 23 * 3_600 }, `idle`, now ) ).toBe( null )
+        expect( session_dot( { idle_since: null }, `idle`, now ) ).toBe( null )
+        expect( session_dot( { unread: true, idle_since: 1 }, `waiting`, now ) ).toBe( null )
     } )
 
     it( `shows compact rows and collapses unnamed session IDs into NAME`, async () => {
@@ -234,7 +255,7 @@ describe( `print_active_sessions_table`, () => {
             attached: false,
         } ], [] ) )
 
-        expect( output ).toMatch( /\n {2}-\n {2}└─ babysit_\/workspace\/legacy_codex_123\s+unknown\s+unknown\n/ )
+        expect( output ).toMatch( /\n {2}-\n {2}└─ {3}babysit_\/workspace\/legacy_codex_123\s+unknown\s+unknown\n/ )
 
     } )
 

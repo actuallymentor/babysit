@@ -121,6 +121,13 @@ const inspect_clone_protection = async ( clone, family, {
         return { active: false, reason: `protected: recovery pending` }
     }
 
+    // Archiving puts a session away, it does not discard it: even with its
+    // tmux and container gone the clone stays until `babysit open` un-archives
+    // it and the session ends normally. Its image stays too (no clone_pruned_at).
+    if( family.some( ( { session } ) => session.archived_at ) ) {
+        return { active: false, reason: `protected: archived` }
+    }
+
     const uncertain_sessions = family.filter( ( { session } ) =>
         [ `active`, `preparing` ].includes( session.status )
         || session.container_cleaned === false

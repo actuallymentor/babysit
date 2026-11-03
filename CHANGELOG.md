@@ -3,7 +3,12 @@
 ## 1.65.0 — 2026-11-03
 
 ### Added
-- `babysit list`/`watch`: `unread` status (blue). An agent that finishes a turn (running or waiting → idle) while no client is attached reads `unread` instead of `idle` until the next attach, so the dashboard shows which sessions want a check-in. Running sessions need `babysit restart` to load the marker.
+- `babysit list`/`watch`: a dot before idle session names. Blue ●: the agent finished a turn (running or waiting → idle) while no client was attached; it clears on the next attach, so the dashboard shows which sessions want a check-in. Grey ●: idle over 24 hours with nothing unread. Running sessions need `babysit restart` to load the markers.
+- `babysit archive` without selectors lists the grey-dot sessions and asks `Archive N sessions? [Y/n]`; `--yes` skips the question (required without a terminal).
+
+### Fixed
+- `babysit archive` printed its confirmations at debug level only; they show again.
+- `babysit prune` keeps the clone (and so the image) of an archived session even after its tmux, monitor and container are gone.
 
 ## 1.64.0 — 2026-11-02
 
