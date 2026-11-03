@@ -163,6 +163,7 @@ describe( `publish_agent_status`, () => {
             agent_status: `idle`,
             last_agent_status: unchanged,
             publish,
+            mark: async () => true,
         } )
 
         expect( published ).toEqual( [
@@ -182,17 +183,41 @@ describe( `publish_agent_status`, () => {
             agent_status: `idle`,
             last_agent_status: `running`,
             publish,
+            mark: async () => true,
         } )
         const retried = await publish_agent_status( {
             session_name: `babysit_one`,
             agent_status: `idle`,
             last_agent_status: failed,
             publish,
+            mark: async () => true,
         } )
 
         expect( failed ).toBe( `running` )
         expect( retried ).toBe( `idle` )
         expect( attempts ).toBe( 2 )
+
+    } )
+
+    it( `marks unread only when a turn finishes`, async () => {
+
+        const marked = []
+        const step = ( agent_status, last_agent_status ) => publish_agent_status( {
+            session_name: `babysit_one`,
+            agent_status,
+            last_agent_status,
+            publish: async () => true,
+            mark: async name => marked.push( [ name, last_agent_status ] ),
+        } )
+
+        // First observation (fresh monitor or recovery) is not a finished turn
+        await step( `idle`, null )
+        await step( `idle`, `running` )
+        await step( `idle`, `waiting` )
+        await step( `running`, `idle` )
+        await step( `waiting`, `running` )
+
+        expect( marked ).toEqual( [ [ `babysit_one`, `running` ], [ `babysit_one`, `waiting` ] ] )
 
     } )
 

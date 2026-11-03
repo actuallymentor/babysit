@@ -2,7 +2,7 @@ import { wait } from 'mentie'
 import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
 import { send_keys } from '../tmux/send.js'
-import { has_session, kill_session, set_agent_status } from '../tmux/session.js'
+import { has_session, kill_session, mark_unread, set_agent_status } from '../tmux/session.js'
 import { IdleTracker, strip_ansi, evaluate_rule, idle_timeout_for } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
@@ -132,12 +132,15 @@ export const agent_exit_status = ( output = ``, sentinel = null ) => {
 
 /**
  * Publish an activity transition, retaining the previous state on failure so
- * the monitor retries next tick.
+ * the monitor retries next tick. A finished turn (running or waiting → idle)
+ * also marks the session unread when nobody is attached. A monitor's first
+ * observation has no previous state, so recovery never marks old sessions.
  * @param {Object} options
  * @param {string} options.session_name - Babysit tmux session name
  * @param {'idle'|'running'|'waiting'} options.agent_status - Newly observed activity
  * @param {'idle'|'running'|'waiting'|null} options.last_agent_status - Last published activity
  * @param {Function} [options.publish=set_agent_status] - Tmux publisher seam
+ * @param {Function} [options.mark=mark_unread] - Unread marker seam
  * @returns {Promise<'idle'|'running'|'waiting'|null>} Last successfully published activity
  */
 export const publish_agent_status = async ( {
@@ -145,12 +148,17 @@ export const publish_agent_status = async ( {
     agent_status,
     last_agent_status,
     publish = set_agent_status,
+    mark = mark_unread,
 } ) => {
 
     if( agent_status === last_agent_status ) return last_agent_status
 
     const published = await publish( session_name, agent_status )
-    return published ? agent_status : last_agent_status
+    if( !published ) return last_agent_status
+
+    const finished_turn = agent_status === `idle` && [ `running`, `waiting` ].includes( last_agent_status )
+    if( finished_turn ) await mark( session_name )
+    return agent_status
 
 }
 

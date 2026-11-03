@@ -36,6 +36,23 @@ describe( `print_active_sessions_table`, () => {
         expect( output ).toMatch( /background tasks\s+waiting\s+claude/ )
     } )
 
+    it( `shows unread for an idle agent with an unseen finished turn`, async () => {
+        const output = await capture_console( () => print_active_sessions_table(
+            [
+                { name: `babysit_done`, attached: false, agent_status: `idle`, unread: true },
+                // A stale flag never outranks fresh activity
+                { name: `babysit_again`, attached: false, agent_status: `running`, unread: true },
+            ],
+            [
+                { tmux_session: `babysit_done`, agent: `claude`, name: `done` },
+                { tmux_session: `babysit_again`, agent: `codex`, name: `again` },
+            ]
+        ) )
+
+        expect( output ).toMatch( /done\s+unread\s+claude/ )
+        expect( output ).toMatch( /again\s+running\s+codex/ )
+    } )
+
     it( `shows compact rows and collapses unnamed session IDs into NAME`, async () => {
 
         const tmux_sessions = [
