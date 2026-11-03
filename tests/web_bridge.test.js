@@ -144,6 +144,7 @@ describe( `per-session web bridge`, () => {
         const directory = make_directory()
         initialize_web_bridge( { directory } )
         const sent = []
+        const read = []
         const bridge = create_web_bridge( {
             session: make_session(),
             tmux_target: `%42`,
@@ -151,11 +152,12 @@ describe( `per-session web bridge`, () => {
             epoch: `launch-epoch`,
             attachment_fn: async () => `detached`,
             send_text_fn: async ( ...args ) => sent.push( args ),
+            mark_read_fn: async name => read.push( name ),
             load_session_fn: () => null,
             refresh_usage_fn: async () => false,
             ...options,
         } )
-        return { bridge, directory, sent }
+        return { bridge, directory, sent, read }
     }
 
     it( `publishes only the allowlisted state without treating an idle screen as a message`, async () => {
@@ -263,7 +265,7 @@ describe( `per-session web bridge`, () => {
     } )
 
     it( `claims one valid request and sends it only to the exact pane id`, async () => {
-        const { bridge, directory, sent } = setup()
+        const { bridge, directory, sent, read } = setup()
         await bridge.publish( { output: `ready`, activity: `idle` } )
         const request = make_request()
         write_request( directory, request, { mtime: new Date( Date.now() + 10_000 ) } )
@@ -273,6 +275,8 @@ describe( `per-session web bridge`, () => {
 
         expect( result ).toEqual( { sent: true, processed: 1 } )
         expect( sent ).toEqual( [ [ `%42`, request.text, { redact: true } ] ] )
+        // A web reply is human input that tmux never sees as a key: it clears unread
+        expect( read ).toEqual( [ make_session().tmux_session ] )
         expect( readdirSync( join( directory, `requests` ) ) ).toEqual( [] )
         expect( readdirSync( join( directory, `inflight` ) ) ).toEqual( [] )
         expect( state.results.at( -1 ) ).toMatchObject( {
@@ -378,6 +382,7 @@ describe( `per-session web bridge`, () => {
             session: { ...make_session(), babysit_id: session_id },
             tmux_target: `%42`, directory, epoch: `launch-epoch`,
             send_text_fn: async ( ...args ) => sent.push( args ),
+            mark_read_fn: async () => true,
         } )
 
         try {

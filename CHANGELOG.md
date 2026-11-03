@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.67.0 — 2026-11-03
+
+### Changed
+- Blue unread ● now clears on input, not on attach: typing or mouse-scrolling in the session (or replying from babysit-web) marks it read; just attaching or looking does not. A turn that ends while a terminal is attached is marked unread too, so a forgotten open terminal no longer hides it. Running sessions need `babysit restart`.
+
 ## 1.66.0 — 2026-11-03
 
 ### Changed

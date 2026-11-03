@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { attach_session, clipboard_command, create_session, get_session_pane, has_session, kill_session, list_sessions, mark_idle, set_agent_status } from '../src/tmux/session.js'
+import { attach_session, clipboard_command, create_session, get_session_pane, has_session, kill_session, list_sessions, mark_idle, mark_read, set_agent_status } from '../src/tmux/session.js'
 import { TMUX_SOCKET } from '../src/utils/paths.js'
 
 describe( `create_session mouse copy`, () => {
@@ -178,9 +178,11 @@ describe( `list_sessions format compatibility`, () => {
 
     it( `preserves session identity and status when tmux sanitizes control characters`, async () => {
         const rows = [
-            { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle`, unread_since: `200`, next_turn: `1800` },
-            { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running`, last_attached: `200`, unread_since: `200`, next_turn: `running` },
+            { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle`, activity: `150`, unread_since: `200`, next_turn: `1800` },
+            { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running`, activity: `201`, unread_since: `200`, next_turn: `running` },
             { session_name: `babysit_waiting`, session_created: `125`, babysit_agent_status: `waiting` },
+            { session_name: `babysit_looked`, session_created: `126`, babysit_agent_status: `idle`, last_attached: `300`, activity: `300`, unread_since: `200` },
+            { session_name: `babysit_typed`, session_created: `127`, babysit_agent_status: `idle`, last_attached: `300`, activity: `301`, unread_since: `200` },
         ]
         const result = await list_sessions( {
             run_command: async ( command, args ) => {
@@ -194,6 +196,7 @@ describe( `list_sessions format compatibility`, () => {
                     .replaceAll( `#{session_created}`, row.session_created )
                     .replaceAll( `#{@babysit_agent_status}`, row.babysit_agent_status )
                     .replaceAll( `#{session_last_attached}`, row.last_attached ?? `` )
+                    .replaceAll( `#{session_activity}`, row.activity ?? `` )
                     .replaceAll( `#{@babysit_unread_since}`, row.unread_since ?? `` )
                     .replaceAll( `#{@babysit_idle_since}`, row.unread_since ?? `` )
                     .replaceAll( `#{@babysit_next_turn}`, row.next_turn ?? `` )
@@ -202,10 +205,13 @@ describe( `list_sessions format compatibility`, () => {
         } )
 
         expect( result ).toEqual( [
-            // Never attached since the stamp: unread. Attached the same second: read.
+            // No input since the stamp: unread. Input after it: read. Attach alone
+            // bumps activity to the attach second, which does not count.
             { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: 1800 },
             { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200, next_turn: null },
             { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null, next_turn: null },
+            { name: `babysit_looked`, attached: false, created: `126`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: null },
+            { name: `babysit_typed`, attached: false, created: `127`, agent_status: `idle`, unread: false, idle_since: 200, next_turn: null },
         ] )
     } )
 
@@ -251,11 +257,11 @@ describe( `mark_idle`, () => {
         ] )
     } )
 
-    it( `leaves a watched session read but still ages it`, async () => {
+    it( `marks an attached session unread too: an open terminal is not a reader`, async () => {
         const { calls, run_command } = runner( `attached` )
 
-        expect( await mark_idle( `babysit_one`, { run_command, now } ) ).toBe( false )
-        expect( sets( calls ).map( args => args[2] ) ).toEqual( [ `@babysit_idle_since` ] )
+        expect( await mark_idle( `babysit_one`, { run_command, now } ) ).toBe( true )
+        expect( sets( calls ).map( args => args[2] ) ).toEqual( [ `@babysit_idle_since`, `@babysit_unread_since` ] )
     } )
 
     it( `only fills a missing age on a first observation`, async () => {
@@ -265,10 +271,18 @@ describe( `mark_idle`, () => {
         expect( sets( calls ) ).toEqual( [ [ `-o`, `-t`, `=babysit_one:`, `@babysit_idle_since`, `1700000000` ] ] )
     } )
 
+    it( `mark_read unsets the unread stamp on the exact session`, async () => {
+        const { calls, run_command } = runner( `detached` )
+
+        expect( await mark_read( `babysit_one`, { run_command } ) ).toBe( true )
+        expect( sets( calls ) ).toEqual( [ [ `-u`, `-t`, `=babysit_one:`, `@babysit_unread_since` ] ] )
+    } )
+
     it( `swallows tmux failures`, async () => {
         const run_command = async () => {
             throw new Error( `no server` )
         }
+        expect( await mark_read( `babysit_one`, { run_command } ) ).toBe( false )
         expect( await mark_idle( `babysit_one`, { run_command } ) ).toBe( false )
         expect( await mark_idle( `babysit_one`, { finished: false, run_command } ) ).toBe( false )
     } )

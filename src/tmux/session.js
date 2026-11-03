@@ -368,12 +368,11 @@ export const get_session_attachment = async ( session_name, { run_command = run 
 
 /**
  * Stamp the start of an idle stretch. A finished turn stamps `@babysit_idle_since`
- * and, when no client is attached, `@babysit_unread_since`: `list_sessions`
- * reads unread until tmux's own `session_last_attached` passes that stamp, so
- * any attach marks it read without hooks or registry writes. A monitor's first
- * look at an idle agent (start, recovery) only stamps idle-since when none is
- * set (`-o`), so restarts neither reset the age nor mark anything unread.
- * Cosmetic: failures are only logged.
+ * and `@babysit_unread_since`, attached or not: an open terminal is not proof
+ * anyone read it. `list_sessions` reads unread until a human touches the session
+ * (see `is_unread`). A monitor's first look at an idle agent (start, recovery)
+ * only stamps idle-since when none is set (`-o`), so restarts neither reset
+ * the age nor mark anything unread. Cosmetic: failures are only logged.
  * @param {string} session_name - Babysit tmux session name
  * @param {Object} [options]
  * @param {boolean} [options.finished=true] - Whether a turn just ended (vs a first observation)
@@ -396,7 +395,6 @@ export const mark_idle = async ( session_name, { finished = true, run_command = 
         }
 
         await set( `-t`, target, IDLE_OPTION, stamp )
-        if( await get_session_attachment( session_name, { run_command } ) === `attached` ) return false
         await set( `-t`, target, UNREAD_OPTION, stamp )
         return true
 
@@ -405,6 +403,41 @@ export const mark_idle = async ( session_name, { finished = true, run_command = 
         return false
     }
 
+}
+
+/**
+ * Clear the unread stamp: input that bypasses tmux's key handling (web bridge
+ * messages arrive as paste buffers) and so never moves `session_activity`.
+ * Cosmetic: failures are only logged.
+ * @param {string} session_name - Babysit tmux session name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Command runner seam
+ * @returns {Promise<boolean>} Whether the stamp was cleared
+ */
+export const mark_read = async ( session_name, { run_command = run } = {} ) => {
+
+    try {
+        await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-u`, `-t`, `=${ session_name }:`, UNREAD_OPTION ] )
+        return true
+    } catch ( error ) {
+        log.debug( `Could not mark ${ session_name } read: ${ error.message }` )
+        return false
+    }
+
+}
+
+/**
+ * Unread: a turn ended and no human input reached tmux since. Keys and mouse
+ * (scroll) bump `session_activity`; agent output and send-keys do not. Attach
+ * also bumps it, to the attach second, so activity must beat `session_last_attached`
+ * too: merely looking keeps it unread. Epoch seconds; same-second input stays unread.
+ * @param {Object} stamps - Epoch-second strings from tmux
+ * @returns {boolean}
+ */
+const is_unread = ( { unread_since, activity, last_attached } ) => {
+    const since = Number( unread_since ) || 0
+    if( !since ) return false
+    return ( Number( activity ) || 0 ) <= Math.max( since, Number( last_attached ) || 0 )
 }
 
 /**
@@ -422,17 +455,16 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
             `list-sessions`, `-F`,
             // Tmux 3.3a sanitizes literal tabs in formats into underscores.
             // Colons survive formatting and cannot occur in session names.
-            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}`,
+            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{session_activity}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}`,
         ] )
 
         return output.split( `\n` )
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
-                const [ name, tmux_status, created, stored_agent_status, last_attached, unread_since, idle_stamp, next_stamp ] = line.split( `:` )
+                const [ name, tmux_status, created, stored_agent_status, last_attached, activity, unread_since, idle_stamp, next_stamp ] = line.split( `:` )
                 const agent_status = [ `idle`, `waiting` ].includes( stored_agent_status ) ? stored_agent_status : `running`
                 const attached = tmux_status === `attached`
-                // Unread: a turn ended unseen and nobody attached since. Same-second attaches count as read.
-                const unread = !attached && Number( unread_since ) > 0 && ( Number( last_attached ) || 0 ) < Number( unread_since )
+                const unread = is_unread( { unread_since, activity, last_attached } )
                 const idle_since = Number( idle_stamp ) > 0 ? Number( idle_stamp ) : null
                 // Only a number is a countdown; `running`/`waiting` mean none is ticking
                 const next_turn = Number( next_stamp ) > 0 ? Number( next_stamp ) : null
