@@ -1,7 +1,9 @@
-import { log } from '../utils/log.js'
+import { createInterface } from 'node:readline/promises'
+
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions, update_session } from '../sessions/store.js'
-import { exited_session_message, order_active_sessions, stored_by_tmux } from './list.js'
+import { relative_time } from '../docker/assets/usage/format.mjs'
+import { exited_session_message, order_active_sessions, session_dot, stored_by_tmux } from './list.js'
 
 /**
  * Resolve a list number, Babysit id, agent session id, or unique display name
@@ -39,23 +41,88 @@ export const select_active_session = ( selector, active, stored ) => {
 }
 
 /**
+ * Ask a default-yes question on the terminal.
+ * @param {string} question - Prompt ending in [Y/n]
+ * @returns {Promise<boolean>}
+ */
+const ask_default_yes = async question => {
+    const rl = createInterface( { input: process.stdin, output: process.stdout } )
+    try {
+        return /^(?:y(?:es)?)?$/i.test( ( await rl.question( question ) ).trim() )
+    } finally {
+        rl.close()
+    }
+}
+
+/**
+ * Unarchived sessions showing the grey dot: idle over 24 hours with nothing
+ * unread. Reads the activity monitors publish (no pane sampling), so a `stuck`
+ * flag or a frozen container keeps a session out.
+ * @param {Object[]} active - Active tmux sessions in display order
+ * @param {Object[]} stored - Stored Babysit metadata
+ * @param {number} now - Epoch ms
+ * @returns {Array<{ number: number, session: Object, tmux: Object }>}
+ */
+export const stale_sessions = ( active, stored, now ) => {
+
+    const by_tmux = stored_by_tmux( stored )
+    return active
+        .map( ( tmux, index ) => ( { number: index + 1, tmux, session: by_tmux.get( tmux.name ) } ) )
+        .filter( ( { tmux, session } ) => session && !tmux.exited && !session.archived_at && !session.stuck_at && !session.frozen_at )
+        .filter( ( { tmux } ) => session_dot( tmux, tmux.agent_status, now ) === `stale` )
+
+}
+
+/**
  * Archive active sessions: they stay running, but `babysit list` dims them and
  * sinks them to the bottom of their workspace until `babysit open` brings them
  * back. Archiving renumbers the list, so every selector resolves against one
  * snapshot before the first write.
- * @param {Object} cmd - Parsed command { session_id, session_ids }
+ * Without selectors it offers every grey-dot session (idle over 24h) behind
+ * one `Archive N sessions? [Y/n]`; `--yes` skips the question, and scripts
+ * without a terminal must pass it.
+ * @param {Object} cmd - Parsed command { session_id, session_ids, flags }
  * @param {Object} [deps]
  */
 export const cmd_archive = async ( cmd, {
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
     update_session_fn = update_session,
-    print = message => log.info( message ),
+    ask_fn = ask_default_yes,
+    interactive = Boolean( process.stdin.isTTY ),
+    now = Date.now(),
+    print = message => console.log( message ),
 } = {} ) => {
 
     const stored = list_stored_sessions_fn()
     const active = order_active_sessions( await list_sessions_fn(), stored )
-    const selected = ( cmd.session_ids || [ cmd.session_id ] ).map( selector => select_active_session( selector, active, stored ) )
+    const selectors = cmd.session_ids?.length ? cmd.session_ids : [ cmd.session_id ].filter( Boolean )
+
+    if( !selectors.length ) {
+
+        const stale = stale_sessions( active, stored, now )
+        if( !stale.length ) return print( `No sessions idle over 24 hours.` )
+
+        const label = session => session.name || session.babysit_id
+        const width = Math.max( ...stale.map( ( { session } ) => label( session ).length ) )
+        stale.forEach( ( { number, session, tmux } ) => {
+            const idle_for = relative_time( now, tmux.idle_since * 1_000 )?.replace( /^in /, `` )
+            print( `  ${ String( number ).padStart( 2 ) }  ${ label( session ).padEnd( width ) }  idle ${ idle_for }` )
+        } )
+
+        const count = `${ stale.length } session${ stale.length === 1 ? `` : `s` }`
+        if( !cmd.flags?.yes && !interactive ) {
+            process.exitCode = 1
+            return print( `Not a terminal; pass --yes to archive ${ count }.` )
+        }
+        if( !cmd.flags?.yes && !await ask_fn( `Archive ${ count }? [Y/n] ` ) ) return
+
+        stale.forEach( ( { session } ) => update_session_fn( session.babysit_id, { archived_at: new Date( now ).toISOString() } ) )
+        return print( `Archived ${ count }; babysit open brings one back.` )
+
+    }
+
+    const selected = selectors.map( selector => select_active_session( selector, active, stored ) )
     const sessions = selected.filter( ( session, index ) => selected.findIndex( other => other.babysit_id === session.babysit_id ) === index )
 
     for( const session of sessions ) {

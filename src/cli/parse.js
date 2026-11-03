@@ -180,10 +180,9 @@ export const parse_args = ( argv ) => {
         return { verb, agent: null, session_ids: positionals.slice( 1 ).map( String ), flags, passthrough: [] }
     }
 
-    // babysit archive <number|session_id|name>...
+    // babysit archive [<number|session_id|name>...] — none offers sessions idle over 24h
     if( verb === `archive` ) {
         const selector = positionals[1] || null
-        if( !selector && !flags.help ) throw new Error( `Usage: babysit archive <number|session_id|name>...` )
         return { verb: `archive`, agent: null, session_id: selector, session_ids: positionals.slice( 1 ), flags, passthrough: [] }
     }
 

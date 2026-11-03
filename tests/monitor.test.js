@@ -199,7 +199,7 @@ describe( `publish_agent_status`, () => {
 
     } )
 
-    it( `marks unread only when a turn finishes`, async () => {
+    it( `stamps idle stretches, as finished turns only after running or waiting`, async () => {
 
         const marked = []
         const step = ( agent_status, last_agent_status ) => publish_agent_status( {
@@ -207,17 +207,18 @@ describe( `publish_agent_status`, () => {
             agent_status,
             last_agent_status,
             publish: async () => true,
-            mark: async name => marked.push( [ name, last_agent_status ] ),
+            mark: async ( name, { finished } ) => marked.push( [ last_agent_status, finished ] ),
         } )
 
         // First observation (fresh monitor or recovery) is not a finished turn
         await step( `idle`, null )
+        await step( `idle`, `idle` )
         await step( `idle`, `running` )
         await step( `idle`, `waiting` )
         await step( `running`, `idle` )
         await step( `waiting`, `running` )
 
-        expect( marked ).toEqual( [ [ `babysit_one`, `running` ], [ `babysit_one`, `waiting` ] ] )
+        expect( marked ).toEqual( [ [ null, false ], [ `running`, true ], [ `waiting`, true ] ] )
 
     } )
 

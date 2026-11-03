@@ -324,6 +324,29 @@ describe( `clone prune storage`, () => {
 
     } )
 
+    it( `protects archived sessions after all runtime state disappears`, async () => {
+
+        const clone = create_clone()
+        save_session( {
+            babysit_id: `archived-gone`,
+            clone_id: clone.clone_id,
+            clone_path: clone.workspace,
+            status: `exited`,
+            archived_at: `2026-11-01T10:00:00.000Z`,
+        }, { directory: sessions_dir } )
+        const inventory = await inspect_clone_inventory( {
+            clones_dir,
+            sessions_dir,
+            list_tmux: async () => [],
+            monitor_alive: () => false,
+            inspect_container: async () => null,
+            get_cwd: () => directory,
+        } )
+        expect( inventory.clones[0].status ).toBe( `protected: archived` )
+        expect( inventory.clones[0].available ).toBe( false )
+
+    } )
+
     it( `protects expected-open recovery families after all runtime state disappears`, async () => {
 
         const clone = create_clone()
