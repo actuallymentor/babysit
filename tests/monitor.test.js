@@ -233,6 +233,7 @@ describe( `background shell waiting`, () => {
         const statuses = []
         const fired = []
         const deadlines = []
+        const next_turns = []
         Date.now = () => now
         try {
             await start_monitor( {
@@ -250,6 +251,7 @@ describe( `background shell waiting`, () => {
                 },
                 execute_action_fn: async () => fired.push( tick ),
                 write_loop_deadline_fn: value => deadlines.push( value ),
+                set_next_turn_fn: async ( _, value ) => next_turns.push( value ),
                 wait_fn: async () => {
                     await Promise.resolve()
                     tick++
@@ -263,6 +265,8 @@ describe( `background shell waiting`, () => {
         expect( deadlines[0] ).toBe( `idle` )
         expect( deadlines[1] ).toBe( 1_012 )
         expect( fired ).toEqual( [ 3 ] )
+        // Per session for watch: the activity word, then the deadline once idle, once each
+        expect( next_turns ).toEqual( [ `waiting`, 1_012 ] )
     } )
 
 } )

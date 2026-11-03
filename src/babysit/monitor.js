@@ -2,7 +2,7 @@ import { wait } from 'mentie'
 import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
 import { send_keys } from '../tmux/send.js'
-import { has_session, kill_session, mark_idle, set_agent_status } from '../tmux/session.js'
+import { has_session, kill_session, mark_idle, set_agent_status, set_next_turn } from '../tmux/session.js'
 import { IdleTracker, strip_ansi, evaluate_rule, idle_timeout_for } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
@@ -236,12 +236,14 @@ export const start_monitor = async ( {
     execute_action_fn = execute_action,
     send_keys_fn = send_keys,
     write_loop_deadline_fn = write_loop_deadline,
+    set_next_turn_fn = set_next_turn,
     wait_fn = wait,
 } ) => {
 
     const idle_tracker = new IdleTracker()
     let session_id_captured = false
     let last_written_deadline = null
+    let last_next_turn = null
     let last_agent_status = null
     let action_task = null
     let action_busy = false
@@ -408,6 +410,12 @@ export const start_monitor = async ( {
                     write_loop_deadline_fn( deadline )
                     last_written_deadline = deadline
                 }
+
+                // Per session for `babysit watch`: the deadline only while idle, so a
+                // busy pane (new deadline every tick) costs one write, not one a second.
+                // Failed writes stay pending and retry next tick.
+                const next_turn = agent_status === `idle` && deadline !== null ? deadline : agent_status
+                if( next_turn !== last_next_turn && await set_next_turn_fn( session_name, next_turn ) ) last_next_turn = next_turn
             }
 
             // Try to capture session ID from agent output (one-time)

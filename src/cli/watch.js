@@ -281,7 +281,8 @@ const watch_registry = on_change => {
 
 /**
  * Live dashboard. Views:
- * - default: the session tree with a USAGE headroom column
+ * - default: the session tree with a USAGE headroom column; idle-rule sessions
+ *   show hh:mm to their next turn as status, config:/on: flags only with `--all`
  * - `--usage`: the account usage panel alone
  * - `--all`: both
  * Frames sample every pane once per second (track_session_activity) and also
@@ -498,6 +499,9 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                     const rendered = show_sessions ? await render_sessions_fn( {
                         hide_archived: true,
                         open_hint: false,
+                        // Launch-yaml rules are noise on a dashboard; the countdown says what they do
+                        rule_flags: Boolean( flags.all ),
+                        countdowns: true,
                         observe_activity_fn,
                         // Read at print time, so a refresh that lands mid-sample still shows
                         extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],

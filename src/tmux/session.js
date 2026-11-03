@@ -11,6 +11,8 @@ const AGENT_STATUS_OPTION = `@babysit_agent_status`
 // Epoch seconds: start of the current idle stretch, and of an unseen one
 const IDLE_OPTION = `@babysit_idle_since`
 const UNREAD_OPTION = `@babysit_unread_since`
+// Idle rules: epoch seconds of the next automated turn while idle, else the activity word
+const NEXT_TURN_OPTION = `@babysit_next_turn`
 
 /**
  * Generate a tmux session name following the babysit convention
@@ -290,6 +292,27 @@ export const set_agent_status = async ( session_name, status, { run_command = ru
 }
 
 /**
+ * Publish when an idle rule (`on: idle`, `--loop`) sends its next turn, for
+ * `babysit watch`. The global loop-deadline file only serves the statusline
+ * inside one container; this one is per session.
+ * @param {string} session_name - Babysit tmux session name
+ * @param {number|string} value - Epoch seconds while idle, else the activity word
+ * @param {Object} [options] - Command runner seam
+ * @returns {Promise<boolean>} Whether tmux accepted the update
+ */
+export const set_next_turn = async ( session_name, value, { run_command = run } = {} ) => {
+
+    try {
+        await run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, `=${ session_name }:`, NEXT_TURN_OPTION, String( value ) ] )
+        return true
+    } catch ( error ) {
+        log.debug( `Could not publish ${ session_name } next turn: ${ error.message }` )
+        return false
+    }
+
+}
+
+/**
  * Resolve the single pane owned by a Babysit session.
  *
  * The leading `=` makes tmux require an exact session-name match. The returned
@@ -389,7 +412,7 @@ export const mark_idle = async ( session_name, { finished = true, run_command = 
  * @param {Object} [options]
  * @param {boolean} [options.strict=false] - Surface inspection failures except an absent tmux server
  * @param {Function} [options.run_command=run] - Injectable command runner
- * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null }>>}
+ * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null }>>}
  */
 export const list_sessions = async ( { strict = false, run_command = run } = {} ) => {
 
@@ -399,19 +422,21 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
             `list-sessions`, `-F`,
             // Tmux 3.3a sanitizes literal tabs in formats into underscores.
             // Colons survive formatting and cannot occur in session names.
-            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}`,
+            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}`,
         ] )
 
         return output.split( `\n` )
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
-                const [ name, tmux_status, created, stored_agent_status, last_attached, unread_since, idle_stamp ] = line.split( `:` )
+                const [ name, tmux_status, created, stored_agent_status, last_attached, unread_since, idle_stamp, next_stamp ] = line.split( `:` )
                 const agent_status = [ `idle`, `waiting` ].includes( stored_agent_status ) ? stored_agent_status : `running`
                 const attached = tmux_status === `attached`
                 // Unread: a turn ended unseen and nobody attached since. Same-second attaches count as read.
                 const unread = !attached && Number( unread_since ) > 0 && ( Number( last_attached ) || 0 ) < Number( unread_since )
                 const idle_since = Number( idle_stamp ) > 0 ? Number( idle_stamp ) : null
-                return { name, attached, created, agent_status, unread, idle_since }
+                // Only a number is a countdown; `running`/`waiting` mean none is ticking
+                const next_turn = Number( next_stamp ) > 0 ? Number( next_stamp ) : null
+                return { name, attached, created, agent_status, unread, idle_since, next_turn }
             } )
 
     } catch ( error ) {

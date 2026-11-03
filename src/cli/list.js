@@ -9,7 +9,7 @@ import { newer_version_available } from './version_check.js'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
-const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey`, frozen: `yellow` }
+const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey`, frozen: `grey` }
 
 // Idle this long without anything unread: offered to `babysit archive`
 export const STALE_AFTER_MS = 24 * 60 * 60_000
@@ -29,6 +29,21 @@ export const session_dot = ( tmux, status, now = Date.now() ) => {
 }
 
 const DOT_COLORS = { unread: `blue`, stale: `grey` }
+
+/**
+ * Time left until an idle rule's next turn as hh:mm, floored; 00:00 once due.
+ * @param {number} next_turn - Epoch seconds of the next turn
+ * @param {number} now - Epoch ms
+ * @returns {string}
+ */
+export const format_countdown = ( next_turn, now ) => {
+    const minutes = Math.max( 0, Math.floor( ( next_turn * 1_000 - now ) / 60_000 ) )
+    const two = value => String( value ).padStart( 2, `0` )
+    return `${ two( Math.floor( minutes / 60 ) ) }:${ two( minutes % 60 ) }`
+}
+
+// Launch-yaml entries in FLAGS (config:FILE, on:...), as opposed to launch modifiers
+const is_rule_flag = flag => /^(?:config|on):/.test( flag )
 
 /**
  * Color for a share of host capacity: calm below half, warning below 70%, red above.
@@ -523,6 +538,8 @@ export const usage_totals_row = ( headers, usages ) => {
  * @param {boolean} [options.show_usage=false] - Show cached container CPU/MEM and a totals row
  * @param {Array<{ header: string, cell: Function }>} [options.extra_columns=[]] - Caller columns after CPU/MEM; `cell( stored )` gets the session's stored record (maybe undefined) and returns a cell
  * @param {boolean} [options.all=false] - Include tmux attachment, diagnostic IDs and raw tmux names
+ * @param {boolean} [options.rule_flags=true] - Show config:/on: entries in FLAGS
+ * @param {boolean} [options.countdowns=false] - Idle rows with an idle rule show hh:mm to their next turn as status
  * @param {number} [options.now] - Epoch milliseconds for usage staleness
  */
 export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
@@ -534,6 +551,8 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
     show_usage = false,
     extra_columns = [],
     all = false,
+    rule_flags = true,
+    countdowns = false,
     now = Date.now(),
 } = {} ) => {
 
@@ -572,7 +591,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
                     ? `stuck`
                     : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
         const tmux_status = tmux.exited ? `exited` : tmux.attached ? `attached` : `detached`
-        const flags = format_session_flags( stored?.modifiers, stored?.config_flags )
+        const flags = format_session_flags( stored?.modifiers, rule_flags ? stored?.config_flags : stored?.config_flags?.filter( flag => !is_rule_flag( flag ) ) )
         const usage = show_usage && !tmux.exited ? cached_usage( stored, now ) : null
         const archived = Boolean( stored?.archived_at )
         // Dots get their own gutter ahead of fork prefixes, so they stack in one
@@ -593,7 +612,9 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
                 ... numbered ? [ numbers[index] ] : [] ,
                 name_cell,
                 // Archived rows are dimmed as a whole, so the status keeps no color of its own.
-                { text: status, color: archived ? null : STATUS_COLORS[ status ] },
+                countdowns && status === `idle` && tmux.next_turn
+                    ? { text: format_countdown( tmux.next_turn, now ), color: archived ? null : `grey` }
+                    : { text: status, color: archived ? null : STATUS_COLORS[ status ] },
                 agent,
                 ... show_usage ? [ usage ? format_cpu( host_cpu_percent( usage ) ) : `-`, usage ? format_memory( usage.memory_bytes ) : `-` ] : [],
                 ... extra_columns.map( column => column.cell( stored ) ),
@@ -635,6 +656,8 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {boolean} [options.hide_archived=false] - Drop archived rows; numbers stay global
  * @param {boolean} [options.open_hint=true] - Print the `babysit open` hint
  * @param {Object[]} [options.extra_columns=[]] - Caller columns, see print_active_sessions_table
+ * @param {boolean} [options.rule_flags=true] - Show config:/on: entries in FLAGS
+ * @param {boolean} [options.countdowns=false] - Idle-rule countdowns in STATUS
  * @param {Function} [options.before_print] - Runs after sampling, right before output
  * @param {Function} [options.list_sessions_fn] - Active tmux session loader
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
@@ -648,6 +671,8 @@ export const render_active_sessions = async ( {
     hide_archived = false,
     open_hint = true,
     extra_columns = [],
+    rule_flags = true,
+    countdowns = false,
     before_print = () => {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
@@ -685,6 +710,8 @@ export const render_active_sessions = async ( {
         extra_columns,
         open_hint,
         all,
+        rule_flags,
+        countdowns,
     } )
 
     // Cached lookup: never a network wait in front of the table.
