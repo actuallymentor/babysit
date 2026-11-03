@@ -17,7 +17,7 @@ import { stripVTControlCharacters } from 'util'
 
 import { log } from '../utils/log.js'
 import { send_text } from '../tmux/send.js'
-import { get_session_attachment, get_session_pane } from '../tmux/session.js'
+import { get_session_attachment, get_session_pane, mark_read } from '../tmux/session.js'
 import { WEB_BRIDGE_DIR, WEB_BRIDGE_PROTOCOL, web_bridge_paths } from './paths.js'
 import { create_completion_reader } from './completion.js'
 import { write_atomic_json } from './files.js'
@@ -198,6 +198,7 @@ const validate_request = ( request, expected ) => {
  * @param {string} [options.epoch] - Per-monitor capability epoch
  * @param {Function} [options.send_text_fn=send_text] - Input sender seam
  * @param {Function} [options.attachment_fn=get_session_attachment] - Attachment reader seam
+ * @param {Function} [options.mark_read_fn=mark_read] - Unread clearing seam
  * @param {Function} [options.now_fn=Date.now] - Clock seam
  * @param {Object} [options.completion_reader] - Launch-bound completed reply reader
  * @param {Function} [options.load_session_fn=load_session] - Session record reader for cached container usage
@@ -211,6 +212,7 @@ export const create_web_bridge = ( {
     epoch = randomBytes( 16 ).toString( `hex` ),
     send_text_fn = send_text,
     attachment_fn = get_session_attachment,
+    mark_read_fn = mark_read,
     now_fn = Date.now,
     completion_reader = create_completion_reader( session ),
     load_session_fn = load_session,
@@ -400,6 +402,9 @@ export const create_web_bridge = ( {
 
                     await send_text_fn( tmux_target, request.text, { redact: true } )
                     add_result( request_id, `accepted`, `Message sent` )
+
+                    // Paste input skips tmux key handling, so a web reply clears unread itself
+                    if( session.tmux_session ) await mark_read_fn( session.tmux_session )
                     sent = true
                 } catch ( error ) {
                     const rejected = error instanceof RejectedRequest
