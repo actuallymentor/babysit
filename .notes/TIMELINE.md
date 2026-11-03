@@ -232,3 +232,4 @@
 - 2026-11-03: 1.65.0 name dots in list/watch (blue unread via tmux stamp vs session_last_attached; grey idle >24h), no-arg `archive` offers grey ones, prune protects archived clones. User picked the dot over a STATUS word / whole-row tint from mockups.
 - 2026-11-03: 1.66.0 watch idle-rule countdown in STATUS, rule flags behind --all, frozen grey.
 - 2026-11-03: unread dot clears on input (session_activity), not attach; attached sessions get marked too (1.67.0)
+- 2026-11-03: 1.67.1 check-in nudge rewritten: enumerate full process tree/subagents/output, 'can it still happen?', reply idle. Agent-generic wording by user request.

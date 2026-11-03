@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.67.1 — 2026-11-03
+
+### Changed
+- Watchdog check-in nudge for waiting agents: audit the full process tree, subagents and their output files without filtering by name; for each live job say what it waits for and whether that can still happen, kill it if not; reply `idle` when all is well. Running sessions need `babysit restart`.
+
 ## 1.67.0 — 2026-11-03
 
 ### Changed
