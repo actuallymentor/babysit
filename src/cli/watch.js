@@ -294,6 +294,7 @@ const watch_registry = on_change => {
  * The Docker build cache is measured hourly, also in the background, and an
  * oversized one adds a warning line that points at `babysit prune`.
  * Codex's app-server fallback stays off: it can rotate tokens outside the auth lease.
+ * Ctrl+C or q leaves a cleared terminal behind.
  * @param {Object} [cmd] - Parsed command
  * @param {Object} [deps]
  * @param {Function} [deps.collect_fn] - Usage collector seam
@@ -392,6 +393,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         let typed = ``
         let chosen = null
         let stopped = false
+        let quit = false
         let chord = null
         let tick = null
         let wake = () => {}
@@ -412,8 +414,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         // frame, and no later selection overrides it
         const stop = session_id => {
             clearTimeout( chord )
-            if( session_id === undefined ) chosen = null
-            else if( !stopped ) chosen = session_id
+            if( session_id === undefined ) {
+                chosen = null
+                quit = true
+            } else if( !stopped ) chosen = session_id
             stopped = true
             wake()
         }
@@ -532,7 +536,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                 input.setRawMode( false )
                 input.pause()
             }
-            if( screen ) write_fn( `\x1b[?25h\x1b[?1049l` )
+            // Quitting (Ctrl+C, q, a signal) also wipes the main screen: the
+            // shell gets a clean prompt, not the scrollback watch came from.
+            // Opening a session leaves it alone; the attach repaints anyway.
+            if( screen ) write_fn( `\x1b[?25h\x1b[?1049l${ quit ? `\x1b[H\x1b[2J` : `` }` )
 
         }
 

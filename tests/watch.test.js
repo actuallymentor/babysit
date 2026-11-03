@@ -309,6 +309,25 @@ describe( `cmd_watch`, () => {
         expect( frames.at( -1 ) ).toBe( `\x1b[?25h\x1b[?1049l` )
     } )
 
+    it( `clears the terminal when quit with Ctrl+C`, async () => {
+        const input = new EventEmitter()
+        Object.assign( input, { isTTY: true, setRawMode: () => {}, resume: () => {}, pause: () => {} } )
+        const frames = []
+        await run_watch( {}, {
+            collect_fn: async () => report,
+            render_sessions_fn: async () => console.log( `tree` ),
+            input,
+            output: { isTTY: true },
+            wait_fn: null,
+            write_fn: frame => {
+                frames.push( frame )
+                // Ctrl+C once the first frame is up
+                if( frames.length === 2 ) setTimeout( () => input.emit( `data`, Buffer.from( `\x03` ) ), 0 )
+            },
+        } )
+        expect( frames.at( -1 ) ).toBe( `\x1b[?25h\x1b[?1049l\x1b[H\x1b[2J` )
+    } )
+
     it( `renders a USAGE column per session row through the real session tree`, async () => {
         const frames = await run_watch( {}, {
             rounds: 2,
