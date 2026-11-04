@@ -20,7 +20,7 @@ Examples:
 
 export const model_help = `Usage: babysit model [model-name]
 List models or switch within the current managed agent session.
-With no arguments, append the top 30 benchmarks, sorted by coding; missing metrics show as —.
+With no arguments, append the top 35 benchmarks, sorted by intelligence; missing metrics show as —.
 Preserves compatible effort, otherwise uses the new model's default.
 Terminal controls queue for up to 60s; --status <request-id> reads the result.
 
@@ -169,7 +169,7 @@ export const run_model = async ( args, { control = model_control, benchmarks = r
     const result = await control( args )
     if( args.length ) return result
     try {
-        return `${ result }\n\n${ await benchmarks( [ `--benchmarks`, `--limit`, `30` ] ) }`
+        return `${ result }\n\n${ await benchmarks( [ `--benchmarks`, `--limit`, `35` ] ) }`
     } catch ( error ) {
         // A missing API key or offline endpoint must not hide available models.
         return `${ result }\n\n${ error.message }`

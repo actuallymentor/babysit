@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.68.0 — 2026-11-04
+
+### Changed
+- `babysit model` benchmarks default to intelligence sort (was coding); bare `babysit model` shows 35 rows (was 30). `--sort coding` restores the old order. Needs an updated image.
+
 ## 1.67.1 — 2026-11-03
 
 ### Changed

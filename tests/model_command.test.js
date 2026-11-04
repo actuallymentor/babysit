@@ -13,7 +13,7 @@ it( `appends a default 30-row benchmark listing after the available models`, asy
             return `Coding benchmarks`
         },
     } )
-    expect( calls ).toEqual( [ [ `control`, [] ], [ `benchmarks`, [ `--benchmarks`, `--limit`, `30` ] ] ] )
+    expect( calls ).toEqual( [ [ `control`, [] ], [ `benchmarks`, [ `--benchmarks`, `--limit`, `35` ] ] ] )
     expect( output ).toBe( `Available: model-one\n\nCoding benchmarks` )
 } )
 

@@ -2,7 +2,7 @@ import { load_benchmarks } from './benchmark-cache.mjs'
 import { benchmark_providers } from './benchmark-providers.mjs'
 
 export const benchmarks_help = `Usage: babysit model --benchmarks [--sort <field>] [--limit <N>] [--all] [--json]
-Sort: coding (default), intelligence, agentic, cost, cost-per-point, name.
+Sort: intelligence (default), coding, agentic, cost, cost-per-point, name.
 Cost = intelligence benchmark USD/task; cost-per-point = cost / intelligence.
 Rows from locally authenticated CLI providers are shown; missing metrics print as — and sort last.
 --all is accepted for compatibility and changes nothing. --limit is a positive integer; omitted means all rows.
@@ -12,7 +12,7 @@ const sort_fields = { coding: `coding`, intelligence: `intelligence`, agentic: `
 
 /** Parse only benchmark flags; never reinterpret a model-switch request. */
 export const parse_benchmarks = args => {
-    const options = { sort: `coding`, limit: Infinity, json: false }
+    const options = { sort: `intelligence`, limit: Infinity, json: false }
     for( let index = 0; index < args.length; index++ ) {
         const argument = args[index]
         if( argument === `--benchmarks` ) continue
@@ -33,7 +33,7 @@ export const parse_benchmarks = args => {
 }
 
 /** Apply local access before sorting and limiting the shared data; missing metrics stay visible. */
-export const select_benchmarks = ( models, providers, { sort = `coding`, limit = Infinity } = {} ) => {
+export const select_benchmarks = ( models, providers, { sort = `intelligence`, limit = Infinity } = {} ) => {
     const field = sort_fields[sort]
     const ascending = [ `cost`, `cost_per_point`, `name` ].includes( field )
     return models.filter( model => providers.has( model.provider ) )
