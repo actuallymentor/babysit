@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.68.1 — 2026-11-04
+
+### Fixed
+- Host `babysit help` names intelligence as the default benchmark sort.
+
 ## 1.68.0 — 2026-11-04
 
 ### Changed
