@@ -703,7 +703,8 @@ describe( `clone prune storage`, () => {
         expect( result.stderr ).toBe( `` )
         expect( existsSync( join( home, `.babysit`, `clones`, clone.clone_id ) ) ).toBe( true )
 
-    } )
+    // Spawns the whole CLI; a busy CI runner needs ~7s just to load it
+    }, 20_000 )
 
 } )
 
