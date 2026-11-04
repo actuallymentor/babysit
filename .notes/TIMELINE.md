@@ -233,3 +233,4 @@
 - 2026-11-03: 1.66.0 watch idle-rule countdown in STATUS, rule flags behind --all, frozen grey.
 - 2026-11-03: unread dot clears on input (session_activity), not attach; attached sessions get marked too (1.67.0)
 - 2026-11-03: 1.67.1 check-in nudge rewritten: enumerate full process tree/subagents/output, 'can it still happen?', reply idle. Agent-generic wording by user request.
+- 2026-11-04: 1.68.0 `babysit model` benchmarks default sort intelligence, bare listing 35 rows (user request).
