@@ -41,7 +41,7 @@ Usage:
   babysit mode                         Print container inside a babysit agent container, else host
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session
-  babysit model --benchmarks           Compare benchmarks; --sort coding is default
+  babysit model --benchmarks           Compare benchmarks; --sort intelligence is default
   babysit exit [--yes]                 Inside a session: end it gracefully after the current turn (asks first)
   babysit stuck                        Inside a session: show "stuck" in babysit list until the user types
   babysit loop                         Inside a session: toggle --loop (list flags and tmux bar follow)
