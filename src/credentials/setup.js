@@ -31,7 +31,7 @@ const EMPTY = { mounts: [], sync: null, sync_baseline: null, cleanup_path: null 
  * file, a host re-login flows into the container.
  * @returns {Object} Sync controller
  */
-const start_file_sync = ( agent, path, tmpfile, baseline ) => {
+const start_file_sync = ( agent, path, tmpfile, baseline, state_path ) => {
 
     const required = agent.credentials?.file_required === true
 
@@ -58,6 +58,7 @@ const start_file_sync = ( agent, path, tmpfile, baseline ) => {
 
     return start_credential_sync( read_source, tmpfile, write_destination, {
         ...baseline,
+        state_path,
         source_path: required ? path : null,
     } )
 
@@ -71,6 +72,7 @@ const start_file_sync = ( agent, path, tmpfile, baseline ) => {
  * @param {'darwin'|'linux'} [options.platform] - Host platform
  * @param {string|null} [options.existing_tmpfile] - Foreground sync copy to reuse
  * @param {Object|null} [options.sync_baseline] - Foreground capture hashes (and source kind)
+ * @param {string|null} [options.state_path] - Durable sync state; written once a sync starts
  * @param {Object} [options.env=process.env] - Environment holding API keys
  * @param {Function} [options.read_keychain=read_keychain_item] - Keychain reader seam
  * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }}
@@ -79,6 +81,7 @@ export const setup_agent_credentials = ( agent, {
     platform,
     existing_tmpfile = null,
     sync_baseline = null,
+    state_path = null,
     env = process.env,
     read_keychain = read_keychain_item,
 } = {} ) => {
@@ -123,6 +126,7 @@ export const setup_agent_credentials = ( agent, {
 
             sync = start_credential_sync( async () => read_keychain( source ).text || null, tmpfile, null, {
                 ...baseline,
+                state_path,
                 credential_source: `keyring`,
             } )
             baseline = sync.baseline()
@@ -150,7 +154,7 @@ export const setup_agent_credentials = ( agent, {
                 baseline = build_credential_sync_baseline( path, tmpfile )
             }
 
-            sync = start_file_sync( agent, path, tmpfile, baseline )
+            sync = start_file_sync( agent, path, tmpfile, baseline, state_path )
             log.info( `Credentials loaded from file: ${ path }` )
             break
 
