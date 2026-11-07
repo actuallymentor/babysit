@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { agent_activity, agent_status } from '../src/babysit/activity.js'
+import { agent_activity, agent_status, OPEN_TURN_STALE_S } from '../src/babysit/activity.js'
 
 describe( `agent activity controls`, () => {
 
@@ -173,6 +173,39 @@ describe( `agent activity controls`, () => {
         expect( agent_status( quoted, `codex`, 300 ) ).toBe( `idle` )
         const reply = screen.replace( `  1 background terminal running · /ps to view · /stop to close`, `• 1 background terminal running` )
         expect( agent_status( reply, `codex`, 300 ) ).toBe( `idle` )
+    } )
+
+} )
+
+describe( `activity with launch events`, () => {
+
+    // Claude 2.1.318 bypass footer: no idle-only control, so the pane alone
+    // reads idle after one still second
+    const quiet = `● Reading files\n❯ \n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
+    const open = { state: `open`, reports_turns: true }
+
+    it( `an open turn keeps a still pane running (silent tool calls)`, () => {
+        expect( agent_status( quiet, `claude`, 5 ) ).toBe( `idle` )
+        expect( agent_status( quiet, `claude`, 5, open ) ).toBe( `running` )
+        expect( agent_status( quiet, `claude`, OPEN_TURN_STALE_S - 1, open ) ).toBe( `running` )
+    } )
+
+    it( `a stale open turn falls back to the pane (Escape fires no Claude hook)`, () => {
+        expect( agent_status( quiet, `claude`, OPEN_TURN_STALE_S, open ) ).toBe( `idle` )
+    } )
+
+    it( `explicit pane controls outrank events (gotcha 130)`, () => {
+        const shells = `❯ \n⏵⏵ bypass permissions on · 1 shell · ← for agents`
+        expect( agent_status( shells, `claude`, 5, { state: `closed`, reports_turns: true } ) ).toBe( `waiting` )
+        expect( agent_status( shells, `claude`, 5, open ) ).toBe( `waiting` )
+        expect( agent_status( `❯ \n? for shortcuts`, `claude`, 0, open ) ).toBe( `idle` )
+    } )
+
+    it( `blocked, closed, absent or start-less turns defer to pane stability`, () => {
+        for( const turn of [ null, { state: `blocked`, reports_turns: true }, { state: `closed`, reports_turns: true }, { state: `open`, reports_turns: false } ] ) {
+            expect( agent_status( quiet, `claude`, 5, turn ) ).toBe( `idle` )
+            expect( agent_status( quiet, `claude`, 0, turn ) ).toBe( `running` )
+        }
     } )
 
 } )
