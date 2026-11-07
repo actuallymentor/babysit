@@ -38,16 +38,15 @@ describe( `transcript archive`, () => {
         const root = mkdtempSync( join( tmpdir(), `babysit-archive-` ) )
         const sandbox = { ...session, agent: `opencode`, modifiers: [ `sandbox` ] }
         const calls = []
-        const run_command = async ( command, args ) => {
-            calls.push( args )
-            // Simulate docker cp landing the state, auth file included
-            const out = args.at( -1 )
+        const copy_out = async ( docker, source, out ) => {
+            calls.push( source )
+            // Simulate the unpacked copy landing, auth file included
             mkdirSync( join( out, `storage` ), { recursive: true } )
             writeFileSync( join( out, `auth.json` ), `{}` )
             writeFileSync( join( out, `storage`, `message.json` ), `{}` )
         }
-        await archive_session_transcripts( sandbox, { root, run_command } )
-        expect( calls[ 0 ] ).toContain( `c1:/home/node/.local/share/opencode/.` )
+        await archive_session_transcripts( sandbox, { root, copy_out } )
+        expect( calls[ 0 ] ).toBe( `c1:/home/node/.local/share/opencode/.` )
         const out = join( root, `sandbox`, `b1`, `opencode` )
         expect( existsSync( join( out, `auth.json` ) ) ).toBe( false )
         expect( existsSync( join( out, `storage`, `message.json` ) ) ).toBe( true )

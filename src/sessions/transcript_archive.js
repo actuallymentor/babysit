@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { chmodSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -114,6 +115,38 @@ export const transcript_archive_root = ( { read_config = read_babysit_config } =
 const is_sandbox = session => Boolean( session.mode?.sandbox || session.sandbox || session.modifiers?.includes( `sandbox` ) )
 
 /**
+ * Stream a container path out as tar and unpack it as the current user. A plain
+ * `docker cp SRC DEST` writes DEST as the Docker client's user: root under
+ * BABYSIT_DOCKER_USE_SUDO, which would leave an archive the user cannot read.
+ * @param {string[]} docker - Docker command with any sudo prefix
+ * @param {string} source - CONTAINER:PATH
+ * @param {string} out - Existing host directory
+ * @returns {Promise<void>}
+ */
+const copy_out_of_container = ( [ command, ...prefix ], source, out ) => new Promise( ( resolve, reject ) => {
+
+    const reader = spawn( command, [ ...prefix, `cp`, source, `-` ], { stdio: [ `ignore`, `pipe`, `ignore` ] } )
+    const unpack = spawn( `tar`, [ `-x`, `-C`, out, `--no-same-owner`, `--strip-components=1` ], { stdio: [ `pipe`, `ignore`, `ignore` ] } )
+    reader.stdout.pipe( unpack.stdin )
+    const timer = setTimeout( () => {
+        reader.kill()
+        unpack.kill()
+    }, ARCHIVE_TIMEOUT_MS )
+
+    let pending = 2
+    let failed = null
+    const settle = name => code => {
+        if( code !== 0 ) failed ||= new Error( `${ name } exited with ${ code }` )
+        if( --pending ) return
+        clearTimeout( timer )
+        failed ? reject( failed ) : resolve()
+    }
+    reader.on( `error`, reject ).on( `close`, settle( `docker cp` ) )
+    unpack.on( `error`, reject ).on( `close`, settle( `tar` ) )
+
+} )
+
+/**
  * Delete credential-looking files from a copied tree.
  * @param {string} directory - Copied state
  */
@@ -154,6 +187,7 @@ export const archive_index_entry = ( session, mounts ) => ( {
 export const archive_session_transcripts = async ( session, {
     root = transcript_archive_root(),
     run_command = run,
+    copy_out = copy_out_of_container,
 } = {} ) => {
 
     if( !root ) return false
@@ -178,7 +212,8 @@ export const archive_session_transcripts = async ( session, {
             mkdirSync( destination, { recursive: true, mode: 0o700 } )
             for( const { target } of mounts ) {
                 const out = join( destination, target.split( `/` ).at( -1 ) )
-                await run_command( command, [ ...prefix, `cp`, `${ session.container_id }:${ target }/.`, out ], {}, ARCHIVE_TIMEOUT_MS )
+                mkdirSync( out, { recursive: true, mode: 0o700 } )
+                await copy_out( [ command, ...prefix ], `${ session.container_id }:${ target }/.`, out )
                     .catch( error => log.debug( `Transcript copy of ${ target } failed: ${ error.message }` ) )
             }
             // docker cp takes everything; drop what looks like a credential
