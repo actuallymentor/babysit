@@ -36,6 +36,7 @@ describe( `launch auth gate`, () => {
         expect( state( { access_token: jwt( NOW - 3_600_000 ), refresh_token: `r` } ) ).toBe( `refreshable` )
         expect( state( { access_token: jwt( NOW - 3_600_000 ) } ) ).toBe( `missing` )
         expect( with_file( `{`, source => local_auth_state( codex, [ file_mount( codex, source ) ], { now: NOW } ) ) ).toBe( `unknown` )
+        expect( with_file( `{"refresh_token":"legacy-shape"}`, source => local_auth_state( codex, [ file_mount( codex, source ) ], { now: NOW } ) ) ).toBe( `unknown` )
     } )
 
     it( `codex: nothing staged is missing, an API key is usable`, () => {
