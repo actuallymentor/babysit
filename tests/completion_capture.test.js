@@ -1,9 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { spawnSync } from 'child_process'
 import { COMPLETION_HELPER_SOURCE, COMPLETION_PLUGIN_SOURCE, COMPLETION_HELPER_PATH, add_completion_hooks } from '../src/agents/completion_capture.js'
+
+// Every case spawns Python per hook payload: slow under a loaded full suite
+setDefaultTimeout( 20_000 )
 
 // Run the same launch and hook programs staged into Docker. A tiny executable
 // stands in for each CLI, exercising real process ancestry and file handoff.
