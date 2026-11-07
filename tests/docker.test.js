@@ -1069,6 +1069,26 @@ describe( `build_docker_command`, () => {
 
     } )
 
+    // Pinned names: a renamed volume strands every saved conversation
+    it( `keeps the exact state volume names and order from adapter data`, () => {
+
+        const scoped = `9c9eb14b4640` // sha256( '/tmp/empty' )
+        for( const mode of [ {}, { yolo: true } ] ) {
+            expect( get_agent_state_mounts( codex, `/tmp/empty`, mode ) ).toEqual( [
+                { source: `babysit-codex-sessions-${ scoped }`, target: `/home/node/.codex/sessions` },
+                { source: `babysit-codex-sqlite-${ scoped }`, target: `/home/node/.codex/sqlite` },
+            ] )
+            expect( get_agent_state_mounts( opencode, `/tmp/empty`, mode ) ).toEqual( [
+                { source: `babysit-opencode-data-${ scoped }`, target: `/home/node/.local/share/opencode` },
+            ] )
+            // Claude's volumes are global: every workspace shares them
+            expect( get_agent_state_mounts( claude, `/elsewhere`, mode ).map( mount => mount.source ) )
+                .toEqual( [ `babysit-claude-projects`, `babysit-claude-plans`, `babysit-claude-todos` ] )
+        }
+        expect( get_agent_state_mounts( { name: `bare` }, `/tmp/empty` ) ).toEqual( [] )
+
+    } )
+
     it( `skips persistent native resume state in sandbox mode`, () => {
 
         for( const a of [ claude, codex, opencode ] ) {

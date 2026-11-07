@@ -25,21 +25,6 @@ export const IOS_PAIRINGS_VOLUME = `babysit-ios`
 
 export const WATCHTOWER_DISABLE_LABEL = `com.centurylinklabs.watchtower.enable=false`
 
-// Claude's Commander parser consumes required operands even when they look
-// like options. Other agents reject those operands or parse them as options.
-// Optional-value flags are intentionally absent: they leave options unconsumed.
-const CLAUDE_VALUE_OPTIONS = new Set( [
-    `--add-dir`, `--agent`, `--agents`, `--allowedTools`, `--allowed-tools`,
-    `--append-system-prompt`, `--append-system-prompt-file`, `--autocompact`,
-    `--betas`, `--debug-file`, `--disallowedTools`, `--disallowed-tools`,
-    `--effort`, `--environment`, `--fallback-model`, `--file`, `--input-format`,
-    `--json-schema`, `--max-budget-usd`, `--mcp-config`, `-n`, `--name`, `--output-format`,
-    `--permission-mode`, `--permission-prompts`, `--plugin-dir`, `--plugin-url`,
-    `--remote-control-session-name-prefix`, `--session-id`, `--setting-sources`,
-    `--settings`, `--system-prompt`, `--system-prompt-file`,
-    `--system-prompt-snapshot`, `--tools`,
-] )
-
 /**
  * Extract a Unix socket path from a Docker host URI.
  * @param {string} docker_host - DOCKER_HOST-style URI
@@ -356,30 +341,11 @@ export const get_agent_state_mounts = ( agent, workspace, mode = {} ) => {
     // keeps sandbox resumes from leaking local state across isolated runs.
     if( mode.sandbox ) return []
 
-    const scoped = label => build_agent_state_volume_name( agent.name, label, workspace )
-
-    if( agent.name === `claude` ) {
-        return [
-            { source: `babysit-claude-projects`, target: `/home/node/.claude/projects` },
-            { source: `babysit-claude-plans`, target: `/home/node/.claude/plans` },
-            { source: `babysit-claude-todos`, target: `/home/node/.claude/todos` },
-        ]
-    }
-
-    if( agent.name === `codex` ) {
-        return [
-            { source: scoped( `sessions` ), target: `/home/node/.codex/sessions` },
-            { source: scoped( `sqlite` ), target: `/home/node/.codex/sqlite` },
-        ]
-    }
-
-    if( agent.name === `opencode` ) {
-        return [
-            { source: scoped( `data` ), target: `/home/node/.local/share/opencode` },
-        ]
-    }
-
-    return []
+    // A fixed `name` is global (Claude); a `label` is scoped to the workspace
+    return ( agent.state?.volumes || [] ).map( ( { name, label, target } ) => ( {
+        source: name || build_agent_state_volume_name( agent.name, label, workspace ),
+        target,
+    } ) )
 
 }
 
@@ -801,17 +767,19 @@ const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
 
     // Native CLIs may reject repeated model flags. Keep an explicit selection
     // intact instead of relying on a later flag overriding Babysit's default.
+    const { value_options, model_short, model_short_attached } = agent.options || {}
     let explicit_model = false
     for( let index = 0; index < agent_args.length; index++ ) {
         const argument = agent_args[ index ]
         if( argument === `--` ) break
-        if( agent.name === `claude` && CLAUDE_VALUE_OPTIONS.has( argument ) ) {
+        if( value_options?.has( argument ) ) {
             index++
             continue
         }
-        if( /^--model(?:=|$)/.test( argument )
-            || agent.name !== `claude` && /^-m(?:=|$)/.test( argument )
-            || agent.name === `codex` && /^-m./.test( argument )
+        const name = argument.split( `=` )[ 0 ]
+        if( name === `--model`
+            || model_short && name === model_short
+            || model_short_attached && argument.startsWith( model_short )
         ) {
             explicit_model = true
             break

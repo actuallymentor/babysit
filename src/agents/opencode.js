@@ -158,6 +158,13 @@ export const opencode = {
         dir: `/home/node/.config/opencode`,
     },
 
+    // OpenCode's whole data dir (SQLite sessions), scoped to the workspace
+    state: {
+        volumes: [
+            { label: `data`, target: `/home/node/.local/share/opencode` },
+        ],
+    },
+
     container_paths: {
         creds: `/home/node/.local/share/opencode/auth.json`,
         // ${OPENCODE_CONFIG_DIR}/AGENTS.md — opencode's global instructions
@@ -212,6 +219,11 @@ export const opencode = {
                 route: JSON.stringify( route ),
             }
         },
+    },
+
+    // `-m` is --model (separate or `=` value; see opencode_model_flag)
+    options: {
+        model_short: `-m`,
     },
 
     // Keep the launch model on the provider the user authenticated. Explicit
