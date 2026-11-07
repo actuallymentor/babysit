@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
-import { existsSync, readFileSync, rmSync, statSync } from 'fs'
-import { dirname } from 'path'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs'
+import { tmpdir } from 'os'
+import { dirname, join } from 'path'
+import { read_sync_state, write_sync_state } from '../src/credentials/refresh.js'
 
 import {
     active_sessions_for_original,
@@ -80,31 +82,59 @@ describe( `clone launch safety`, () => {
 
 describe( `clone container recovery`, () => {
 
-    it( `reconstructs reboot-cleared credential scratch without losing conflict hashes`, async () => {
+    it( `reconstructs reboot-cleared credential scratch from the durable state, hashes intact`, async () => {
         const updates = []
-        const baseline = { baseline_source_hash: `source`, baseline_tmpfile_hash: `container` }
+        const state_dir = mkdtempSync( join( tmpdir(), `babysit-clone-state-` ) )
+        const state_path = join( state_dir, `reboot-codex.json` )
+        write_sync_state( state_path, { tmpfile: `/missing-reboot-temp/credentials.json`, source_hash: `source`, synced_hash: `container` } )
+        let file = null
         try {
             await recover_clone_container( {
                 babysit_id: `reboot`, agent: `codex`, container_id: `old`,
-                creds_tmpfiles: { codex: `/missing-reboot-temp/credentials.json` },
-                creds_sync_baselines: { codex: baseline },
+                creds_states: { codex: state_path },
             }, {
                 inspect_container: async () => `exited`,
                 monitor_alive: () => false,
                 update_session_fn: ( id, fields ) => updates.push( fields ),
                 recover_session: async () => {},
             } )
-            const file = updates.find( value => value.creds_tmpfiles ).creds_tmpfiles.codex
+            const state = read_sync_state( state_path )
+            file = state.tmpfile
+            expect( file ).not.toBe( `/missing-reboot-temp/credentials.json` )
             expect( existsSync( file ) ).toBe( true )
             expect( readFileSync( file, `utf8` ) ).toBe( `` )
             expect( statSync( dirname( file ) ).mode & 0o777 ).toBe( 0o700 )
-            expect( updates.some( value => value.creds_sync_baselines ) ).toBe( false )
+            expect( state ).toMatchObject( { source_hash: `source`, synced_hash: `container` } )
+            // The record already points at the state; nothing to rewrite
+            expect( updates.some( value => value.creds_states || value.creds_tmpfiles ) ).toBe( false )
         } finally {
-            const file = updates.find( value => value.creds_tmpfiles )?.creds_tmpfiles.codex
             if( file ) rmSync( dirname( file ), { recursive: true, force: true } )
+            rmSync( state_dir, { recursive: true, force: true } )
         }
     } )
 
+    it( `converts a legacy record once, then rebuilds its copy`, async () => {
+        const updates = []
+        const state_dir = mkdtempSync( join( tmpdir(), `babysit-clone-legacy-` ) )
+        try {
+            await recover_clone_container( {
+                babysit_id: `legacy`, agent: `codex`, container_id: `old`,
+                creds_tmpfiles: { codex: `/missing-reboot-temp/credentials.json` },
+                creds_sync_baselines: { codex: { baseline_source_hash: `source`, baseline_tmpfile_hash: `container` } },
+            }, {
+                inspect_container: async () => `exited`,
+                monitor_alive: () => false,
+                update_session_fn: ( id, fields ) => updates.push( fields ),
+                recover_session: async () => {},
+                state_options: { state_dir },
+            } )
+            const { creds_states } = updates.find( value => value.creds_states )
+            expect( read_sync_state( creds_states.codex ) ).toMatchObject( { source_hash: `source`, synced_hash: `container` } )
+            rmSync( dirname( read_sync_state( creds_states.codex ).tmpfile ), { recursive: true, force: true } )
+        } finally {
+            rmSync( state_dir, { recursive: true, force: true } )
+        }
+    } )
 
     it( `stops and finalizes a surviving running container`, async () => {
 

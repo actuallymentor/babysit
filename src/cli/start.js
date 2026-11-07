@@ -9,7 +9,13 @@ import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
 import { get_agent, retired_agent_message } from '../agents/index.js'
 import { config_flags, load_config, load_clone_config } from '../babysit/yaml.js'
-import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
+import {
+    cleanup_stale_ephemeral_credential_mounts,
+    credential_state_tmpfiles,
+    session_credential_states,
+    setup_credentials,
+} from '../credentials/index.js'
+import { read_sync_state, write_sync_state } from '../credentials/refresh.js'
 import {
     clear_credential_recovery,
     list_credential_recoveries,
@@ -273,6 +279,7 @@ export const prepare_clone_with_access_fix = async ( options, {
  * @param {Function} [dependencies.recover_session] - Credential-safe finalizer
  * @param {Function} [dependencies.update_session_fn] - Session record updater
  * @param {Function} [dependencies.monitor_alive] - Token-aware monitor probe
+ * @param {Object} [dependencies.state_options] - Credential state directory seam
  * @returns {Promise<boolean>} Whether a surviving container was reconciled
  */
 export const recover_clone_container = async ( session = {}, {
@@ -282,6 +289,7 @@ export const recover_clone_container = async ( session = {}, {
     recover_session = cmd_monitor,
     update_session_fn = update_session,
     monitor_alive = is_monitor_alive,
+    state_options = {},
 } = {} ) => {
 
     const container = session.container_id || session.container_name
@@ -303,20 +311,20 @@ export const recover_clone_container = async ( session = {}, {
         await stop_container( container )
     }
 
-    // /tmp is commonly cleared at boot. Recreate only observation files in
-    // fresh private directories; retain the old hashes for conflict resolution.
-    const tmpfiles = { ... session.creds_tmpfiles || ( session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {} )  }
-    let replaced = false
-    for( const [ name, file ] of Object.entries( tmpfiles ) ) {
-        if( existsSync( file ) ) continue
-        const baseline = session.creds_sync_baselines?.[ name ] || ( name === session.agent ? session.creds_sync_baseline : null )
-        if( !baseline?.baseline_source_hash || !baseline?.baseline_tmpfile_hash ) throw new Error( `Cannot reconstruct missing credential baseline for ${ name }` )
+    // /tmp is commonly cleared at boot; the sync states under BABYSIT_DIR are
+    // not. Recreate only the observation files, in fresh private directories,
+    // and keep the states' hashes for conflict resolution.
+    const states = session_credential_states( session, state_options )
+    if( !session.creds_states && Object.keys( states ).length ) update_session_fn( session.babysit_id, { creds_states: states } )
+    for( const [ name, path ] of Object.entries( states ) ) {
+        const state = read_sync_state( path )
+        if( !state ) throw new Error( `Cannot reconstruct missing credential sync state for ${ name }` )
+        if( existsSync( state.tmpfile ) ) continue
+        if( !state.source_hash || !state.synced_hash ) throw new Error( `Cannot reconstruct missing credential baseline for ${ name }` )
         const transport = build_private_tmpfile( `creds-${ name }`, `recovered.json`, ``, { file_mode: 0o666 } )
         if( !transport ) throw new Error( `Cannot rebuild credential observation file for ${ name }` )
-        tmpfiles[ name ] = transport.file
-        replaced = true
+        write_sync_state( path, { ...state, tmpfile: transport.file } )
     }
-    if( replaced ) update_session_fn( session.babysit_id, { creds_tmpfiles: tmpfiles, creds_tmpfile: tmpfiles[ session.agent ] || null } )
 
     update_session_fn( session.babysit_id, { container_id: container } )
     await recover_session( {
@@ -905,6 +913,7 @@ async function start_session( cmd ) {
         .flatMap( session => [
             session.creds_tmpfile,
             ...Object.values( session.creds_tmpfiles || {} ),
+            ...Object.values( credential_state_tmpfiles( session.creds_states ) ),
         ] )
         .map( private_credential_tmpdir )
         .filter( Boolean )
@@ -1258,8 +1267,7 @@ async function start_session( cmd ) {
     const {
         mounts: creds_mounts,
         sync: creds_sync,
-        sync_baseline: creds_sync_baseline,
-        sync_baselines: creds_sync_baselines,
+        states: creds_states,
         tmpfiles: creds_tmpfiles,
     } = credential_setup
 
@@ -1514,15 +1522,9 @@ async function start_session( cmd ) {
         // End the foreground controller before the monitor starts. Awaiting its
         // final pull gives the two processes an exclusive handoff instead of
         // letting independent Docker-copy queues race on the same sync files.
-        // Persist the resulting hashes so the monitor recognises the refreshed
-        // host/tmpfile pair as its starting point.
-        let monitor_sync_baselines = creds_sync_baselines
+        // The durable sync states carry the resulting hashes to the monitor.
         if( creds_sync ) {
             await creds_sync.stop()
-            monitor_sync_baselines = {
-                ...creds_sync_baselines,
-                ...creds_sync.baselines(),
-            }
 
             auth_cache_contexts = Object.fromEntries(
                 Object.entries( auth_cache_contexts ).flatMap( ( [ name, context ] ) => {
@@ -1553,8 +1555,6 @@ async function start_session( cmd ) {
             )
             auth_cache_context = auth_cache_contexts[ agent.name ] || null
         }
-        const monitor_sync_baseline = monitor_sync_baselines[ agent.name ]
-            || creds_sync_baseline
 
         // Save durable ownership metadata before spawning the monitor. The
         // prepared launch keeps its signal/error cleanup until the detached
@@ -1574,10 +1574,8 @@ async function start_session( cmd ) {
         session_data = {
             ...base_session_data,
             pane_id: pane.pane_id,
-            creds_tmpfile: creds_tmpfiles[ agent.name ] || null,
-            creds_tmpfiles,
-            creds_sync_baseline: monitor_sync_baseline,
-            creds_sync_baselines: monitor_sync_baselines,
+            // Durable sync states: the monitor resumes their hashes
+            creds_states,
             auth_cache_context,
             auth_cache_contexts,
             agent_exit_sentinel,
