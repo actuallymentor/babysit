@@ -1,6 +1,6 @@
 import { resolve } from 'path'
 import mri from 'mri'
-import { is_agent, retired_agent_message } from '../agents/index.js'
+import { assert_account_support, is_agent, retired_agent_message } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
 import { SHELLS } from './shell_init.js'
 
@@ -343,7 +343,7 @@ export const parse_args = ( argv ) => {
         // Drop the session id when present so the agent adapter is the only place
         // that injects the resume flag — otherwise the id appears twice.
         const passthrough = collect_passthrough( prepared, agent, session_id, numbered_resume ? [ `all`, `n` ] : [] )
-        if( flags.account && agent !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ agent } has none` )
+        if( flags.account ) assert_account_support( agent )
 
         return { verb: sub_verb, agent, session_id, flags, passthrough }
 

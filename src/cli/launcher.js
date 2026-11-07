@@ -1,6 +1,6 @@
 import { emitKeypressEvents } from 'readline'
 
-import { SUPPORTED_AGENTS } from '../agents/index.js'
+import { SUPPORTED_AGENTS, has_accounts } from '../agents/index.js'
 import { read_launch_defaults } from '../babysit/launch_defaults.js'
 import { command_to_launch, launch_to_command, read_launch_section, validate_launch } from '../babysit/launch_config.js'
 import { log } from '../utils/log.js'
@@ -118,7 +118,7 @@ export const launch_menu = async ( {
         ...open ? [
             ...ADVANCED_TOGGLES.map( key => ( { type: `toggle`, key } ) ),
             ...advanced_text.map( key => ( { type: `text`, key } ) ),
-            ...state.agent === `claude` && account_names.length ? [ { type: `cycle`, key: `account` } ] : [],
+            ...has_accounts( state.agent ) && account_names.length ? [ { type: `cycle`, key: `account` } ] : [],
         ] : [],
     ]
 
@@ -157,7 +157,7 @@ export const launch_menu = async ( {
         if( text.name.trim() ) argv.push( `--name=${ text.name }` )
         for( const port of text.ports.split( /[,\s]+/ ).filter( Boolean ) ) argv.push( `--port=${ port }` )
         if( text.log.trim() ) argv.push( text.log.trim() === `on` ? `--log=` : `--log=${ text.log.trim() }` )
-        if( state.agent === `claude` && state.account ) argv.push( `--account=${ state.account }` )
+        if( has_accounts( state.agent ) && state.account ) argv.push( `--account=${ state.account }` )
 
         // Agent arguments skip Babysit's parser so they can never be read as Babysit flags
         return { ...parse_args( argv ), passthrough: submit === `fork` ? [] : words( text.args ) }
@@ -383,7 +383,7 @@ export const fork_from_menu = async ( {
             ignore_host_agents_md: Boolean( inherited.ignore_host_agents_md ),
             clone: filesystem === `clone`,
             // Shown as the parent's subscription rather than auto, which a fork would not do
-            account: parent.agent === `claude` && parent.claude_account || false,
+            account: has_accounts( parent.agent ) && parent.claude_account || false,
         },
         submit: `fork`,
     } )

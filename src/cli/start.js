@@ -7,7 +7,7 @@ import { wait } from 'mentie'
 
 import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
-import { get_agent, retired_agent_message } from '../agents/index.js'
+import { get_agent, has_accounts, retired_agent_message } from '../agents/index.js'
 import { config_flags, load_config, load_clone_config } from '../babysit/yaml.js'
 import {
     cleanup_stale_ephemeral_credential_mounts,
@@ -1050,7 +1050,7 @@ async function resolve_launch( cmd ) {
         requested: flags.account,
         // A fork keeps its parent's subscription
         stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
-        probe_quota: agent.name === `claude`,
+        probe_quota: has_accounts( agent ),
     } ) )
     const launch_account = claude_login.account
     if( launch_account ) log[ claude_login.reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ claude_login.reason })` )
