@@ -42,6 +42,7 @@ import { detect_mode } from './utils/platform.js'
 import { run_effort, run_model, run_exit, run_stuck, run_loop, run_reset } from './docker/assets/effort/command.mjs'
 import { run_usage } from './cli/usage.js'
 import { cmd_shell_init } from './cli/shell_init.js'
+import { COMMANDS, command_named } from './cli/registry.js'
 
 const is_directory = path => {
     try {
@@ -51,14 +52,55 @@ const is_directory = path => {
     }
 }
 
-// Machine-run (monitor, boot recovery, scripted `mode`) or self-updating verbs never start a background update
-const QUIET_VERBS = new Set( [ `update`, `__monitor`, `shell-init`, `recover`, `mode` ] )
+// Registry `quiet`: machine-run (monitor, boot recovery, scripted `mode`) or
+// self-updating verbs never start a background update
+const QUIET_VERBS = new Set( COMMANDS.filter( command => command.quiet ).map( command => command.name ) )
 
-// Subcommands that need a dep check before they run. `help` and `--version`
-// are pure metadata reads, `__monitor` is a background daemon that inherits
-// the foreground's already-checked environment, and `update` runs its own
-// dep check inside `cmd_update`.
-const DEP_CHECK_VERBS = new Set( [ `start`, `launch_dir`, `resume`, `fork`, `list`, `watch`, `open`, `doctor`, `auth` ] )
+// Registry `deps`: verbs that need a dep check before they run. `help` and
+// `--version` are pure metadata reads, `__monitor` is a background daemon that
+// inherits the foreground's already-checked environment, and `update` runs its
+// own dep check inside `cmd_update`.
+const DEP_CHECK_VERBS = new Set( COMMANDS.filter( command => command.deps ).map( command => command.name ) )
+
+// In-session helpers (registry `context: container`) keep the container helper's
+// argv and output; usage alone returns an exit code
+const IN_SESSION = { effort: run_effort, model: run_model, exit: run_exit, stuck: run_stuck, reset: run_reset, loop: run_loop }
+
+// Commands that report through the exit code
+const exit_code = run => async cmd => {
+    process.exitCode = await run( cmd )
+}
+
+// One handler per host command the parser returns
+const HANDLERS = {
+    start: cmd_start,
+    launch_dir: cmd_launch_dir,
+    recover: cmd => cmd.recover_verb === `init` ? cmd_recover_init( cmd ) : cmd.flags.shutdown ? cmd_recovery_shutdown() : cmd_recover( cmd ),
+    freeze: exit_code( cmd_freeze ),
+    unfreeze: exit_code( cmd_freeze ),
+    archive: cmd_archive,
+    close: cmd_close,
+    restart: cmd_restart,
+    // `babysit <agent> resume <id>` arrives with agent set — go to cmd_start
+    // `babysit resume <id>` arrives with agent: null — needs cmd_resume to look up the stored session
+    resume: cmd => cmd.agent ? cmd_start( cmd ) : cmd_resume( cmd ),
+    list: cmd_list,
+    fork: cmd_fork,
+    watch: cmd_watch,
+    init: cmd_init,
+    audit: exit_code( cmd_audit ),
+    clean: exit_code( cmd_clean ),
+    open: cmd_open,
+    update: cmd_update,
+    config: cmd_config,
+    'shell-init': cmd_shell_init,
+    mode: () => console.log( detect_mode() ),
+    prune: cmd_prune,
+    web: cmd_web,
+    doctor: cmd_doctor,
+    auth: exit_code( cmd_auth ),
+    __monitor: cmd_monitor,
+}
 
 /**
  * Main entry point
@@ -72,33 +114,11 @@ const main = async () => {
         return
     }
 
-    // Keep the container helper and full CLI's effort syntax identical.
-    if( process.argv[2] === `effort` ) {
-        console.log( await run_effort( process.argv.slice( 3 ) ) )
-        return
-    }
-    if( process.argv[2] === `model` ) {
-        console.log( await run_model( process.argv.slice( 3 ) ) )
-        return
-    }
-    if( process.argv[2] === `exit` ) {
-        console.log( await run_exit( process.argv.slice( 3 ) ) )
-        return
-    }
-    if( process.argv[2] === `stuck` ) {
-        console.log( await run_stuck( process.argv.slice( 3 ) ) )
-        return
-    }
-    if( process.argv[2] === `reset` ) {
-        console.log( await run_reset( process.argv.slice( 3 ) ) )
-        return
-    }
-    if( process.argv[2] === `loop` ) {
-        console.log( await run_loop( process.argv.slice( 3 ) ) )
-        return
-    }
-    if( process.argv[2] === `usage` ) {
-        process.exitCode = await run_usage( process.argv.slice( 3 ) )
+    // Keep the container helper and full CLI's syntax identical for in-session commands
+    const [ word, ...rest ] = process.argv.slice( 2 )
+    if( command_named( word )?.context === `container` ) {
+        if( word === `usage` ) process.exitCode = await run_usage( rest )
+        else console.log( await IN_SESSION[ word ]( rest ) )
         return
     }
 
@@ -154,115 +174,9 @@ const main = async () => {
     if( !QUIET_VERBS.has( cmd.verb ) ) maybe_auto_update()
 
     // Dispatch to subcommand
-    switch ( cmd.verb ) {
-
-    case `start`:
-        await cmd_start( cmd )
-        break
-
-    case `launch_dir`:
-        await cmd_launch_dir( cmd )
-        break
-
-    case `recover`:
-        if( cmd.recover_verb === `init` ) await cmd_recover_init( cmd )
-        else if( cmd.flags.shutdown ) await cmd_recovery_shutdown()
-        else await cmd_recover( cmd )
-        break
-
-    case `freeze`:
-    case `unfreeze`:
-        process.exitCode = await cmd_freeze( cmd )
-        break
-
-    case `archive`:
-        await cmd_archive( cmd )
-        break
-
-    case `close`:
-        await cmd_close( cmd )
-        break
-
-    case `restart`:
-        await cmd_restart( cmd )
-        break
-
-    case `resume`:
-        // `babysit <agent> resume <id>` arrives with agent set — go to cmd_start
-        // `babysit resume <id>` arrives with agent: null — needs cmd_resume to look up the stored session
-        if( cmd.agent ) await cmd_start( cmd )
-        else await cmd_resume( cmd )
-        break
-
-    case `list`:
-        await cmd_list( cmd )
-        break
-
-    case `fork`:
-        await cmd_fork( cmd )
-        break
-
-    case `watch`:
-        await cmd_watch( cmd )
-        break
-
-    case `init`:
-        await cmd_init( cmd )
-        break
-
-    case `audit`:
-        process.exitCode = await cmd_audit( cmd )
-        break
-
-    case `clean`:
-        process.exitCode = await cmd_clean( cmd )
-        break
-
-    case `open`:
-        await cmd_open( cmd )
-        break
-
-    case `update`:
-        await cmd_update( cmd )
-        break
-
-    case `config`:
-        await cmd_config( cmd )
-        break
-
-    case `shell-init`:
-        cmd_shell_init( cmd )
-        break
-
-    case `mode`:
-        console.log( detect_mode() )
-        break
-
-    case `prune`:
-        await cmd_prune( cmd )
-        break
-
-    case `web`:
-        await cmd_web( cmd )
-        break
-
-    case `doctor`:
-        await cmd_doctor( cmd )
-        break
-
-    case `auth`:
-        process.exitCode = await cmd_auth( cmd )
-        break
-
-    case `__monitor`:
-        await cmd_monitor( cmd )
-        break
-
-    default:
-        show_help()
-        break
-
-    }
+    const handler = HANDLERS[ cmd.verb ]
+    if( handler ) await handler( cmd )
+    else show_help()
 
     // Detaching (ctrl+b d) or closing a session opened here lands on the interactive watch list
     const watched = cmd.verb === `watch` || await watch_after_detach()
