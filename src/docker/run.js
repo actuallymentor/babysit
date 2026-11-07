@@ -776,7 +776,7 @@ const build_agent_command = ( agent, mode, agent_args, options = {} ) => {
             index++
             continue
         }
-        const name = argument.split( `=` )[ 0 ]
+        const [ name ] = argument.split( `=` )
         if( name === `--model`
             || model_short && name === model_short
             || model_short_attached && argument.startsWith( model_short )
