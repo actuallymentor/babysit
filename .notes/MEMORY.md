@@ -11,4 +11,4 @@
 | [RECOVERY_RESEARCH.md](RECOVERY_RESEARCH.md) | Accepted recovery design and Ubuntu boot validation | Before changing session recovery or boot services |
 | [REASONING_CONTROL_PROOF.md](REASONING_CONTROL_PROOF.md) | Live Codex/OpenCode effort-switching evidence, transport requirements, and limits | Before changing agent-requested reasoning controls |
 | [TIMELINE.md](TIMELINE.md) | Major recent decisions, changes, and release outcomes | When reviewing recent history |
-| [REFACTOR_PLAN.md](REFACTOR_PLAN.md) | Accepted multi-track refactor plan and its constraints | While the 2026-11 refactor tracks are in flight |
+| [REFACTOR_PLAN.md](REFACTOR_PLAN.md) | 2.0 refactor plan, its review constraints and track split (shipped) | When revisiting 2.0 design decisions |

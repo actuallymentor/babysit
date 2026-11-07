@@ -1,4 +1,4 @@
-# Refactor plan (2026-11-07, user accepted all prefactor items; #8 = remove Antigravity)
+# Refactor plan (2026-11-07, user accepted all prefactor items; #8 = remove Antigravity) — DONE, shipped in 2.0.0
 
 Order: S1 #8 → parallel A / B / C (worktrees) → D after A+C merged → merge, test:all + live smoke, 2.0.0, push+deploy.
 
