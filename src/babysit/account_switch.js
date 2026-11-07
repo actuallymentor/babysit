@@ -3,18 +3,23 @@ import { closeSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { log } from '../utils/log.js'
+import { run } from '../utils/exec.js'
+import { docker_command_prefix } from '../docker/run.js'
+import { send_escape, send_text } from '../tmux/send.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { notify_pushover } from '../utils/notify.js'
 import { load_session, update_session } from '../sessions/store.js'
 import { get_session_attachment } from '../tmux/session.js'
 import { resolve_checker_command } from '../cli/auth.js'
-import { DEFAULT_ACCOUNT, list_claude_accounts, pick_account, probe_accounts } from '../cli/claude_accounts.js'
+import { DEFAULT_ACCOUNT, hot_swap_env_file, list_claude_accounts, pick_account, probe_accounts } from '../cli/claude_accounts.js'
 
 /*
  * When Claude says a subscription limit was hit, move the session to another
- * registered account with headroom: `babysit restart --account <next>
- * --continue` closes it, resumes the same conversation on the new token, and
- * sends the continue prompt. An account the session left in a limit window
+ * registered account with headroom. Hot-swappable sessions (launched with two
+ * or more accounts) get the new token written into Claude's credentials file
+ * and a continue prompt, without a restart. Older sessions fall back to
+ * `babysit restart --account <next> --continue`, which closes the session,
+ * resumes the same conversation on the new token, and sends the continue prompt. An account the session left in a limit window
  * that is still open is never a target again (switches carry over through
  * resume), so A→B→C works but two exhausted accounts never ping-pong.
  */
@@ -29,6 +34,9 @@ export const SWITCH_PROBE_MAX_AGE_MS = 60_000
 
 // A limit line this soon after a switch is likely the resumed transcript, not a new limit
 export const SPENT_NOTICE_GRACE_MS = 10 * 60_000
+
+// Typed after a hot swap, once Escape closed Claude's limit picker
+export const HOT_SWAP_PROMPT = `Your Claude subscription hit its usage limit, so Babysit switched this session to another account. Continue where you left off.`
 
 // A recorded switch blocks its source account until that account's limit resets
 const switch_window_open = ( { at, resets_at }, now ) => resets_at
@@ -144,6 +152,34 @@ export const spawn_account_restart = ( babysit_id, account, {
 }
 
 /**
+ * Rewrite a running session's Claude token in place. babysit-claude-token in
+ * the container replaces the account env file and Claude's credentials file;
+ * the token travels on stdin, never in argv.
+ * @param {string} container_id - Session container
+ * @param {Object} account - Target account with token
+ * @param {Object} [options] - Command runner seam
+ * @returns {Promise<void>}
+ */
+export const swap_account_token = async ( container_id, account, { run_command = run } = {} ) => {
+
+    const [ command, ...prefix ] = docker_command_prefix()
+    await run_command( command, [ ...prefix, `exec`, `-i`, `-u`, `node`, container_id, `babysit-claude-token` ], {
+        input: hot_swap_env_file( account ),
+    }, 30_000 )
+
+}
+
+/**
+ * Close the limit picker and ask Claude to carry on.
+ * @param {string} target - tmux pane or session
+ * @returns {Promise<void>}
+ */
+const nudge_after_swap = async target => {
+    await send_escape( target )
+    await send_text( target, HOT_SWAP_PROMPT )
+}
+
+/**
  * Whether a person has the session's tmux open. Unreadable counts as detached:
  * the session is likely gone and the restart reports that itself.
  * @param {string} tmux_session - Exact tmux session name
@@ -168,6 +204,8 @@ export const create_account_switcher = ( session, {
     attached = session_attached,
     notify = notify_pushover,
     restart = spawn_account_restart,
+    swap = swap_account_token,
+    nudge = nudge_after_swap,
     now = Date.now,
 } = {} ) => {
 
@@ -218,10 +256,12 @@ export const create_account_switcher = ( session, {
             if( accounts.length < 2 ) return null
             log.info( `Pane shows a claude usage limit` )
 
-            // Resume needs the native id, or it would continue another conversation
+            // A restart resumes by native id, or it would continue another conversation.
+            // A hot swap keeps the process, so it needs neither the id nor a volume.
             const latest = load( session.babysit_id ) || session
-            if( !latest.agent_session_id ) return skip( `no native session id was captured` )
-            if( latest.modifiers?.includes( `sandbox` ) ) return skip( `sandbox sessions cannot restart` )
+            const hot_swap = Boolean( latest.claude_hot_swap && latest.container_id )
+            if( !hot_swap && !latest.agent_session_id ) return skip( `no native session id was captured` )
+            if( !hot_swap && latest.modifiers?.includes( `sandbox` ) ) return skip( `sandbox sessions cannot restart` )
 
             // Guard before probing: a stale limit line in a resumed transcript costs nothing
             const guard = switch_targets( { session: latest, names: accounts.map( ( { name } ) => name ), now: now() } )
@@ -242,6 +282,19 @@ export const create_account_switcher = ( session, {
                 }
                 skip( plan.skip )
                 return plan
+            }
+
+            // In place: swap the token, then type the nudge unless a person is there
+            if( hot_swap ) {
+                const account = accounts.find( ( { name } ) => name === plan.to )
+                await swap( latest.container_id, account )
+                const entry = { at: new Date( now() ).toISOString(), from: plan.from, to: plan.to, resets_at: plan.resets_at, hot_swap: true }
+                update( session.babysit_id, current => ( { claude_account: plan.to, account_switches: [ ...current.account_switches || [], entry ] } ) )
+                const present = latest.tmux_session && await attached( latest.tmux_session )
+                if( !present ) await nudge( latest.pane_id || latest.tmux_session )
+                log.info( `Claude limit hit on account ${ plan.from }; switched session ${ session.babysit_id } to ${ plan.to } in place (${ plan.headroom }% left)` )
+                await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from }; switched ${ label( latest ) } to ${ plan.to } (${ plan.headroom }% left)${ present ? `. Type continue to resume` : `` }.` } )
+                return { ...plan, hot_swap: true }
             }
 
             // Never pull the session out from under someone typing in it; later scans retry

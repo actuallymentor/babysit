@@ -24,6 +24,7 @@ import { start_caffeinate, stop_caffeinate } from '../utils/caffeinate.js'
 import { remove_docker_container, stop_docker_container, wait_for_docker_container_stopped } from '../docker/file_transport.js'
 import { reconcile_frozen, set_container_paused } from './freeze.js'
 import { start_usage_sampler } from '../docker/stats.js'
+import { start_transcript_archiver } from '../sessions/transcript_archive.js'
 import { open_web_bridge } from '../web_bridge/bridge.js'
 import { create_control_bridge } from '../control/bridge.js'
 import { create_exit_controller } from '../control/exit.js'
@@ -314,6 +315,15 @@ export const cmd_monitor = async ( cmd ) => {
 
     let creds_sync = null
     let usage_sampler = null
+    let transcript_archiver = null
+    let final_archive_task = null
+
+    // One last mirror per monitor: before a sandbox's removal, or at teardown
+    const final_archive = () => {
+        if( !transcript_archiver ) return Promise.resolve()
+        final_archive_task ||= transcript_archiver.stop().then( () => transcript_archiver.run() )
+        return final_archive_task
+    }
     let exit_controller = null
     let stuck_controller = null
     let credential_setup_complete = false
@@ -399,6 +409,8 @@ export const cmd_monitor = async ( cmd ) => {
             const started_at = Date.now()
             try {
                 await wait_for_container_stop()
+                // Last pass while a sandbox's state still exists: removal deletes it
+                await final_archive()
                 await remove_docker_container( session.container_id )
                 container_cleaned = true
                 container_cleanup_result = true
@@ -428,6 +440,8 @@ export const cmd_monitor = async ( cmd ) => {
         if( creds_sync && session.container_id ) creds_sync.connect( session.container_id )
         // Cache CPU/memory on the session record so `babysit list` never waits on Docker.
         if( session.container_id ) usage_sampler = start_usage_sampler( session )
+        // Mirror native transcripts (subagents included) into the configured archive
+        transcript_archiver = start_transcript_archiver( () => load_session( session.babysit_id ) || session )
 
         // Long sessions rotate OAuth tokens while they run. Re-stamp the host
         // auth cache on each trusted writeback so a parallel launch still hits
@@ -594,6 +608,7 @@ export const cmd_monitor = async ( cmd ) => {
     } finally {
         exit_controller?.stop()
         await usage_sampler?.stop()
+        await final_archive()
         identity_reader.close()
         const credentials_recovered = await cleanup_credentials()
         const container_removed = credentials_recovered

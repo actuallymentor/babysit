@@ -23,6 +23,7 @@ const KNOWN_FLAGS = [
     `log`,
     `port`,
     `auth-check-agents`,
+    `transcripts`,
     `config`,
     `account`,
 ]
@@ -44,7 +45,7 @@ const UPDATE_FLAGS = [ `auto` ]
 // Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
 // uses this to skip the value token too — without that, the user's `--log foo`
 // would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n`, `account` ] )
+const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `transcripts`, `config`, `n`, `account` ] )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -82,7 +83,7 @@ export const parse_args = ( argv ) => {
     } )
     const parse = tokens => mri( tokens, {
         boolean: [ ...booleans ],
-        string: [ `name`, `log`, `port`, `auth-check-agents`, `config`, `n`, `account` ],
+        string: [ `name`, `log`, `port`, `auth-check-agents`, `transcripts`, `config`, `n`, `account` ],
         alias: { h: `help`, v: `version` },
     } )
 
@@ -134,6 +135,8 @@ export const parse_args = ( argv ) => {
         // clones, the monitor, and resume all read the same absolute path.
         config: typeof args.config === `string` && args.config ? resolve( args.config ) : false,
         auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
+        // `babysit config --transcripts PATH|off`: where native transcripts are archived
+        transcripts: typeof args.transcripts === `string` ? args.transcripts : false,
         // Claude subscription for this launch (babysit auth accounts); false picks by headroom
         account: normalise_account( args.account ),
         auth: verb === `doctor` && ( args.auth || false ),

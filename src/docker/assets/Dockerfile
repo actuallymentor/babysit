@@ -176,6 +176,8 @@ COPY statusline.sh /usr/local/bin/statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 # Ahead of the real claude on PATH: see claude-shim.sh
 COPY claude-shim.sh /opt/babysit-bin/claude
+# Rewrites a hot-swappable session's Claude token: see claude-token.sh
+COPY claude-token.sh /usr/local/bin/babysit-claude-token
 COPY antigravity-auth.py /usr/local/bin/antigravity-auth.py
 COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
@@ -185,7 +187,7 @@ COPY ios/ /opt/ios/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
     && ln -s /opt/babysit-effort /opt/effort \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh /opt/babysit-bin/claude
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/statusline.sh /opt/babysit-bin/claude /usr/local/bin/babysit-claude-token
 
 # Reuse the image's Chrome for both global and project-local Puppeteer installs.
 # This avoids Puppeteer's otherwise automatic Chrome-for-Testing and Headless
@@ -262,7 +264,7 @@ RUN set -eux; \
         pkgconf pkg-config pstree fuser killall socat getfacl setfacl \
         inotifywait inotifywatch entr shfmt git-filter-repo \
         ctags ctags-universal readtags qpdf \
-        codex agy claude opencode babysit \
+        codex agy claude opencode babysit babysit-claude-token \
     ; do \
         gosu node sh -c 'command -v "$1"' babysit-command "$cmd"; \
     done; \

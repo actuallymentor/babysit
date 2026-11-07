@@ -190,6 +190,7 @@ export const aggregate_syncs = ( syncs, {
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used
  *   when reusing an existing tmpfile in the monitor. Legacy active-agent shape.
  * @param {Object|null} [options.sync_baselines] - Per-agent foreground-capture hashes
+ * @param {string[]} [options.exclude] - Agent names whose host credentials are skipped
  * @returns {Promise<{
  *   mounts: Array,
  *   sync: Object|null,
@@ -216,7 +217,10 @@ export const setup_credentials = async ( agent, options = {} ) => {
     const tmpfiles = {}
     const next_sync_baselines = {}
 
-    const credential_agents = get_credential_agents( agent )
+    // A hot-swappable Claude session owns its credentials file: the host
+    // /login must neither be staged nor receive the swapped setup-token back
+    const excluded = new Set( options.exclude || [] )
+    const credential_agents = get_credential_agents( agent ).filter( ( { name } ) => !excluded.has( name ) )
 
     for( const credential_agent of credential_agents ) {
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
-import { create_account_switcher, plan_account_switch, spawn_account_restart, switch_targets } from '../src/babysit/account_switch.js'
+import { create_account_switcher, plan_account_switch, spawn_account_restart, swap_account_token, switch_targets } from '../src/babysit/account_switch.js'
 import { shows_limit, start_monitor } from '../src/babysit/monitor.js'
 import { claude } from '../src/agents/claude.js'
 
@@ -116,7 +116,7 @@ describe( `account switcher`, () => {
     const accounts = [ { name: `default`, token: `a` }, { name: `work`, token: `b` } ]
     const harness = ( { record = {}, readings = [ reading( `default`, 100 ), reading( `work`, 20 ) ], list = () => accounts, attached = false } = {} ) => {
         const state = { babysit_id: `b1`, agent_session_id: `n1`, claude_account: `default`, account_switches: [], tmux_session: `t1`, ...record }
-        const calls = { restarts: [], notes: [], probes: [] }
+        const calls = { restarts: [], notes: [], probes: [], swaps: [], nudges: [] }
         const switcher = create_account_switcher( state, {
             list,
             probe: async ( probed, options ) => calls.probes.push( [ probed.map( ( { name } ) => name ), options ] ) && readings,
@@ -125,6 +125,8 @@ describe( `account switcher`, () => {
             attached: async () => typeof attached === `function` ? attached() : attached,
             notify: async note => calls.notes.push( note.message ),
             restart: ( id, account ) => calls.restarts.push( [ id, account ] ),
+            swap: async ( container, account ) => calls.swaps.push( [ container, account.name ] ),
+            nudge: async target => calls.nudges.push( target ),
             now: () => NOW,
         } )
         return { state, calls, switcher }
@@ -142,6 +144,28 @@ describe( `account switcher`, () => {
         await switcher()
         expect( calls.restarts.length ).toBe( 1 )
         expect( calls.probes.length ).toBe( 1 )
+    } )
+
+    it( `a hot-swappable session switches in place: token swap, account recorded, nudge`, async () => {
+        const { state, calls, switcher } = harness( { record: { claude_hot_swap: true, container_id: `c1`, pane_id: `%3`, agent_session_id: null, modifiers: [ `sandbox` ] } } )
+        expect( await switcher() ).toMatchObject( { from: `default`, to: `work`, hot_swap: true } )
+        expect( calls.swaps ).toEqual( [ [ `c1`, `work` ] ] )
+        expect( calls.nudges ).toEqual( [ `%3` ] )
+        expect( calls.restarts ).toEqual( [] )
+        expect( state.claude_account ).toBe( `work` )
+        expect( state.account_switches ).toEqual( [ { at: new Date( NOW ).toISOString(), from: `default`, to: `work`, resets_at: RESET, hot_swap: true } ] )
+
+        // The lingering limit line now reads against work, which has headroom: nothing happens
+        await switcher()
+        expect( calls.swaps.length ).toBe( 1 )
+    } )
+
+    it( `an attached person gets the new token but types the continue themselves`, async () => {
+        const { calls, switcher } = harness( { record: { claude_hot_swap: true, container_id: `c1` }, attached: true } )
+        await switcher()
+        expect( calls.swaps ).toEqual( [ [ `c1`, `work` ] ] )
+        expect( calls.nudges ).toEqual( [] )
+        expect( calls.notes[ 0 ] ).toContain( `Type continue to resume` )
     } )
 
     it( `a stale limit line after the switch is settled by the guard, without probing`, async () => {
@@ -240,6 +264,19 @@ describe( `account switcher`, () => {
             },
         } )
         expect( spawned ).toEqual( [ { bin: `/usr/bin/babysit`, args: [ `restart`, `b1`, `--force`, `--detach`, `--continue`, `--account`, `work` ], detached: true } ] )
+    } )
+
+} )
+
+describe( `swap_account_token`, () => {
+
+    it( `pipes the account env lines into babysit-claude-token as node, never in argv`, async () => {
+        const calls = []
+        await swap_account_token( `c1`, { name: `work`, token: `sk-ant-oat01-WORK` }, { run_command: async ( ...call ) => calls.push( call ) } )
+        const [ [ , args, options ] ] = calls
+        expect( args.slice( -5 ) ).toEqual( [ `-i`, `-u`, `node`, `c1`, `babysit-claude-token` ] )
+        expect( args.join( ` ` ) ).not.toContain( `sk-ant` )
+        expect( options.input ).toBe( `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-WORK\nBABYSIT_CLAUDE_HOT_SWAP=1\n` )
     } )
 
 } )

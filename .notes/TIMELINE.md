@@ -234,3 +234,5 @@
 - 2026-11-03: unread dot clears on input (session_activity), not attach; attached sessions get marked too (1.67.0)
 - 2026-11-03: 1.67.1 check-in nudge rewritten: enumerate full process tree/subagents/output, 'can it still happen?', reply idle. Agent-generic wording by user request.
 - 2026-11-04: 1.68.0 `babysit model` benchmarks default sort intelligence, bare listing 35 rows (user request).
+- **2026-11-07**: Transcript archive (`babysit config --transcripts`, default `~/.babysit/transcripts`, on): the monitor mirrors native agent state volumes every 10 min + at end, plus a per-session index; subagents included (Claude `subagents/`, Codex subagent rollouts + spawn edges). Proxy/LiteLLM/MITM rejected: native transcripts already hold the full content and usage. Claude account hot swap: ≥ 2 accounts → token in the credentials file, limit → `docker exec babysit-claude-token`, Esc + continue prompt, no restart. Verified in a real container and against a real interactive limit screen (Claude 2.1.318). Needs the new image (entrypoint/shim/token script).
+

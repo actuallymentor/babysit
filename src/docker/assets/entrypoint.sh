@@ -189,6 +189,13 @@ run_agent() {
             done < /home/node/.babysit-claude-account.env
             unset account_line
         fi
+        # Hot-swappable account: the token moves into the Claude credentials
+        # file, which Claude re-reads before every request, so Babysit can
+        # switch subscriptions mid-session. The env token would outrank it.
+        if [ "${BABYSIT_CLAUDE_HOT_SWAP:-}" = 1 ]; then
+            babysit-claude-token < /home/node/.babysit-claude-account.env || exit $?
+            unset CLAUDE_CODE_OAUTH_TOKEN
+        fi
         # Secondary agy invocations need the same API route as the frontend.
         python3 /usr/local/bin/antigravity-auth.py "$@" || exit $?
         exec "$@"

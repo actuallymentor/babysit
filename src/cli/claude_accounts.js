@@ -278,15 +278,44 @@ export const resolve_launch_account = async ( { requested = false, stored = null
 
 }
 
+// Set in the account env file: the entrypoint moves the token into Claude's credentials file
+export const HOT_SWAP_ENV = `BABYSIT_CLAUDE_HOT_SWAP`
+
 /**
- * Credential mount for a named account: a private env file the launcher copies
- * in with `docker cp`, sourced after ~/.babysitrc so it wins. `default` needs none.
- * @param {Object|null} account - Chosen account
- * @returns {Object[]} Zero or one `account_env` mount
+ * Whether a Claude launch can change subscriptions without a restart: only
+ * with two or more accounts. Claude re-reads its credentials file before every
+ * request, so such a session keeps its token there instead of in the env.
+ * @param {Object} [options] - list seam
+ * @returns {boolean}
  */
-export const account_credential_mounts = account => account && account.name !== DEFAULT_ACCOUNT
-    ? [ { type: `account_env`, key: CLAUDE_TOKEN_ENV, value: account.token, account: account.name } ]
-    : []
+export const account_hot_swap = ( { list = list_claude_accounts } = {} ) => list().length >= 2
+
+/**
+ * Credential mount for a chosen account: a private env file the launcher copies
+ * in with `docker cp`, sourced after ~/.babysitrc so it wins. Without hot swap
+ * `default` needs none; with it every account rides along, plus the flag.
+ * @param {Object|null} account - Chosen account
+ * @param {Object} [options]
+ * @param {boolean} [options.hot_swap] - Token goes to the credentials file
+ * @returns {Object[]} `account_env` mounts
+ */
+export const account_credential_mounts = ( account, { hot_swap = false } = {} ) => {
+
+    if( !account || !hot_swap && account.name === DEFAULT_ACCOUNT ) return []
+
+    const mount = ( key, value ) => ( { type: `account_env`, key, value, account: account.name } )
+    return [ mount( CLAUDE_TOKEN_ENV, account.token ), ...hot_swap ? [ mount( HOT_SWAP_ENV, `1` ) ] : [] ]
+
+}
+
+/**
+ * Lines for the account env file, the same shape babysit-claude-token reads.
+ * @param {Object} account - Account with token
+ * @returns {string} KEY=value lines
+ */
+export const hot_swap_env_file = account => account_credential_mounts( account, { hot_swap: true } )
+    .map( ( { key, value } ) => `${ key }=${ value }\n` )
+    .join( `` )
 
 /**
  * Per-account Claude usage in collect_usage's shape, so `babysit usage`,

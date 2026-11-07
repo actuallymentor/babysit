@@ -38,6 +38,7 @@ Usage:
   babysit archive [<number|id>...]     Dim sessions and sink them to the bottom of babysit list; none offers the grey-dot ones; open un-archives
   babysit freeze <number|id|all>...    Pause session containers in place (docker pause); unfreeze resumes them
   babysit config                       Show settings and setup status
+  babysit config --transcripts PATH    Archive agent transcripts in PATH (off disables; default ~/.babysit/transcripts)
   babysit mode                         Print container inside a babysit agent container, else host
   babysit effort [level]               Inspect/change effort inside a managed agent session
   babysit model [model-name]           List/change models in the current agent session
