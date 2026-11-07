@@ -68,13 +68,16 @@ export const codex = {
 
     credentials: {
         // Launch gate (no model call). Codex refreshes an expired access
-        // token itself, so a refresh token alone still logs in.
+        // token itself, so a refresh token alone still logs in. Only an absent
+        // file or tokens with neither access nor refresh count as missing.
         gate: ( { file, env, now = Date.now() } ) => {
             if( env ) return `usable`
             if( file === null ) return `missing`
             try {
                 const { tokens, OPENAI_API_KEY: api_key } = JSON.parse( file ) || {}
                 if( api_key ) return `usable`
+                // A shape this gate does not know is no evidence of logout
+                if( !tokens ) return `unknown`
                 if( jwt_expiry( tokens?.access_token ) > now ) return `usable`
                 return tokens?.refresh_token ? `refreshable` : `missing`
             } catch {
