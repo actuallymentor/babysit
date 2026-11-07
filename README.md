@@ -53,20 +53,31 @@ Use explicit commands in scripts.
 | Flag | Effect |
 |---|---|
 | _(none)_ | Read-write workspace mount |
-| `--yolo` | Maximum autonomy; skip agent permissions (Claude: also accepts prompts that still block, such as rm safety checks, when their default is yes; never model swaps or billing) |
-| `--sandbox` | No workspace mount; ephemeral |
+| `--yolo` | Maximum autonomy: skip agent permission prompts, `AGENT_AUTONOMY_MODE=yolo` |
+| `--docker` | Mount the host Docker socket (controls the host daemon, even in sandbox) |
+| `--adb` | Android adb with a key shared by every session (network devices only) |
+| `--ios` | iOS 16 devices via WebDriverAgent, pairing shared by every session (network only) |
+| `--devices` | Every device kind: `--adb` and `--ios` |
+| `--clone` | Work in a durable copy; the original is mounted read-only at `/original` |
+| `--loop` | When idle, type `./LOOP.md`, `~/.agents/LOOP.md`, or "Keep going" |
+| `--sandbox` | No workspace mount; the container and its files are thrown away |
 | `--mudbox` | Read-only workspace mount |
-| `--clone` | Durable workspace clone + `/original`; explicit merge-back |
-| `--docker` | Host Docker daemon access |
-| `--adb` | `adb` + shared key and device registry (`babysit-adb` volume): pair a phone once with `babysit adb pair HOST:PORT CODE`, every session reconnects it at launch (pins port 5555 until reboot). Network devices only, host at `host.docker.internal` |
-| `--ios` | iPhone (iOS 16 and older) over the LAN via WebDriverAgent, pairing shared in the `babysit-ios` volume; see [iOS devices](#ios-devices---ios) |
-| `--devices` | Every device kind: `--adb` + `--ios` (+ future ones) |
-| `--ignore-host-agents-md` | Skip host instructions, preferences, rc file; keep credentials |
-| `--port PORT` / `--port H:C` | Publish port; repeatable |
-| `--loop` | Continue on idle |
-| `--log[=PATH]` | Append raw tmux output to file |
-| `--config FILE` | Use FILE instead of `./babysit.yaml`; relative `do: ./X.md` paths resolve beside FILE. The session keeps it on resume and in clones. Works with the launch menu too: `babysit --config FILE` opens it prefilled from the file's `launch:` |
+| `--ignore-host-agents-md` | Leave out host instructions, skills, preferences, and `~/.babysitrc` setup; keep credentials |
+| `--yes` | Skip clone safety and `--config DIR/` confirmation prompts; with "audit", apply required fixes |
+| `--name NAME` | Human-readable session name (shown in babysit list, usable with open) |
+| `--config FILE` | Use FILE instead of `./babysit.yaml`; kept on resume and in clones |
+| `--port PORT` | Publish host PORT to the same container port; repeatable |
+| `--port H:C` | Publish host port H to container port C |
+| `--log[=PATH]` | Append raw tmux output to PATH (default `.YYYY_MM_DD_HH_MM.babysit.log`) |
+| `--account NAME` | Claude: run on this subscription (babysit auth accounts); default picks most headroom |
 | `--config DIR/` | Start one detached session per `DIR/*.yaml` (see [Directory launch](#directory-launch)) |
+
+`babysit --help` prints the same rows (one registry, `src/cli/registry.js`; a test keeps this table in sync).
+
+- `--yolo` on Claude also accepts prompts that still block, such as rm safety checks, when their default is yes; never model swaps or billing.
+- `--adb`: shared key and device registry (`babysit-adb` volume); pair a phone once with `babysit adb pair HOST:PORT CODE`, every session reconnects it at launch (pins port 5555 until reboot). Host at `host.docker.internal`. See [Android devices](#android-devices---adb).
+- `--ios`: iPhone (iOS 16 and older) over the LAN, pairing in the `babysit-ios` volume; see [iOS devices](#ios-devices---ios).
+- `--config FILE`: relative `do: ./X.md` paths resolve beside FILE. `babysit --config FILE` opens the launch menu prefilled from the file's `launch:`.
 
 Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
 the socket controls the host daemon, including in Sandbox/Mudbox.
