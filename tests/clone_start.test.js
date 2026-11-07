@@ -113,6 +113,29 @@ describe( `clone container recovery`, () => {
         }
     } )
 
+    it( `a recorded host logout (null source hash) still rebuilds after a reboot`, async () => {
+        const state_dir = mkdtempSync( join( tmpdir(), `babysit-clone-logout-` ) )
+        const state_path = join( state_dir, `logout-codex.json` )
+        write_sync_state( state_path, { tmpfile: `/missing-reboot-temp/credentials.json`, source_hash: null, synced_hash: `container` } )
+        try {
+            await recover_clone_container( {
+                babysit_id: `logout`, agent: `claude`, container_id: `old`,
+                creds_states: { codex: state_path },
+            }, {
+                inspect_container: async () => `exited`,
+                monitor_alive: () => false,
+                update_session_fn: () => {},
+                recover_session: async () => {},
+            } )
+            const state = read_sync_state( state_path )
+            expect( state.source_hash ).toBe( null )
+            expect( existsSync( state.tmpfile ) ).toBe( true )
+            rmSync( dirname( state.tmpfile ), { recursive: true, force: true } )
+        } finally {
+            rmSync( state_dir, { recursive: true, force: true } )
+        }
+    } )
+
     it( `converts a legacy record once, then rebuilds its copy`, async () => {
         const updates = []
         const state_dir = mkdtempSync( join( tmpdir(), `babysit-clone-legacy-` ) )

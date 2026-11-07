@@ -316,7 +316,9 @@ export const recover_clone_container = async ( session = {}, {
         const state = read_sync_state( path )
         if( !state ) throw new Error( `Cannot reconstruct missing credential sync state for ${ name }` )
         if( existsSync( state.tmpfile ) ) continue
-        if( !state.source_hash || !state.synced_hash ) throw new Error( `Cannot reconstruct missing credential baseline for ${ name }` )
+        // A null source_hash is a recorded host logout, not missing metadata:
+        // rebuild the copy and let reconciliation honour the logout or a new login
+        if( !Object.hasOwn( state, `source_hash` ) || !state.synced_hash ) throw new Error( `Cannot reconstruct missing credential baseline for ${ name }` )
         const transport = build_private_tmpfile( `creds-${ name }`, `recovered.json`, ``, { file_mode: 0o666 } )
         if( !transport ) throw new Error( `Cannot rebuild credential observation file for ${ name }` )
         write_sync_state( path, { ...state, tmpfile: transport.file } )

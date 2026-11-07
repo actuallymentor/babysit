@@ -169,6 +169,26 @@ describe( `account switcher`, () => {
         }
     } )
 
+    it( `a pre-2.0 image without babysit-claude-token falls back to the restart switch`, async () => {
+        const restarts = []
+        const state = { babysit_id: `b1`, agent_session_id: `n1`, claude_account: `default`, account_switches: [], tmux_session: `t1`, claude_hot_swap: true, container_id: `c1` }
+        const switcher = create_account_switcher( state, {
+            list: () => accounts,
+            probe: async () => [ reading( `default`, 100 ), reading( `work`, 20 ) ],
+            load: () => state,
+            update: ( id, change ) => Object.assign( state, change( state ) ),
+            attached: async () => false,
+            notify: async () => {},
+            restart: ( id, account ) => restarts.push( [ id, account ] ),
+            swap: async () => { throw new Error( `babysit-claude-token: not found` ) },
+            nudge: async () => {},
+            now: () => NOW,
+        } )
+        expect( await switcher() ).toMatchObject( { from: `default`, to: `work` } )
+        expect( restarts ).toEqual( [ [ `b1`, `work` ] ] )
+        expect( state.account_switches[ 0 ].hot_swap ).toBeUndefined()
+    } )
+
     it( `an attached person gets the new token but types the continue themselves`, async () => {
         const { calls, switcher } = harness( { record: { claude_hot_swap: true, container_id: `c1` }, attached: true } )
         await switcher()
