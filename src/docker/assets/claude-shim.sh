@@ -44,6 +44,13 @@ for entry in "${path_entries[@]}"; do
     [ "$dir" = "$self_dir" ] && on_path=1
 done
 
+# A babysit shim carries this marker on its second line (builtins only)
+is_shim() {
+    local first second
+    { IFS= read -r first; IFS= read -r second; } < "$1" 2> /dev/null || return 1
+    [ "$second" = "# Installed ahead of the real claude on PATH." ]
+}
+
 # On PATH: skip everything up to this directory. Run by absolute path: skip only this file.
 skipping=$on_path
 for dir in "${dirs[@]}"; do
@@ -52,7 +59,14 @@ for dir in "${dirs[@]}"; do
         continue
     fi
     [ "$dir" = "$self_dir" ] && continue
-    [ -x "$dir/claude" ] && exec "$dir/claude" "$@"
+    [ -x "$dir/claude" ] || continue
+    # Hot swap: an older shim further along (e.g. in the shared npm-global
+    # volume) would put the rc token back into the env. This one already did
+    # its work, so go straight to the real claude.
+    if [ "${BABYSIT_CLAUDE_HOT_SWAP:-}" = 1 ] && is_shim "$dir/claude"; then
+        continue
+    fi
+    exec "$dir/claude" "$@"
 done
 
 echo "claude: not found on PATH" >&2
