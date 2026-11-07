@@ -32,12 +32,41 @@ export const agent_activity = ( output, agent_name ) => {
 
 }
 
+// An open turn whose pane has not moved this long is presumed over: Claude
+// fires no hook on an Escape interrupt, and a hook can die. Running agents
+// redraw a spinner/timer every second, so real work never sits this still.
+export const OPEN_TURN_STALE_S = 120
+
 /**
- * Prefer agent controls over pane stability, which includes decorative redraws.
+ * Whether launch events say a turn is in progress right now.
+ * @param {Object|null} turn - launch_channel turn() state
+ * @param {number} idle_seconds - Seconds since visible output last changed
+ * @returns {boolean}
+ */
+export const turn_running = ( turn, idle_seconds ) => turn?.state === `open` && idle_seconds < OPEN_TURN_STALE_S
+
+/**
+ * Activity, by precedence:
+ * 1. Explicit pane controls (approval dialog → idle, interrupt hint → running,
+ *    background work → waiting): what the person sees wins (gotcha 130).
+ * 2. Launch events, only from a producer that reports turn starts: an open,
+ *    fresh turn is running even while the pane sits still (silent tools).
+ * 3. Pane stability: no events (old containers/images), stale or
+ *    permission-blocked turns, and closed turns. A closed turn does not force
+ *    idle: its successor's turn_started can lag the pane by one poll.
  * @param {string} output - Current visible tmux pane
  * @param {string} agent_name - Native agent name
  * @param {number} idle_seconds - Seconds since visible output last changed
+ * @param {Object|null} [turn=null] - Event turn state with `reports_turns`
  * @returns {'idle'|'running'|'waiting'} Current activity
  */
-export const agent_status = ( output, agent_name, idle_seconds ) =>
-    agent_activity( output, agent_name ) || ( idle_seconds >= 1 ? `idle` : `running` )
+export const agent_status = ( output, agent_name, idle_seconds, turn = null ) => {
+
+    const shown = agent_activity( output, agent_name )
+    if( shown ) return shown
+
+    if( turn?.reports_turns && turn_running( turn, idle_seconds ) ) return `running`
+
+    return idle_seconds >= 1 ? `idle` : `running`
+
+}

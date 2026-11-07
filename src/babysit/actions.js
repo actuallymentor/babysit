@@ -16,11 +16,14 @@ const SEGMENT_POLL_INTERVAL_MS = 2_000
  * @param {string} session_name - The tmux session name
  * @param {*} action - The do: value from the rule
  * @param {Object} config - The babysit config section
- * @param {Object} [key_senders] - Injectable key senders for tests
+ * @param {Object} [options] - Seams and the launch channel
+ * @param {Function} [options.send_enter_fn] - Enter key sender
+ * @param {Object|null} [options.launch_channel] - Live turn events; segment waits end at turn_completed
  * @returns {Promise<void>}
  */
 export const execute_action = async ( session_name, action, config, {
     send_enter_fn = send_enter,
+    launch_channel = null,
 } = {} ) => {
 
     const action_str = String( action ).trim()
@@ -49,7 +52,8 @@ export const execute_action = async ( session_name, action, config, {
     // Markdown file path
     if( action_str.endsWith( `.md` ) ) {
         log.info( `Action: executing markdown file ${ action_str }` )
-        await execute_markdown( session_name, action_str, config )
+        const segments = load_markdown_segments( action_str, { config } )
+        if( segments ) await execute_segments( session_name, segments, { launch_channel } )
         return
     }
 
@@ -57,7 +61,7 @@ export const execute_action = async ( session_name, action, config, {
     if( action_str.includes( `===` ) ) {
         log.info( `Action: executing segmented instruction` )
         const segments = expand_segments( split_segments( action_str ), config )
-        await execute_segments( session_name, segments )
+        await execute_segments( session_name, segments, { launch_channel } )
         return
     }
 
@@ -87,40 +91,29 @@ const run_shell_command = ( command ) => new Promise( ( resolve, reject ) => {
 } )
 
 /**
- * Load and execute a markdown file as segmented instructions
- * @param {string} session_name - The tmux session name
- * @param {string} file_path - Path to the markdown file
- * @param {Object} config - The babysit config section
- * @returns {Promise<void>}
- */
-const execute_markdown = async ( session_name, file_path, config ) => {
-
-    const segments = load_markdown_segments( file_path, { config } )
-    if( !segments ) return
-
-    await execute_segments( session_name, segments )
-
-}
-
-/**
- * Execute an array of segments, waiting for idle between each
+ * Execute an array of segments, waiting for the agent between each
  * @param {string} session_name - The tmux session name
  * @param {string[]} segments - Array of text segments
+ * @param {Object} [options] - Launch channel and seams for wait_for_idle
  * @returns {Promise<void>}
  */
-const execute_segments = async ( session_name, segments ) => {
+export const execute_segments = async ( session_name, segments, options = {} ) => {
+
+    const { send_text_fn = send_text } = options
 
     for( let i = 0; i < segments.length; i++ ) {
 
         const segment = segments[i]
         log.debug( `Executing segment ${ i + 1 }/${ segments.length }: ${ segment.slice( 0, 60 ) }` )
 
-        await send_text( session_name, segment )
+        // Mark before typing: only a turn that starts after it can end this wait
+        const mark = options.launch_channel?.last_seq?.() ?? 0
+        await send_text_fn( session_name, segment )
 
         // Wait for idle before sending next segment (except for the last one)
         if( i < segments.length - 1 ) {
             log.debug( `Waiting for idle before next segment...` )
-            await wait_for_idle( session_name )
+            await wait_for_idle( session_name, { ...options, mark } )
         }
 
     }
@@ -128,37 +121,73 @@ const execute_segments = async ( session_name, segments ) => {
 }
 
 /**
- * Wait until the tmux session output stabilises (agent is idle)
- * @param {string} session_name - The tmux session name
- * @param {number} [threshold_s=30] - Seconds of no change to consider idle
- * @param {number} [max_wait_s=600] - Maximum time to wait
- * @returns {Promise<void>}
+ * Whether launch events show the segment's own turn finished: a turn that
+ * started after `mark` and has since completed (any status, interrupts too).
+ * @param {Object|null} launch_channel - Live channel
+ * @param {number} mark - Channel seq before the segment was typed
+ * @returns {boolean}
  */
-const wait_for_idle = async ( session_name, threshold_s = SEGMENT_IDLE_THRESHOLD_S, max_wait_s = 600 ) => {
+export const segment_turn_done = ( launch_channel, mark ) => {
 
-    const tracker = new IdleTracker()
-    const deadline = Date.now() +  max_wait_s * 1_000 
+    if( !launch_channel?.reports_turns?.() ) return false
+    const turn = launch_channel.turn()
+    return turn?.state === `closed` && turn.started_seq > mark
 
-    while( Date.now() < deadline ) {
+}
+
+/**
+ * Wait until the agent finished the segment's turn. With turn events, the
+ * turn's own completion ends the wait. The pane rule (30s unchanged screen)
+ * runs alongside as the fallback: no events, hooks that stop emitting, a
+ * Claude Escape interrupt (no hook fires), a lost container.
+ * @param {string} session_name - The tmux session name
+ * @param {Object} [options]
+ * @param {Object|null} [options.launch_channel] - Live turn events
+ * @param {number} [options.mark=0] - Channel seq before the segment was typed
+ * @param {number} [options.threshold_s=30] - Seconds of no change to consider idle
+ * @param {number} [options.max_wait_s=600] - Maximum time to wait
+ * @returns {Promise<'event'|'pane'|'gone'|'timeout'>} What ended the wait
+ */
+export const wait_for_idle = async ( session_name, {
+    launch_channel = null,
+    mark = 0,
+    threshold_s = SEGMENT_IDLE_THRESHOLD_S,
+    max_wait_s = 600,
+    capture_pane_fn = capture_pane,
+    wait_fn = wait,
+    poll_ms = SEGMENT_POLL_INTERVAL_MS,
+    now_fn = Date.now,
+} = {} ) => {
+
+    const tracker = new IdleTracker( now_fn )
+    const deadline = now_fn() + max_wait_s * 1_000
+
+    while( now_fn() < deadline ) {
+
+        launch_channel?.tick?.( { eager: true } )
+        if( segment_turn_done( launch_channel, mark ) ) {
+            log.debug( `Segment turn completed (${ launch_channel.turn().status }), continuing` )
+            return `event`
+        }
 
         try {
-            const raw = await capture_pane( session_name )
-            const clean = strip_ansi( raw )
-            const idle_seconds = tracker.update( clean )
+            const raw = await capture_pane_fn( session_name )
+            const idle_seconds = tracker.update( strip_ansi( raw ) )
 
             if( idle_seconds >= threshold_s ) {
                 log.debug( `Session idle for ${ idle_seconds }s, continuing` )
-                return
+                return `pane`
             }
         } catch {
             // Session may have ended
-            return
+            return `gone`
         }
 
-        await wait( SEGMENT_POLL_INTERVAL_MS )
+        await wait_fn( poll_ms )
 
     }
 
     log.warn( `Idle wait timed out after ${ max_wait_s }s` )
+    return `timeout`
 
 }
