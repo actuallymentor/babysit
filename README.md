@@ -220,7 +220,11 @@ Attachment is separate. Pruning needs free space for locks/journals.
 Launch makes no model call: it checks the launched agent's staged login locally (Codex: an expired access token with a
 refresh token still starts, since Codex refreshes it; OpenCode: no credentials is fine for free models; Claude: a
 setup-token or route) and asks before starting only when there is nothing to log in with. Every installed agent still
-receives credentials. Real prompts are `doctor --auth` and the checker:
+receives credentials, so each session's nested `claude` and `codex` are logged in.
+OpenCode also borrows the Codex ChatGPT login for its `openai` provider: access token only (never the single-use
+refresh token, which would log Codex out), refreshed from Codex every sync tick, never written to the host's OpenCode
+`auth.json`; an OpenCode `openai` login of its own wins. A ChatGPT subscription is then OpenCode's default over
+OpenRouter. Claude subscriptions stay out of OpenCode's own provider: Anthropic permits them only in Claude Code. Real prompts are `doctor --auth` and the checker:
 run `babysit auth init` once so a 10-minute host-level checker keeps logins verified (`babysit config` shows its state).
 The checker covers every agent whose credentials are on the host (Claude: a setup-token or route) and leaves
 OpenCode (whose identity depends on the project's provider route) to `doctor --auth`. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`

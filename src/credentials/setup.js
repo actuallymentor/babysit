@@ -6,7 +6,7 @@ import {
     copy_host_file_to_private_tmpfile,
     private_credential_tmpdir,
 } from '../utils/tmpfile.js'
-import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
+import { build_credential_sync_baseline, hash_credential_content, start_credential_sync } from './refresh.js'
 import { credential_env_keys, credential_sources, resolve_credential_file } from './paths.js'
 import { read_keychain_item } from './keychain.js'
 
@@ -19,6 +19,10 @@ import { read_keychain_item } from './keychain.js'
  *   file_required     the host file is the login: absence = logout, other read
  *                     errors and partial JSON retain recovery state, and the
  *                     file's directory is watched for re-logins (Codex)
+ *   compose           { read( host_text ), strip( container_text ) }: the
+ *                     container sees read()'s view of the host file (OpenCode
+ *                     adds the lent Codex login); strip() runs before every
+ *                     write back, so derived entries never reach the host
  *
  * A keychain source is one-way (host → container): a locked desktop keyring
  * must never turn a staged secret into a host file write.
@@ -34,8 +38,9 @@ const EMPTY = { mounts: [], sync: null, sync_baseline: null, cleanup_path: null 
 const start_file_sync = ( agent, path, tmpfile, baseline, state_path ) => {
 
     const required = agent.credentials?.file_required === true
+    const compose = agent.credentials?.compose || null
 
-    const read_source = async () => {
+    const read_host = () => {
         try {
             return readFileSync( path, `utf-8` )
         } catch ( error ) {
@@ -45,11 +50,12 @@ const start_file_sync = ( agent, path, tmpfile, baseline, state_path ) => {
             return null
         }
     }
+    const read_source = async () => compose ? compose.read( read_host() ) : read_host()
 
     // Mode is omitted so the host file keeps its perms (typically 0600)
     const write_destination = async content => {
         try {
-            writeFileSync( path, content )
+            writeFileSync( path, compose ? compose.strip( content ) : content )
         } catch ( error ) {
             log.debug( `Failed to write back to host creds at ${ path }: ${ error.message }` )
             throw error
@@ -140,10 +146,22 @@ export const setup_agent_credentials = ( agent, {
             if( pinned === `keyring` ) continue
 
             const path = resolve_credential_file( source.file )
-            if( !existing_tmpfile && !existsSync( path ) ) continue
+            const compose = agent.credentials?.compose || null
+            // A composed view can exist without the host file (OpenCode lent only Codex's login)
+            const composed = compose && !existing_tmpfile ? compose.read( existsSync( path ) ? readFileSync( path, `utf-8` ) : null ) : null
+            if( !existing_tmpfile && !existsSync( path ) && !composed ) continue
 
             let tmpfile = existing_tmpfile
-            if( !tmpfile ) {
+            if( !tmpfile && composed !== null ) {
+                const transport = build_private_tmpfile( `creds-${ agent.name }`, `auth.json`, composed, { file_mode: 0o666 } )
+                if( !transport ) return { mounts, sync, sync_baseline: baseline, cleanup_path }
+                tmpfile = transport.file
+                cleanup_path = transport.directory
+                mounts.push( { type: `synced_file`, source: tmpfile, target: agent.container_paths.creds } )
+                // Both sides start at the composed view, so the first tick sees no change
+                const hash = hash_credential_content( composed )
+                baseline = { baseline_source_hash: hash, baseline_tmpfile_hash: hash }
+            } else if( !tmpfile ) {
                 // A chmod-666 client-side sync file: Docker stages it before
                 // start and later pulls refreshed credentials back here
                 const transport = copy_host_file_to_private_tmpfile( path, agent.name )

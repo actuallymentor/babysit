@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 
 import { resolve_opencode_route_config } from './opencode_config.js'
+import { compose_opencode_auth, read_host_codex_login, strip_lent_logins } from './opencode_codex_login.js'
 import { opencode_screen } from './screens/opencode.js'
 
 export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
@@ -36,25 +37,32 @@ const is_literal_api_key = value => Boolean( value && !has_config_template( valu
  * @param {string} [options.home_dir=homedir()] - Host home directory
  * @param {Function} [options.path_exists=existsSync] - Filesystem seam
  * @param {Function} [options.read_file=readFileSync] - File reader seam
+ * @param {Function} [options.read_codex] - Host Codex login reader seam (lent to OpenCode)
+ * @param {boolean} [options.subscriptions_only] - Only OAuth (subscription) logins
  * @returns {string[]} Authenticated provider ids without credential values
  */
 export const resolve_opencode_auth_providers = ( {
     home_dir = homedir(),
     path_exists = existsSync,
     read_file = path => readFileSync( path, `utf8` ),
+    read_codex = read_host_codex_login,
+    subscriptions_only = false,
 } = {} ) => {
 
+    // The container's view: host entries plus the lent Codex login
     const auth_path = OPENCODE_CREDENTIAL_FILE.replace( /^~(?=\/|$)/, () => home_dir )
-    if( !path_exists( auth_path ) ) return []
+    const content = compose_opencode_auth( path_exists( auth_path ) ? read_file( auth_path ) : null, read_codex() )
+    if( !content ) return []
 
     try {
-        const credentials = JSON.parse( read_file( auth_path ) )
+        const credentials = JSON.parse( content )
         if( !credentials || typeof credentials !== `object` || Array.isArray( credentials ) ) return []
 
         return Object.entries( credentials )
             .filter( ( [ , credential ] ) => credential
                 && typeof credential === `object`
                 && typeof credential.type === `string`
+                && ( !subscriptions_only || credential.type === `oauth` )
             )
             .map( ( [ provider ] ) => provider )
     } catch {
@@ -90,9 +98,12 @@ export const resolve_opencode_default_model = ( options = {} ) => {
     const enabled_providers = Array.isArray( route.enabled_providers )
         ? route.enabled_providers
         : null
+    // A ChatGPT subscription (own or lent from Codex) costs nothing per call,
+    // so it beats OpenRouter; OpenRouter still beats a plain OpenAI API key
+    const subscription = resolve_opencode_auth_providers( { ...options, subscriptions_only: true } ).includes( `openai` )
     const preferred_providers = enabled_providers
         ? enabled_providers
-        : Object.keys( PROVIDER_DEFAULT_MODELS )
+        : subscription ? [ `openai`, `openrouter` ] : Object.keys( PROVIDER_DEFAULT_MODELS )
     const provider = preferred_providers.find( candidate =>
         providers.has( candidate )
         && PROVIDER_DEFAULT_MODELS[ candidate ]
@@ -155,6 +166,12 @@ export const opencode = {
         sources: {
             darwin: [ { file: OPENCODE_CREDENTIAL_FILE } ],
             linux: [ { file: OPENCODE_CREDENTIAL_FILE } ],
+        },
+        // The Codex ChatGPT login is lent to OpenCode's `openai` provider
+        // (access token only, never written back): see opencode_codex_login.js
+        compose: {
+            read: host => compose_opencode_auth( host, read_host_codex_login() ),
+            strip: strip_lent_logins,
         },
     },
 

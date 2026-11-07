@@ -25,6 +25,7 @@ import {
 } from '../src/agents/auth.js'
 import {
     OPENCODE_FREE_DEFAULT_MODEL,
+    OPENCODE_DEFAULT_MODEL,
     OPENCODE_OPENROUTER_DEFAULT_MODEL,
     resolve_opencode_model,
 } from '../src/agents/opencode.js'
@@ -239,11 +240,21 @@ describe( `host agent auth checks`, () => {
                 openrouter: { type: `api`, key: `redacted` },
             } ),
         } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )
+        // A ChatGPT subscription (oauth) costs nothing per call: it beats OpenRouter
         expect( resolve_opencode_model( [], {
             route: {},
             path_exists: () => true,
             read_file: () => JSON.stringify( {
                 openai: { type: `oauth`, access: `redacted` },
+                openrouter: { type: `api`, key: `redacted` },
+            } ),
+        } ) ).toBe( OPENCODE_DEFAULT_MODEL )
+        // A plain OpenAI API key does not: OpenRouter stays first
+        expect( resolve_opencode_model( [], {
+            route: {},
+            path_exists: () => true,
+            read_file: () => JSON.stringify( {
+                openai: { type: `api`, key: `redacted` },
                 openrouter: { type: `api`, key: `redacted` },
             } ),
         } ) ).toBe( OPENCODE_OPENROUTER_DEFAULT_MODEL )

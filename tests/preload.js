@@ -9,3 +9,7 @@
 for( const key of Object.keys( process.env ) ) if( /^(BABYSIT|PUSHOVER)_/.test( key ) ) delete process.env[ key ]
 delete process.env.CLAUDE_CODE_OAUTH_TOKEN
 process.env.BABYSIT_RC_LOADED = `1`
+
+// OpenCode borrows the host Codex login (opencode_codex_login.js). Point Codex
+// at an empty home so the machine's real login never changes model defaults.
+process.env.CODEX_HOME = `/nonexistent/babysit-test-codex-home`

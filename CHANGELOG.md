@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.1.0 — 2026-11-07
+
+### Added
+- OpenCode borrows the Codex ChatGPT login for its `openai` provider (access token only, refreshed from Codex, never written back to the host); its own OpenAI login still wins. With a ChatGPT subscription available, OpenCode defaults to it over OpenRouter. Nested `claude` and `codex` in OpenCode sessions stay logged in.
+
 ## 2.0.0 — 2026-11-07
 
 ### Breaking
