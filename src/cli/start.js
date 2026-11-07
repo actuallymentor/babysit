@@ -71,7 +71,7 @@ import { format_session_status_label } from './list.js'
 import { modifiers_from_flags } from './registry.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
 import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
-import { create_identity_reader } from '../sessions/identity.js'
+import { create_launch_channel } from '../sessions/launch_channel.js'
 import { get_session_pane } from '../tmux/session.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
@@ -1576,16 +1576,16 @@ const handoff_to_monitor = async launch => {
     // Save durable ownership metadata before spawning the monitor. The
     // prepared launch keeps its signal/error cleanup until the detached
     // monitor process has acknowledged that it spawned successfully.
-    const identity_reader = create_identity_reader( base_session_data )
+    const launch_channel = create_launch_channel( base_session_data )
     try {
-        const identity = await identity_reader.refresh()
+        const identity = await launch_channel.refresh()
         if( identity ) {
             if( cmd.recovering && identity.session_id !== base_session_data.recovery_native_id ) throw new Error( `Agent resumed a different conversation` )
             base_session_data.agent_session_id = identity.session_id
             base_session_data.agent_session_id_source = `structured`
         }
     } finally {
-        identity_reader.close()
+        launch_channel.close()
     }
     const pane = await get_session_pane( session_name )
     const session_data = record_launch_progress( babysit_id, {

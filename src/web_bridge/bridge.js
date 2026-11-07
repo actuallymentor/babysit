@@ -19,7 +19,7 @@ import { log } from '../utils/log.js'
 import { send_text } from '../tmux/send.js'
 import { get_session_attachment, get_session_pane, mark_read } from '../tmux/session.js'
 import { WEB_BRIDGE_DIR, WEB_BRIDGE_PROTOCOL, web_bridge_paths } from './paths.js'
-import { create_completion_reader } from './completion.js'
+import { create_launch_channel } from '../sessions/launch_channel.js'
 import { write_atomic_json } from './files.js'
 import { refresh_account_usage } from './account_usage.js'
 import { load_session } from '../sessions/store.js'
@@ -190,6 +190,16 @@ const validate_request = ( request, expected ) => {
 }
 
 /**
+ * A bridge opened without the monitor's shared launch channel owns its own.
+ * @param {Object} session - Stored Babysit launch metadata
+ * @returns {{read: Function, close: Function}} Completed reply reader
+ */
+const standalone_completion_reader = session => {
+    const channel = create_launch_channel( session )
+    return { read: channel.completion_reader.read, close: channel.close }
+}
+
+/**
  * Create a bridge bound to one immutable Babysit launch and exact tmux pane.
  * @param {Object} options
  * @param {Object} options.session - Stored Babysit session metadata
@@ -214,7 +224,7 @@ export const create_web_bridge = ( {
     attachment_fn = get_session_attachment,
     mark_read_fn = mark_read,
     now_fn = Date.now,
-    completion_reader = create_completion_reader( session ),
+    completion_reader = standalone_completion_reader( session ),
     load_session_fn = load_session,
     refresh_usage_fn = refresh_account_usage,
 } ) => {
