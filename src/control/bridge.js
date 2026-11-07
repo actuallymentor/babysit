@@ -22,7 +22,7 @@ export const create_control_bridge = ( session, {
     const pane = session.pane_id
     // Codex changes model/effort over its own RPC; its bridge serves only the
     // session-level handlers (exit, stuck) the monitor registers.
-    const terminal_agent = [ `claude`, `opencode`, `antigravity` ].includes( session.agent )
+    const terminal_agent = [ `claude`, `opencode` ].includes( session.agent )
     if( !terminal_agent && !Object.keys( handlers ).length ) return null
     if( !/^[a-f0-9-]{36}$/.test( launch_id || `` ) || !/^%\d+$/.test( pane || `` ) || !/^[a-f0-9]{12,64}$/.test( session.container_id || `` ) ) return null
     const [ command, ...prefix ] = docker_command_prefix()

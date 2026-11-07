@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'bun:test'
-import { get_agent, SUPPORTED_AGENTS, is_agent } from '../src/agents/index.js'
+import { get_agent, SUPPORTED_AGENTS, is_agent, retired_agent_message } from '../src/agents/index.js'
 import { extract_session_id } from '../src/sessions/extract.js'
 
 describe( `agent registry`, () => {
 
-    it( `supports four agents`, () => {
-        expect( SUPPORTED_AGENTS ).toEqual( [ `claude`, `codex`, `antigravity`, `opencode` ] )
+    it( `supports three agents`, () => {
+        expect( SUPPORTED_AGENTS ).toEqual( [ `claude`, `codex`, `opencode` ] )
     } )
 
     it( `returns null for unknown agent`, () => {
@@ -33,12 +33,6 @@ describe( `agent session id capture`, () => {
         const codex = get_agent( `codex` )
         expect( extract_session_id( `To continue this session, run codex resume ${ uuid }`, codex.session_id_pattern ) ).toBe( uuid )
         expect( extract_session_id( `Session ID: ${ uuid }`, codex.session_id_pattern ) ).toBe( uuid )
-    } )
-
-    it( `captures Antigravity resume ids`, () => {
-        const antigravity = get_agent( `antigravity` )
-        expect( extract_session_id( `agy --conversation ${ uuid }`, antigravity.session_id_pattern ) ).toBe( uuid )
-        expect( extract_session_id( `Conversation ID: ${ uuid }`, antigravity.session_id_pattern ) ).toBe( uuid )
     } )
 
     it( `captures OpenCode ses_ ids`, () => {
@@ -96,7 +90,6 @@ describe( `credential coverage`, () => {
 
     const claude = get_agent( `claude` )
     const codex = get_agent( `codex` )
-    const antigravity = get_agent( `antigravity` )
     const opencode = get_agent( `opencode` )
 
     it( `codex resolves the OAuth auth.json file from host CODEX_HOME`, () => {
@@ -129,12 +122,6 @@ describe( `credential coverage`, () => {
         expect( claude.credentials.darwin.env_key ).toBe( `CLAUDE_CODE_OAUTH_TOKEN` )
     } )
 
-    it( `antigravity declares the OAuth creds file in addition to GEMINI_API_KEY`, () => {
-        expect( antigravity.credentials.darwin.fallback_file ).toBe( `~/.gemini/antigravity-cli/antigravity-oauth-token` )
-        expect( antigravity.credentials.linux.file ).toBe( `~/.gemini/antigravity-cli/antigravity-oauth-token` )
-        expect( antigravity.credentials.darwin.env_key ).toBe( `GEMINI_API_KEY` )
-    } )
-
     it( `opencode declares its file path on darwin (no Keychain — opencode does not use it)`, () => {
         // opencode stores tokens in a plain file even on macOS. Pre-fix, darwin
         // adapter only handled keychain_service + fallback_file, so opencode's
@@ -148,14 +135,13 @@ describe( `credential coverage`, () => {
         // agent.container_paths.creds — null targets silently drop the file.
         expect( claude.container_paths.creds ).toBe( `/home/node/.claude/.credentials.json` )
         expect( codex.container_paths.creds ).toBe( `/home/node/.codex/auth.json` )
-        expect( antigravity.container_paths.creds ).toBe( `/home/node/.gemini/antigravity-cli/antigravity-oauth-token` )
         expect( opencode.container_paths.creds ).toBe( `/home/node/.local/share/opencode/auth.json` )
     } )
 
     it( `each credential mount target is an absolute container path`, () => {
         // Targets must be absolute and container-local — relative paths confuse
         // docker's bind-mount, and host paths would point at user files.
-        for( const a of [ claude, codex, antigravity, opencode ] ) {
+        for( const a of [ claude, codex, opencode ] ) {
             expect( a.container_paths.creds.startsWith( `/home/node/` ) ).toBe( true )
         }
     } )
@@ -177,7 +163,6 @@ describe( `credential preflight`, () => {
 describe( `model defaults`, () => {
 
     // OpenCode resolves a current model against the authenticated provider.
-    // Antigravity remains unpinned so its own account router can choose.
 
     it( `opencode resolves the frontier model through the authenticated provider`, () => {
         const resolve_model = get_agent( `opencode` ).defaults.model
@@ -192,10 +177,6 @@ describe( `model defaults`, () => {
         } ) ).toBe( `openrouter/openai/gpt-5.6-sol` )
     } )
 
-    it( `antigravity does not force a model`, () => {
-        expect( get_agent( `antigravity` ).defaults.model ).toBeUndefined()
-    } )
-
     it( `claude and codex force their preferred frontier defaults`, () => {
         expect( get_agent( `claude` ).defaults.model ).toBe( `default` )
         expect( get_agent( `claude` ).defaults.effort ).toBe( `medium` )
@@ -205,39 +186,15 @@ describe( `model defaults`, () => {
 
 } )
 
-describe( `Antigravity CLI flags`, () => {
+describe( `retired agents`, () => {
 
-    const agent = get_agent( `antigravity` )
-
-    it( `uses the native binary and permissions flag`, () => {
-        expect( agent.bin ).toBe( `agy` )
-        expect( agent.flags.skip_permissions() ).toBe( `--dangerously-skip-permissions` )
-    } )
-
-    it( `resumes an exact conversation or the latest conversation`, () => {
-        expect( agent.flags.resume( `conversation-id` ) ).toEqual( [ `--conversation`, `conversation-id` ] )
-        expect( agent.flags.resume_latest() ).toEqual( [ `--continue` ] )
-    } )
-
-    it( `exposes native effort and headless prompt flags`, () => {
-        expect( agent.flags.effort( `high` ) ).toEqual( [ `--effort`, `high` ] )
-        expect( agent.auth_check.args( `Say ok` ) ).toEqual( [ `--print`, `Say ok` ] )
-    } )
-
-    it( `waits for the Antigravity composer instead of typing into native setup`, () => {
-        expect( agent.initial_prompt_ready( `Antigravity CLI 1.2.1\n>\n────\n? for shortcuts     Gemini 3.8 Flash · medium` ) ).toBe( true )
-        for( const screen of [
-            `Do you trust the contents of this project?\n> Yes, I trust this folder\n↑/↓ Navigate · enter Confirm`,
-            `Choose your color scheme:\n> terminal\n↑/↓ Navigate · enter Confirm`,
-            `Select login method:\n> Google account\n↑/↓ Navigate · enter Select`,
-            `Terms of Service & Data Use\n> [ ] Yes, I agree\n↑/↓ Navigate · enter Toggle`,
-            `⣯ Generating...\n>\nesc to cancel       Gemini 3.8 Flash · medium`,
-        ] ) expect( agent.initial_prompt_ready( screen ) ).toBe( false )
-    } )
-
-    it( `does not reinterpret old Gemini sessions as Antigravity`, () => {
-        expect( get_agent( `gemini` ) ).toBeNull()
-        expect( is_agent( `gemini` ) ).toBe( false )
+    it( `are no longer registered`, () => {
+        for( const name of [ `gemini`, `antigravity`, `agy` ] ) {
+            expect( get_agent( name ) ).toBeNull()
+            expect( is_agent( name ) ).toBe( false )
+            expect( retired_agent_message( name ) ).toContain( `support was removed` )
+        }
+        expect( retired_agent_message( `claude` ) ).toBeNull()
     } )
 
 } )

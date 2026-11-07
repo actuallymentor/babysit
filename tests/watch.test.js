@@ -34,7 +34,7 @@ const report = {
             { name: `credit balance`, unit: `credits`, remaining: `0`, unlimited: true },
         ] },
         { agent: `opencode`, provider: `openrouter`, status: `error`, message: `HTTP 5\x0700`, limits: [] },
-        { agent: `antigravity`, provider: `google`, status: `unauthenticated`, limits: [] },
+        { agent: `opencode`, provider: `google`, status: `unauthenticated`, limits: [] },
     ],
 }
 
@@ -71,7 +71,7 @@ describe( `format_usage_panel`, () => {
         expect( lines[5] ).toMatch( /7d\s+▰▰▰▰▱▱▱▱▱▱\s+40%$/ )
         expect( lines[6] ).toBe( `  opencode/openrouter error HTTP 500` )
         expect( lines ).toHaveLength( 7 )
-        expect( lines.join( `\n` ) ).not.toMatch( /credit|antigravity|lifetime/ )
+        expect( lines.join( `\n` ) ).not.toMatch( /credit|google|lifetime/ )
         // Columns line up across agents.
         expect( lines[1].indexOf( `▰` ) ).toBe( lines[4].indexOf( `▰` ) )
     } )
@@ -197,7 +197,7 @@ describe( `usage_cell`, () => {
         expect( usage_cell( marked, { agent: `claude` } ) ).toMatchObject( { text: `▰▰▰▰▰▰▰▰▱▱` } )
         expect( usage_cell( marked, { agent: `codex` } ) ).toMatchObject( { text: `▰▰▰▰▱▱▱▱▱▱` } )
         expect( usage_cell( marked, { agent: `codex` } ).rendered ).toBe( usage_bar( 40 ) )
-        expect( usage_cell( marked, { agent: `antigravity` } ) ).toEqual( { text: `—`, color: `dim` } )
+        expect( usage_cell( marked, { agent: `unknown` } ) ).toEqual( { text: `—`, color: `dim` } )
         expect( usage_cell( null, { agent: `claude` } ) ).toEqual( { text: `—`, color: `dim` } )
     } )
 

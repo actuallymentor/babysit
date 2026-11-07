@@ -196,8 +196,6 @@ run_agent() {
             babysit-claude-token < /home/node/.babysit-claude-account.env || exit $?
             unset CLAUDE_CODE_OAUTH_TOKEN
         fi
-        # Secondary agy invocations need the same API route as the frontend.
-        python3 /usr/local/bin/antigravity-auth.py "$@" || exit $?
         exec "$@"
     ' babysit-agent "$@"
 }
@@ -217,7 +215,6 @@ fi
 capture_agent=""
 case "${1:-}" in
     claude|codex|opencode) capture_agent="$1" ;;
-    agy|antigravity) capture_agent="antigravity" ;;
     python3)
         if [ "${2:-}" = "/home/node/.babysit-capture/capture.py" ] && [ "${3:-}" = "launch" ]; then
             capture_agent="${4:-}"

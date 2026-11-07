@@ -235,7 +235,7 @@ describe( `parse_args`, () => {
     } )
 
     it( `combines multiple mode flags`, () => {
-        const cmd = parse_args( [ `antigravity`, `--mudbox`, `--yolo`, `--loop`, `--docker` ] )
+        const cmd = parse_args( [ `opencode`, `--mudbox`, `--yolo`, `--loop`, `--docker` ] )
         expect( cmd.flags.mudbox ).toBe( true )
         expect( cmd.flags.yolo ).toBe( true )
         expect( cmd.flags.loop ).toBe( true )
@@ -463,21 +463,12 @@ describe( `parse_args`, () => {
 
 } )
 
-describe( `Antigravity command alias`, () => {
+describe( `retired agents`, () => {
 
-    it( `explains the retired Gemini command instead of opening a named launcher`, () => {
-        expect( () => parse_args( [ `gemini` ] ) ).toThrow( `Gemini CLI support was replaced by Antigravity` )
-        expect( () => parse_args( [ `gemini`, `resume`, `native-id` ] ) ).toThrow( `existing Gemini conversations cannot be resumed` )
-    } )
-
-    it( `normalizes agy launches to the persisted antigravity name`, () => {
-        expect( parse_args( [ `agy`, `--yolo`, `--effort`, `high` ] ) )
-            .toMatchObject( { verb: `start`, agent: `antigravity`, flags: { yolo: true }, passthrough: [ `--effort`, `high` ] } )
-    } )
-
-    it( `normalizes agy resume without forwarding the alias`, () => {
-        expect( parse_args( [ `agy`, `resume`, `native-id` ] ) )
-            .toMatchObject( { verb: `resume`, agent: `antigravity`, session_id: `native-id`, passthrough: [] } )
+    it( `explains removed Gemini and Antigravity commands instead of opening a named launcher`, () => {
+        for( const argv of [ [ `gemini` ], [ `antigravity`, `--yolo` ], [ `agy`, `resume`, `native-id` ] ] ) {
+            expect( () => parse_args( argv ) ).toThrow( `support was removed from babysit` )
+        }
     } )
 
 } )

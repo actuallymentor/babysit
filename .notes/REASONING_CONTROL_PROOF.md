@@ -70,7 +70,7 @@ A native adapter is viable for Codex 0.153.4 when it controls the exact server h
 
 This requires changing Babysit's Codex launch path to start the explicit server and attach its TUI. It is not a proven retrofit for sessions already running under the ordinary launch path.
 
-The initial Codex experiment did not establish live control for other agents. OpenCode was subsequently verified as recorded above; Claude Code and Gemini CLI remain outside the implemented effort controls.
+The initial Codex experiment did not establish live control for other agents. OpenCode was subsequently verified as recorded above.
 
 ## Fresh production-container verification — 2026-09-08
 

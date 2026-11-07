@@ -14,41 +14,9 @@ import { log } from './log.js'
 // inside a 0700 host directory even though their inner sync file is 0666.
 
 /**
- * Copy a host file to a fresh chmod-666 tmpfile so the container's `node`
- * user can both read AND write it. Returns null if the source is missing
- * or unreadable so callers can skip the mount silently.
- *
- * @param {string} host_path - Source file on host (must exist)
- * @param {string} tag - Short identifier baked into the tmpfile name (typically the agent name)
- * @param {(content: string) => string} [transform] - Optional content rewrite before write
- * @returns {string|null} Tmpfile path, or null if source missing/unreadable
- */
-export const copy_host_file_to_tmpfile = ( host_path, tag, transform ) => {
-
-    try {
-
-        if( !existsSync( host_path ) ) return null
-
-        let content = readFileSync( host_path, `utf-8` )
-        if( transform ) content = transform( content )
-
-        const tmpfile = join( tmpdir(), `babysit-${ tag }-${ basename( host_path ) }-${ randomUUID() }` )
-        writeFileSync( tmpfile, content )
-        chmodSync( tmpfile, 0o666 )
-
-        return tmpfile
-
-    } catch ( e ) {
-        log.debug( `Failed to copy ${ host_path } to tmpfile: ${ e.message }` )
-        return null
-    }
-
-}
-
-/**
  * Build a fresh chmod-666 tmpfile from in-memory content (no host source).
  * Used when babysit synthesises a file that has no equivalent on the host
- * (e.g. Antigravity completion hooks for a fresh host profile).
+ * (e.g. a sanitised Claude settings.json).
  *
  * @param {string} tag - Short identifier baked into the tmpfile name
  * @param {string} hint - Filename hint (e.g. "hooks.json")

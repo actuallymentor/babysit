@@ -1,6 +1,6 @@
 import { resolve } from 'path'
 import mri from 'mri'
-import { is_agent } from '../agents/index.js'
+import { is_agent, retired_agent_message } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
 import { SHELLS } from './shell_init.js'
 
@@ -54,16 +54,15 @@ const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `tran
  */
 export const parse_args = ( argv ) => {
 
-    if( argv[0] === `gemini` ) throw new Error( `Gemini CLI support was replaced by Antigravity. Use babysit antigravity; existing Gemini conversations cannot be resumed with Antigravity.` )
+    if( retired_agent_message( argv[0] ) ) throw new Error( retired_agent_message( argv[0] ) )
 
     // Pre-process so a bare `--log` (no value) becomes `--log=` and mri's
     // `string` consumer doesn't grab the next flag as the value.
-    const named = argv[0] === `agy` ? [ `antigravity`, ...argv.slice( 1 ) ] : argv
     // mri reads `-n25` as the cluster n,2,5; split the attached row count on resume
     // commands, leaving literal agent input after `--` untouched.
-    const literal_start = named.indexOf( `--` ) === -1 ? named.length : named.indexOf( `--` )
-    const resume_command = named[0] === `resume` || is_agent( named[0] ) && named[1] === `resume`
-    const prepared = normalise_value_flags( named.flatMap( ( arg, index ) =>
+    const literal_start = argv.indexOf( `--` ) === -1 ? argv.length : argv.indexOf( `--` )
+    const resume_command = argv[0] === `resume` || is_agent( argv[0] ) && argv[1] === `resume`
+    const prepared = normalise_value_flags( argv.flatMap( ( arg, index ) =>
         resume_command && index < literal_start && /^-n\d+$/.test( arg ) ? [ `-n`, arg.slice( 2 ) ] : [ arg ] ) )
 
     // Note: mri's `unknown` callback halts parsing and returns the callback's value
@@ -72,7 +71,7 @@ export const parse_args = ( argv ) => {
     // numbers (01 -> 1, large IDs -> 1e+33). Give bare booleans an explicit
     // value for parsing only; agent passthrough retains the original tokens.
     const separator = prepared.indexOf( `--` )
-    const command_booleans = named[0] === `fork` ? FORK_FLAGS : named[0] === `watch` ? WATCH_FLAGS : named[0] === `update` ? UPDATE_FLAGS : []
+    const command_booleans = argv[0] === `fork` ? FORK_FLAGS : argv[0] === `watch` ? WATCH_FLAGS : argv[0] === `update` ? UPDATE_FLAGS : []
     const booleans = [ ...BOOLEAN_FLAGS, ...command_booleans ]
     const parseable = prepared.map( ( arg, index ) => {
         if( separator !== -1 && index > separator ) return arg
@@ -331,9 +330,8 @@ export const parse_args = ( argv ) => {
     // babysit fork <number|session_id> [agent] [start flags] [-- agent args]
     if( verb === `fork` ) {
         const selector = command_positionals[1] === undefined ? null : String( command_positionals[1] )
-        const agent_word = command_positionals[2] || null
-        const agent = agent_word === `agy` ? `antigravity` : agent_word
-        if( agent && !is_agent( agent ) ) throw new Error( `Unknown agent: ${ agent }` )
+        const agent = command_positionals[2] || null
+        if( agent && !is_agent( agent ) ) throw new Error( retired_agent_message( agent ) || `Unknown agent: ${ agent }` )
         if( command_positionals.length > 3 ) throw new Error( `Unknown fork argument: ${ command_positionals[3] }` )
         if( !selector && !flags.help ) throw new Error( `Usage: babysit fork <number|session_id> [agent] [flags]` )
         if( args.share && args.clone ) throw new Error( `--share and --clone are mutually exclusive` )
@@ -353,7 +351,7 @@ export const parse_args = ( argv ) => {
                 // --no-yolo etc.: drop that switch even though the parent had it
                 unset: FORK_NEGATABLE_FLAGS.filter( flag => args[ flag ] === false ),
             },
-            passthrough: collect_passthrough( prepared.slice( 1 ), agent_word, selector, [ ...FORK_FLAGS, ...negations ] ),
+            passthrough: collect_passthrough( prepared.slice( 1 ), agent, selector, [ ...FORK_FLAGS, ...negations ] ),
         }
     }
 

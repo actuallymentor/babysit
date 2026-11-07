@@ -65,4 +65,3 @@ Only when the classifier returns `unknown`. Driver is Codex: Claude is the agent
 
 ## Other agents
 - **Codex.** Rarely logs out. `codex login --device-auth` (code at a URL) with a persistent ChatGPT browser profile fits B's skeleton. An API key (`CODEX_API_KEY`) avoids it entirely.
-- **Antigravity.** Google sign-in fights automation hard. Use `GEMINI_API_KEY` instead.

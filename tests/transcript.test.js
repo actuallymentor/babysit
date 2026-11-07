@@ -50,26 +50,6 @@ describe( `exact native transcript verification`, () => {
         expect( check( `codex`, `root` ) ).toBe( false )
     } )
 
-    it( `requires Antigravity exact native CLI trajectory data rather than transcript filenames`, () => {
-        const file = join( directory, `.gemini/antigravity-cli/conversations/root.db` )
-        mkdirSync( join( directory, `.gemini/antigravity-cli/conversations` ), { recursive: true } )
-        const setup = spawnSync( `python3`, [ `-c`, `import sqlite3,sys
-with sqlite3.connect(sys.argv[1]) as db:
- db.execute('CREATE TABLE trajectory_meta (cascade_id TEXT, source INTEGER)')
- db.execute('CREATE TABLE steps (idx INTEGER)')
- db.execute('INSERT INTO trajectory_meta VALUES (?, ?)', ('root', 17))
- db.execute('INSERT INTO steps VALUES (0)')`, file ] )
-        expect( setup.status ).toBe( 0 )
-        expect( check( `antigravity`, `root` ) ).toBe( true )
-        expect( check( `antigravity`, `roo` ) ).toBe( false )
-        spawnSync( `python3`, [ `-c`, `import sqlite3,sys
-with sqlite3.connect(sys.argv[1]) as db: db.execute('UPDATE trajectory_meta SET source = 16')`, file ] )
-        expect( check( `antigravity`, `root` ) ).toBe( false )
-        rmSync( file )
-        fixture( `.gemini/antigravity-cli/brain/root/.system_generated/logs/transcript.jsonl`, { type: `USER_INPUT`, content: `Hi` } )
-        expect( check( `antigravity`, `root` ) ).toBe( false )
-    } )
-
     it( `validates OpenCode legacy JSON instead of trusting a filename`, () => {
         const file = fixture( `.local/share/opencode/storage/session/project/ses_root.json`, { id: `ses_root`, parentID: `ses_parent` } )
         expect( check( `opencode`, `ses_root` ) ).toBe( false )

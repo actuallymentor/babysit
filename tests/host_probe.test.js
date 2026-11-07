@@ -93,7 +93,7 @@ describe( `host CLI auth probe`, () => {
     it( `declines when the CLI is absent, unsupported, or reads a relocated config`, async () => {
 
         expect( await probe( claude, () => null ) ).toBeNull()
-        expect( await probe( get_agent( `antigravity` ), fake_cli( `echo ok` ) ) ).toBeNull()
+        expect( await probe( get_agent( `opencode` ), fake_cli( `echo ok` ) ) ).toBeNull()
         expect( await probe( claude, fake_cli( `echo ok` ), { env: { HOME: `/home/a`, CLAUDE_CONFIG_DIR: `/elsewhere` } } ) ).toBeNull()
         expect( claude.auth_check.host_args( `p`, { env: { HOME: `/home/a`, CLAUDE_CONFIG_DIR: `~/.claude` } } ) ).not.toBeNull()
         expect( resolve_host_bin( `sh`, { PATH: `/nonexistent:/bin:/usr/bin` } ) ).toMatch( /\/sh$/ )
@@ -134,7 +134,7 @@ describe( `host CLI auth probe`, () => {
 
     } )
 
-    it( `asks security for the item without a shell and decodes go-keyring secrets`, () => {
+    it( `asks security for the item without a shell`, () => {
 
         const calls = []
         const spawn_sync = result => ( bin, args ) => {
@@ -149,11 +149,6 @@ describe( `host CLI auth probe`, () => {
         expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 44, stdout: `` } ) } ) ).toEqual( { state: `missing` } )
         expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 51, stdout: `` } ) } ) ).toEqual( { state: `unknown` } )
         expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: null, error: new Error( `ETIMEDOUT` ) } ) } ) ).toEqual( { state: `unknown` } )
-
-        const antigravity = get_agent( `antigravity` ).credentials.darwin
-        const encoded = `go-keyring-base64:${ Buffer.from( `{"t":1}` ).toString( `base64` ) }`
-        expect( read_keychain_item( antigravity, { spawn_sync: spawn_sync( { status: 0, stdout: encoded } ) } ) ).toEqual( { state: `present`, text: `{"t":1}` } )
-        expect( calls.at( -1 ) ).toEqual( [ `security`, `find-generic-password`, `-s`, `gemini`, `-a`, `antigravity`, `-w` ] )
 
     } )
 

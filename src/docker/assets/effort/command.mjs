@@ -4,7 +4,6 @@ import { effort as opencode_effort } from './opencode.mjs'
 import { model as codex_model } from './codex-model.mjs'
 import { opencode_catalog, resolve_opencode_model } from './catalog.mjs'
 import { terminal_request } from './terminal-client.mjs'
-import { agy_catalog, resolve_agy_model } from './agy-catalog.mjs'
 import { run_benchmarks, benchmarks_help } from './benchmarks.mjs'
 
 export const effort_help = `Usage: babysit effort [level]
@@ -123,7 +122,7 @@ export const run_effort = async args => {
     const parsed = parse_control( args, effort_help )
     if( parsed.help ) return parsed.help
     const agent = process.env.BABYSIT_EFFORT_AGENT || process.env.BABYSIT_CONTROL_AGENT
-    if( parsed.status_id || [ `claude`, `antigravity` ].includes( agent ) ) return terminal_request( `effort`, parsed )
+    if( parsed.status_id || agent === `claude` ) return terminal_request( `effort`, parsed )
     if( !process.env.BABYSIT_EFFORT_ENDPOINT ) {
         throw new Error( `Effort control is unavailable. Run this command inside a newly started managed agent session with a supported CLI and model.` )
     }
@@ -149,14 +148,6 @@ const model_control = async args => {
             ].join( `\n` )
         }
         const target = await resolve_opencode_model( parsed.value )
-        return terminal_request( `model`, { value: target.id, target } )
-    }
-    if( agent === `antigravity` ) {
-        if( parsed.value === undefined ) {
-            const { models } = await agy_catalog()
-            return [ `Antigravity models:`, ...models.map( model => `${ model.id } — ${ model.name }` ) ].join( `\n` )
-        }
-        const target = await resolve_agy_model( parsed.value )
         return terminal_request( `model`, { value: target.id, target } )
     }
     if( agent === `claude` ) return terminal_request( `model`, parsed )

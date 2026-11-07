@@ -9,7 +9,7 @@ import {
 } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
-import { decode_keyring_secret, start_keyring_sync } from './keyring.js'
+import { start_keyring_sync } from './keyring.js'
 
 const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
 
@@ -40,8 +40,7 @@ export const read_keychain_item = ( cred_config, { spawn_sync = spawnSync } = {}
     } ) || {}
 
     if( status === KEYCHAIN_ITEM_NOT_FOUND ) return { state: `missing` }
-    const raw = status === 0 ? String( stdout || `` ).trim() : ``
-    const text = cred_config.keychain_encoding === `go-keyring` ? decode_keyring_secret( raw ) : raw
+    const text = status === 0 ? String( stdout || `` ).trim() : ``
     return text ? { state: `present`, text } : { state: `unknown` }
 
 }
@@ -77,18 +76,14 @@ export const setup_darwin_credentials = async ( agent, {
     if( cred_config.keychain_service ) {
 
         const keychain_selector = `-s "${ cred_config.keychain_service }"${ cred_config.keychain_account ? ` -a "${ cred_config.keychain_account }"` : `` }`
-        const read_keychain = () => {
-            const value = run_command(
-                `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
-                { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
-            )
-            return cred_config.keychain_encoding === `go-keyring` ? decode_keyring_secret( value ) : value
-        }
+        const read_keychain = () => run_command(
+            `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
+            { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
+        )
 
         // Preserve the foreground source when reconnecting a monitor. Legacy
         // Claude captures lack source metadata, so retain their detection path.
-        // Antigravity captures are new: an unmarked baseline is file-backed.
-        const pinned_source = existing_tmpfile && ( baseline?.credential_source || cred_config.keychain_encoding === `go-keyring` )
+        const pinned_source = existing_tmpfile && baseline?.credential_source
         const exists = pinned_source ? null : run_command(
             `security find-generic-password ${ keychain_selector } 2>/dev/null`,
             { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
@@ -182,7 +177,7 @@ export const setup_darwin_credentials = async ( agent, {
         }
     }
 
-    // Environment variable credentials (e.g. CODEX_API_KEY, GEMINI_API_KEY).
+    // Environment variable credentials (e.g. CODEX_API_KEY).
     // These can stack with file-based creds — env vars are how users override
     // the file's contents at runtime.
     if( cred_config.env_key && process.env[ cred_config.env_key ] ) {

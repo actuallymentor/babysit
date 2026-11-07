@@ -78,7 +78,7 @@ const STATUS_TEXT = {
     unavailable: `Limits not exposed`,
 }
 
-const AGENT_NAMES = { antigravity: `Antigravity`, claude: `Claude`, codex: `Codex`, opencode: `OpenCode` }
+const AGENT_NAMES = { claude: `Claude`, codex: `Codex`, opencode: `OpenCode` }
 
 const host_cpu_label = cores => cores ? `of ${ cores } ${ cores === 1 ? `core` : `cores` }` : `of host`
 

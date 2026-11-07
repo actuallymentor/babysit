@@ -87,7 +87,7 @@ describe( `CLI help`, () => {
             expect( help_topic( [ `--help` ] ) ).toBe( null )
             expect( help_topic( [ `nonsense`, `--help` ] ) ).toBe( null )
             expect( help_topic( [ `help`, `__proto__` ] ) ).toBe( null )
-            expect( help_topic( [ `agy`, `--help` ] ) ).toStartWith( `Usage: babysit antigravity [options]` )
+            expect( help_topic( [ `opencode`, `--help` ] ) ).toStartWith( `Usage: babysit opencode [options]` )
         } )
 
         it( `gives every page a usage line and examples`, () => {

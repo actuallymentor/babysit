@@ -6,24 +6,21 @@ import { createInterface } from 'readline'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 
 const binary_name = process.argv[1] ? basename( process.argv[1] ) : `agent`
-const agent_name = binary_name === `agy` ? `antigravity` : binary_name
+const agent_name = binary_name
 const workspace = `/workspace`
 const marker_log = `${ workspace }/e2e-fake-agent.log`
 const agent_args = process.argv.slice( 2 )
 const session_prefix_by_agent = {
     claude: `c1a`,
     codex: `c0d`,
-    antigravity: `9e1`,
     opencode: `0ce`,
 }
 const startup_banner_by_agent = {
     claude: `Welcome to Claude Code v3`,
     codex: `OpenAI Codex\nmodel: loading\ndirectory: loading or /workspace`,
-    antigravity: `Antigravity CLI`,
     opencode: `OpenCode loading`,
 }
 const composer_ready_by_agent = {
-    antigravity: `Antigravity CLI\n>\n? for shortcuts`,
     claude: `Claude Code v3\n? for shortcuts`,
     codex: `OpenAI Codex\nmodel: fake\ndirectory: /workspace\n› Ask Codex to do anything`,
     opencode: `Ask anything...`,
@@ -31,7 +28,6 @@ const composer_ready_by_agent = {
 const credential_paths = {
     claude: `/home/node/.claude/.credentials.json`,
     codex: `/home/node/.codex/auth.json`,
-    antigravity: `/home/node/.gemini/antigravity-cli/antigravity-oauth-token`,
     opencode: `/home/node/.local/share/opencode/auth.json`,
 }
 
@@ -158,13 +154,6 @@ const handle_prompt = ( line ) => {
         process.exit( 0 )
     }
 
-    if( agent_name === `antigravity` ) {
-        run_antigravity_hooks( `PreInvocation` )
-        append_antigravity_step( `USER_EXPLICIT`, `USER_INPUT`, line )
-        append_antigravity_step( `MODEL`, `PLANNER_RESPONSE`, `Completed: ${ line }` )
-        run_antigravity_hooks( `Stop` )
-    }
-
     const auto_prompt_agent = line.match( /BABYSIT_E2E_AUTO_PROMPT_([A-Z]+)/ )?.[1]?.toLowerCase()
     if( auto_prompt_agent ) {
         write_marker( `${ workspace }/e2e-auto-prompt-${ auto_prompt_agent }.txt`, line )
@@ -287,64 +276,16 @@ if( is_auth_check ) {
 const transcript_paths = {
     codex: `/home/node/.codex/sessions/e2e/rollout-${ session_id }.jsonl`,
     claude: `/home/node/.claude/projects/-workspace/${ session_id }.jsonl`,
-    antigravity: `/home/node/.gemini/antigravity-cli/brain/${ session_id }/.system_generated/logs/transcript_full.jsonl`,
     opencode: `/home/node/.local/share/opencode/storage/session/e2e/${ session_id }.json`,
 }
 const transcript = transcript_paths[ agent_name ]
 if( transcript ) {
     ensure_parent( transcript )
-    if( agent_name !== `antigravity` ) writeFileSync( transcript, JSON.stringify( agent_name === `codex`
+    writeFileSync( transcript, JSON.stringify( agent_name === `codex`
         ? { type: `session_meta`, payload: { id: session_id, source: `cli` } }
         : { sessionId: session_id, id: session_id, type: `user`, projectHash: `e2e` } ) + `\n` )
 }
-// Antigravity emits its real hook payloads against native SQLite and JSONL
-// state; use the installed capture bridge rather than forging its receipts.
-let antigravity_step = transcript && existsSync( transcript ) && agent_name === `antigravity`
-    ? readFileSync( transcript, `utf8` ).trim().split( `\n` ).filter( Boolean ).length : 0
-const append_antigravity_step = ( source, type, content ) => {
-    appendFileSync( transcript, JSON.stringify( { step_index: antigravity_step++, source, type, status: `DONE`, content, tool_calls: [] } ) + `\n` )
-}
-const run_antigravity_hooks = event => {
-    const hooks_file = `/home/node/.gemini/config/hooks.json`
-    if( !existsSync( hooks_file ) ) throw new Error( `Antigravity completion hooks missing` )
-    const hooks = JSON.parse( readFileSync( hooks_file, `utf8` ) )
-    const payload = {
-        conversationId: session_id,
-        transcriptPath: transcript,
-        artifactDirectoryPath: `/home/node/.gemini/antigravity-cli/brain/${ session_id }`,
-        workspacePaths: [ workspace ],
-        modelName: `gemini-3.8-flash-medium`,
-        initialNumSteps: antigravity_step,
-        invocationNum: 0,
-        ... event === `Stop` ? { executionNum: antigravity_step, terminationReason: `NO_TOOL_CALL`, error: ``, fullyIdle: true } : {} ,
-    }
-    for( const group of Object.values( hooks ) ) for( const handler of group[ event ] || [] ) {
-        if( handler.type !== `command` ) continue
-        const result = spawnSync( `sh`, [ `-c`, handler.command ], {
-            input: JSON.stringify( payload ), encoding: `utf8`, timeout: ( handler.timeout || 5 ) * 1000,
-        } )
-        if( result.error || result.status !== 0 ) {
-            const reason = result.error?.message || result.stderr?.trim() || result.signal || `exit ${ result.status }`
-            throw new Error( `Antigravity ${ event } hook failed: ${ reason }` )
-        }
-    }
-}
-if( agent_name === `antigravity` ) {
-    const database = `/home/node/.gemini/antigravity-cli/conversations/${ session_id }.db`
-    ensure_parent( database )
-    const result = spawnSync( `python3`, [ `-c`, `
-import sqlite3, sys
-with sqlite3.connect(sys.argv[1]) as db:
-    db.execute('CREATE TABLE IF NOT EXISTS trajectory_meta (trajectory_id TEXT, cascade_id TEXT, trajectory_type INTEGER, source INTEGER)')
-    db.execute('INSERT INTO trajectory_meta SELECT ?, ?, 4, 17 WHERE NOT EXISTS (SELECT 1 FROM trajectory_meta)', (sys.argv[2], sys.argv[2]))
-    db.execute('CREATE TABLE IF NOT EXISTS steps (idx INTEGER)')
-    db.execute('INSERT INTO steps SELECT 0 WHERE NOT EXISTS (SELECT 1 FROM steps)')
-`, database, session_id ], { encoding: `utf8` } )
-    if( result.status !== 0 ) throw new Error( `Antigravity native state failed: ${ result.stderr }` )
-    if( !existsSync( transcript ) ) append_antigravity_step( `USER_EXPLICIT`, `USER_INPUT`, `Fixture conversation` )
-    run_antigravity_hooks( `PreInvocation` )
-}
-if( agent_name !== `antigravity` && process.env.BABYSIT_COMPLETION_FILE && process.env.BABYSIT_COMPLETION_LAUNCH_ID ) {
+if( process.env.BABYSIT_COMPLETION_FILE && process.env.BABYSIT_COMPLETION_LAUNCH_ID ) {
     const identity_path = `${ dirname( process.env.BABYSIT_COMPLETION_FILE ) }/identity.json`
     ensure_parent( identity_path )
     const identity = JSON.stringify( {

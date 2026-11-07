@@ -19,7 +19,6 @@ const callbacks = ( first, transition ) => {
 }
 
 const claude_ready = `Claude Code v2.1.278\n● high · /effort\n────\n❯\u00a0Try "fix typecheck errors"\n────\nmanual mode on`
-const agy_ready = `Antigravity CLI 1.2.9\n────────────────\n>\n────────────────\n? for shortcuts   Gemini 3.1 Pro · high`
 
 // Claude Code 2.1.283's picker as captured live: a ten-row window with ↑/↓
 // scroll hints that wraps at both ends, and an update-only final row.
@@ -443,24 +442,6 @@ describe( `native terminal controls`, () => {
         await expect( terminal_control( { agent: `opencode`, operation: `model`, value: target.id, target, capture, send_text, send_keys: async () => {}, dismiss } ) ).rejects.toThrow( `deadline expired` )
         expect( dismissed ).toBe( true )
         expect( screen ).toBe( ready )
-    } )
-
-    test( `uses Antigravity's exact model slug and checks the footer`, async () => {
-        const changed = `Antigravity CLI 1.2.9\n> /model\n  ⎿  Model set to Gemini 3.8 Flash (High)\n────────────────\n>\n────────────────\n? for shortcuts   Gemini 3.8 Flash · high`
-        const io = callbacks( agy_ready, ( _, action ) => action === `text` ? changed : agy_ready )
-        const result = await terminal_control( {
-            agent: `antigravity`, operation: `model`, value: `gemini-3.8-flash-high`,
-            target: { id: `gemini-3.8-flash-high`, name: `Gemini 3.8 Flash (High)`, effort: `high` }, ...io,
-        } )
-        expect( result.applied ).toBe( `gemini-3.8-flash-high` )
-        expect( io.sent ).toEqual( [ [ `text`, `/model gemini-3.8-flash-high` ] ] )
-    } )
-
-    test( `rejects unavailable Antigravity effort without changing the model`, async () => {
-        const picker = `${ agy_ready }\nSet Effort\nlow                   high\nKeyboard: ←/→ Effort`
-        const io = callbacks( agy_ready, ( _, action ) => action === `text` ? picker : agy_ready )
-        await expect( terminal_control( { agent: `antigravity`, operation: `effort`, value: `medium`, ...io } ) ).rejects.toMatchObject( { code: `CONTROL_UNSUPPORTED` } )
-        expect( io.sent ).toEqual( [ [ `text`, `/effort` ], [ `keys`, `Escape` ] ] )
     } )
 
     test( `rejects OpenCode when its composer contains a draft`, async () => {

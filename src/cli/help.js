@@ -114,7 +114,7 @@ Examples:
   babysit codex --clone --name "feature 1"
   babysit codex --sandbox --loop
   babysit codex --ignore-host-agents-md
-  babysit antigravity --mudbox --yolo
+  babysit opencode --mudbox --yolo
   babysit opencode resume abc-123 --yolo
   babysit doctor --auth
   babysit doctor --auth opencode --refresh

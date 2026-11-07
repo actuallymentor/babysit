@@ -4,8 +4,7 @@ Durable Docker + tmux sessions for coding agents. Detach, resume, recover;
 automate terminal responses with YAML rules.
 
 Supports [Claude](https://docs.anthropic.com/en/docs/claude-code),
-[Codex](https://github.com/openai/codex),
-[Antigravity](https://antigravity.google/docs/cli/overview/), and
+[Codex](https://github.com/openai/codex), and
 [OpenCode](https://github.com/anomalyco/opencode).
 
 ## Quick start
@@ -23,7 +22,7 @@ babysit --port 5173 --name Blog --yolo   # Launcher with flags and name prefille
 babysit claude --yolo
 babysit codex --clone --name "feature 1"
 babysit codex --sandbox --loop
-babysit antigravity --mudbox
+babysit opencode --mudbox
 ```
 
 **Detach:** `Ctrl+B d` · **Reattach:** `babysit open` · **Reference:** `babysit --help`, and per command with examples: `babysit auth --help`, `babysit auth init --help`, `babysit help resume` (inside a session: `babysit help`)
@@ -311,7 +310,6 @@ A request already running at the provider finishes unchanged.
 | Codex | Native thread/turn settings; reports partial application if the active turn rejects a model change |
 | Claude | Native session-only pickers; effort can change during a turn |
 | OpenCode | Effort plugin; model picker applies on the next turn |
-| Antigravity | Native model/effort controls; waits for an idle composer |
 
 Terminal controls preserve drafts and existing dialogs, queue for up to 60 seconds,
 and return a request ID while pending. `--status` reports applied/failed results.
@@ -363,7 +361,7 @@ without refresh locking. JSON stays valid. Host invocations
 use the host cache and environment, with `~/.babysitrc` sourced first.
 
 Provider filtering happens on every invocation using installed CLIs and local
-native credentials (Codex, Claude, Antigravity, and recognized direct OpenCode
+native credentials (Codex, Claude, and recognized direct OpenCode
 providers). Credentials are read without refreshing tokens or sending inference.
 This does not verify expired credentials or imply every listed variant is
 selectable in your CLI. Router credentials alone do not enable every creator.
@@ -420,7 +418,7 @@ Percentages are green below 50%, yellow below 70%, red above; resets are relativ
 with the local date dimmed. Colors follow `NO_COLOR`, `FORCE_COLOR`, and TTY detection.
 
 Internal provider endpoints are used where needed. Unsupported credentials/providers
-(including Antigravity quota retrieval) are labeled unavailable; other results remain
+are labeled unavailable; other results remain
 visible. Exit 1 indicates unavailable usage or fetch errors. Missing authentication
 is reported separately. Usage reads start no inference, with one exception: when the `/login` token cannot read Claude
 usage and a setup-token exists, one 1-output-token Haiku request reads the session/weekly quotas from its rate-limit
@@ -464,7 +462,7 @@ babysit:
 
 ```yaml
 launch:
-    agent: claude            # claude | codex | antigravity | opencode
+    agent: claude            # claude | codex | opencode
     name: api reviewer       # optional; default: file name without extension (with it if all digits)
     mode: regular            # regular | sandbox | mudbox
     yolo: true
@@ -569,7 +567,7 @@ babysit config --transcripts off                # disable; `default` restores ~/
 
 | Path (under the archive) | Contents |
 |---|---|
-| `volumes/<volume>/` | Mirror of each agent state volume: Claude `projects/` (`<session>.jsonl`, `<session>/subagents/agent-*.jsonl`, `tool-results/`), Codex `sessions/` rollouts (subagents = own rollout, `source.subagent`) + `sqlite/` (thread spawn edges), OpenCode `opencode.db`, Antigravity `conversations/*.db` |
+| `volumes/<volume>/` | Mirror of each agent state volume: Claude `projects/` (`<session>.jsonl`, `<session>/subagents/agent-*.jsonl`, `tool-results/`), Codex `sessions/` rollouts (subagents = own rollout, `source.subagent`) + `sqlite/` (thread spawn edges), OpenCode `opencode.db` |
 | `sandbox/<babysit_id>/` | Sandbox sessions: state copied out before the container is removed |
 | `sessions/<babysit_id>.json` | Index: agent, workspace, start, native session id, Claude account + switches, transcript paths |
 
@@ -628,7 +626,6 @@ npm run test:all
 | `npm run test:web` | Web API + browser interactions |
 | `npm run test:bridge` | Browser → tmux; first `npm run build --prefix web` |
 | `npm run test:prune` | Interactive pruning through real terminal |
-| `npm run test:antigravity` | Real agy TUI/hooks/resume against local model fixture |
 | `npm run test:codex` | Real Codex resume and permissions against local model fixture |
 | `npm run test:numbers` | Real CLI history/recovery selectors and PTY resume attach/detach |
 | `npm run test:close` | Real Docker/tmux numbered close and list renumbering (requires E2E image) |
@@ -644,8 +641,7 @@ npm run test:all
 Set `BABYSIT_CONTROL_E2E_SUBAGENT=1` to also exercise real subagent-issued controls
 (requires paid inference).
 `test:claude-dialog` uses local Claude credentials and one small model call; exit 1 means the dialog changed.
-Requires Docker, tmux, Python 3,
-`agy` (`AGY_E2E_BINARY` override), `codex` (`CODEX_E2E_BINARY` override),
+Requires Docker, tmux, Python 3, `codex` (`CODEX_E2E_BINARY` override),
 Claude Code 2.1.285, Chrome/Chromium (`CHROME_PATH` override).
 Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.
 E2E uses real Docker/tmux without model API calls.

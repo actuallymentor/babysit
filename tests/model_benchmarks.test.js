@@ -70,7 +70,7 @@ it( `rejects invalid flags and model-switch combinations`, () => {
 } )
 
 it( `requires installed CLIs plus credentials; routers never imply every creator`, async () => {
-    const discover = async () => ( { env: {}, codex: { tokens: { access_token: `secret` } }, claude: {}, antigravity: {},
+    const discover = async () => ( { env: {}, codex: { tokens: { access_token: `secret` } }, claude: {},
         opencode: { anthropic: { key: `secret` }, google: { access: `secret` }, openrouter: { key: `secret` }, deepseek: {} },
     } )
     expect( [ ...await benchmark_providers( { discover, has_cli: async () => false } ) ] ).toEqual( [] )

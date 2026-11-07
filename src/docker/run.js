@@ -373,12 +373,6 @@ export const get_agent_state_mounts = ( agent, workspace, mode = {} ) => {
         ]
     }
 
-    if( agent.name === `antigravity` ) {
-        return [
-            { source: scoped( `state` ), target: `/home/node/.gemini/antigravity-cli` },
-        ]
-    }
-
     if( agent.name === `opencode` ) {
         return [
             { source: scoped( `data` ), target: `/home/node/.local/share/opencode` },
@@ -643,11 +637,10 @@ export const build_docker_command_args = ( options ) => {
     flags.push( `-e`, `BABYSIT_MODIFIERS=${ modifier_label }` )
 
     // Pin the agent's home/config directory inside the container. Each agent
-    // exposes its own env var (CODEX_HOME, GEMINI_CLI_HOME, CLAUDE_CONFIG_DIR,
-    // OPENCODE_CONFIG_DIR). Setting it explicitly gives babysit a single
-    // source of truth for where the agent reads global instructions and
-    // credentials from — and stops a stray host-side value from redirecting
-    // the agent to a path we never mount.
+    // exposes its own env var (CODEX_HOME, CLAUDE_CONFIG_DIR, OPENCODE_CONFIG_DIR).
+    // Setting it explicitly gives babysit a single source of truth for where
+    // the agent reads global instructions and credentials from — and stops a
+    // stray host-side value from redirecting the agent to a path we never mount.
     if( agent.home?.env_var && agent.home?.dir ) {
         flags.push( `-e`, `${ agent.home.env_var }=${ agent.home.dir }` )
     }
@@ -671,7 +664,7 @@ export const build_docker_command_args = ( options ) => {
     }
 
     // Agent-native resume state. Claude already needed this for projects/plans/
-    // todos; Codex, Antigravity, and OpenCode also store local transcripts/session
+    // todos; Codex and OpenCode also store local transcripts/session
     // indexes outside auth files, so fresh containers need persistent volumes
     // here or `resume --last` / `--session <id>` starts from an empty install.
     if( include_agent_state ) {
@@ -719,7 +712,7 @@ export const build_docker_command_args = ( options ) => {
 
     // Bind-mount the user's cross-agent globals into each agent's native
     // discovery path (read-only). The agent loads it through its own
-    // AGENTS.md / GEMINI.md / CLAUDE.md mechanism — no babysit-specific
+    // AGENTS.md / CLAUDE.md mechanism — no babysit-specific
     // configuration needed inside the container. Conditional on the host
     // file existing so a missing ~/.agents/AGENTS.md leaves the agent in
     // its vanilla state.

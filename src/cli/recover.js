@@ -3,6 +3,7 @@ import { hostname } from 'os'
 import { randomUUID } from 'crypto'
 import { wait } from 'mentie'
 import { TMUX_SOCKET } from '../utils/paths.js'
+import { retired_agent_message } from '../agents/index.js'
 import { inspect_stored_sessions, load_session, session_workspace, update_session } from '../sessions/store.js'
 import { acquire_session_lock, get_boot_id, lock_owner_is_stale } from '../sessions/lock.js'
 import { docker_identity, recovery_candidates, select_recovery_sessions, session_lock_key, workspace_config_hash } from '../sessions/recovery.js'
@@ -20,7 +21,7 @@ import { log } from '../utils/log.js'
 /** Explain why a durable launch cannot be automatically replayed. */
 export const recovery_blocker = ( session, { replay = true } = {} ) => {
 
-    if( session.agent === `gemini` ) return `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.`
+    if( retired_agent_message( session.agent ) ) return retired_agent_message( session.agent )
     if( session.recovery_version !== 1 ) return `Legacy session has no recovery intent; use babysit resume explicitly`
     if( !session.expected_open ) return `Intentionally closed`
     if( session.modifiers?.includes( `sandbox` ) ) return `Sandbox state is ephemeral`
