@@ -116,15 +116,14 @@ export const claude = {
     name: `claude`,
     bin: `claude`,
 
-    // Claude's version command refreshes near-expiry host credentials.
-    // Other adapters omit this capability because their version commands do
-    // not change authentication state.
-    credential_preflight: true,
-
     // CLAUDE_CODE_OAUTH_TOKEN is the one-year `claude setup-token` login. It
     // outranks the /login file and never rotates, so sessions cannot race
     // each other for a one-use refresh token. It only makes model requests.
+    // It is the only subscription login staged into containers (account env
+    // file, hot swap); the host /login below is read for host probes and for
+    // legacy sessions that captured it, never staged anew.
     credentials: {
+        stage_host_login: false,
         darwin: {
             keychain_service: `Claude Code-credentials`,
             fallback_file: `~/.claude/.credentials.json`,

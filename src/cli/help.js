@@ -84,6 +84,7 @@ Flags:
   --remove        With "babysit auth init", uninstall the scheduled checker
   --no-linger     With "babysit auth init", do not enable loginctl lingering (checks then stop at logout)
   --claude-token  With "babysit auth init", mint a new Claude setup-token even if one is set (--no-claude-token skips)
+  --token-stdin   With "babysit auth init --claude-token", read the token from a pipe (no TTY or host claude needed)
   --account NAME  Claude: run on this subscription (start, resume, restart); default picks most headroom
   --all           With "list", show full details; with "resume [number]", use every workspace and show every row
   -n N            With "resume", show N history rows (default 10)

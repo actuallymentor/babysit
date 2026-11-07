@@ -145,7 +145,7 @@ For a finished config: removes full-line comments and blank lines in place, keep
 Spread work over several Claude subscriptions; babysit switches when one runs out.
 
 ```bash
-babysit auth init --claude-token --name work      # mint + paste + verify, once per subscription
+babysit auth init --claude-token --name work      # mint (or paste) + verify, once per subscription
 babysit auth init --claude-token --name personal
 babysit auth accounts                             # name, expiry, headroom (never tokens)
 babysit claude --account work                     # force one; default picks most headroom
@@ -154,11 +154,12 @@ babysit restart all --account failover            # every Claude session onto on
 babysit auth accounts remove personal
 ```
 
-- Existing `~/.babysitrc` token = account `default`; one account behaves as before
+- Existing `~/.babysitrc` token = account `default`
+- Every session gets one account, whatever its agent: Codex/OpenCode sessions carry it for nested `claude` calls (picked from cached quota, no probe)
 - Launch picks the account with the most remaining rate-window headroom (cached 5 min, 1 Haiku token per probe)
 - Limit hit → session moves to the next account with headroom. Never back to an account it left until that window resets (A→B→C ok, no ping-pong); none left → log + Pushover. Off: `claude_account_auto_switch: false` in `babysit.yaml`
-- **Hot swap** (sessions started with ≥ 2 accounts): no restart. Claude re-reads its credentials file before every request, so babysit rewrites the token there (`docker exec`, token on stdin), presses Esc and types a continue prompt; attached → you type it (Pushover says so). Same process, same conversation; first request after a switch re-reads the context (prompt cache is per account). These sessions skip the host `/login` file
-- Sessions started with one account switch by restart instead: chat resumed, continue prompt sent, waits while you are attached (Pushover: detach to switch). Reattach with `babysit open`
+- **Hot swap**: no restart. Claude re-reads its credentials file before every request, so babysit rewrites the token there (`docker exec`, token on stdin), presses Esc and types a continue prompt; attached → you type it (Pushover says so). Same process, same conversation; first request after a switch re-reads the context (prompt cache is per account)
+- Sessions started before 2.0 with one account switch by restart instead: chat resumed, continue prompt sent, waits while you are attached (Pushover: detach to switch). Reattach with `babysit open`
 - Token reaches only its container, as a private file (never `docker -e`)
 - `usage` / `watch` show `claude / <account>` rows; USAGE column follows the session's account
 
@@ -216,13 +217,23 @@ limit window when any usage limit (session/daily/weekly/credit) reaches 90% (one
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
 any step over 5s is reported by name.
 
-`babysit auth init` also offers a one-year Claude token when `CLAUDE_CODE_OAUTH_TOKEN` is unset (Claude installed, in a
-terminal): it runs `claude setup-token`, takes the pasted token, proves it with one prompt, and saves
-`export CLAUDE_CODE_OAUTH_TOKEN=…` to `~/.babysitrc` (0600). The token outranks `/login` in every session and never
-rotates, so sessions stop logging each other out. `--claude-token` mints a replacement, `--no-claude-token` skips.
-Restart running Claude sessions to switch. It only makes model requests (claude.ai connectors/Remote Control need
-`/login`). Env logins skip the offline and host CLI checks; the 6h container check and the pane trigger still alert, and
-the alert says to rerun `babysit auth init --claude-token`.
+**Claude login.** Inside containers Claude runs only on a one-year `claude setup-token` (the host `/login` and its
+macOS Keychain item are never staged, so sessions cannot log each other out by rotating one refresh token). No token
+and no other route → a Claude launch fails fast and says how to import one. Import, with or without a host `claude`:
+
+```bash
+babysit auth init --claude-token                                  # runs claude setup-token if installed, else paste one minted elsewhere
+echo "$TOKEN" | babysit auth init --claude-token --token-stdin    # no TTY; add --name NAME for a named account
+```
+
+With a host `claude` the token is proven with one prompt before saving; without one only its format is checked (the
+command says so). The default token lands in `~/.babysitrc` (0600) as `export CLAUDE_CODE_OAUTH_TOKEN=…`; `--name`
+tokens go to the account registry. `babysit auth init` also offers the token when `CLAUDE_CODE_OAUTH_TOKEN` is unset
+(Claude installed, in a terminal); `--claude-token` mints a replacement, `--no-claude-token` skips. Restart running
+Claude sessions to switch. It only makes model requests (claude.ai connectors/Remote Control need `/login`). An
+`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry route (in `~/.babysitrc` or Claude's
+`settings.json`) works instead and needs no token. Env logins skip the offline and host CLI checks; the 6h container
+check and the pane trigger still alert, and the alert says to rerun `babysit auth init --claude-token`.
 Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation and is skipped when Docker cannot be listed. Saved sessions are re-read right before deleting, so anything saved while the prompt waited stays. Images with several repository tags are skipped (`rm <id>` refuses them). Estimates: build cache from `buildx du` row ages, as a range (shared rows only raise the upper bound); images as a range (bytes no other image shares to the summed sizes; the range needs direct Docker socket access, a sudo setup shows the upper bound); container sizes are not measured. Freed space is the before/after free-space delta per disk; ZFS keeps freeing in the background. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 

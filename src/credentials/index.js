@@ -190,7 +190,6 @@ export const aggregate_syncs = ( syncs, {
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used
  *   when reusing an existing tmpfile in the monitor. Legacy active-agent shape.
  * @param {Object|null} [options.sync_baselines] - Per-agent foreground-capture hashes
- * @param {string[]} [options.exclude] - Agent names whose host credentials are skipped
  * @returns {Promise<{
  *   mounts: Array,
  *   sync: Object|null,
@@ -217,12 +216,7 @@ export const setup_credentials = async ( agent, options = {} ) => {
     const tmpfiles = {}
     const next_sync_baselines = {}
 
-    // A hot-swappable Claude session owns its credentials file: the host
-    // /login must neither be staged nor receive the swapped setup-token back
-    const excluded = new Set( options.exclude || [] )
-    const credential_agents = get_credential_agents( agent ).filter( ( { name } ) => !excluded.has( name ) )
-
-    for( const credential_agent of credential_agents ) {
+    for( const credential_agent of get_credential_agents( agent ) ) {
 
         const is_active_agent = credential_agent.name === agent.name
         const existing_tmpfile = existing_tmpfiles[ credential_agent.name ]
@@ -232,15 +226,18 @@ export const setup_credentials = async ( agent, options = {} ) => {
         // Only reattach sync to tmpfiles captured by the foreground.
         if( is_monitor_reuse && !existing_tmpfile ) continue
 
+        // Claude's subscription login enters containers only as a setup-token
+        // (account env file, hot swap). Its host /login is never staged, so it
+        // neither races sessions for one-use refresh tokens nor receives the
+        // token back. Only legacy sessions that captured it keep their sync.
+        if( !existing_tmpfile && credential_agent.credentials?.stage_host_login === false ) continue
+
         const sync_baseline = sync_baselines[ credential_agent.name ]
             || ( is_active_agent ? options.sync_baseline : null )
 
-        // A scheduled auth check skips the pre-flight while sessions run: it
-        // could refresh, and so rotate, a token one of them holds
         const result = await setup_platform_credentials( credential_agent, {
             existing_tmpfile,
             sync_baseline,
-            preflight: options.preflight !== false,
         } )
 
         mounts.push( ...result.mounts )

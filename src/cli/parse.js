@@ -28,7 +28,7 @@ const KNOWN_FLAGS = [
     `account`,
 ]
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `ios`, `devices`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
+const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `ios`, `devices`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token`, `token-stdin` ]
 const AUTH_VERBS = [ `status`, `check`, `init`, `accounts` ]
 
 // `babysit fork` only: filesystem/takeover/mode switches, plus --no-history and
@@ -145,6 +145,8 @@ export const parse_args = ( argv ) => {
         linger: verb === `auth` && args.linger !== false,
         // Unset: offer the token when missing. --claude-token re-mints, --no-claude-token skips.
         claude_token: verb === `auth` && typeof args[ `claude-token` ] === `boolean` ? args[ `claude-token` ] : undefined,
+        // --token-stdin imports a piped setup-token (no TTY, no host claude needed)
+        token_stdin: verb === `auth` && ( args[ `token-stdin` ] || false ),
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),

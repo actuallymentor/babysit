@@ -512,8 +512,6 @@ export const cmd_auth_check = async ( {
                 // valid until its TTL and the next run retries.
                 clear_on_failure: false,
                 defer_probe: agent => may_rotate_held_token( agent ) ? held_reason : null,
-                // Staging runs before any deferral: its pre-flight must not refresh a held token
-                preflight: !sessions_active,
                 signal: controller.signal,
             } )
 
@@ -571,12 +569,11 @@ export const cmd_auth_init = async ( cmd, {
     claude_token = setup_claude_token,
 } = {} ) => {
 
-    // A named account only adds a token; the checker is already installed or not.
-    // `--name default` is the rc token, so it takes the plain flow below.
-    if( cmd.flags.name && cmd.flags.name !== DEFAULT_ACCOUNT ) {
-        validate_account_name( cmd.flags.name )
-        return await claude_token( cmd, { output } ) === `saved` ? 0 : 1
-    }
+    // A named account or a piped token only adds a token; the checker is
+    // already installed or not. `--name default` is the rc token.
+    const named = cmd.flags.name && cmd.flags.name !== DEFAULT_ACCOUNT
+    if( named ) validate_account_name( cmd.flags.name )
+    if( named || cmd.flags.token_stdin ) return await claude_token( cmd, { output } ) === `saved` ? 0 : 1
 
     if( !scheduler ) throw new Error( `babysit auth init supports Linux hosts running systemd and macOS; schedule babysit auth check yourself elsewhere` )
 

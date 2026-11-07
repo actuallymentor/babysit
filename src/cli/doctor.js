@@ -22,6 +22,7 @@ import {
 } from '../credentials/recovery.js'
 import { private_credential_tmpdir } from '../utils/tmpfile.js'
 import { run_auth_checks_with_progress } from './auth_progress.js'
+import { resolve_claude_login } from './claude_accounts.js'
 
 /**
  * Resolve `doctor --auth` agent selection.
@@ -56,7 +57,7 @@ export const select_doctor_auth_agents = ( selection = `all` ) => {
  * @param {boolean} [options.clear_on_failure=true] - Also drop cache entries on non-auth probe failures
  * @param {Function} [options.acquire_lease] - Lease acquisition seam; may return an already-owned lease
  * @param {Function} [options.defer_probe] - Reason to hold back a due probe, or null to run it
- * @param {boolean} [options.preflight=true] - Let staging run agents' token-refreshing pre-flight
+ * @param {Function} [options.claude_login] - Claude login the sessions would stage (setup-token account)
  * @returns {Promise<Object[]>} Per-agent results
  */
 export const run_auth_diagnostics = async ( agents, {
@@ -78,14 +79,18 @@ export const run_auth_diagnostics = async ( agents, {
     allow_skip = false,
     clear_on_failure = true,
     defer_probe = () => null,
-    preflight = true,
+    claude_login = () => resolve_claude_login( { probe_quota: false } ),
 } = {} ) => {
 
     const cache_options = cache_path ? { cache_path } : {}
     const auth_lease = await acquire_lease()
     let credential_setup
     try {
-        credential_setup = await setup( agents[0], { preflight } )
+        credential_setup = await setup( agents[0] )
+        // Claude is checked on the account a launch would pick, never the host /login
+        if( agents.some( agent => agent.name === `claude` ) ) {
+            credential_setup.mounts.push( ...( await claude_login() ).mounts )
+        }
     } catch ( error ) {
         auth_lease.release()
         throw error

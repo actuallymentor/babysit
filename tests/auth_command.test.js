@@ -495,21 +495,6 @@ describe( `auth check`, () => {
 
             } )
 
-            it( `stages without the token-refreshing pre-flight while sessions run`, async () => {
-
-                const staged = []
-                const setup = async ( agent, options = {} ) => {
-                    staged.push( options.preflight )
-                    return { mounts: [], sync: null, tmpfiles: {} }
-                }
-                due()
-                await check( { ...codex_only, ...live, setup, read_credential: fresh_token } ).exit_code
-                due()
-                await check( { ...codex_only, setup, read_credential: fresh_token } ).exit_code
-                expect( staged ).toEqual( [ false, true ] )
-
-            } )
-
             it( `counts a session's token rotation as the proof that keeps the entry warm`, async () => {
 
                 due()

@@ -16,7 +16,7 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
-import { account_credential_mounts, account_hot_swap, resolve_launch_account } from './claude_accounts.js'
+import { resolve_claude_login } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
     DEFAULT_DOCKER_SOCKET,
@@ -92,6 +92,15 @@ const INITIAL_PROMPT_READY_INTERVAL_MS = 250
 const STARTUP_EXIT_GRACE_MS = 750
 const STARTUP_LOG_TAIL_LINES = 80
 const monotonic_now = () => performance.now()
+
+// A Claude launch without a setup-token or another configured route
+export const MISSING_CLAUDE_LOGIN = [
+    `Claude needs a setup-token to run in Babysit (the host /login is not staged into containers).`,
+    `  Mint one with claude setup-token (on any machine), then import it:`,
+    `    babysit auth init --claude-token                    # paste interactively`,
+    `    echo "$TOKEN" | babysit auth init --claude-token --token-stdin [--name NAME]`,
+    `  An ANTHROPIC_API_KEY, Bedrock, Vertex or Foundry route in ~/.babysitrc works too.`,
+].join( `\n` )
 
 /**
  * Canonicalize an existing workspace while retaining a stable fallback for
@@ -1237,21 +1246,28 @@ async function start_session( cmd ) {
         }
     }
 
-    // Claude subscription: --account, else the resumed session's, else the one
-    // with most headroom when several are registered. null keeps the rc token.
-    if( flags.account && agent.name !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ agent.name } sessions have none` )
-    const { account: launch_account, reason: account_reason } = agent.name === `claude`
-        ? await time_phase( `claude account selection`, () => resolve_launch_account( {
-            requested: flags.account,
-            // A Claude → Claude fork keeps its parent's subscription
-            stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
-        } ) )
-        : { account: null }
-    if( launch_account ) log[ account_reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ account_reason })` )
+    // Claude login for every session (Codex and OpenCode sessions too, for
+    // nested claude): --account, else the resumed session's, else the one
+    // with most headroom. Only Claude launches may wait on a quota probe;
+    // others pick from cached readings. A setup-token is the only
+    // subscription login staged; an API key/Bedrock/Vertex/Foundry route
+    // configured on the host stays the login as is.
+    const claude_login = await time_phase( `claude account selection`, () => resolve_claude_login( {
+        requested: flags.account,
+        // A fork keeps its parent's subscription
+        stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
+        probe_quota: agent.name === `claude`,
+    } ) )
+    const launch_account = claude_login.account
+    if( launch_account ) log[ claude_login.reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ claude_login.reason })` )
+    if( agent.name === `claude` && !launch_account && !claude_login.route ) {
+        print_error( MISSING_CLAUDE_LOGIN )
+        throw new Error( `Session launch aborted; see diagnostic above` )
+    }
 
-    // Several accounts: the token lives in Claude's credentials file, so a limit
-    // switches subscriptions in place instead of restarting the session
-    const claude_hot_swap = Boolean( launch_account ) && account_hot_swap()
+    // The token lives in Claude's credentials file, so a limit switches
+    // subscriptions in place instead of restarting the session
+    const claude_hot_swap = Boolean( launch_account )
 
     const launch_cwd = canonical_workspace( process.cwd() )
     const stored_original = session_original_workspace( stored_resume_session )
@@ -1487,11 +1503,11 @@ async function start_session( cmd ) {
         // agent so nested coding-agent calls remain authenticated.
         startup_status.set( `loading credentials` )
         credential_setup = await time_phase(
-            `credential discovery and preflight`,
-            () => setup_credentials( agent, { exclude: claude_hot_swap ? [ `claude` ] : [] } )
+            `credential discovery`,
+            () => setup_credentials( agent )
         )
-        // A named account rides along as a staged file that outranks the rc token
-        credential_setup.mounts.push( ...account_credential_mounts( launch_account, { hot_swap: claude_hot_swap } ) )
+        // The Claude account rides along as a staged file that outranks the rc token
+        credential_setup.mounts.push( ...claude_login.mounts )
         foreground_recovery_id = register_credential_recovery( {
             sync_paths: Object.values( credential_setup.tmpfiles ).map(
                 file => private_credential_tmpdir( file ) || file

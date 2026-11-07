@@ -1,11 +1,8 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { log } from '../utils/log.js'
-import { run_sync } from '../utils/exec.js'
 import { copy_host_file_to_private_tmpfile, private_credential_tmpdir } from '../utils/tmpfile.js'
 import { build_credential_sync_baseline, start_credential_sync } from './refresh.js'
 import { resolve_credential_file } from './paths.js'
-
-const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
 
 /**
  * Set up credentials on Linux by copying credential files to tmpfiles
@@ -16,14 +13,11 @@ const CREDENTIAL_COMMAND_TIMEOUT_MS = 10_000
  *   pulls reach the same credential baseline.
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
  *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
- * @param {Function} [options.run_command=run_sync] - Host command runner
  * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }} Credential specs and sync controller
  */
 export const setup_linux_credentials = async ( agent, {
     existing_tmpfile = null,
     sync_baseline = null,
-    preflight = true,
-    run_command = run_sync,
 } = {} ) => {
 
     const cred_config = agent.credentials?.linux
@@ -44,18 +38,6 @@ export const setup_linux_credentials = async ( agent, {
             let tmpfile = existing_tmpfile
 
             if( !tmpfile ) {
-
-                // Pre-flight: invoke the agent CLI on the host so any near-expiry
-                // token is refreshed before we copy. Without this, a stale token
-                // would ride the container for 5 min before our sync daemon catches up.
-                // Skipped when re-using an existing tmpfile — the foreground
-                // already pre-flighted, and the container is already running on
-                // that capture.
-                if( preflight && agent.credential_preflight ) {
-                    run_command( `${ agent.bin } --version 2>/dev/null`, {
-                        timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS,
-                    } )
-                }
 
                 // Copy into a chmod-666 client-side sync file. Docker stages it
                 // before start and later pulls refreshed credentials back here.
