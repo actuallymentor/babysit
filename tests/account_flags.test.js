@@ -12,6 +12,7 @@ import { ACCOUNT_ENV_BOOTSTRAP_PATH, build_docker_launch_plan } from '../src/doc
 import { build_docker_command_args } from '../src/docker/run.js'
 import { cleanup_ephemeral_credential_mounts } from '../src/credentials/index.js'
 import { claude } from '../src/agents/claude.js'
+import { assert_account_support, get_agent, has_accounts } from '../src/agents/index.js'
 
 const WORK = `sk-ant-oat01-work-token`
 
@@ -38,6 +39,15 @@ describe( `--account parsing`, () => {
     it( `--account is refused where no Claude session is meant`, () => {
         expect( parse_args( [ `restart`, `all`, `--account`, `work` ] ) ).toMatchObject( { session_id: `all`, flags: { account: `work` } } )
         expect( () => parse_args( [ `codex`, `--account`, `work` ] ) ).toThrow( `codex has none` )
+    } )
+
+    it( `only adapters with accounts take --account`, () => {
+        expect( [ `claude`, `codex`, `opencode` ].filter( has_accounts ) ).toEqual( [ `claude` ] )
+        expect( has_accounts( get_agent( `claude` ) ) ).toBe( true )
+        expect( has_accounts( `gemini` ) ).toBe( false )
+        expect( () => assert_account_support( `claude` ) ).not.toThrow()
+        expect( () => assert_account_support( `codex` ) ).toThrow( `--account picks a Claude subscription; codex has none` )
+        expect( () => assert_account_support( `opencode`, `s1 is an opencode session` ) ).toThrow( `; s1 is an opencode session` )
     } )
 
     it( `auth accounts [remove <name>] and init --name`, () => {

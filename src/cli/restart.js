@@ -3,6 +3,7 @@ import { close_session, select_each, snapshot_selector, use_launch_environment }
 import { most_headroom_account } from './claude_accounts.js'
 import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
+import { assert_account_support, get_agent, has_accounts } from '../agents/index.js'
 import { agent_activity } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { capture_pane } from '../tmux/capture.js'
@@ -61,10 +62,11 @@ const settled_activity = async ( target, agent, { capture, activity, sleep } ) =
 
     const first = await capture( target )
     const status = activity( first, agent )
-    if( status || agent !== `claude` ) return status
+    const settle = get_agent( agent )?.screen?.settle_footer
+    if( status || !settle ) return status
 
     const footer = strip_ansi( first ).trimEnd().split( `\n` ).slice( -8 ).join( `\n` )
-    if( !/\(shift\+tab to cycle\)/.test( footer ) ) return null
+    if( !settle.test( footer ) ) return null
 
     await sleep( SETTLE_MS )
     return await capture( target ) === first ? `idle` : `running`
@@ -99,7 +101,7 @@ export const unarchived_sessions = async ( { inspect_records = inspect_stored_se
 const assert_restartable = ( session, { force = false, account = false } = {} ) => {
 
     // Checked before the close: a refused --account after it would strand the session
-    if( account && session.agent !== `claude` ) throw new Error( `--account picks a Claude subscription; ${ session.babysit_id } is a ${ session.agent } session` )
+    if( account ) assert_account_support( session.agent, `${ session.babysit_id } is a ${ session.agent } session` )
 
     // Sandbox loss is unconditional; the rest is the user's call with --force.
     const blocker = restart_blocker( session )
@@ -135,7 +137,7 @@ const restart_session = async ( session, { force = false, detach = false, accoun
         : `image unknown`
 
     // No --account: a Claude session moves to the subscription with most headroom
-    if( !account && session.agent === `claude` ) account = await best_account()
+    if( !account && has_accounts( session.agent ) ) account = await best_account()
     const account_note = account ? `, account ${ account }` : ``
 
     if( !force ) {
@@ -229,7 +231,7 @@ export const cmd_restart = async ( cmd, { select = null, select_all = unarchived
             const latest = load( session.babysit_id ) || session
 
             // A batch mixes agents: --account moves its Claude sessions and leaves the rest be
-            const account = latest.agent === `claude` && flags.account
+            const account = has_accounts( latest.agent ) && flags.account
             await restart_session( latest, { ...flags, account, detach: true }, seams )
         } catch ( error ) {
             if( error.closed ) throw error

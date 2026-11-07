@@ -45,13 +45,12 @@ export const container_image = async container => {
 
 /**
  * Agent options a launch replays, short aliases mapped to their long name.
- * Claude has no `-m`; the other agents take it for `--model`.
- * @param {Object} agent - Agent adapter
+ * @param {Object} agent - Agent adapter (`options.model_short`: its `-m`, if any)
  * @returns {Map<string, string>} Option name → canonical name
  */
 export const replayable_options = agent => new Map( [
     [ `--model`, `--model` ],
-    ... agent.name === `claude` ? [] : [ [ `-m`, `--model` ] ],
+    ... agent.options?.model_short ? [ [ agent.options.model_short, `--model` ] ] : [],
     [ `--effort`, `--effort` ],
     [ `--variant`, `--variant` ],
 ] )
@@ -87,7 +86,7 @@ export const recovery_arguments = ( agent, args = [], mode = {} ) => {
         if( model ) saved.push( `--model`, model )
     }
 
-    if( agent.name === `claude` && agent.defaults?.effort && !saved.includes( `--effort` ) ) saved.push( `--effort`, agent.defaults.effort )
+    if( agent.options?.replay_effort && agent.defaults?.effort && !saved.includes( `--effort` ) ) saved.push( `--effort`, agent.defaults.effort )
 
     return { args: saved, unsupported }
 

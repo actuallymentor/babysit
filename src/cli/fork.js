@@ -7,7 +7,7 @@ import { createInterface } from 'readline/promises'
 import { log } from '../utils/log.js'
 import { BABYSIT_DIR, CLONES_DIR } from '../utils/paths.js'
 import { run } from '../utils/exec.js'
-import { get_agent, retired_agent_message } from '../agents/index.js'
+import { get_agent, has_accounts, retired_agent_message } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { get_image_name } from '../docker/update.js'
 import { attach_session, list_sessions } from '../tmux/session.js'
@@ -144,7 +144,7 @@ export const merge_fork_passthrough = ( parent, agent_name, passthrough = [] ) =
     if( parent.agent !== agent_name ) return passthrough
 
     // Compare canonical names, so a typed `-m` replaces a saved `--model`
-    const options = replayable_options( { name: agent_name } )
+    const options = replayable_options( get_agent( agent_name ) || {} )
     const canonical = argument => options.get( argument.split( `=` )[0] )
     const saved = parent.launch_spec?.args || []
     const typed = new Set( passthrough.map( canonical ).filter( Boolean ) )
@@ -562,7 +562,7 @@ export const cmd_fork = async ( cmd, {
 
     const fork = {
         // --account wins in start; otherwise a Claude → Claude fork keeps the parent's
-        claude_account: agent.name === `claude` && parent.agent === `claude` ? parent.claude_account || null : null,
+        claude_account: agent.accounts && has_accounts( parent.agent ) ? parent.claude_account || null : null,
         // A writable share of a clone joins its family so prune keeps it
         join_clone_id: joins_clone ? parent_clone_id : null,
         clone_options: filesystem === `clone` ? { snapshot: true, tree: parent_clone } : null,

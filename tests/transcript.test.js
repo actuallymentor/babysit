@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, symlinkSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join, dirname, relative } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { get_agent } from '../src/agents/index.js'
 import { CHECK_TRANSCRIPT, verify_session_transcript, refresh_durable_identity, read_durable_exit } from '../src/sessions/transcript.js'
 
 let directory
@@ -18,8 +19,9 @@ const fixture = ( file, content ) => {
     return path
 }
 const check = ( agent, id ) => {
-    const script = CHECK_TRANSCRIPT.replace( `pathlib.Path('/home/node')`, `pathlib.Path(${ JSON.stringify( directory ) })` )
-    const result = spawnSync( `python3`, [ `-c`, script, agent, id ], { encoding: `utf8` } )
+    // State roots as Docker mounts them, relocated under the fixture home
+    const roots = get_agent( agent ).state.volumes.map( volume => join( directory, relative( `/home/node`, volume.target ) ) )
+    const result = spawnSync( `python3`, [ `-c`, CHECK_TRANSCRIPT, agent, id, ...roots ], { encoding: `utf8` } )
     expect( result.stderr ).toBe( `` )
     return result.status === 0
 }
@@ -92,7 +94,8 @@ os._exit(0)`, file ] )
         expect( calls[ 1 ] ).toContain( `--read-only` )
         expect( calls[ 1 ] ).toContain( `/tmp:rw,nosuid,nodev,size=512m` )
         expect( calls[ 1 ].filter( value => value.endsWith( `:ro` ) ) ).toHaveLength( 2 )
-        expect( calls[ 1 ].at( -1 ) ).toBe( `root` )
+        // The native id, then the state roots the script reads
+        expect( calls[ 1 ].slice( -3 ) ).toEqual( [ `root`, `/home/node/.codex/sessions`, `/home/node/.codex/sqlite` ] )
     } )
 
 } )

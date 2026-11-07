@@ -1,3 +1,4 @@
+import { STATE_READERS } from '../sessions/state_readers.js'
 import { build_private_tmpfile } from '../utils/tmpfile.js'
 
 export const COMPLETION_HELPER_PATH = `/home/node/.babysit-capture/capture.py`
@@ -5,8 +6,10 @@ export const COMPLETION_PLUGIN_PATH = `/home/node/.config/opencode/plugins/babys
 
 // Kept in an imported JS module so Bun's standalone build includes the helper.
 // Python is already installed in the image; its TOML parser preserves arbitrary
-// existing Codex notify arrays without guessing at TOML syntax.
-export const COMPLETION_HELPER_SOURCE = String.raw`import json, os, pathlib, subprocess, sys, tempfile, datetime, tomllib, re, fcntl, uuid
+// existing Codex notify arrays without guessing at TOML syntax. The shared
+// state readers ride along (codex_root_rollout).
+export const COMPLETION_HELPER_SOURCE = STATE_READERS + String.raw`
+import json, os, pathlib, subprocess, sys, tempfile, datetime, tomllib, re, fcntl, uuid
 
 
 def root_hook(agent):
@@ -44,18 +47,10 @@ def codex_root_session(session):
     if not re.fullmatch(r'[a-zA-Z0-9-]+', session):
         return False
     home = pathlib.Path(os.environ.get('CODEX_HOME', '/home/node/.codex'))
-    for transcript in (home / 'sessions').glob('**/rollout-*' + session + '.jsonl'):
-        with transcript.open() as file:
-            metadata = json.loads(file.readline(65536))
-        if metadata.get('type') == 'session_meta':
-            data = metadata.get('payload', {})
-            # Remote roots retain vscode provenance after native resume.
-            # root_hook checks current process ancestry; structured subagent
-            # sources remain excluded regardless of the current transport.
-            source = data.get('source')
-            if data.get('id') == session and source in ('cli', 'vscode'):
-                return True
-    return False
+    # Remote roots retain vscode provenance after native resume.
+    # root_hook checks current process ancestry; structured subagent
+    # sources remain excluded regardless of the current transport.
+    return codex_root_rollout(home / 'sessions', session)
 
 
 def durable_write(path, content):

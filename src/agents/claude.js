@@ -4,6 +4,7 @@
  */
 import { homedir } from 'os'
 import { join, resolve } from 'path'
+import { claude_screen } from './screens/claude.js'
 
 // A probe with this much access left uses the token as is, so it cannot
 // rotate a refresh token that a running session holds too
@@ -121,6 +122,9 @@ export const claude = {
     // not change authentication state.
     credential_preflight: true,
 
+    // Named subscriptions (`babysit auth accounts`, `--account`, limit-hit switching)
+    accounts: true,
+
     // CLAUDE_CODE_OAUTH_TOKEN is the one-year `claude setup-token` login. It
     // outranks the /login file and never rotates, so sessions cannot race
     // each other for a one-use refresh token. It only makes model requests.
@@ -144,6 +148,17 @@ export const claude = {
     home: {
         env_var: `CLAUDE_CONFIG_DIR`,
         dir: `/home/node/.claude`,
+    },
+
+    // Native state that outlives a container (resume, fork, recovery). A
+    // `name` volume is shared by every workspace, a `label` one is scoped to
+    // the workspace. The first volume also holds Babysit's durable receipts.
+    state: {
+        volumes: [
+            { name: `babysit-claude-projects`, target: `/home/node/.claude/projects` },
+            { name: `babysit-claude-plans`, target: `/home/node/.claude/plans` },
+            { name: `babysit-claude-todos`, target: `/home/node/.claude/todos` },
+        ],
     },
 
     container_paths: {
@@ -205,6 +220,27 @@ export const claude = {
         refresh_expires_at: credential => oauth_field( credential, `refreshTokenExpiresAt` ),
     },
 
+    // Passthrough option rules Babysit reads before the args reach the CLI
+    options: {
+        // Claude's Commander parser consumes required operands even when they
+        // look like options, so `--name --model` names a session `--model`.
+        // Optional-value flags are intentionally absent: they consume nothing.
+        // Claude has no `-m` short form for --model.
+        value_options: new Set( [
+            `--add-dir`, `--agent`, `--agents`, `--allowedTools`, `--allowed-tools`,
+            `--append-system-prompt`, `--append-system-prompt-file`, `--autocompact`,
+            `--betas`, `--debug-file`, `--disallowedTools`, `--disallowed-tools`,
+            `--effort`, `--environment`, `--fallback-model`, `--file`, `--input-format`,
+            `--json-schema`, `--max-budget-usd`, `--mcp-config`, `-n`, `--name`, `--output-format`,
+            `--permission-mode`, `--permission-prompts`, `--plugin-dir`, `--plugin-url`,
+            `--remote-control-session-name-prefix`, `--session-id`, `--setting-sources`,
+            `--settings`, `--system-prompt`, `--system-prompt-file`,
+            `--system-prompt-snapshot`, `--tools`,
+        ] ),
+        // Recovery saves the default effort as a replayable `--effort` flag
+        replay_effort: true,
+    },
+
     defaults: {
         // `default` is Claude Code's recommended everyday model (Opus 5.5 today).
         // `best` (Fable) has its own much smaller weekly cap and, at medium
@@ -226,6 +262,9 @@ export const claude = {
 
     // `babysit reset`: new conversation in the same process
     reset_command: `/clear`,
+
+    // Pane knowledge: activity, owned dialogs, composer drafts, native controls
+    screen: claude_screen,
 
     // YOLO monitors answer this bypass-immune prompt with Enter on "Yes".
     yolo_dialog: find_yolo_dialog,

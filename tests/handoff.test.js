@@ -2,15 +2,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { spawnSync } from 'child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { join, relative } from 'path'
 
+import { get_agent } from '../src/agents/index.js'
 import { HANDOFF_MAX_CHARS, READ_TRANSCRIPT, build_handoff_markdown, read_parent_transcript } from '../src/sessions/handoff.js'
 
 const jsonl = records => records.map( record => JSON.stringify( record ) ).join( `\n` ) + `\n`
 
-// Run the in-container reader against a fixture home, exactly as Docker would
+// Run the in-container reader against a fixture home, exactly as Docker would:
+// the state roots it mounts, relocated under that home
 const read = ( home, agent, ident = `` ) => {
-    const result = spawnSync( `python3`, [ `-c`, READ_TRANSCRIPT, agent, ident, home ], { encoding: `utf8` } )
+    const roots = get_agent( agent ).state.volumes.map( volume => join( home, relative( `/home/node`, volume.target ) ) )
+    const result = spawnSync( `python3`, [ `-c`, READ_TRANSCRIPT, agent, ident, ...roots ], { encoding: `utf8` } )
     if( result.status !== 0 ) throw new Error( result.stderr )
     return JSON.parse( result.stdout )
 }

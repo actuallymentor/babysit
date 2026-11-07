@@ -2,6 +2,7 @@ import { get_agent } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { get_image_name } from '../docker/update.js'
 import { run } from '../utils/exec.js'
+import { STATE_READERS } from './state_readers.js'
 import { session_workspace } from './store.js'
 
 // Docker start/remove alone can take tens of seconds on a busy daemon
@@ -21,13 +22,13 @@ const BABYSIT_PROMPT_MARKER = `Running inside a Babysit container.`
  * Read a parent's own words and recent replies from native agent state.
  * Runs read-only inside a throwaway container (or the live sandbox container)
  * and prints one JSON object: { transcript, user, assistant, files }.
- * Arguments: agent, native id (may be empty: newest conversation), home root.
+ * Arguments: agent, native id (may be empty: newest conversation), then the
+ * agent's state roots in adapter order.
  */
-export const READ_TRANSCRIPT = `
-import collections, json, pathlib, re, shutil, sqlite3, sys, tempfile
-agent, ident, root = (sys.argv[1:] + ['', '', ''])[:3]
-root = root or '/home/node'
-home = pathlib.Path(root)
+export const READ_TRANSCRIPT = STATE_READERS + `
+import collections, re, sys
+agent, ident, *roots = sys.argv[1:]
+state = pathlib.Path(roots[0])
 user, files = [], []
 assistant = collections.deque(maxlen=${ RECENT_MESSAGES * 2 })
 transcript = None
@@ -53,41 +54,18 @@ def newest(candidates):
     return max(found, key=lambda file: file.stat().st_mtime) if found else None
 
 
-def lines(file):
-    try:
-        with file.open(errors='replace') as stream:
-            for line in stream:
-                if len(line) > 8388608: continue
-                try:
-                    value = json.loads(line)
-                    if isinstance(value, dict): yield value
-                except ValueError: pass
-    except OSError: pass
-
-
 def texts(content, kind):
     if isinstance(content, str): return [content]
     if not isinstance(content, list): return []
     return [block.get('text', '') for block in content if isinstance(block, dict) and block.get('type') == kind]
 
 
-def isolated_db(file):
-    # Never open live SQLite state in place; copy it with crash sidecars first
-    directory = tempfile.mkdtemp(prefix='babysit-handoff-')
-    target = pathlib.Path(directory) / file.name
-    shutil.copyfile(file, target)
-    for suffix in ('-wal', '-journal'):
-        sidecar = pathlib.Path(str(file) + suffix)
-        if sidecar.is_file() and not sidecar.is_symlink(): shutil.copyfile(sidecar, str(target) + suffix)
-    return sqlite3.connect(target, timeout=2)
-
-
 if agent == 'claude':
     pattern = '*/' + (ident or '*') + '.jsonl'
-    file = newest((home / '.claude/projects').glob(pattern))
+    file = newest(state.glob(pattern))
     if file:
         transcript = str(file)
-        for record in lines(file):
+        for record in json_records(file, maximum=8388608):
             if record.get('isSidechain') or record.get('isMeta'): continue
             message = record.get('message') or {}
             content = message.get('content')
@@ -100,11 +78,11 @@ if agent == 'claude':
                     tool_input = block.get('input') or {}
                     touch(tool_input.get('file_path') or tool_input.get('notebook_path'))
 elif agent == 'codex':
-    file = newest((home / '.codex/sessions').glob('**/rollout-*' + (ident or '') + '.jsonl'))
+    file = newest(codex_rollouts(state, ident))
     if file:
         transcript = str(file)
         fallback_user, events_assistant = [], []
-        for record in lines(file):
+        for record in json_records(file, maximum=8388608):
             payload = record.get('payload') or {}
             kind = payload.get('type')
             item = payload.get('item') or {}
@@ -124,18 +102,18 @@ elif agent == 'codex':
         if not user: user = fallback_user
         if not assistant: assistant.extend(events_assistant)
 elif agent == 'opencode':
-    database = newest((home / '.local/share/opencode').glob('**/*.db'))
+    database = newest(state.glob('**/*.db'))
     try:
         if database:
             transcript = str(database)
-            db = isolated_db(database)
-            session = ident or (db.execute('SELECT id FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT 1').fetchone() or [''])[0]
-            roles = {row[0]: json.loads(row[1]).get('role') for row in db.execute('SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created', (session,))}
-            for message_id, data in db.execute('SELECT message_id, data FROM part WHERE session_id = ? ORDER BY time_created', (session,)):
-                part = json.loads(data)
-                if part.get('synthetic'): continue
-                if part.get('type') == 'text': keep(user, part.get('text')) if roles.get(message_id) == 'user' else assistant.append(str(part.get('text') or '')[:LIMIT])
-                if part.get('type') == 'tool' and part.get('tool') in ('edit', 'write', 'patch', 'multiedit'): touch(((part.get('state') or {}).get('input') or {}).get('filePath'))
+            with isolated_sqlite(database) as db:
+                session = ident or (db.execute('SELECT id FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT 1').fetchone() or [''])[0]
+                roles = {row[0]: json.loads(row[1]).get('role') for row in db.execute('SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created', (session,))}
+                for message_id, data in db.execute('SELECT message_id, data FROM part WHERE session_id = ? ORDER BY time_created', (session,)):
+                    part = json.loads(data)
+                    if part.get('synthetic'): continue
+                    if part.get('type') == 'text': keep(user, part.get('text')) if roles.get(message_id) == 'user' else assistant.append(str(part.get('text') or '')[:LIMIT])
+                    if part.get('type') == 'tool' and part.get('tool') in ('edit', 'write', 'patch', 'multiedit'): touch(((part.get('state') or {}).get('input') or {}).get('filePath'))
     except (sqlite3.Error, OSError, ValueError): pass
 
 print(json.dumps({'transcript': transcript, 'user': user, 'assistant': list(assistant), 'files': files[:${ MAX_FILES * 2 }]}))
@@ -160,14 +138,17 @@ export const read_parent_transcript = async ( parent, { live = false, run_comman
     const sandbox = parent.modifiers?.includes( `sandbox` )
     const [ command, ...prefix ] = docker_command_prefix()
 
+    // A live sandbox keeps the same state paths in the container itself
+    const mounts = get_agent_state_mounts( agent, session_workspace( parent ) )
+    const script = [ `-c`, READ_TRANSCRIPT, parent.agent, ident, ...mounts.map( mount => mount.target ) ]
     const args = sandbox
         ? live && parent.container_id
-            ? [ ...prefix, `exec`, `-i`, parent.container_id, `python3`, `-c`, READ_TRANSCRIPT, parent.agent, ident ]
+            ? [ ...prefix, `exec`, `-i`, parent.container_id, `python3`, ...script ]
             : null
         : [
             ...prefix, `run`, `--rm`, `--network`, `none`, `--read-only`, `--tmpfs`, `/tmp:rw,nosuid,nodev,size=512m`, `--user`, `0`,
-            ...get_agent_state_mounts( agent, session_workspace( parent ) ).flatMap( mount => [ `-v`, `${ mount.source }:${ mount.target }:ro` ] ),
-            `--entrypoint`, `python3`, parent.image_id || get_image_name(), `-c`, READ_TRANSCRIPT, parent.agent, ident,
+            ...mounts.flatMap( mount => [ `-v`, `${ mount.source }:${ mount.target }:ro` ] ),
+            `--entrypoint`, `python3`, parent.image_id || get_image_name(), ...script,
         ]
     if( !args ) return null
 
