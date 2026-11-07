@@ -1,6 +1,7 @@
 import { spawnSync } from 'child_process'
 import { randomUUID } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'fs'
+import { normalise_local_sync_file } from '../docker/file_transport.js'
 import { join, resolve } from 'path'
 import { createInterface } from 'readline/promises'
 
@@ -393,6 +394,8 @@ const export_parent_transcript = async ( parent, container_path, destination, { 
     try {
         if( live && parent.modifiers?.includes( `sandbox` ) ) {
             await run_command( command, [ ...prefix, `cp`, `${ parent.container_id }:${ container_path }`, local ], {}, 60_000 )
+            // sudo docker cp leaves a root-owned file the later chmod cannot touch
+            await normalise_local_sync_file( local, { run_command } )
             return local
         }
 
@@ -405,6 +408,7 @@ const export_parent_transcript = async ( parent, container_path, destination, { 
         ], {}, 60_000 )
         try {
             await run_command( command, [ ...prefix, `cp`, `${ name }:${ container_path }`, local ], {}, 60_000 )
+            await normalise_local_sync_file( local, { run_command } )
         } finally {
             await run_command( command, [ ...prefix, `rm`, `-f`, name ], {}, 30_000 ).catch( () => null )
         }

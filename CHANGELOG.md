@@ -1,10 +1,22 @@
 # Changelog
 
-## 1.69.0 — 2026-11-07
+## 2.0.0 — 2026-11-07
+
+### Breaking
+- Antigravity (`agy`) support removed. Its stored sessions list but cannot resume, with a clear message.
+- Claude in containers runs only on a setup-token (or an API key / Bedrock / Vertex / Foundry route); the rotating host `/login` and Keychain item are never copied in. No token: a Claude launch stops and names the fix. Import without a host `claude` or TTY: `echo "$TOKEN" | babysit auth init --claude-token --token-stdin [--name NAME]`.
+- Launches make no model call to check logins: a local per-agent gate (usable / refreshable / unknown / missing) only stops a launch with no login at all. `babysit doctor --auth` and the scheduled checker still probe; the checker now enrolls every agent whose credentials are present.
 
 ### Added
 - Transcript archive: every session's native agent transcripts (all messages, tool calls, tool results, per-turn token usage, subagents included) are mirrored to `~/.babysit/transcripts` every 10 min and at session end. Configure with `babysit config --transcripts PATH|off|default`; see README "Transcript archive".
-- Claude account hot swap: sessions launched with two or more accounts switch subscriptions in place on a limit (token rewritten in Claude's credentials file, Esc + continue prompt), with no restart, and even while attached (you type the continue). Needs the updated image; running sessions keep restart-based switching.
+- Claude account hot swap: on a limit, sessions switch subscriptions in place (token rewritten in Claude's credentials file, Esc + continue prompt), with no restart, even while attached (you type the continue). Needs the new image; sessions already running keep restart-based switching.
+- Codex and OpenCode sessions carry a Claude account too (picked by headroom from cached readings), so nested `claude` calls are logged in.
+- Per-launch event channel (`events.jsonl`) from agent hooks: turn start/end, session id, permission prompts, exit. The monitor uses it for running/idle, segment pacing (waits end when the turn ends) and session ids; pane reading stays as the fallback. Codex turn boundaries need the new image.
+
+### Changed
+- Help and README flag tables come from one flag/command registry; in-session commands are listed under their own heading; `--account` and `--token-stdin` documented everywhere.
+- Credential sync state lives under `~/.babysit/credential-sync/` (survives reboots and tmp cleanup).
+- Internal: one credential setup routine for macOS/Linux, launch split into phases with one failure handler, per-agent knowledge in adapters, shared inline readers.
 
 ## 1.68.1 — 2026-11-04
 
