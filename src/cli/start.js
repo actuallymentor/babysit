@@ -16,7 +16,7 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
-import { account_credential_mounts, resolve_launch_account } from './claude_accounts.js'
+import { account_credential_mounts, account_hot_swap, resolve_launch_account } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
     DEFAULT_DOCKER_SOCKET,
@@ -1250,6 +1250,10 @@ async function start_session( cmd ) {
         : { account: null }
     if( launch_account ) log[ account_reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ account_reason })` )
 
+    // Several accounts: the token lives in Claude's credentials file, so a limit
+    // switches subscriptions in place instead of restarting the session
+    const claude_hot_swap = Boolean( launch_account ) && account_hot_swap()
+
     const launch_cwd = canonical_workspace( process.cwd() )
     const stored_original = session_original_workspace( stored_resume_session )
     const original_workspace = canonical_workspace( stored_original || launch_cwd )
@@ -1442,6 +1446,7 @@ async function start_session( cmd ) {
         continuation: cmd.recovering ?  cmd.no_continue ? `skipped` : `pending`  : flags.continue_prompt ? `pending` : null,
         // Account fields only exist where accounts are in play
         ...launch_account && { claude_account: launch_account.name },
+        ...claude_hot_swap && { claude_hot_swap: true },
         ...stored_resume_session?.account_switches?.length && { account_switches: stored_resume_session.account_switches },
         // forked_from, fork_base, fork_filesystem, fork_history, fork_handoff
         ...cmd.fork?.record,
@@ -1484,10 +1489,10 @@ async function start_session( cmd ) {
         startup_status.set( `loading credentials` )
         credential_setup = await time_phase(
             `credential discovery and preflight`,
-            () => setup_credentials( agent )
+            () => setup_credentials( agent, { exclude: claude_hot_swap ? [ `claude` ] : [] } )
         )
         // A named account rides along as a staged file that outranks the rc token
-        credential_setup.mounts.push( ...account_credential_mounts( launch_account ) )
+        credential_setup.mounts.push( ...account_credential_mounts( launch_account, { hot_swap: claude_hot_swap } ) )
         foreground_recovery_id = register_credential_recovery( {
             sync_paths: Object.values( credential_setup.tmpfiles ).map(
                 file => private_credential_tmpdir( file ) || file

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.69.0 — 2026-11-07
+
+### Added
+- Transcript archive: every session's native agent transcripts (all messages, tool calls, tool results, per-turn token usage, subagents included) are mirrored to `~/.babysit/transcripts` every 10 min and at session end. Configure with `babysit config --transcripts PATH|off|default`; see README "Transcript archive".
+- Claude account hot swap: sessions launched with two or more accounts switch subscriptions in place on a limit (token rewritten in Claude's credentials file, Esc + continue prompt), with no restart, and even while attached (you type the continue). Needs the updated image; running sessions keep restart-based switching.
+
 ## 1.68.1 — 2026-11-04
 
 ### Fixed

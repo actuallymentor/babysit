@@ -386,12 +386,28 @@ Examples:
   sudo systemctl disable "babysit-recover-$(id -u).service"   Turn it off`,
 
     config: () => `Usage: babysit config
+       babysit config --transcripts PATH|off|default
 
-Read-only overview: storage paths, Docker image and socket, launch-menu
-defaults, auth checker, web bridge, and boot recovery status.
+Overview (read-only without flags): storage paths, Docker image and socket,
+launch-menu defaults, auth checker, web bridge, boot recovery, transcript archive.
 
-Example:
-  babysit config`,
+Transcript archive (on by default, ~/.babysit/transcripts, under BABYSIT_HOME):
+every session's native agent transcripts are mirrored there every 10 minutes
+and when it ends. That is every message, tool call, tool result and per-turn
+token usage, subagents included (Claude subagents/*.jsonl, Codex subagent
+rollouts). Files stay in each agent's own format (JSONL, SQLite); credential
+files are skipped. Tool output can still contain secrets: the archive is 0700.
+  volumes/<volume>/         Claude, Codex, OpenCode, Antigravity state volumes
+  sandbox/<babysit_id>/     sandbox sessions, copied before the container goes
+  sessions/<babysit_id>.json  agent, workspace, Claude account, native session id
+PATH is a host directory (~ expands, relative resolves here); off disables;
+default restores ~/.babysit/transcripts. Saved in ~/.babysit/config.json
+(transcript_archive) and read when each session's monitor starts.
+
+Examples:
+  babysit config
+  babysit config --transcripts ~/archive/agents
+  babysit config --transcripts off`,
 
     mode: () => `Usage: babysit mode
 
@@ -454,10 +470,16 @@ the account "default"; add more with babysit auth init --claude-token --name NAM
 takes the account with most headroom (the tightest rate window, read with one
 1-token request per account, cached 5 min); --account NAME forces one. The
 session keeps its account through resume, restart, and recovery. When a session
-hits its limit, the monitor moves it to another account with headroom (resume
-plus a continue prompt), never back to one it left while that limit window is
-open, and never while you are attached: detach to let it switch
+hits its limit, the monitor moves it to another account with headroom, never
+back to one it left while that limit window is open
 (config.claude_account_auto_switch, default true).
+Sessions started with two or more accounts switch in place: Claude re-reads its
+credentials file before every request, so Babysit rewrites the token there,
+presses Esc and types a continue prompt (or, while you are attached, leaves the
+typing to you). No restart, same process and conversation; the prompt cache is
+per account, so the first request after a switch re-reads the context. Such
+sessions do not use the host /login file. Older sessions switch by restart
+(resume plus a continue prompt) and only while detached.
 The token reaches the container as a private file copied in with docker cp,
 never a docker -e flag.
 
@@ -588,7 +610,7 @@ Examples:
 }
 
 // Flags whose next argument is a value, not a command word
-const VALUE_FLAGS = new Set( [ `--name`, `--log`, `--port`, `--config`, `-n`, `--status`, `--sort`, `--limit`, `--auth-check-agents` ] )
+const VALUE_FLAGS = new Set( [ `--name`, `--log`, `--port`, `--config`, `-n`, `--status`, `--sort`, `--limit`, `--auth-check-agents`, `--transcripts` ] )
 
 // After `--` everything is literal agent input, `-h` included
 const babysit_args = argv => argv.includes( `--` ) ? argv.slice( 0, argv.indexOf( `--` ) ) : argv

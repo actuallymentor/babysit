@@ -13,6 +13,7 @@ import {
     DEFAULT_AUTH_CHECK_AGENTS,
     read_babysit_config,
     normalise_auth_check_agents,
+    normalise_transcript_archive,
     write_babysit_config,
 } from '../babysit/config.js'
 
@@ -89,6 +90,16 @@ export const cmd_config = async ( cmd, {
         return
     }
 
+    // Absolute path or off, normalised before saving so the file never holds a relative path
+    if( typeof cmd.flags.transcripts === `string` ) {
+        if( !cmd.flags.transcripts.trim() ) throw new Error( `--transcripts takes a directory, off, or default` )
+        const { transcript_archive } = write_babysit_config( { transcript_archive: normalise_transcript_archive( cmd.flags.transcripts ) }, { config_path } )
+        output.write( transcript_archive
+            ? `Transcript archive: ${ transcript_archive } (sessions archive there from their next monitor start)\n`
+            : `Transcript archive: off\n` )
+        return
+    }
+
     const recovery = await recovery_status()
     const auth_scheduler = checker_scheduler()
     const defaults = read_launch_defaults()
@@ -105,6 +116,7 @@ export const cmd_config = async ( cmd, {
             ? `${ process.env.BABYSIT_HOST_BABYSITRC } (inherited)`
             : file_status( join( homedir(), `.babysitrc` ) ) ],
         [ `Workspace config`, file_status( join( process.cwd(), `babysit.yaml` ) ) ],
+        [ `Transcript archive`, current_config.transcript_archive || `off (babysit config --transcripts PATH)` ],
         [ `Tmux socket`, TMUX_SOCKET ],
         [ `Docker image`, get_image_name() ],
         [ `Web bridge directory`, web.root ],

@@ -93,3 +93,6 @@
 - Suspected cause of every Docker session reporting "Agent input did not become ready" on 10-29: Claude's `is_initial_prompt_ready` requires `Claude Code v\d` in the visible pane; a resumed conversation can scroll the banner off. Unverified. Suggested fix: on recovery require only the composer footer and no startup blocker.
 - Also unsurfaced: sessions in `blocked` silently skip rules/loops. Consider a `babysit list` status for it.
 - Segmented Babysit actions still pause web sending (up to 10 min per wait, to avoid interleaved keystrokes). Could narrow the lock to actual typing.
+- 2026-11-07: Transcript archive defaults to ON at `~/.babysit/transcripts` (you asked to save everything). The first pass over the shared Claude volume copied 3.6 GB / 28k files in ~2 min; incremental passes take ~2 s. Tokens printed in tool output are not redacted, the archive is only 0700/0600. Say if you want redaction or a default of off.
+- 2026-11-07: Hot swap applies only to sessions launched after the upgrade with ≥ 2 Claude accounts; running sessions keep restart-based switching. Those sessions no longer get the host /login file (nested `claude` uses the session's setup-token instead).
+

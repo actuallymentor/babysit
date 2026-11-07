@@ -6,8 +6,10 @@ import { join } from 'path'
 import { PassThrough } from 'stream'
 
 import {
+    DEFAULT_TRANSCRIPT_ARCHIVE,
     default_babysit_config,
     normalise_auth_check_agents,
+    normalise_transcript_archive,
     read_babysit_config,
     write_babysit_config,
 } from '../src/babysit/config.js'
@@ -30,7 +32,7 @@ describe( `babysit config`, () => {
         const config_path = join( directory, `config.json` )
         write_babysit_config( { auto_update: true }, { config_path } )
         write_babysit_config( { auth_check_agents: [ `claude` ] }, { config_path } )
-        expect( read_babysit_config( { config_path } ) ).toEqual( { version: 1, auth_check_agents: [ `claude` ], auto_update: true } )
+        expect( read_babysit_config( { config_path } ) ).toMatchObject( { version: 1, auth_check_agents: [ `claude` ], auto_update: true } )
         write_babysit_config( { auto_update: false }, { config_path } )
         expect( read_babysit_config( { config_path } ).auth_check_agents ).toEqual( [ `claude` ] )
         rmSync( directory, { recursive: true, force: true } )
@@ -140,6 +142,33 @@ describe( `babysit config`, () => {
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
+    } )
+
+} )
+
+describe( `transcript archive setting`, () => {
+
+    it( `normalises paths, off and default`, () => {
+        expect( normalise_transcript_archive( undefined ) ).toBe( DEFAULT_TRANSCRIPT_ARCHIVE )
+        expect( normalise_transcript_archive( `off` ) ).toBe( false )
+        expect( normalise_transcript_archive( false ) ).toBe( false )
+        expect( normalise_transcript_archive( `default` ) ).toBe( DEFAULT_TRANSCRIPT_ARCHIVE )
+        expect( normalise_transcript_archive( `/srv/archive` ) ).toBe( `/srv/archive` )
+        expect( normalise_transcript_archive( `~/archive` ) ).toMatch( /^\/.+\/archive$/ )
+        expect( normalise_transcript_archive( `rel/dir` ) ).toBe( join( process.cwd(), `rel/dir` ) )
+    } )
+
+    it( `config --transcripts saves the path or off, keeping other settings`, async () => {
+        const directory = mkdtempSync( join( tmpdir(), `babysit-config-transcripts-` ) )
+        const config_path = join( directory, `config.json` )
+        write_babysit_config( { auto_update: true }, { config_path } )
+        const output = new PassThrough()
+        await cmd_config( { flags: { transcripts: `/srv/archive` } }, { output, config_path } )
+        expect( read_babysit_config( { config_path } ) ).toMatchObject( { auto_update: true, transcript_archive: `/srv/archive` } )
+        await cmd_config( { flags: { transcripts: `off` } }, { output, config_path } )
+        expect( read_babysit_config( { config_path } ).transcript_archive ).toBe( false )
+        expect( output.read().toString() ).toContain( `Transcript archive: off` )
+        rmSync( directory, { recursive: true, force: true } )
     } )
 
 } )

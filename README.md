@@ -157,7 +157,9 @@ babysit auth accounts remove personal
 
 - Existing `~/.babysitrc` token = account `default`; one account behaves as before
 - Launch picks the account with the most remaining rate-window headroom (cached 5 min, 1 Haiku token per probe)
-- Limit hit → session restarts on the next account with headroom, chat resumed, continue prompt sent. Never back to an account it left until that window resets (A→B→C ok, no ping-pong); waits while you are attached (Pushover: detach to switch); none left → log + Pushover. Off: `claude_account_auto_switch: false` in `babysit.yaml`. Detached restart: reattach with `babysit open`
+- Limit hit → session moves to the next account with headroom. Never back to an account it left until that window resets (A→B→C ok, no ping-pong); none left → log + Pushover. Off: `claude_account_auto_switch: false` in `babysit.yaml`
+- **Hot swap** (sessions started with ≥ 2 accounts): no restart. Claude re-reads its credentials file before every request, so babysit rewrites the token there (`docker exec`, token on stdin), presses Esc and types a continue prompt; attached → you type it (Pushover says so). Same process, same conversation; first request after a switch re-reads the context (prompt cache is per account). These sessions skip the host `/login` file
+- Sessions started with one account switch by restart instead: chat resumed, continue prompt sent, waits while you are attached (Pushover: detach to switch). Reattach with `babysit open`
 - Token reaches only its container, as a private file (never `docker -e`)
 - `usage` / `watch` show `claude / <account>` rows; USAGE column follows the session's account
 
@@ -555,16 +557,39 @@ curl -H "Authorization: Bearer $BABYSIT_KEY" https://babysit.example.com/api/sta
 
 Text also scales with viewport width.
 
+## Transcript archive
+
+Every session's native agent transcripts are mirrored into one host directory: every message, tool call, tool result and per-turn token usage, **subagents included**. On by default.
+
+```bash
+babysit config                                  # shows "Transcript archive: <path|off>"
+babysit config --transcripts ~/archive/agents   # move it (~ expands; relative resolves to cwd)
+babysit config --transcripts off                # disable; `default` restores ~/.babysit/transcripts
+```
+
+| Path (under the archive) | Contents |
+|---|---|
+| `volumes/<volume>/` | Mirror of each agent state volume: Claude `projects/` (`<session>.jsonl`, `<session>/subagents/agent-*.jsonl`, `tool-results/`), Codex `sessions/` rollouts (subagents = own rollout, `source.subagent`) + `sqlite/` (thread spawn edges), OpenCode `opencode.db`, Antigravity `conversations/*.db` |
+| `sandbox/<babysit_id>/` | Sandbox sessions: state copied out before the container is removed |
+| `sessions/<babysit_id>.json` | Index: agent, workspace, start, native session id, Claude account + switches, transcript paths |
+
+- Runs every 10 min while a session runs and once at its end; incremental (exact mtime), SQLite via the backup API (WAL included); a read-only, offline container per pass
+- Files stay in each agent's own format (JSONL, SQLite): nothing is converted, so CLI format changes cost nothing. Claude transcripts also hold the system prompt, tool definitions and request params (`api-request*` records)
+- Credential-looking files (`*auth*.json`, `*cred*.json`, …) are skipped. Tool output can still contain secrets: the archive is `0700`, files `0600`
+- Setting lives in `~/.babysit/config.json` (`transcript_archive`); a session reads it when its monitor starts. The path is a host path
+- Reasoning: only what the CLI receives (Claude's thinking summaries, Codex's encrypted reasoning + summaries)
+
 ## Configuration & storage
 
 ```bash
 babysit config
+babysit config --transcripts PATH|off|default    # transcript archive, see above
 export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 ```
 
 | Location / setting | Contents / effect |
 |---|---|
-| `${BABYSIT_HOME:-$HOME/.babysit}` | Config, sessions, clones, caches, recovery, default web bridge |
+| `${BABYSIT_HOME:-$HOME/.babysit}` | Config, sessions, clones, caches, recovery, default web bridge, default transcript archive (`transcripts/`) |
 | `BABYSIT_WEB_BRIDGE_DIR` | Override bridge path; match Compose environment |
 | Docker volumes | Persistent agent state; isolated `node_modules` / `.venv` |
 | `config.isolate_dependencies: false` | Disable dependency volumes |
@@ -583,7 +608,7 @@ export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
 - `babysit update` pulls a running `babysit-web` container's image and, on a new image, recreates it via its Compose project (labels give project, files, env file). Stopped containers stay stopped; `:local` builds are skipped; containers not started by Compose are pulled but need a manual recreate.
   Older/unlabelled images show `version unavailable`.
 - Launch prompts contain brief mode boundaries and browser/session-control hints.
-- `config` is read-only; unavailable systemd checks → unknown. Enablement and runtime state are separate.
+- `config` is read-only unless given `--transcripts`; unavailable systemd checks → unknown. Enablement and runtime state are separate.
 
 ## Develop
 

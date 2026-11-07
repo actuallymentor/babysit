@@ -5,6 +5,8 @@ import { join } from 'node:path'
 
 import {
     account_credential_mounts,
+    account_hot_swap,
+    hot_swap_env_file,
     account_headroom,
     account_usage_report,
     cached_account_usage,
@@ -159,6 +161,16 @@ describe( `headroom selection`, () => {
         expect( account_credential_mounts( null ) ).toEqual( [] )
         expect( account_credential_mounts( { name: `default`, token: RC } ) ).toEqual( [] )
         expect( account_credential_mounts( { name: `work`, token: WORK } ) ).toEqual( [ { type: `account_env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: WORK, account: `work` } ] )
+    } )
+
+    it( `hot swap stages every account, the default included, plus the flag`, () => {
+        expect( account_credential_mounts( { name: `default`, token: RC }, { hot_swap: true } ) ).toEqual( [
+            { type: `account_env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: RC, account: `default` },
+            { type: `account_env`, key: `BABYSIT_CLAUDE_HOT_SWAP`, value: `1`, account: `default` },
+        ] )
+        expect( hot_swap_env_file( { name: `work`, token: WORK } ) ).toBe( `CLAUDE_CODE_OAUTH_TOKEN=${ WORK }\nBABYSIT_CLAUDE_HOT_SWAP=1\n` )
+        expect( account_hot_swap( { list: () => [ { name: `default` } ] } ) ).toBe( false )
+        expect( account_hot_swap( { list: () => [ { name: `default` }, { name: `work` } ] } ) ).toBe( true )
     } )
 
     it( `the staged account token reaches Claude's probe and keys its auth cache`, () => {

@@ -23,6 +23,12 @@ if [ -f "$account_env" ]; then
     done < "$account_env"
 fi
 
+# A hot-swappable session keeps its token in Claude's credentials file, which
+# Babysit rewrites on an account switch. The env token would outrank it.
+if [ "${BABYSIT_CLAUDE_HOT_SWAP:-}" = 1 ]; then
+    unset CLAUDE_CODE_OAUTH_TOKEN
+fi
+
 # The real claude is the next one on PATH after this file's own directory. Moving
 # only forward means several copies of this shim (the image's plus a hot-fixed one
 # in a shared volume) chain to the real claude instead of calling each other
