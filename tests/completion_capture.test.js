@@ -268,7 +268,125 @@ main()
         const settings = add_completion_hooks( { hooks: { Stop: [ user_hook ] } }, `claude` )
         expect( settings.hooks.Stop[ 0 ] ).toEqual( user_hook )
         expect( settings.hooks.Stop ).toHaveLength( 2 )
-        expect( settings.hooks.SessionStart ).toHaveLength( 1 )
+        for( const name of [ `SessionStart`, `UserPromptSubmit`, `StopFailure`, `Notification` ] ) expect( settings.hooks[ name ] ).toHaveLength( 1 )
+        expect( settings.hooks.Notification[ 0 ].matcher ).toBe( `permission_prompt` )
+    } )
+
+    describe( `launch event channel`, () => {
+
+        const events = () => {
+            const file = join( directory, `output`, `events.jsonl` )
+            if( !existsSync( file ) ) return []
+            return readFileSync( file, `utf8` ).trim().split( `\n` ).map( line => JSON.parse( line ) )
+        }
+        // Shape only: timestamps and the fixed envelope are checked once
+        const shapes = () => events().map( ( { version, launch_id, at, ...event } ) => {
+            expect( version ).toBe( 1 )
+            expect( launch_id ).toBe( `launch-1` )
+            expect( Number.isFinite( Date.parse( at ) ) ).toBe( true )
+            return event
+        } )
+
+        it( `Claude: identity, turns, permission prompts and failures as observed on 2.1.318`, () => {
+            const record = execute( `claude`, [
+                { hook_event_name: `SessionStart`, session_id: `root`, source: `startup` },
+                { hook_event_name: `UserPromptSubmit`, session_id: `root`, prompt_id: `p1`, prompt: `ping` },
+                { hook_event_name: `Stop`, session_id: `root`, prompt_id: `p1`, last_assistant_message: `Pong reply.`, background_tasks: [] },
+                { hook_event_name: `UserPromptSubmit`, session_id: `root`, prompt_id: `p2` },
+                { hook_event_name: `Notification`, session_id: `root`, notification_type: `idle_prompt`, message: `Claude is waiting` },
+                { hook_event_name: `Notification`, session_id: `root`, notification_type: `permission_prompt`, message: `Claude needs your permission` },
+                { hook_event_name: `StopFailure`, session_id: `root`, prompt_id: `p2`, error: `server_error`, last_assistant_message: `API Error: 500` },
+                { hook_event_name: `SubagentStop`, session_id: `root`, agent_id: `child`, last_assistant_message: `Child` },
+            ] )
+            expect( shapes() ).toEqual( [
+                { seq: 1, type: `session_id`, agent: `claude`, session_id: `root` },
+                { seq: 2, type: `turn_started`, agent: `claude`, session_id: `root`, turn_id: `p1` },
+                { seq: 3, type: `turn_completed`, agent: `claude`, session_id: `root`, turn_id: `p1`, status: `completed` },
+                { seq: 4, type: `turn_started`, agent: `claude`, session_id: `root`, turn_id: `p2` },
+                { seq: 5, type: `permission_prompt`, agent: `claude`, session_id: `root`, message: `Claude needs your permission` },
+                { seq: 6, type: `turn_completed`, agent: `claude`, session_id: `root`, turn_id: `p2`, status: `error`, error: `server_error` },
+            ] )
+            // An API error is no reply: the web bridge keeps the last real one
+            expect( record.text ).toBe( `Pong reply.` )
+        } )
+
+        it( `Claude: a nested CLI and a foreign session emit nothing; /clear rebinds`, () => {
+            execute( `claude`, [
+                { hook_event_name: `SessionStart`, session_id: `old` },
+                { nested: true, hook_event_name: `UserPromptSubmit`, session_id: `nested`, prompt_id: `n1` },
+                { hook_event_name: `UserPromptSubmit`, session_id: `foreign`, prompt_id: `f1` },
+                { hook_event_name: `SessionStart`, session_id: `new`, source: `clear` },
+            ] )
+            expect( shapes().map( event => [ event.type, event.session_id ] ) ).toEqual( [ [ `session_id`, `old` ], [ `session_id`, `new` ] ] )
+        } )
+
+        it( `Codex: notify completions plus app-server turn boundaries`, () => {
+            codex_metadata( `root`, `vscode` )
+            execute( `codex`, [
+                { type: `babysit-session-identity`, 'thread-id': `root` },
+                { type: `babysit-turn-started`, 'thread-id': `root`, 'turn-id': `t1` },
+                { type: `babysit-turn-ended`, 'thread-id': `root`, 'turn-id': `t1`, status: `interrupted` },
+                { type: `babysit-turn-started`, 'thread-id': `root`, 'turn-id': `t2` },
+                { type: `agent-turn-complete`, 'thread-id': `root`, 'turn-id': `t2`, 'last-assistant-message': `Done` },
+            ] )
+            expect( shapes().map( ( { type, turn_id, status } ) => [ type, turn_id, status ] ) ).toEqual( [
+                [ `session_id`, undefined, undefined ],
+                [ `turn_started`, `t1`, undefined ],
+                [ `turn_completed`, `t1`, `interrupted` ],
+                [ `turn_started`, `t2`, undefined ],
+                [ `turn_completed`, `t2`, `completed` ],
+            ] )
+        } )
+
+        it( `OpenCode: one turn_started per busy stretch; aborts complete as interrupted`, () => {
+            const plugin = join( directory, `plugin.mjs` )
+            writeFileSync( plugin, COMPLETION_PLUGIN_SOURCE.replace( COMPLETION_HELPER_PATH, helper ) )
+            writeFileSync( fixture, `#!/usr/bin/env node
+async function main() {
+    const { BabysitCompletion } = await import(${ JSON.stringify( plugin ) })
+    let latest = {info: {role: 'assistant', id: 'm1', time: {completed: 1}, finish: 'stop'}, parts: [{type: 'text', text: 'Reply'}]}
+    const client = {session: {get: async ({path}) => ({data: {id: path.id}}), messages: async () => ({data: [latest]})}}
+    const hooks = await BabysitCompletion({client})
+    const event = (type, properties) => hooks.event({event: {type, properties: {sessionID: 'ses_root', ...properties}}})
+    await hooks['chat.message']({sessionID: 'ses_root'})
+    await event('session.status', {status: {type: 'busy'}})
+    await event('session.status', {status: {type: 'busy'}})
+    await event('session.status', {sessionID: 'ses_child', status: {type: 'busy'}})
+    await event('session.idle')
+    latest = {info: {role: 'assistant', id: 'm2', time: {}, error: {name: 'MessageAbortedError'}}, parts: []}
+    await event('session.status', {status: {type: 'busy'}})
+    await event('session.idle')
+}
+main()
+` )
+            expect( execute( `opencode`, [] ).text ).toBe( `Reply` )
+            expect( shapes().map( ( { type, turn_id, status, error } ) => [ type, turn_id, status, error ] ) ).toEqual( [
+                [ `session_id`, undefined, undefined, undefined ],
+                [ `turn_started`, undefined, undefined, undefined ],
+                [ `turn_completed`, `m1`, `completed`, undefined ],
+                [ `turn_started`, undefined, undefined, undefined ],
+                [ `turn_completed`, `m2`, `interrupted`, `MessageAbortedError` ],
+            ] )
+        } )
+
+        it( `bounds the file by keeping the newest whole lines with monotonic seq`, () => {
+            // A 4 KiB bound stands in for 256 KiB: same code path, fewer processes
+            writeFileSync( helper, COMPLETION_HELPER_SOURCE.replace( `EVENTS_MAX_BYTES = 256 * 1024`, `EVENTS_MAX_BYTES = 4096` ) )
+            const payloads = Array.from( { length: 40 }, ( _, index ) => ( { hook_event_name: `UserPromptSubmit`, session_id: `root`, prompt_id: `p${ index }-${ `x`.repeat( 100 ) }` } ) )
+            execute( `claude`, payloads )
+            expect( readFileSync( join( directory, `output`, `events.jsonl` ) ).length ).toBeLessThanOrEqual( 4096 )
+            const kept = events()
+            expect( kept.length ).toBeLessThan( 41 )
+            expect( kept.at( -1 ) ).toMatchObject( { seq: 41, turn_id: `p39-${ `x`.repeat( 100 ) }` } )
+            kept.forEach( ( event, index ) => index && expect( event.seq ).toBe( kept[ index - 1 ].seq + 1 ) )
+        }, 30_000 )
+
+        it( `appends the exit event with or without a durable receipt`, () => {
+            const result = spawnSync( `python3`, [ helper, `exit`, `claude`, `143`, `1` ], { env, encoding: `utf8` } )
+            expect( result.status ).toBe( 0 )
+            expect( shapes() ).toEqual( [ { seq: 1, type: `exit`, agent: `claude`, exit_status: 143, interrupted: true } ] )
+        } )
+
     } )
 
 } )

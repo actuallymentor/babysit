@@ -278,7 +278,9 @@ set -e
 # The pane can vanish before the host polls its terminal marker. Persist the
 # native exit first; host shutdown remains recoverable even if a signal handler
 # made the child return zero. Receipt failure must never masquerade as success.
-if [ "${BABYSIT_RECOVERY_IDENTITY:-0}" = "1" ] && [ -n "$capture_agent" ]; then
+# The helper also appends the live `exit` event; it persists the durable
+# receipt only when BABYSIT_RECOVERY_IDENTITY=1 (sandboxes keep no receipt).
+if [ -n "$capture_agent" ] && [ -n "${BABYSIT_COMPLETION_LAUNCH_ID:-}" ]; then
     if ! gosu node python3 /home/node/.babysit-capture/capture.py exit "$capture_agent" "${agent_status:-1}" "$agent_interrupted"; then
         printf 'Could not persist native session exit receipt\n' >&2
     fi
