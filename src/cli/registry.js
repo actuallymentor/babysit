@@ -81,7 +81,7 @@ export const FLAGS = [
     { name: `log`, type: `optional`, scope: `launch`, yaml: `log`, usage: `--log[=PATH]`,
         summary: `Append raw tmux output to PATH (default .YYYY_MM_DD_HH_MM.babysit.log)` },
     { name: `account`, type: `value`, scope: `launch`, arg: `NAME`,
-        summary: `Claude subscription for this session, or for nested claude in other agents (babysit auth accounts); default picks most headroom` },
+        summary: `Claude: run on this subscription (babysit auth accounts); default picks most headroom` },
 
     // `babysit config` settings; consumed anywhere like launch flags
     { name: `transcripts`, type: `value`, scope: `global`, commands: [ `config` ] },
