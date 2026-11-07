@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'path'
 
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
+import { MENU_TOGGLES } from '../cli/registry.js'
 
 const DEFAULTS_PATH = join( BABYSIT_DIR, `launch-defaults.json` )
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -26,14 +27,13 @@ const read_store = path => {
 const normalise = ( value = {} ) => {
 
     const mode = MODES.includes( value?.mode ) ? value.mode : `regular`
+    // The menu's top-level switches are the remembered ones
     return {
         agent: SUPPORTED_AGENTS.includes( value?.agent ) ? value.agent : SUPPORTED_AGENTS[0],
-        docker: value?.docker === true,
+        ...Object.fromEntries( MENU_TOGGLES.map( key => [ key, value?.[ key ] === true ] ) ),
         // Only the Devices switch is remembered; adb and ios alone are Advanced
         devices: value?.devices === true || value?.adb === true && value?.ios === true,
-        yolo: value?.yolo === true,
         clone: mode === `regular` && value?.clone === true,
-        loop: value?.loop === true,
         mode,
     }
 

@@ -1,0 +1,491 @@
+{
+  "launch_flags": [
+    [],
+    [
+      "--yolo",
+      "--docker",
+      "--adb",
+      "--ios",
+      "--devices",
+      "--clone",
+      "--loop",
+      "--ignore-host-agents-md",
+      "--port=3000",
+      "--port=8080:80",
+      "--log"
+    ],
+    [
+      "--sandbox",
+      "--log=out.log"
+    ],
+    [
+      "--ios",
+      "--mudbox"
+    ]
+  ],
+  "launch_to_command": [
+    {
+      "verb": "start",
+      "agent": "claude",
+      "session_id": null,
+      "flags": {
+        "help": false,
+        "version": false,
+        "yolo": false,
+        "sandbox": false,
+        "mudbox": false,
+        "clone": false,
+        "loop": false,
+        "docker": false,
+        "adb": false,
+        "ios": false,
+        "devices": false,
+        "yes": false,
+        "ignore_host_agents_md": false,
+        "all": false,
+        "usage": false,
+        "interactive": false,
+        "auto": false,
+        "limit": null,
+        "watch": false,
+        "list": false,
+        "name": "fallback",
+        "log": false,
+        "config": "/c.yaml",
+        "auth_check_agents": false,
+        "transcripts": false,
+        "account": false,
+        "auth": false,
+        "refresh": false,
+        "remove": false,
+        "linger": false,
+        "claude_token": "<undefined>",
+        "ports": []
+      },
+      "passthrough": []
+    },
+    {
+      "verb": "start",
+      "agent": "claude",
+      "session_id": null,
+      "flags": {
+        "help": false,
+        "version": false,
+        "yolo": true,
+        "sandbox": false,
+        "mudbox": false,
+        "clone": true,
+        "loop": true,
+        "docker": true,
+        "adb": true,
+        "ios": true,
+        "devices": true,
+        "yes": false,
+        "ignore_host_agents_md": true,
+        "all": false,
+        "usage": false,
+        "interactive": false,
+        "auto": false,
+        "limit": null,
+        "watch": false,
+        "list": false,
+        "name": "fallback",
+        "log": "",
+        "config": "/c.yaml",
+        "auth_check_agents": false,
+        "transcripts": false,
+        "account": false,
+        "auth": false,
+        "refresh": false,
+        "remove": false,
+        "linger": false,
+        "claude_token": "<undefined>",
+        "ports": [
+          "3000:3000",
+          "8080:80"
+        ]
+      },
+      "passthrough": []
+    },
+    {
+      "verb": "start",
+      "agent": "codex",
+      "session_id": null,
+      "flags": {
+        "help": false,
+        "version": false,
+        "yolo": false,
+        "sandbox": true,
+        "mudbox": false,
+        "clone": false,
+        "loop": false,
+        "docker": false,
+        "adb": false,
+        "ios": false,
+        "devices": false,
+        "yes": false,
+        "ignore_host_agents_md": false,
+        "all": false,
+        "usage": false,
+        "interactive": false,
+        "auto": false,
+        "limit": null,
+        "watch": false,
+        "list": false,
+        "name": "fallback",
+        "log": "out.log",
+        "config": "/c.yaml",
+        "auth_check_agents": false,
+        "transcripts": false,
+        "account": false,
+        "auth": false,
+        "refresh": false,
+        "remove": false,
+        "linger": false,
+        "claude_token": "<undefined>",
+        "ports": []
+      },
+      "passthrough": [
+        "--model",
+        "o3"
+      ]
+    },
+    {
+      "verb": "start",
+      "agent": "claude",
+      "session_id": null,
+      "flags": {
+        "help": false,
+        "version": false,
+        "yolo": false,
+        "sandbox": false,
+        "mudbox": true,
+        "clone": false,
+        "loop": false,
+        "docker": false,
+        "adb": false,
+        "ios": true,
+        "devices": false,
+        "yes": false,
+        "ignore_host_agents_md": false,
+        "all": false,
+        "usage": false,
+        "interactive": false,
+        "auto": false,
+        "limit": null,
+        "watch": false,
+        "list": false,
+        "name": "x",
+        "log": false,
+        "config": "/c.yaml",
+        "auth_check_agents": false,
+        "transcripts": false,
+        "account": false,
+        "auth": false,
+        "refresh": false,
+        "remove": false,
+        "linger": false,
+        "claude_token": "<undefined>",
+        "ports": []
+      },
+      "passthrough": []
+    }
+  ],
+  "command_to_launch": [
+    {
+      "agent": "claude",
+      "mode": "regular",
+      "yolo": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "devices": false,
+      "clone": false,
+      "loop": false,
+      "ignore_host_agents_md": false,
+      "ports": [],
+      "log": false,
+      "args": []
+    },
+    {
+      "agent": "claude",
+      "mode": "regular",
+      "yolo": true,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "devices": true,
+      "clone": false,
+      "loop": true,
+      "ignore_host_agents_md": false,
+      "ports": [
+        "3000:3000"
+      ],
+      "log": true,
+      "args": [
+        "--model",
+        "x"
+      ]
+    },
+    {
+      "agent": "codex",
+      "mode": "mudbox",
+      "yolo": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "devices": false,
+      "clone": false,
+      "loop": false,
+      "ignore_host_agents_md": true,
+      "ports": [],
+      "log": "out.log",
+      "args": [],
+      "name": "n"
+    },
+    {
+      "agent": "opencode",
+      "mode": "sandbox",
+      "yolo": false,
+      "docker": true,
+      "adb": true,
+      "ios": false,
+      "devices": false,
+      "clone": false,
+      "loop": false,
+      "ignore_host_agents_md": false,
+      "ports": [],
+      "log": false,
+      "args": []
+    },
+    {
+      "agent": "claude",
+      "mode": "regular",
+      "yolo": false,
+      "docker": false,
+      "adb": false,
+      "ios": true,
+      "devices": false,
+      "clone": true,
+      "loop": false,
+      "ignore_host_agents_md": false,
+      "ports": [],
+      "log": false,
+      "args": []
+    }
+  ],
+  "build_launch_yaml": [
+    "# How the session starts. `babysit --config DIR/` starts one session per yaml in\n# DIR and needs only agent; commented keys show their defaults. A bare\n# `babysit --config FILE` opens the launch menu with these values.\nlaunch:\n    # claude | codex | opencode\n    agent: claude\n\n    # Directory launches default to the yaml path relative to DIR.\n    # name: my session\n\n    # regular | sandbox | mudbox; clone needs regular.\n    # mode: regular\n\n    # yolo: false\n    # Mounts the host Docker socket (sibling containers); agents always run in a container.\n    # docker: false\n    # Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.\n    # adb: false\n    # ios: false\n    # devices: false\n    # clone: false\n    # loop: false\n    # ignore_host_agents_md: false\n\n    # PORT or HOST:CONTAINER entries.\n    # ports: []\n\n    # false, true for the default path, or a file path.\n    # log: false\n\n    # Passed to the agent CLI as-is, e.g. [\"--model\", \"opus\"].\n    # args: []\n",
+    "# How the session starts. `babysit --config DIR/` starts one session per yaml in\n# DIR and needs only agent; commented keys show their defaults. A bare\n# `babysit --config FILE` opens the launch menu with these values.\nlaunch:\n    # claude | codex | opencode\n    agent: claude\n\n    # Directory launches default to the yaml path relative to DIR.\n    # name: my session\n\n    # regular | sandbox | mudbox; clone needs regular.\n    # mode: regular\n\n    yolo: true\n    # Mounts the host Docker socket (sibling containers); agents always run in a container.\n    docker: true\n    # Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.\n    adb: true\n    ios: true\n    devices: true\n    clone: true\n    loop: true\n    ignore_host_agents_md: true\n\n    # PORT or HOST:CONTAINER entries.\n    ports: [\"3000\", \"8080:80\"]\n\n    # false, true for the default path, or a file path.\n    log: true\n\n    # Passed to the agent CLI as-is, e.g. [\"--model\", \"opus\"].\n    # args: []\n",
+    "# How the session starts. `babysit --config DIR/` starts one session per yaml in\n# DIR and needs only agent; commented keys show their defaults. A bare\n# `babysit --config FILE` opens the launch menu with these values.\nlaunch:\n    # claude | codex | opencode\n    agent: codex\n\n    # Directory launches default to the yaml path relative to DIR.\n    # name: my session\n\n    # regular | sandbox | mudbox; clone needs regular.\n    mode: sandbox\n\n    # yolo: false\n    # Mounts the host Docker socket (sibling containers); agents always run in a container.\n    # docker: false\n    # Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.\n    # adb: false\n    # ios: false\n    # devices: false\n    # clone: false\n    # loop: false\n    # ignore_host_agents_md: false\n\n    # PORT or HOST:CONTAINER entries.\n    # ports: []\n\n    # false, true for the default path, or a file path.\n    log: \"out.log\"\n\n    # Passed to the agent CLI as-is, e.g. [\"--model\", \"opus\"].\n    args: [\"--model\", \"o3\"]\n",
+    "# How the session starts. `babysit --config DIR/` starts one session per yaml in\n# DIR and needs only agent; commented keys show their defaults. A bare\n# `babysit --config FILE` opens the launch menu with these values.\nlaunch:\n    # claude | codex | opencode\n    agent: claude\n\n    # Directory launches default to the yaml path relative to DIR.\n    name: \"x\"\n\n    # regular | sandbox | mudbox; clone needs regular.\n    mode: mudbox\n\n    # yolo: false\n    # Mounts the host Docker socket (sibling containers); agents always run in a container.\n    # docker: false\n    # Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.\n    # adb: false\n    ios: true\n    # devices: false\n    # clone: false\n    # loop: false\n    # ignore_host_agents_md: false\n\n    # PORT or HOST:CONTAINER entries.\n    # ports: []\n\n    # false, true for the default path, or a file path.\n    # log: false\n\n    # Passed to the agent CLI as-is, e.g. [\"--model\", \"opus\"].\n    # args: []\n"
+  ],
+  "mode_from_modifiers": [
+    {
+      "yolo": false,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "ignore_host_agents_md": false
+    },
+    {
+      "yolo": true,
+      "sandbox": true,
+      "mudbox": true,
+      "docker": true,
+      "adb": true,
+      "ios": true,
+      "clone": true,
+      "ignore_host_agents_md": true
+    },
+    {
+      "yolo": false,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "ignore_host_agents_md": false
+    }
+  ],
+  "merge_resume_flags": [
+    {
+      "yolo": false,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "loop": false,
+      "ignore_host_agents_md": false,
+      "name": "stored",
+      "log": false,
+      "config": false,
+      "ports": [
+        1
+      ]
+    },
+    {
+      "yolo": true,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "loop": false,
+      "ignore_host_agents_md": false,
+      "name": "n",
+      "log": "",
+      "config": false,
+      "ports": [
+        "3000"
+      ]
+    },
+    {
+      "yolo": false,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "loop": true,
+      "ignore_host_agents_md": false,
+      "name": "stored",
+      "log": false,
+      "config": false,
+      "ports": [
+        1
+      ],
+      "devices": true
+    },
+    {
+      "yolo": true,
+      "sandbox": true,
+      "mudbox": true,
+      "docker": true,
+      "adb": true,
+      "ios": true,
+      "clone": true,
+      "loop": true,
+      "ignore_host_agents_md": true,
+      "name": "stored",
+      "log": false,
+      "config": false,
+      "ports": [
+        1
+      ]
+    },
+    {
+      "yolo": true,
+      "sandbox": true,
+      "mudbox": true,
+      "docker": true,
+      "adb": true,
+      "ios": true,
+      "clone": true,
+      "loop": true,
+      "ignore_host_agents_md": true,
+      "name": "n",
+      "log": "",
+      "config": false,
+      "ports": [
+        "3000"
+      ]
+    },
+    {
+      "yolo": true,
+      "sandbox": true,
+      "mudbox": true,
+      "docker": true,
+      "adb": true,
+      "ios": true,
+      "clone": true,
+      "loop": true,
+      "ignore_host_agents_md": true,
+      "name": "stored",
+      "log": false,
+      "config": false,
+      "ports": [
+        1
+      ],
+      "devices": true
+    },
+    {
+      "yolo": false,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "loop": true,
+      "ignore_host_agents_md": false,
+      "name": "stored",
+      "log": false,
+      "config": false,
+      "ports": [
+        1
+      ]
+    },
+    {
+      "yolo": true,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "loop": true,
+      "ignore_host_agents_md": false,
+      "name": "n",
+      "log": "",
+      "config": false,
+      "ports": [
+        "3000"
+      ]
+    },
+    {
+      "yolo": false,
+      "sandbox": false,
+      "mudbox": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "clone": false,
+      "loop": true,
+      "ignore_host_agents_md": false,
+      "name": "stored",
+      "log": false,
+      "config": false,
+      "ports": [
+        1
+      ],
+      "devices": true
+    }
+  ],
+  "help_topic": [
+    null,
+    null,
+    "Usage: babysit claude [options] [agent CLI flags]",
+    "Usage: babysit claude resume <id|number> [options] [agent CLI flags]",
+    "Usage: babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]",
+    "Usage: babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]",
+    null,
+    "Usage: babysit fork <number|session_id> [agent] [options] [-- agent CLI flags]",
+    "Usage: babysit resume [--all] [-n N]",
+    "Usage: babysit model [model-name]",
+    "Usage: babysit restart <number|session_id|all>... [--force] [--detach] [--continue] [--account NAME]",
+    "Usage: babysit claude [options] [agent CLI flags]",
+    null,
+    "Usage: babysit web key add|list|remove [NAME]",
+    "Usage: babysit usage [--json]",
+    "Usage: babysit effort [level]"
+  ]
+}
