@@ -1,52 +1,42 @@
 # babysit
 
-Durable Docker + tmux sessions for coding agents. Detach, resume, recover;
-automate terminal responses with YAML rules.
+Durable Docker + tmux sessions for coding agents. Detach, resume, recover; automate terminal responses with YAML rules.
 
-Supports [Claude](https://docs.anthropic.com/en/docs/claude-code),
-[Codex](https://github.com/openai/codex), and
-[OpenCode](https://github.com/anomalyco/opencode).
+Supports [Claude](https://docs.anthropic.com/en/docs/claude-code), [Codex](https://github.com/openai/codex), [OpenCode](https://github.com/anomalyco/opencode).
 
 ## Quick start
 
-Requires **macOS/Linux, Docker, tmux, Git**. New Linux clones also require **rsync** (`sudo apt install rsync`, or your package manager). Installs to `~/.local/bin`; no sudo.
+Needs **macOS/Linux, Docker, tmux, Git** (+ **rsync** on Linux). Installs to `~/.local/bin`, no sudo.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/actuallymentor/babysit/main/scripts/install.sh | bash
 ```
 
 ```bash
-babysit                                 # Interactive launcher
+babysit                                  # Interactive launcher
 babysit "feature 1"                      # Launcher with session name
-babysit --port 5173 --name Blog --yolo   # Launcher with flags and name prefilled
 babysit claude --yolo
 babysit codex --clone --name "feature 1"
 babysit codex --sandbox --loop
 babysit opencode --mudbox
+babysit claude --yolo --model sonnet --effort high   # unknown flags pass through
 ```
 
-**Detach:** `Ctrl+B d` · **Reattach:** `babysit open` · **Reference:** `babysit --help`, and per command with examples: `babysit auth --help`, `babysit auth init --help`, `babysit help resume` (inside a session: `babysit help`)
+**Detach:** `Ctrl+B d` · **Reattach:** `babysit open` · **Help:** `babysit --help`, `babysit help <command>`
 
-Unknown flags pass through: `babysit claude --yolo --model sonnet --effort high`.
-Explicit models override defaults. Codex defaults to `gpt-6-astra`, effort `medium`.
-Claude defaults to `default` (Claude Code's recommended model), effort `medium`; explicit flags override it. Use `--model best` for Fable, which has a smaller weekly cap.
+Defaults: Codex `gpt-6-astra` / `medium`; Claude `default` / `medium` (`--model best` = Fable, smaller weekly cap). Explicit flags win.
 
 ### Launcher
 
 | Input | Action |
 |---|---|
 | ↑/↓ | Navigate rows |
-| ←/→ | Select agent CLI (Model), Mode, or Claude Account (Advanced) |
-| Type on Name / Ports / Log / Args | Set session name, ports (`5173, 3000:80`), log (`on` = default path, or a path), agent arguments (`--model "opus 4"`) |
-| Space | Toggle Docker, Devices, YOLO, Clone, Loop; open/close Advanced; toggle ADB, iOS, Ignore host AGENTS.md inside it |
-| Enter / Esc / Ctrl+C | Launch / cancel / cancel |
+| ←/→ | Agent, Mode, Claude account |
+| Type | Name, ports (`5173, 3000:80`), log, agent args |
+| Space | Toggle Docker, Devices, YOLO, Clone, Loop; open Advanced |
+| Enter / Esc | Launch / cancel |
 
-Mode: Regular → Sandbox → Mudbox. Clone forces Regular.
-Devices = ADB + iOS. Advanced (ADB or iOS alone, ignore host AGENTS.md, Ports, Log, Args, Account) opens by itself when flags or `--config` prefill it.
-Account (Claude, with [accounts](#claude-accounts)): `auto` (most headroom) or a named subscription, each with % of its tightest rate window used; `--account` prefills it, forks show the parent's.
-Agent, Mode and the top-level switches (Docker, Devices, YOLO, Clone, Loop) persist per workspace; new workspaces inherit the latest global selection. Advanced values are never remembered.
-Names never persist. Menu requires a TTY; explicit agent commands ignore defaults.
-Use explicit commands in scripts.
+Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and switches persist per workspace; names and Advanced values don't. Needs a TTY; use explicit commands in scripts.
 
 ## Flags
 
@@ -70,49 +60,102 @@ Use explicit commands in scripts.
 | `--port H:C` | Publish host port H to container port C |
 | `--log[=PATH]` | Append raw tmux output to PATH (default `.YYYY_MM_DD_HH_MM.babysit.log`) |
 | `--account NAME` | Claude: run on this subscription (babysit auth accounts); default picks most headroom |
-| `--config DIR/` | Start one detached session per `DIR/*.yaml` (see [Directory launch](#directory-launch)) |
 
-`babysit --help` prints the same rows (one registry, `src/cli/registry.js`; a test keeps this table in sync).
+Flags combine. `--clone` excludes `--sandbox`/`--mudbox`. `--docker` weakens isolation (host daemon control, even in sandbox).
 
-- `--yolo` on Claude also accepts prompts that still block, such as rm safety checks, when their default is yes; never model swaps or billing.
-- `--adb`: shared key and device registry (`babysit-adb` volume); pair a phone once with `babysit adb pair HOST:PORT CODE`, every session reconnects it at launch (pins port 5555 until reboot). Host at `host.docker.internal`. See [Android devices](#android-devices---adb).
-- `--ios`: iPhone (iOS 16 and older) over the LAN, pairing in the `babysit-ios` volume; see [iOS devices](#ios-devices---ios).
-- `--config FILE`: relative `do: ./X.md` paths resolve beside FILE. `babysit --config FILE` opens the launch menu prefilled from the file's `launch:`.
+- `--yolo` on Claude also accepts blocking prompts whose default is yes (e.g. rm checks); never model swaps or billing
+- `--adb` / `--ios`: see [Android devices](#android-devices---adb), [iOS devices](#ios-devices---ios)
+- `--config FILE`: opens the launch menu prefilled from its `launch:`; relative `do: ./X.md` paths resolve beside FILE
 
-Flags combine. `--clone` excludes `--sandbox` / `--mudbox`. `--docker` weakens isolation:
-the socket controls the host daemon, including in Sandbox/Mudbox.
+### Clone
 
-`--clone` on a repository root clones its committed state (`git clone`, no hardlinks; every branch, tag,
-remote-tracking ref and remote kept) and carries untracked/ignored paths matching `config.clone.carry`
-(default `.env`, `.env.*`, `.notes`, `babysit.yaml`; wholly ignored folders are carried as a unit, never walked).
-Dependencies and build output are not copied; uncommitted edits are not either unless `config.clone.changes: true`
-(staged and unstaged state survive; untracked files come along). `config.clone.depth: N` clones shallow history.
-Plain folders, repository subdirectories, repositories declaring attribute filters (LFS, git-crypt), and
-`config.clone.mode: copy` copy the working tree instead, skipping `config.clone.exclude` names (default
-`node_modules`) at any depth. Submodules and nested worktrees are only present in copy mode.
+- Git repo root: `git clone` of committed state (all refs), plus untracked/ignored paths matching `carry`. Dependencies and build output not copied
+- Plain folders, subdirectories, LFS/git-crypt repos, `mode: copy`: working-tree copy minus `exclude`
+- Unreadable paths you own: listed with the `chmod` fix; `y` or `--yes` applies it
 
 ```yaml
 config:
     clone:
         mode: git            # git | copy
         carry: ['.env', '.env.*', '.notes', 'babysit.yaml']
-        changes: false
-        depth: null
-        exclude: ['node_modules']
+        changes: false       # true: carry uncommitted edits
+        depth: null          # N: shallow
+        exclude: ['node_modules']   # copy mode
 ```
 
-Linux copies preserve hard links within the clone, sparse files, timestamps, and supported ACLs/xattrs.
-macOS copies clone files through APFS reflinks when available. Copies run as your user; privileged
-ownership/metadata remain limited by your permissions and filesystem. Completed clone reuse/resume does not require rsync.
+## Sessions
 
-Copy mode preserves nested worktrees (including `.claude/worktrees`) with isolated Git metadata.
-Worktree metadata must stay within the copied source; cloning a linked worktree as the root remains unsupported.
-Absolute-linked worktrees are locked against Git pruning across mount paths; manage/unlock them from the host clone path.
+Status: `running` (foreground work), `waiting` (background shells/subagents), `idle`. Idle rules don't fire while waiting.
 
-`--clone` checks the whole source before copying. Paths you own but can't read (e.g. a `drw-------`
-`__pycache__`) are listed with the exact `chmod`; answer `y` (or pass `--yes`) to apply it and retry.
+| Command | Effect |
+|---|---|
+| `babysit init [file.yaml]` | Write a default config, then open the launch menu to fill `launch:` |
+| `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached; see [Directory launch](#directory-launch) |
+| `babysit audit --config FILE\|DIR/` | Fix yaml for `--config DIR/`; see [Audit](#audit) |
+| `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip comment lines and blanks; see [Clean](#clean) |
+| `babysit list [--all]` | Sessions as a tree: status, CPU/MEM, flags. Blue ● = turn finished, grey ● = idle >24h. `--all` adds IDs, tmux names |
+| `babysit watch [--usage\|--all] [--interactive]` | Live `list` + usage. `--interactive`: type a number to open, ctrl+c to close |
+| `babysit fork <n\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
+| `babysit open [id\|name\|number]` | Attach; shell `cd`s to the session's base dir (needs `eval "$(babysit shell-init)"` in your rc) |
+| `babysit shell-init [bash\|zsh\|fish]` | Print the shell function behind `open`. Fish: `babysit shell-init fish \| source` |
+| `babysit resume [--all] [-n N]` | Workspace history, newest 10 (`-n N` rows, `--all` workspaces) |
+| `babysit resume <id\|number> [flags]` | Restore a saved session (`babysit <agent> resume …` must match its agent) |
+| `babysit close <n\|id>...` | Close and retire from recovery; numbers resolve before the first close |
+| `babysit restart <n\|id\|all>... [--force] [--detach] [--continue] [--account NAME]` | Close gracefully, resume on the current image. Needs an idle/waiting agent and captured session id (`--force` overrides). Claude moves to the account with most headroom |
+| `babysit freeze <n\|id\|all>...` / `unfreeze` | `docker pause` in place; host only. Ends at reboot; `close` unpauses |
+| `babysit archive [<n\|id>...] [--yes]` | Sink sessions to the bottom of the list (they keep running). No selectors: offers every grey-dot session. `open` un-archives |
+| `babysit prune [--list]` | Show reclaimable space; interactively prune unused Docker data and managed clones |
+| `babysit doctor --auth [agent] [--refresh]` | Real auth check (one prompt per agent); `--refresh` bypasses the 12h cache |
+| `babysit auth [status]` | Cached auth ages, checker state |
+| `babysit auth check [agent] [--force]` | Run the checker now |
+| `babysit auth accounts [remove NAME]` | Claude subscriptions; see [Claude accounts](#claude-accounts) |
+| `babysit auth init [--remove] [--no-linger]` | Install/remove the 10-min checker (systemd user timer / launchd) |
+| `babysit config` | Effective paths, image, defaults, web/recovery status |
+| `babysit mode` | `container` inside a session, `host` otherwise |
+| `babysit update [--auto]` | Update Babysit, agent tools, image, web container. `--auto`: background updates on new releases |
 
-## Fork, audit, Claude accounts
+Numbers refer to the listing of the command they're used with: `open`/`close`/`archive` → `babysit list`; `resume N` → `babysit resume` (`resume N --all` for `resume --all` rows); `recover N` → `babysit recover --dry-run`. Re-list after changes, or use IDs.
+
+### Login
+
+- Launch makes no model call: it checks the agent's staged login locally and asks only when there's nothing to log in with. Every installed agent still gets credentials, so nested `claude`/`codex` work
+- `babysit auth init` once → 10-min checker (`babysit config` shows state). `doctor --auth` does a real probe
+- Pushover alerts (`PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`): agent logged out, any usage limit at 90%
+- OpenCode borrows the Codex ChatGPT login (access token only, never written to host OpenCode `auth.json`) and then prefers it over OpenRouter; its own `openai` login wins
+
+**Claude** in containers runs only on a one-year setup-token (host `/login` is never copied, so sessions can't log each other out). No token or other route → launch stops and says how to import:
+
+```bash
+babysit auth init --claude-token                                  # runs claude setup-token, or paste one
+echo "$TOKEN" | babysit auth init --claude-token --token-stdin    # no TTY; --name NAME for a named account
+```
+
+- Default token lands in `~/.babysitrc` (0600) as `CLAUDE_CODE_OAUTH_TOKEN`; restart Claude sessions to switch
+- Model requests only: claude.ai connectors/Remote Control need `/login`
+- `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry works instead, no token needed
+
+### Recovery
+
+| Command | Effect |
+|---|---|
+| `babysit recover [id\|number]` | Recover interrupted sessions, detached, across workspaces |
+| `babysit recover --dry-run [--json]` | Inspect candidates/blockers |
+| `babysit recover --no-continue [id\|number]` | Reopen without the continue prompt |
+| `babysit recover init` | Enable Ubuntu boot recovery for this account |
+
+Resumes the saved conversation and sends "You were interrupted. Check the current state, then continue unfinished work." Normal exit or `close` retires a session. Unflushed work and in-flight subprocesses are lost; sandboxes stay ephemeral. Missing transcripts, changed config or unsupported args block recovery. Custom tmux sockets need the same `BABYSIT_TMUX_SOCKET`.
+
+**Boot recovery (Ubuntu):** needs system Docker and home/workspaces/credentials available before login.
+
+```bash
+babysit recover init
+journalctl -u "babysit-recover-$(id -u).service"
+sudo systemctl disable "babysit-recover-$(id -u).service"   # turn off
+```
+
+Unattended init needs root or cached sudo (skip a `sudo` prefix: it strips PATH/storage exports). Rerun after moving the executable or storage.
+
+## Fork, audit, clean, accounts
 
 ### Fork
 
@@ -125,13 +168,11 @@ babysit fork 3 opencode --mudbox  # read-only reviewer on the live tree
 babysit fork 3 --clone --takeover # snapshot copy, close the original
 ```
 
-- Filesystem: prompt shows `branch · modified · untracked · unpushed · parent live/exited`. Defaults: exited/stuck parent → share; live parent → clone snapshot; `--mudbox` → read-only share. `--share` / `--clone` skip; `--yes` takes the default
-- Clone snapshot carries everything: uncommitted, untracked (minus `exclude`), unpushed commits; mid-merge/rebase → plain copy. New branch from parent HEAD
-- Chat: same agent → native fork (`--fork-session`, `codex fork`, `opencode --fork`); other agent → transcript handoff as first prompt. `--no-history` starts clean
-- Inherits modes, config, model/effort (same agent), Claude account; flags override, `--regular` / `--no-yolo|docker|adb|ios|loop` drop inherited ones
-- Live parent → `Close #N? [y/N]`; `--takeover` closes without asking
-- `list`/`watch` nest forks under the parent; an exited parent stays as `exited` while a fork lives
-- Launcher: press `f` (off the Name row) to pick a session to fork
+- Filesystem: live parent → clone snapshot; exited/stuck parent → share; `--mudbox` → read-only share. `--share`/`--clone` skip the prompt, `--yes` takes the default
+- Chat: same agent → native fork; other agent → transcript handoff as first prompt. `--no-history` starts clean
+- Inherits modes, config, model/effort (same agent), Claude account. `--regular` / `--no-yolo|docker|adb|ios|loop` drop inherited ones
+- `--takeover` closes a live parent without asking
+- Launcher: `f` (off the Name row) picks a session to fork
 
 ### Audit
 
@@ -140,368 +181,145 @@ babysit audit --config agents/      # every agents/*.yaml, interactive
 babysit audit --config api.yaml --yes
 ```
 
-Asks for a missing `agent`, and for unset `mode` and on/off switches (yolo, docker, adb, ios, devices, clone, loop, ignore_host_agents_md): a non-default answer is written live, the default as a commented line (not asked again). `ports`, `log`, `args` are never added. Offers to reset bad values / drop unknown keys. Never asks about optional keys (`name`, `config:`, `babysit:`). Shows a diff before writing; comments kept. Non-TTY: report only, exit 1 on failure. `--yes`: fixes only, no questions.
+Asks for missing `agent`, unset `mode` and switches; shows a diff before writing; keeps comments. Non-TTY: report only (exit 1 on failure). `--yes`: fixes only.
 
 ### Clean
 
 ```bash
-babysit clean --config babysit/config.yaml   # one file
-babysit clean --config sessions/ --dry-run   # every sessions/*.yaml|yml, report only
+babysit clean --config babysit/config.yaml
+babysit clean --config sessions/ --dry-run
 ```
 
-For a finished config: removes full-line comments and blank lines in place, keeps inline comments (`key: value # note`). Text inside `|`/`>` blocks and quoted multi-line strings is left alone, and a file is only rewritten if it still parses to the same values. Invalid yaml is reported and skipped (exit 1). Not undoable outside git.
+Removes full-line comments and blank lines, keeps inline comments and block strings. Rewrites only if values are unchanged. Not undoable outside git.
 
 ### Claude accounts
 
-Spread work over several Claude subscriptions; babysit switches when one runs out.
+Spread work over several subscriptions; babysit switches when one runs out.
 
 ```bash
-babysit auth init --claude-token --name work      # mint (or paste) + verify, once per subscription
-babysit auth init --claude-token --name personal
+babysit auth init --claude-token --name work      # once per subscription
 babysit auth accounts                             # name, expiry, headroom (never tokens)
-babysit claude --account work                     # force one; default picks most headroom
-babysit restart 2 6                               # move sessions to the account with most headroom
-babysit restart all --account failover            # every Claude session onto one subscription
+babysit claude --account work                     # force one; default = most headroom
+babysit restart all --account failover            # move every Claude session
 babysit auth accounts remove personal
 ```
 
-- Existing `~/.babysitrc` token = account `default`
-- Every session gets one account, whatever its agent: Codex/OpenCode sessions carry it for nested `claude` calls (picked from cached quota, no probe)
-- Launch picks the account with the most remaining rate-window headroom (cached 5 min, 1 Haiku token per probe)
-- Limit hit → session moves to the next account with headroom. Never back to an account it left until that window resets (A→B→C ok, no ping-pong); none left → log + Pushover. Off: `claude_account_auto_switch: false` in `babysit.yaml`
-- **Hot swap**: no restart. Claude re-reads its credentials file before every request, so babysit rewrites the token there (`docker exec`, token on stdin), presses Esc and types a continue prompt; attached → you type it (Pushover says so). Same process, same conversation; first request after a switch re-reads the context (prompt cache is per account)
-- Sessions started before 2.0 with one account switch by restart instead: chat resumed, continue prompt sent, waits while you are attached (Pushover: detach to switch). Reattach with `babysit open`
-- Token reaches only its container, as a private file (never `docker -e`)
-- `usage` / `watch` show `claude / <account>` rows; USAGE column follows the session's account
-
-## Sessions
-
-Status: `running` for foreground work, `waiting` for background shells, terminals, or Claude subagents, `idle` when ready.
-Idle rules do not start while waiting; manual input remains available.
-
-| Command | Effect |
-|---|---|
-| `babysit init [file.yaml]` | Write a default config; asks for the file name when none is given, then opens the launch menu to fill `launch:` |
-| `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached, compose-style; see [Directory launch](#directory-launch) |
-| `babysit audit --config FILE\|DIR/ [--yes]` | Fix yaml so `--config DIR/` accepts it; see [Audit](#audit) |
-| `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip full-line comments and blank lines from config yaml, keep inline comments; see [Clean](#clean) |
-| `babysit list [--all]` | Active sessions as a tree: workspace trunks, numbered leaves with a dot before the name (blue ● = turn finished, until you type or scroll in it (attaching alone does not count); grey ● = idle over 24h), colored status and container CPU (share of the host) / MEM, totals row, FLAGS (launch modifiers + the session's yaml rules, e.g. `on:idle/30m`, `on:/error/i`, `config:api.yaml`), orange notice when a newer release exists; `--all` adds tmux attachment, IDs, tmux names |
-| `babysit watch [--usage\|--all] [--interactive]` | Live dashboard (panes sampled every second, instant redraw on session start/close/archive, changed frames only): the `list` tree minus archived sessions (numbers unchanged), USAGE column = usage bar for the session's worst rate window; idle-rule sessions (`on: idle`, `--loop`) show grey `hh:mm` to their next turn as STATUS; `config:`/`on:` flags only with `--all`. `--usage`: only the account usage panel, one metered row per limit (bar, % used, reset or used / limit); `--all`: tree + panel. Balances and lifetime spend stay in `babysit usage`; usage refreshes every 5 min. A yellow line warns when a disk holding clones or Docker data is under 15% free while Babysit's clones plus build cache take over 20% of it (clears at 20% free), whenever under 10 GB is free, or when the build cache tops 200 GB (stalls launches); sizes measured hourly in the background, free space live. `--interactive`: type a session number to open it, ctrl+c to close (any view clears the terminal on ctrl+c/q); detaching or the session closing returns here, and `open`/start/`fork` land here after a detach in a terminal. Replaces `list --watch` |
-| `babysit fork <number\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
-| `babysit open [id\|name\|number]` | Attach; your shell moves to the session's base directory (where it was started, never its `--clone` copy) before attaching, so detaching leaves you there; needs `eval "$(babysit shell-init)"` in your rc, else the `cd` line is printed. `fork` does the same |
-| `babysit shell-init [bash\|zsh\|fish]` | Print the `babysit` shell function that lets `open` change your directory and runs the attach itself, so no idle babysit process (swapped out on a busy host) delays a detach; after the detach it runs `babysit watch --interactive`. Fish: `babysit shell-init fish \| source` |
-| `babysit resume [--all] [-n N]` | Workspace history, newest 10 rows; `-n N` shows N rows, `--all` shows every workspace and row |
-| `babysit resume <id\|number> [flags]` | Restore saved session |
-| `babysit <agent> resume <id\|number> [flags]` | Restore; selected history row must match agent |
-| `babysit close <number or id>...` | Close by list number or ID; retire launch from recovery. Several at once (`close 3 4 5`): numbers resolve before the first close |
-| `babysit restart <number, id, or all>... [--force] [--detach] [--continue] [--account NAME]` | Close gracefully and resume on the current image, continuing the agent by its native id. Refuses unless the agent shows an idle or waiting control and a native session id was captured; `--force` overrides both, `--detach` returns instead of attaching. Sandbox sessions cannot be restarted. Several selectors (`restart 1 6 3`, resolved before the first close) or `all` restart detached, skipping and reporting refusals. Claude: moves to the account with most headroom (`--account` overrides; with several or `all`, Claude sessions only). No `--continue` → asks `y/N` once |
-| `babysit freeze <number, id, name or all>...` / `babysit unfreeze ...` | Pause session containers in place (`docker pause`; nothing is killed) and resume them where they left off. Host only (`babysit mode`), Docker sessions only. Monitor stands down while frozen and restarts its idle/watchdog timers on unfreeze; list shows `frozen`, tmux bar `FROZEN`. Keys typed meanwhile arrive on unfreeze; agents retry API calls that timed out; ends at reboot/Docker restart; `close` unpauses first |
-| `babysit archive [<number, id or name>...] [--yes]` | Dim sessions and sink them to the bottom of their workspace (several at once: numbers resolve before the first archive); a workspace whose sessions are all archived sinks to the bottom of the list. No selectors: list the grey-dot sessions and ask `Archive N sessions? [Y/n]` (`--yes` skips; required without a terminal). Archived sessions keep running and `prune` keeps their clones. `babysit open` un-archives |
-| `babysit prune --list` | Reclaimable space estimates and managed clone usage, no prompts |
-| `babysit prune` | Show what is reclaimable and where, interactively prune unused Docker data (incl. build cache unused for 7 days) and managed clones, report space actually freed |
-| `babysit doctor --auth [agent] [--refresh]` | Real auth check (one prompt in the image) for every agent, Claude on its setup-token account; bypass 12h cache with `--refresh` |
-| `babysit auth [status]` | Cached authentication ages and whether the scheduled checker is installed |
-| `babysit auth check [agent] [--force]` | What the checker runs: offline checks, host CLI probe after 1h, container re-verify after 6h; `--force` probes one agent now |
-| `babysit auth accounts [remove NAME]` | Claude subscriptions; see [Claude accounts](#claude-accounts) |
-| `babysit auth init [--remove] [--no-linger]` | Install (or remove) the 10-minute checker: systemd user timer on Linux (enables user lingering unless `--no-linger`), launchd agent on macOS |
-| `babysit config` | Effective paths, image, socket, menu defaults, web/recovery status |
-| `babysit mode` | Print `container` inside a babysit agent container, `host` otherwise |
-| `babysit update` | Update Babysit, agent tools, image, running web container; show image version |
-| `babysit update --auto` | Ask `Enable automatic updates? Y/n`; when on, a newer release triggers one background `babysit update` (log `~/.babysit/auto-update.log`, retried daily on failure) |
-
-**Status detection** (`list` samples panes for 1s):
-
-- Input/interrupt controls → idle/running; background shells/terminals or Claude subagent rows → waiting; else output stability; unreadable → unknown
-- Colors: grey idle, green running, orange waiting, red after `babysit stuck` (cleared by typing into the tmux session or web input)
-- CPU/MEM: cached by each session's monitor every 30s from `docker stats` (CPU 100% = one core; MEM whole MiB); `-` if no sample under 5 min old
-- Totals row: green <50% of Docker host cores/memory, yellow <70%, red above
-- Colors follow `NO_COLOR`, `TERM=dumb`, non-TTY. Detach or agent exit shows remaining sessions. Attachment is separate
-
-**Launch login check** (no model call):
-
-- Local check of the launched agent's staged login; asks only when there is nothing to log in with
-- Codex: expired access token + refresh token still starts. OpenCode: no credentials fine for free models. Claude: setup-token or route
-- Every installed agent still gets credentials, so nested `claude`/`codex` are logged in
-- OpenCode borrows the Codex ChatGPT login for `openai`: access token only (never the single-use refresh token, which would log Codex out), refreshed from Codex every sync tick, never written to host OpenCode `auth.json`. Its own `openai` login wins. A ChatGPT subscription then beats OpenRouter as default
-- Claude subscriptions stay out of OpenCode's provider: Anthropic permits them only in Claude Code
-- Startup shows `Starting claude: …`; steps over 5s are named
-
-**Real auth checks** (`doctor --auth` + scheduled checker):
-
-- `babysit auth init` once → 10-min host checker (`babysit config` shows state)
-- Covers every agent with host credentials (Claude: setup-token or route); OpenCode (identity depends on project provider route) is left to `doctor --auth`
-- Running sessions re-stamp the cache when they rotate a token
-- With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc` (or exported at `auth init`), pushes on:
-  - a verified agent logging out (offline credential check, hourly ~3s host probe, or logged-out pane message)
-  - any usage limit (session/daily/weekly/credit) hitting 90%, once per limit window, one push per check
-- Without them: no-op
-
-**Claude login.** In containers Claude runs only on a one-year `claude setup-token`; host `/login` and macOS Keychain are never staged, so sessions can't log each other out by rotating a refresh token. No token and no other route → launch fails fast with import instructions.
-
-```bash
-babysit auth init --claude-token                                  # runs claude setup-token if installed, else paste one minted elsewhere
-echo "$TOKEN" | babysit auth init --claude-token --token-stdin    # no TTY; add --name NAME for a named account
-```
-
-- With host `claude`: token proven with one prompt before saving; without: format check only (said so)
-- Default token → `~/.babysitrc` (0600) as `export CLAUDE_CODE_OAUTH_TOKEN=…`; `--name` tokens → account registry
-- `auth init` offers the token when `CLAUDE_CODE_OAUTH_TOKEN` is unset (Claude installed, TTY); `--claude-token` mints a replacement, `--no-claude-token` skips
-- Restart running Claude sessions to switch
-- Model requests only: claude.ai connectors/Remote Control need `/login`
-- `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry route (in `~/.babysitrc` or Claude `settings.json`) works instead, no token needed
-- Env logins skip offline + host CLI checks; the 6h container check and pane trigger still alert, telling you to rerun `babysit auth init --claude-token`
-
-**Docker cleanup** (`prune`):
-
-- Removes stopped containers and images not needed by this account's saved sessions, plus unused networks and build cache daemon-wide
-- Kept: Babysit-named containers, images used by containers, volumes
-- Separate confirmation; skipped when Docker can't be listed. Saved sessions re-read right before deleting
-- Images with several repo tags skipped (`rm <id>` refuses them)
-- Estimates: build cache from `buildx du` row ages as a range (shared rows raise only the upper bound); images as a range (unshared bytes → summed sizes; needs direct Docker socket access, sudo setups show the upper bound); containers not measured
-- Freed = before/after free-space delta per disk; ZFS keeps freeing in the background
-- Quarantined clones with root-owned files (from `sudo`/Docker in a session) deleted via a root container; on failure prints the `sudo rm -rf` path and continues
-- Needs free space for locks/journals
-
-Old resume IDs follow their latest launch; history shows current launches and saved status.
-
-Numbers use each command's current listing:
-
-- `open N` / `close N` / `archive N`: `babysit list` (archived rows sit at the bottom and are numbered there).
-- `resume N` / `<agent> resume N`: `babysit resume`; use `resume N --all`
-  for rows from `babysit resume --all` (also supported with an explicit agent).
-- `recover N`: `babysit recover --dry-run`, across workspaces.
-
-Re-list after sessions change; use IDs for durable references.
-
-### Recovery
-
-| Command | Effect |
-|---|---|
-| `babysit recover [id\|number]` | Recover interrupted sessions, detached, across workspaces |
-| `babysit recover --dry-run [--json]` | Inspect candidates/blockers |
-| `babysit recover --no-continue [id\|number]` | Reopen without sending continuation |
-| `babysit recover init` | Enable Ubuntu boot recovery for this account |
-
-Resumes the saved conversation, then sends: “You were interrupted. Check the current
-state, then continue unfinished work.” Includes idle sessions; preserves live agents,
-repairs missing monitors, avoids duplicate running sessions. Attach with `babysit open`.
-
-| Preserved | Limits |
-|---|---|
-| Detach/shutdown recovery intent | Normal exit / `close` retires session |
-| Model, effort, variant, modes, ports, image, credential-home paths | Credentials reloaded |
-| Saved conversation | Unflushed work / in-flight subprocesses lost; Sandbox stays ephemeral |
-| Supported launch configuration | Missing transcripts, changed config, unsupported args/prerequisites block recovery |
-
-Older sessions need `resume`. Custom sockets need the same `BABYSIT_TMUX_SOCKET`.
-Uncertain continuation delivery after a second crash: inspect the conversation,
-then acknowledge with `--no-continue`; already-submitted input remains effective.
-
-**Ubuntu boot recovery:** system Docker, direct Docker access, home/workspaces/credentials
-available before login. Run as session owner; the command requests sudo internally.
-
-```bash
-babysit recover init
-journalctl -u "babysit-recover-$(id -u).service"
-sudo systemctl disable "babysit-recover-$(id -u).service" # Disable future boot recovery
-```
-
-- Enables next-boot recovery; leaves current sessions alone. Bounded retries; failures in journal.
-- Stop service → suspend its sessions, preserve recovery intent. `close` → retire session.
-- Captures absolute executable, PATH, `BABYSIT_HOME`; login shell settings are not loaded.
-- Rerun after moving executable/storage or adding workspace mount dependencies.
-- Checks storage, Docker access, Babysit, `sh`, `tmux`, `docker`, `cat`, `ps` as service user.
-- Unattended init needs root or cached/passwordless sudo. Avoid a `sudo` prefix: it can strip PATH/storage exports.
-- Login-unlocked homes/keyrings and rootless/remote Docker require separate host setup.
+- Existing `~/.babysitrc` token = account `default`. Every session gets one account, so nested `claude` works in Codex/OpenCode too
+- On a limit the session hot-swaps to the next account with headroom: token rewritten in place, Esc + continue prompt, same conversation. Attached → you type the continue. Never back to an account until its window resets. Off: `claude_account_auto_switch: false`
+- Sessions from before 2.0 switch by restart instead
+- `usage`/`watch` show `claude / <account>` rows
 
 ## Model and effort
 
-Inside a newly launched managed session:
+Inside a managed session:
 
 ```bash
 babysit model                 # Available models + top 35 intelligence benchmarks
-babysit model <model-name>     # Switch within this agent
-babysit effort                # Supported effort levels
-babysit effort high
-babysit model --status <id>    # Result of a queued terminal request
-babysit effort --status <id>
-babysit exit [--yes]          # End this session gracefully after the current turn; asks for confirmation first
-babysit stuck                 # Mark this session "stuck" in babysit list until the user types into it
-babysit loop                  # Toggle --loop for this session; prints "Looping is now enabled/disabled"
-babysit reset                 # Clear this session's context and type the initial prompt again (after the current turn)
+babysit model <name>          # Switch within this agent
+babysit effort [level]        # List / set effort
+babysit model --status <id>   # Result of a queued request (same for effort)
+babysit exit [--yes]          # End gracefully after the current turn (asks first)
+babysit stuck                 # Mark "stuck" in list until the user types
+babysit loop                  # Toggle --loop
+babysit reset                 # Clear context, retype the initial prompt
 ```
 
-`babysit exit` first asks `You may only exit if the user explicitly told you to do so, not because you are done. Exit? Y/n`;
-without a terminal on stdin it refuses and points at `--yes`. Confirmed, it marks the session intentionally
-closed (recovery will not relaunch it), waits for the agent's composer to be idle, sends `/exit`, answers Claude's
-"Background work is running" menu with "Exit and stop tasks", and forces a close if the agent has not quit 30 seconds
-after `/exit` (or 10 minutes after the request if the turn never ends). Monitor diagnostics: `~/.babysit/monitor-logs/<id>.log`.
+- Changes affect this session only; incompatible model → default effort. Requests queue up to 60s and return an ID
+- Needs an updated image and a new container with its host monitor; not available in remote/headless sessions, Codex `--profile`, OpenCode `--pure`
+- `exit` is for when the user explicitly asked; it marks the session closed (no recovery)
 
-Changes affect this session, not future launch defaults. Claude subagent calls
-control the main session; they do not change the subagent's private model.
-Compatible effort is preserved; switching to an incompatible model selects its
-default effort.
-A request already running at the provider finishes unchanged.
-
-| Agent | Behavior |
-|---|---|
-| Codex | Native thread/turn settings; reports partial application if the active turn rejects a model change |
-| Claude | Native session-only pickers; effort can change during a turn |
-| OpenCode | Effort plugin; model picker applies on the next turn |
-
-Terminal controls preserve drafts and existing dialogs, queue for up to 60 seconds,
-and return a request ID while pending. `--status` reports applied/failed results.
-Model catalogs and effort choices come from the installed CLI/provider.
-OpenCode `effort default` restores its TUI variant; plugin overrides do not update
-its footer. After a manual OpenCode model change, send a turn before querying its
-API-backed model/effort state.
-
-Requires an updated image and a new container with its host monitor running.
-Remote/headless sessions, Codex `--profile`, OpenCode `--pure`: normal launch
-without API controls. Codex resume/fork with permission flags uses the native CLI;
-its live controls remain unavailable.
-
-## Model benchmarks
+### Benchmarks
 
 ```bash
-babysit model --benchmarks                         # Intelligence descending, missing metrics as —
-babysit model --benchmarks --sort cost --limit 20   # Cheapest intelligence task
-babysit model --benchmarks --sort cost-per-point    # Cost/task ÷ intelligence
-babysit model --benchmarks --json                  # Machine-readable report
+babysit model --benchmarks                         # Intelligence descending
+babysit model --benchmarks --sort cost --limit 20
+babysit model --benchmarks --json
 ```
 
-Bare `babysit model` appends `--benchmarks --limit 35` after available models.
-A missing benchmark key or API failure leaves the model list visible.
-
-Sorts: `intelligence` (default), `coding`, `agentic`, `cost`, `cost-per-point`,
-`name`. Scores descend; costs and names ascend. Missing values sort last.
-`--limit N` takes a positive integer; omit for all matching rows.
-Rows missing a metric still show, with `—` in that column.
-
-Columns: model/effort variant, provider, intelligence, coding, agentic,
-intelligence benchmark USD/task, USD/intelligence point. Token pricing is omitted.
-A zero intelligence score has no cost/point. The ratio measures benchmark cost,
-not whether a model can solve your particular task.
-
-Requires `ARTIFICIAL_ANALYSIS_API_KEY`. Configure container defaults in `~/.babysitrc`:
-
-```bash
-export ARTIFICIAL_ANALYSIS_API_KEY="your-key"
-ARTIFICIAL_ANALYSIS_TTL_MINUTES=15
-```
-
-Uses the Artificial Analysis free API, fetching all pages. Cache lives at
-`~/.cache/babysit/benchmarks.json` in the existing Docker cache volume, shared
-across Babysit containers on the same Docker daemon. TTL `0` bypasses caching;
-invalid/negative TTLs fail. Failed refreshes use stale data with a stderr warning.
-Cache failures fall back to a live fetch; hosts without `flock` use atomic writes
-without refresh locking. JSON stays valid. Host invocations
-use the host cache and environment, with `~/.babysitrc` sourced first.
-
-Provider filtering happens on every invocation using installed CLIs and local
-native credentials (Codex, Claude, and recognized direct OpenCode
-providers). Credentials are read without refreshing tokens or sending inference.
-This does not verify expired credentials or imply every listed variant is
-selectable in your CLI. Router credentials alone do not enable every creator.
+Sorts: `intelligence` (default), `coding`, `agentic`, `cost`, `cost-per-point`, `name`. Needs `ARTIFICIAL_ANALYSIS_API_KEY` (free API) in `~/.babysitrc`; optional `ARTIFICIAL_ANALYSIS_TTL_MINUTES=15` (`0` = no cache). Cached in the shared Docker cache volume; failed refreshes use stale data. Only providers with installed CLIs/credentials are listed.
 
 ## Android devices (`--adb`)
 
 ```bash
 babysit adb pair 192.168.2.114:38775 758418 --name dev-phone   # once, from any --adb session
-babysit adb                   # reconnect recorded devices (also runs at launch)
-babysit adb list              # registry + connection state
-babysit adb add HOST[:PORT]   # record an already-paired device; scans if no port
+babysit adb                   # reconnect recorded devices (also at launch)
+babysit adb list
+babysit adb add HOST[:PORT]   # already-paired device
 babysit adb forget HOST
 ```
 
-Registry: `/opt/babysit-adb/devices/devices.json` on the shared volume. Reconnect
-order: `host:5555` → last Wireless debugging port → scan 37000–50000. After a
-Wireless debugging connect, `adb tcpip 5555` pins the fixed port until reboot
-(`--no-tcpip` opts out per device). Phone side: static IP, Developer options →
-*Disable adb authorization timeout*. Launch log: `/tmp/babysit-adb-up.log`.
+Network devices only; host at `host.docker.internal`. Reconnect order: `host:5555` → last Wireless debugging port → scan 37000–50000; `adb tcpip 5555` pins the port until reboot (`--no-tcpip` opts out). Phone: static IP, Developer options → *Disable adb authorization timeout*.
 
 ## iOS devices (`--ios`)
 
-iOS 16 and older (newer iOS needs a root tunnel). One-time, on a Mac: Developer Mode + *Enable UI Automation* on the phone, build and install WebDriverAgent with Xcode (`build-for-testing` + `test` once, trust the profile), tick *Show this iPhone when on Wi-Fi*. Copy `/var/db/lockdown/UDID.plist` (the pair record, full device access).
+iOS 16 and older, over the LAN. One-time on a Mac: Developer Mode + *Enable UI Automation*, build/install WebDriverAgent with Xcode, tick *Show this iPhone when on Wi-Fi*, copy `/var/db/lockdown/UDID.plist`.
 
 ```bash
-babysit ios add 192.168.2.75 UDID ./UDID.plist --name iphone --runner BUNDLE.xctrunner   # once, from any --ios session
-babysit ios                   # launch WebDriverAgent on recorded devices (also runs at launch)
-babysit ios list              # registry + WebDriverAgent state
-babysit ios forget iphone     # drop device and pair record
+babysit ios add 192.168.2.75 UDID ./UDID.plist --name iphone --runner BUNDLE.xctrunner   # once
+babysit ios                   # launch WebDriverAgent on recorded devices (also at launch)
+babysit ios list
+babysit ios forget iphone
 ```
 
-Registry and records: `/opt/babysit-ios` (`babysit-ios` volume). Control with Python `facebook-wda` at `http://HOST:8100`: post `waitForIdleTimeout=0` and `animationCoolOffTimeout=0` to `session/ID/appium/settings` first or `source()` fails on iOS 16. A supervisor per device relaunches WebDriverAgent whenever `:8100` goes down (idle sleep, phone reboot); every live `--ios` session runs one, so the device stays up while any session lives. Log: `/tmp/babysit-ios-wda.log`. Free Apple IDs re-sign every 7 days. Launch log: `/tmp/babysit-ios-up.log`.
+Control with `facebook-wda` at `http://HOST:8100`; post `waitForIdleTimeout=0` and `animationCoolOffTimeout=0` to `session/ID/appium/settings` first or `source()` fails. WebDriverAgent is relaunched automatically; free Apple IDs re-sign every 7 days.
 
 ## Account usage
 
 ```bash
-babysit usage                 # Host or container; no running session required
-babysit usage --json          # Structured results, including partial failures
+babysit usage                 # Host or container
+babysit usage --json
 ```
 
-Queries authenticated agents independently. Claude/Codex show provider quota
-windows and reset times; OpenRouter shows API-key budgets and spend. Unknown
-allowances stay unknown. Local token history is not an account limit.
+Claude/Codex quota windows and resets, OpenRouter budgets and spend. Green <50%, yellow <70%, red above. Exit 1 = unavailable usage or fetch errors. No inference, except one 1-token Haiku request when only a setup-token is available.
 
 ```
 claude / anthropic
   limit                  used  resets
   session                2%    in 3h 25m Oct 9 13:09
   weekly_all             65%   in 3d 6h Oct 12 15:59
-  weekly_scoped / Fable  99%   in 3d 6h Oct 12 15:59
 ```
-
-Percentages are green below 50%, yellow below 70%, red above; resets are relative
-with the local date dimmed. Colors follow `NO_COLOR`, `FORCE_COLOR`, and TTY detection.
-
-Internal provider endpoints are used where needed. Unsupported credentials/providers
-are labeled unavailable; other results remain
-visible. Exit 1 indicates unavailable usage or fetch errors. Missing authentication
-is reported separately. Usage reads start no inference, with one exception: when the `/login` token cannot read Claude
-usage and a setup-token exists, one 1-output-token Haiku request reads the session/weekly quotas from its rate-limit
-headers (per-model weekly scopes are not in those headers).
 
 ## Supervision
 
-`babysit init` writes a commented `babysit.yaml` (or the name you give it, used via `--config FILE`); without one, defaults apply. Rules run top-down; first match wins.
+`babysit init` writes a commented `babysit.yaml` (or use `--config FILE`). Rules run top-down; first match wins.
 
 ```yaml
 config:
     idle_timeout_s: 300
-    watchdog_idle_s: 1800    # stall watchdog, see below; 0 disables
+    watchdog_idle_s: 1800    # stall watchdog; 0 disables
     watchdog_waiting_s: 900
-    yolo_approve_dangerous_commands: true # YOLO accepts blocking prompts whose default is yes (not model swaps/billing); false: leave them to a person
+    yolo_approve_dangerous_commands: true
 
 babysit:
-    # Uncomment wanted rules.
     # - on: idle
     #   do: ./IDLE.md
     #   timeout: 30:00
-
     # - on: /error/i
     #   do: notify_command
 ```
 
 | Setting | Values |
 |---|---|
-| `on` | `idle`, literal text, `/regex/flags` (literal and regex look at the last 10 pane lines) |
-| `do` | `enter`, named `config.commands` command, text, Markdown file |
-| `timeout` | Idle rules only: `SS`, `MM:SS`, `HH:MM:SS`; overrides `idle_timeout_s` |
-| `run_on_start` | Idle rules only: `true` fires on the first idle (30s of quiet) instead of waiting a full timeout; later fires use `timeout` |
-| Markdown steps | Separate with `===`; wait for idle between steps |
-| `--loop` source | First available: `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going`. A `--config FILE` with its own idle rule keeps that rule |
+| `on` | `idle`, literal text, `/regex/flags` (matched against the last 10 pane lines) |
+| `do` | `enter`, named `config.commands` entry, text, Markdown file |
+| `timeout` | Idle rules: `SS`, `MM:SS`, `HH:MM:SS` |
+| `run_on_start` | Idle rules: fire on first idle instead of after a full timeout |
+| Markdown steps | Separate with `===`; waits for idle between steps |
+| `--loop` source | `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going` |
 
-`--ignore-host-agents-md` skips the host `LOOP.md`.
+**Stall watchdog** (on by default): nudges agents that silently stopped.
+- **Idle** `watchdog_idle_s`: Haiku reads the last 150 lines; if stalled (not parked on purpose), types a nudge. Skipped when an idle rule or `--loop` exists
+- **Waiting** `watchdog_waiting_s`: asks the agent to audit its process tree and kill what can't finish. Repeats until it runs again
+- Skipped while `stuck`. Verdicts in `~/.babysit/monitor-logs/<id>.log`
 
 ### Directory launch
 
-`launch:` declares how a session starts. `babysit init` writes it uncommented from the launch menu.
+`launch:` declares how a session starts (`babysit init` writes it from the launch menu).
 
 ```yaml
 launch:
     agent: claude            # claude | codex | opencode
-    name: api reviewer       # optional; default: file name without extension (with it if all digits)
+    name: api reviewer       # default: file name
     mode: regular            # regular | sandbox | mudbox
     yolo: true
     docker: false
@@ -512,176 +330,89 @@ launch:
     loop: false
     ignore_host_agents_md: false
     ports: []                # PORT or HOST:CONTAINER
-    log: false               # false | true (default path) | path
-    args: ["--model", "opus"] # agent CLI passthrough
+    log: false               # false | true | path
+    args: ["--model", "opus"]
 ```
 
-`babysit --config DIR/` runs every `DIR/*.yaml` / `*.yml` (not recursive), compose-style:
+`babysit --config DIR/` starts every `DIR/*.yaml|yml` (not recursive) in the current directory:
 
-- Workspace: the current directory, for every session
-- Strict: the `launch:` section and its `agent` must exist and every value must be valid; omitted keys take their defaults (what `babysit init` writes commented). One bad file aborts the whole run
-- Overview of each file (start/running, name, agent, flags), then `Start N sessions? [y/N]`; `--yes` skips, non-TTY requires it
-- Never duplicates: a file whose session (matched by yaml realpath, incl. sessions using an implicit `./babysit.yaml`) is still live is skipped, re-checked right before each start; stopped or dead ones start fresh. Symlinked yaml counts
-- Sessions start one at a time, detached; a failure skips that file only. In-launch prompts are answered by the overview, and an unauthenticated agent fails its file instead of asking
-- No agent, name or other flags on the command line: they live in the yaml
-
-`babysit --config FILE` (single file) opens the launch menu prefilled from `launch:` (partial sections are fine);
-keys without a menu row (`ports`, `log`, `args`, `ignore_host_agents_md`) are carried into the launch.
-`babysit <agent> --config FILE` ignores `launch:`.
-
-**Stall watchdog** (on by default): agents sometimes say they'll wait for a subagent, then never resume once it finishes, or sit behind a background poll that hung.
-- **Idle** for `watchdog_idle_s` (30 min): Claude Haiku reads the last 150 terminal lines inside the session container (Codex as fallback) and decides: parked on purpose (finished, asked you something) or stalled. Stalled → types a nudge: collect finished background work, resume, or reply `idle`. One judgment per quiet stretch, so a session left alone for days gets one cheap check and no message unless it stalled. Skipped when an idle rule or `--loop` already nudges.
-- **Waiting** on background shells/subagents for `watchdog_waiting_s` (15 min): no judge. The agent is asked to audit its full process tree, subagents and their output (what is each waiting for, can it still happen? kill what can't), or reply `idle`. Repeats every interval until the agent runs again; a screen cannot tell a hung poll from a healthy one, the agent can.
-- Skipped while `stuck`. Typing restarts the stretch. Verdicts and check-ins are in the monitor log.
+- Strict: `launch:` and `agent` required, all values valid; one bad file aborts the run
+- Shows an overview, asks `Start N sessions? [y/N]` (`--yes` skips; required without a TTY)
+- Skips files whose session is still live; starts one at a time, detached; a failure skips that file only
+- Agent, name and flags live in the yaml, not on the command line
 
 ## Mobile web companion
 
 ```bash
-babysit web init         # Initialize bridge, print token; rerun to rotate token
+babysit web init         # Initialize bridge, print token; rerun to rotate
 babysit web key add NAME # Read-only API key, shown once; also list / remove NAME
 
 # Local: http://127.0.0.1:3000
-BABYSIT_WEB_UID="$(id -u)" \
-BABYSIT_WEB_GID="$(id -g)" \
+BABYSIT_WEB_UID="$(id -u)" BABYSIT_WEB_GID="$(id -g)" \
 docker compose -f examples/compose.web.local.yml up --build -d
 ```
 
-Production behind a TLS proxy:
+Behind a TLS proxy:
 
 ```bash
-BABYSIT_WEB_UID="$(id -u)" \
-BABYSIT_WEB_GID="$(id -g)" \
-BABYSIT_WEB_PROXY_NETWORK="proxy" \
-BABYSIT_WEB_PUBLIC_ORIGIN="https://babysit.example.com" \
+BABYSIT_WEB_UID="$(id -u)" BABYSIT_WEB_GID="$(id -g)" \
+BABYSIT_WEB_PROXY_NETWORK="proxy" BABYSIT_WEB_PUBLIC_ORIGIN="https://babysit.example.com" \
 docker compose -f examples/compose.web.yml up -d
 ```
 
-- Proxy → `http://babysit-web:3000` on shared network; no published host port.
-- Preserve original host, `X-Forwarded-Proto`, `X-Forwarded-For`.
-- Keep bridge directory private. Companion gets sanitized state + request queue; no Docker/tmux/home/workspace access.
-- Custom bridge: same absolute `BABYSIT_WEB_BRIDGE_DIR` for Babysit and Compose.
-- Login lasts 30 days, renewed on use (`BABYSIT_WEB_SESSION_TTL_MS`). Sessions are HMAC-signed against the token hash, so restarts/redeploys keep you logged in; `web init` (token rotation) and logout end them.
-- Running sessions discover newly initialized bridges. After upgrades, exit/resume old sessions to load updated monitor/capture helpers; first new reply fills the view.
+- Proxy → `http://babysit-web:3000` on the shared network; forward host, `X-Forwarded-Proto`, `X-Forwarded-For`
+- Keep the bridge directory private (custom path: same absolute `BABYSIT_WEB_BRIDGE_DIR` for Babysit and Compose). The companion has no Docker/tmux/home access
+- Login lasts 30 days (`BABYSIT_WEB_SESSION_TTL_MS`); token rotation and logout end sessions
+- After upgrades, exit/resume old sessions to load updated helpers
 
-Sessions page: session list first (status, agent, directory, container CPU · MEM, heartbeat; a table on desktop), then Host (container CPU/MEM totals as a share of the Docker host) and collapsible Account usage (limits per signed-in agent, with reset times).
-
-JSON API: browser cookie, or `Authorization: Bearer <key>` with a read-only API key (`babysit web key`). Keys: GET only (POST → 403), hash-only in `access/api-keys.json`, applied without restart, kept across `web init`. Full reference: **API docs** in the app menu.
+**JSON API:** cookie, or `Authorization: Bearer <key>` (read-only, GET only). Full reference: **API docs** in the app menu.
 
 ```bash
 curl -H "Authorization: Bearer $BABYSIT_KEY" https://babysit.example.com/api/status
 ```
 
-| JSON API | Returns |
+| Endpoint | Returns |
 |---|---|
-| `GET /api/status` | `{ generated_at, sessions[], containers: { sessions, sampled, cpu_percent, memory_bytes, host_cpus, host_memory_bytes }, usage: { fetched_at, stale, agents[]: { agent, provider, status, message, limits[] } } \| null }` |
-| `GET /api/sessions` | `{ sessions[] }`, each with `container: { cpu_percent, memory_bytes, … } \| null` |
+| `GET /api/status` | Sessions, container CPU/MEM totals, account usage |
+| `GET /api/sessions` | `{ sessions[] }` with container stats |
 | `GET /api/sessions/:id` | `{ session, pending }` |
-| `GET /api/me` | `{ role }`; `read` for API keys |
-
-- Container figures come from each monitor's 30s `docker stats` cache; `cpu_percent` is a share of the whole host.
-- Account limits: a host monitor refreshes `state/account-usage.json` every 5 min (one fetch across sessions, read-only credentials; `stale` after 15 min, dropped after a day). Claude setup-token-only logins spend one output token per refresh. Codex without an OAuth token reports an error here; use `babysit usage`.
-
-| Control / indicator | Meaning |
-|---|---|
-| Message view | Latest completed reply; retained while busy |
-| Terminal output | Live tool steps/prompts |
-| Reply ↓ | Jump to composer; draft while busy, send when unlocked |
-| Copy | Copy code block |
-| App menu | Theme, text size (100–150%), install, update, logout |
-| Heartbeat age | Host freshness |
-| Delivery status | Handoff to agent; completion comes later |
-
-Text also scales with viewport width.
+| `GET /api/me` | `{ role }` |
 
 ## Transcript archive
 
-Every session's native agent transcripts are mirrored into one host directory: every message, tool call, tool result and per-turn token usage, **subagents included**. On by default.
+Native agent transcripts (messages, tool calls/results, token usage, subagents) are mirrored to `~/.babysit/transcripts` every 10 min and at session end. On by default.
 
 ```bash
-babysit config                                  # shows "Transcript archive: <path|off>"
-babysit config --transcripts ~/archive/agents   # move it (~ expands; relative resolves to cwd)
-babysit config --transcripts off                # disable; `default` restores ~/.babysit/transcripts
+babysit config --transcripts PATH|off|default
 ```
 
-| Path (under the archive) | Contents |
-|---|---|
-| `volumes/<volume>/` | Mirror of each agent state volume: Claude `projects/` (`<session>.jsonl`, `<session>/subagents/agent-*.jsonl`, `tool-results/`), Codex `sessions/` rollouts (subagents = own rollout, `source.subagent`) + `sqlite/` (thread spawn edges), OpenCode `opencode.db` |
-| `sandbox/<babysit_id>/` | Sandbox sessions: state copied out before the container is removed |
-| `sessions/<babysit_id>.json` | Index: agent, workspace, start, native session id, Claude account + switches, transcript paths |
-
-- Runs every 10 min while a session runs and once at its end; incremental (exact mtime), SQLite via its live backup API (consistent, WAL included); an offline container per pass
-- Best effort: a failed pass is logged and retried next time, but a sandbox whose final copy fails is still removed (sandboxes stay ephemeral)
-- Files stay in each agent's own format (JSONL, SQLite): nothing is converted, so CLI format changes cost nothing. Claude transcripts also hold the system prompt, tool definitions and request params (`api-request*` records)
-- Credential-looking files (`*auth*.json`, `*cred*.json`, …) are skipped. Tool output can still contain secrets: the archive is `0700`, files `0600`
-- Setting lives in `~/.babysit/config.json` (`transcript_archive`); a session reads it when its monitor starts. The path is a host path
-- Reasoning: only what the CLI receives (Claude's thinking summaries, Codex's encrypted reasoning + summaries)
+- Files stay in each agent's own format (JSONL, SQLite); layout: `volumes/<volume>/`
+- Credential-looking files skipped; tool output may still hold secrets (archive `0700`, files `0600`)
+- Best effort: failed passes retry; sandboxes are removed even if the final copy fails
 
 ## Configuration & storage
 
-```bash
-babysit config
-babysit config --transcripts PATH|off|default    # transcript archive, see above
-export BABYSIT_HOME="/mnt/storage/babysit" # Host shell profile; absolute path
-```
-
 | Location / setting | Contents / effect |
 |---|---|
-| `${BABYSIT_HOME:-$HOME/.babysit}` | Config, sessions, clones, caches, recovery, default web bridge, default transcript archive (`transcripts/`) |
-| `BABYSIT_WEB_BRIDGE_DIR` | Override bridge path; match Compose environment |
+| `${BABYSIT_HOME:-$HOME/.babysit}` | Config, sessions, clones, caches, recovery, web bridge, transcripts |
+| `BABYSIT_WEB_BRIDGE_DIR` | Override bridge path; match Compose |
 | Docker volumes | Persistent agent state; isolated `node_modules` / `.venv` |
 | `config.isolate_dependencies: false` | Disable dependency volumes |
-| `~/.babysitrc` | Shell setup sourced by every host `babysit` command (auth timer included) and before agent launch; container sourcing skipped by `--ignore-host-agents-md` |
+| `~/.babysitrc` | Shell setup sourced by host `babysit` commands and before agent launch (skipped by `--ignore-host-agents-md`) |
 
-- `BABYSIT_HOME`: unset/empty → default; relative paths/literal `~` rejected. No automatic migration.
-- Set storage on host, not in container rc. Export matching settings for Compose; rerun `recover init` after changes.
-- Credentials, Docker volumes, tmux socket retain their locations; storage override alone does not isolate instances.
-- Agent runs non-root in Docker/tmux; detached monitor applies rules and syncs credentials.
-- Codex config is staged in a temporary copy; invalid TOML fails before staging.
-- Codex host `auth.json` changes sync automatically; five-minute reconciliation remains as fallback.
-- Codex reloads its own in-memory auth during same-account refresh/recovery; file sync does not force a reload.
-- Image includes agent CLIs, coding tools, Chrome, Puppeteer, Xvfb, Poppler, qpdf, adb/fastboot, Python uiautomator2, pymobiledevice3 + facebook-wda (iOS via WebDriverAgent).
-- Image builds refresh agent CLIs on every run/attempt and log installed versions.
-- `babysit update` allows 120 seconds for image pulls and reports the image version.
-- `babysit update` pulls a running `babysit-web` container's image and, on a new image, recreates it via its Compose project (labels give project, files, env file). Stopped containers stay stopped; `:local` builds are skipped; containers not started by Compose are pulled but need a manual recreate.
-  Older/unlabelled images show `version unavailable`.
-- Launch prompts contain brief mode boundaries and browser/session-control hints.
-- `config` is read-only unless given `--transcripts`; unavailable systemd checks → unknown. Enablement and runtime state are separate.
+- `BABYSIT_HOME` must be absolute; set it on the host, export matching values for Compose, rerun `recover init` after changing
+- Image ships agent CLIs, Chrome/Puppeteer, adb/fastboot, uiautomator2, pymobiledevice3; `babysit update` refreshes it and reports the version
 
 ## Develop
 
-Requires **Bun**. Build outputs: static Linux/macOS binaries in `dist/`.
+Requires **Bun**. Binaries build to `dist/`.
 
 ```bash
-npm install
-npm install --prefix web
+npm install && npm install --prefix web
 npm run build
 npm run test:all
 ```
 
-| Check | Scope |
-|---|---|
-| `npm run test:cli` | CLI units |
-| `npm run test:web` | Web API + browser interactions |
-| `npm run test:bridge` | Browser → tmux; first `npm run build --prefix web` |
-| `npm run test:prune` | Interactive pruning through real terminal |
-| `npm run test:codex` | Real Codex resume and permissions against local model fixture |
-| `npm run test:numbers` | Real CLI history/recovery selectors and PTY resume attach/detach |
-| `npm run test:close` | Real Docker/tmux numbered close and list renumbering (requires E2E image) |
-| `npm run test:claude-controls` | Real Claude model/effort pickers, narrow panes, versioned IDs; no inference |
-| `npm run test:controls` | Optional authenticated usage + native Claude controls through Docker |
-| `npm run test:claude-dialog` | Optional: real Claude "Dangerous rm" prompt still matches YOLO approval; prints a drift report after Claude updates |
-| `npm run test:e2e` | Docker launch, send, detach, resume, recovery, cleanup |
-| `node tests/e2e/status.js` | Focused Docker/tmux activity regression |
-| `node tests/e2e/credential-sync.js` | Host login watcher → running Docker container; dummy credentials, requires E2E image |
-
-`test:all` runs the automated suites, also on PRs/main pushes. The optional
-`test:controls` smoke uses local Claude credentials and checks available account quotas.
-Set `BABYSIT_CONTROL_E2E_SUBAGENT=1` to also exercise real subagent-issued controls
-(requires paid inference).
-`test:claude-dialog` uses local Claude credentials and one small model call; exit 1 means the dialog changed.
-Requires Docker, tmux, Python 3, `codex` (`CODEX_E2E_BINARY` override),
-Claude Code 2.1.285, Chrome/Chromium (`CHROME_PATH` override).
-Missing prerequisites fail. Clone E2E skips nested Docker; CI runs on host.
-E2E uses real Docker/tmux without model API calls.
+Individual suites: `test:cli`, `test:web`, `test:bridge` (after `npm run build --prefix web`), `test:prune`, `test:codex`, `test:numbers`, `test:close`, `test:claude-controls`, `test:controls`, `test:claude-dialog`, `test:e2e`. E2E needs Docker, tmux, Python 3, `codex`, Chrome/Chromium and makes no model calls; `test:controls` and `test:claude-dialog` use real Claude credentials.
 
 [Design contract](SPECIFICATION.md) · [Changelog](CHANGELOG.md) · MIT
