@@ -62,7 +62,7 @@ const fixture = async ( { loaded = [], turn = completed( `latest`, [ message( `a
     const all_records = () => existsSync( output ) ? readFileSync( output, `utf8` ).trim().split( `\n` ).filter( Boolean ).map( line => JSON.parse( line ) ) : []
     const records = () => all_records().filter( record => JSON.parse( record.argv[ 3 ] ).type === `agent-turn-complete` )
     const identities = () => all_records().filter( record => JSON.parse( record.argv[ 3 ] ).type === `babysit-session-identity` )
-    return { emit, status, calls, records, identities, observer }
+    return { emit, status, calls, records, identities, all_records, observer }
 }
 
 describe( `Codex app-server completion bridge`, () => {
@@ -144,6 +144,22 @@ describe( `Codex app-server completion bridge`, () => {
         for( const status of [ `interrupted`, `failed`, `completed` ] ) test.emit( `turn/completed`, { threadId: `root`, turn: completed( status, [ message( `progress`, `commentary` ) ], { status } ) } )
         await until( () => test.calls.some( call => call.method === `thread/read` ) )
         await test.observer.close()
+        expect( test.records() ).toEqual( [] )
+    } )
+
+    it( `reports root turn boundaries, including interrupted, failed and reply-less turns`, async () => {
+        const test = await fixture()
+        const boundaries = () => test.all_records().map( record => JSON.parse( record.argv[ 3 ] ) ).filter( payload => payload.type.startsWith( `babysit-turn` ) )
+        test.emit( `turn/started`, { threadId: `root`, turn: { id: `t1`, status: `inProgress`, items: [] } } )
+        test.emit( `turn/started`, { threadId: `child`, turn: { id: `c1`, status: `inProgress`, items: [] } } )
+        for( const status of [ `interrupted`, `failed`, `completed` ] ) test.emit( `turn/completed`, { threadId: `root`, turn: completed( status, [ message( `progress`, `commentary` ) ], { status } ) } )
+        await until( () => boundaries().length === 4 )
+        expect( boundaries() ).toEqual( [
+            { type: `babysit-turn-started`, 'thread-id': `root`, 'turn-id': `t1` },
+            { type: `babysit-turn-ended`, 'thread-id': `root`, 'turn-id': `interrupted`, status: `interrupted` },
+            { type: `babysit-turn-ended`, 'thread-id': `root`, 'turn-id': `failed`, status: `error` },
+            { type: `babysit-turn-ended`, 'thread-id': `root`, 'turn-id': `completed`, status: `completed` },
+        ] )
         expect( test.records() ).toEqual( [] )
     } )
 
