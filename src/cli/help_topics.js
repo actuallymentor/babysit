@@ -440,7 +440,8 @@ Examples:
        babysit auth accounts [remove NAME]
 
 Keeps agent logins verified so launches start fast, and tells you when one
-breaks. A launch or babysit doctor --auth verifies a login and caches it for
+breaks. Launches make no model call (a local check only stops a launch with
+no login at all); babysit doctor --auth verifies a login and caches it for
 12h. The checker (installed by babysit auth init) runs babysit auth check every
 10 minutes to keep those entries warm and catch logouts:
   offline        every run: credential file deleted, Claude refresh token expired
@@ -497,7 +498,7 @@ Examples:
 
 Shows each agent's cached login: when it was verified, how old that is, and
 whether the scheduled checker is installed. Missing entries mean the next
-launch probes first.
+check (babysit auth check or doctor --auth) probes first.
 
 Examples:
   babysit auth
@@ -505,7 +506,8 @@ Examples:
 
     'auth check': () => `Usage: babysit auth check [agent] [--force]
 
-What the scheduled checker runs. Only agents verified before are checked,
+What the scheduled checker runs. Agents with credentials on the host (Claude:
+a setup-token or route; OpenCode stays with doctor --auth) are checked,
 cheapest first: offline file checks, then a host CLI prompt once the last proof
 is 1h old, then a container re-verify after 6h. A host probe waits while a
 session might be refreshing the same token. Network failures never alert.

@@ -7,7 +7,7 @@ import { wait } from 'mentie'
 
 import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
-import { get_agent, retired_agent_message, SUPPORTED_AGENTS } from '../agents/index.js'
+import { get_agent, retired_agent_message } from '../agents/index.js'
 import { config_flags, load_config, load_clone_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import {
@@ -34,29 +34,15 @@ import { warn_if_unrecognized_watchtower_is_running } from '../docker/watchtower
 import { image_facts } from '../docker/facts.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { clone as clone_prompt } from '../system_prompt/index.js'
-import {
-    check_host_agent_authentication,
-    confirm_continue_with_unauthenticated_agents,
-    failed_agent_names,
-    resolve_host_auth_context_files,
-    resolve_host_auth_context_values,
-    run_host_agent_auth_check,
-    unauthenticated_agent_names,
-} from '../agents/auth.js'
+import { confirm_continue_with_unauthenticated_agents } from '../agents/auth.js'
 import {
     clear_host_auth_cache,
-    credential_mounts_for_agent,
-    find_host_auth_cache_hit,
-    fingerprint_agent_credentials,
-    record_host_auth_success,
     refresh_file_credential_parts,
     refresh_host_auth_cache,
-    resolve_auth_image_identity,
 } from '../agents/auth_cache.js'
+import { launch_auth_cache_contexts, local_auth_state } from '../agents/auth_gate.js'
 import { acquire_host_auth_lease } from '../agents/auth_lease.js'
-import { run_auth_checks_with_progress } from './auth_progress.js'
 import { start_startup_status } from './startup_status.js'
-import { auth_checker_hint } from './auth.js'
 import { apply_loop } from '../modes/loop.js'
 import { attach_session, create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
@@ -75,7 +61,6 @@ import { write_loop_deadline } from '../statusline/render.js'
 import { resolve_log_path, append_session_header } from '../utils/log_file.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { time_phase, time_phase_sync } from '../utils/timing.js'
-import { command_exists } from '../utils/exec.js'
 import { acquire_clone_lock, grant_clone_source_access, prepare_clone_workspace } from '../clone.js'
 import { cmd_resume, resolve_numbered_resume } from './resume.js'
 import { cmd_open } from './open.js'
@@ -793,264 +778,6 @@ export const confirm_docker_restricted_mode = async ( mode = {}, { input = proce
 
 }
 
-/**
- * Select startup auth probes. The active frontend always remains first because
- * Babysit can launch it from the image even when no host binary exists. Other
- * agents are relevant only when their host CLI resolves on PATH.
- *
- * @param {Object} active_agent - Active frontend adapter
- * @param {Object} [options]
- * @param {Object[]} [options.candidates] - Supported candidate adapters
- * @param {Function} [options.is_installed] - Host CLI detector
- * @returns {Object[]} Active-first, deduplicated adapters
- */
-export const select_startup_auth_agents = ( active_agent, {
-    candidates = SUPPORTED_AGENTS.map( get_agent ).filter( Boolean ),
-    is_installed = candidate => command_exists( candidate.bin ),
-} = {} ) => {
-
-    const unique_candidates = [ ...new Map(
-        candidates.filter( Boolean ).map( candidate => [ candidate.name, candidate ] )
-    ).values() ]
-    const installed_candidates = unique_candidates.filter( candidate =>
-        candidate?.name
-        && candidate.name !== active_agent?.name
-        && is_installed( candidate )
-    )
-    const selected = [ active_agent, ...installed_candidates ].filter( Boolean )
-
-    return [ ...new Map( selected.map( candidate => [ candidate.name, candidate ] ) ).values() ]
-
-}
-
-/**
- * Decide whether startup needs the fail-closed confirmation prompt.
- * Pressing Enter skips the whole batch decision even when one probe failed
- * before cancellation reached its siblings.
- *
- * @param {Object[]} results - Authentication results
- * @param {boolean} skipped - Batch-level user skip decision
- * @returns {boolean} Whether to ask Exit? [Y/n]
- */
-export const should_confirm_startup_authentication = ( results = [], skipped = false ) =>
-    !skipped && Boolean(
-        unauthenticated_agent_names( results ).length
-        || failed_agent_names( results ).length
-    )
-
-/**
- * Check the active agent (scope `active`) or the active agent plus every
- * host-installed supported agent (scope `installed`), reusing fresh hash-bound
- * successes and running every miss concurrently. The main session still
- * receives all captured credentials so nested agent calls work; each throwaway
- * probe receives only its own credential descriptors.
- *
- * Startup uses `active`: an unauthenticated bystander CLI has no cache entry,
- * so checking it meant a full probe container on every single boot.
- *
- * @param {Object} agent - Active agent adapter
- * @param {Object} options - Launch authentication context
- * @param {'active'|'installed'} [options.scope='installed'] - Which agents to verify
- * @returns {Promise<{ results: Object[], skipped: boolean, cache_context: Object|null, cache_contexts: Object }>} Results and safe trust metadata
- */
-export const check_startup_agent_authentication = async ( agent, {
-    workspace,
-    mode,
-    creds_mounts,
-    input = process.stdin,
-    output = process.stdout,
-    cache_path = undefined,
-    resolve_image_identity = resolve_auth_image_identity,
-    resolve_context_files = resolve_host_auth_context_files,
-    resolve_context_values = resolve_host_auth_context_values,
-    run_auth_check = run_host_agent_auth_check,
-    agents = SUPPORTED_AGENTS.map( get_agent ).filter( Boolean ),
-    is_host_cli_installed = candidate => command_exists( candidate.bin ),
-    agent_args = [],
-    reconcile_credentials = async () => {},
-    credential_source_changed = () => false,
-    scope = `installed`,
-    before_probes = () => {},
-} ) => {
-
-    const selected_agents = scope === `active`
-        ? [ agent ]
-        : select_startup_auth_agents( agent, {
-            candidates: agents,
-            is_installed: is_host_cli_installed,
-        } )
-    const cache_options = cache_path ? { cache_path } : {}
-    const context_files = new Map( selected_agents.map( candidate => [
-        candidate.name,
-        resolve_context_files( mode, { agent: candidate } ),
-    ] ) )
-    const context_values = new Map( selected_agents.map( candidate => [
-        candidate.name,
-        resolve_context_values(
-            candidate,
-            candidate.name === agent.name ? agent_args : [],
-            {
-                workspace,
-                include_host_preferences: !mode.ignore_host_agents_md,
-            }
-        ),
-    ] ) )
-    const credential_identities = new Map( selected_agents.map( candidate => [
-        candidate.name,
-        fingerprint_agent_credentials( candidate, creds_mounts, {
-            context_files: context_files.get( candidate.name ),
-            context_values: context_values.get( candidate.name ),
-        } ),
-    ] ) )
-    const has_cacheable_identity = [ ...credential_identities.values() ].some( Boolean )
-    const image_identity = has_cacheable_identity ? await resolve_image_identity() : null
-    const cached_results = []
-    const cache_contexts = {}
-    const agents_to_check = []
-
-    selected_agents.forEach( candidate => {
-        const identity = credential_identities.get( candidate.name )
-        const cached = identity && find_host_auth_cache_hit( candidate.name, {
-            credential_fingerprint: identity.fingerprint,
-            image_identity,
-        }, cache_options )
-
-        if( !cached ) {
-            agents_to_check.push( candidate )
-            return
-        }
-
-        log.info( `Authentication cache hit: ${ candidate.name }` )
-        cached_results.push( {
-            name: candidate.name,
-            status: `cached`,
-            authenticated: true,
-        } )
-        cache_contexts[ candidate.name ] = {
-            credential_fingerprint: identity.fingerprint,
-            credential_parts: identity.parts,
-            image_identity,
-        }
-    } )
-
-    if( agents_to_check.length ) before_probes()
-    const checked_batch = agents_to_check.length
-        ? await run_auth_checks_with_progress( agents_to_check, ( { signal, on_state } ) =>
-            check_host_agent_authentication( {
-                agents: agents_to_check,
-                signal,
-                on_state,
-                run_auth_check: async ( auth_agent, options ) => {
-                    const result = await run_auth_check( auth_agent, {
-                        ...options,
-                        workspace,
-                        mode,
-                        creds_mounts: credential_mounts_for_agent( auth_agent, creds_mounts ),
-                        config: { isolate_dependencies: false },
-                        agent_args: auth_agent.name === agent.name ? agent_args : [],
-                    } )
-                    if( result.status !== `authenticated` ) return result
-
-                    try {
-                        await reconcile_credentials( auth_agent.name )
-                    } catch ( error ) {
-                        return {
-                            ...result,
-                            status: `failed`,
-                            authenticated: false,
-                            reason: `credential reconciliation failed: ${ error.message }`,
-                        }
-                    }
-
-                    if( credential_source_changed( auth_agent.name ) ) {
-                        return {
-                            ...result,
-                            status: `failed`,
-                            authenticated: false,
-                            reason: `host credentials changed during authentication`,
-                        }
-                    }
-
-                    return result
-                },
-            } ), {
-            input,
-            output,
-        } )
-        : { results: [], skipped: false }
-    const checked_results = checked_batch.results
-
-    checked_results.forEach( result => {
-        if( result.status !== `authenticated` ) {
-            if( [ `unauthenticated`, `failed` ].includes( result.status ) ) {
-                const observed_identity = credential_identities.get( result.name )
-                clear_host_auth_cache( result.name, {
-                    ...cache_options,
-                    expected_credential_fingerprint: observed_identity?.fingerprint,
-                    image_identity,
-                } )
-            }
-            return
-        }
-
-        // A real probe can rotate OAuth credentials. Fingerprint only after
-        // that probe's final credential pull has completed.
-        const checked_agent = get_agent( result.name )
-        const verified_context_values = resolve_context_values(
-            checked_agent,
-            checked_agent.name === agent.name ? agent_args : [],
-            {
-                workspace,
-                include_host_preferences: !mode.ignore_host_agents_md,
-            }
-        )
-        const identity = fingerprint_agent_credentials( checked_agent, creds_mounts, {
-            context_files: context_files.get( checked_agent.name ),
-            context_values: verified_context_values,
-        } )
-        const initial_context = credential_identities.get( result.name )?.parts
-            ?.filter( part => [ `context`, `value` ].includes( part.kind ) )
-        const verified_context = identity?.parts
-            .filter( part => [ `context`, `value` ].includes( part.kind ) )
-        if( JSON.stringify( initial_context ) !== JSON.stringify( verified_context ) ) {
-            result.status = `failed`
-            result.authenticated = false
-            result.reason = `authentication context changed during the check`
-            clear_host_auth_cache( result.name, {
-                ...cache_options,
-                expected_credential_fingerprint: credential_identities.get( result.name )?.fingerprint,
-                image_identity,
-            } )
-            return
-        }
-        if( !identity || !image_identity ) return
-
-        record_host_auth_success( result.name, {
-            credential_fingerprint: identity.fingerprint,
-            image_identity,
-            credential_parts: identity.parts,
-        }, cache_options )
-        cache_contexts[ result.name ] = {
-            credential_fingerprint: identity.fingerprint,
-            credential_parts: identity.parts,
-            image_identity,
-        }
-    } )
-
-    const results_by_name = new Map(
-        [ ...cached_results, ...checked_results ].map( result => [ result.name, result ] )
-    )
-    const results = selected_agents.map( candidate => results_by_name.get( candidate.name ) )
-
-    return {
-        results,
-        skipped: checked_batch.skipped,
-        cache_context: cache_contexts[ agent.name ] || null,
-        cache_contexts,
-    }
-
-}
-
 /** Merge launch progress without overwriting concurrent closure or shutdown intent. */
 export const record_launch_progress = ( id, fields, { recovering = false, update = update_session } = {} ) =>
     update( id, current => ( {
@@ -1486,17 +1213,16 @@ async function start_session( cmd ) {
         }
     }
 
-    // Serialize before capture. A waiting launch then observes any refresh
-    // token reconciled by the leader and reuses its warm verification instead
-    // of racing the same one-use credential through another model request.
-    // One live line names the blocking step so a slow host never looks hung.
+    // Serialize capture with auth probes: a concurrent doctor/checker probe
+    // can rotate a one-use refresh token while this launch copies it
+    // (gotcha 94). One live line names the blocking step so a slow host
+    // never looks hung.
     const startup_status = start_startup_status( `Starting ${ agent.name }` )
     const auth_lease = await time_phase( `authentication lease`, () => acquire_host_auth_lease( {
         on_wait: () => startup_status.set( `waiting for another authentication check to finish` ),
     } ) )
     let credential_setup = null
     let foreground_recovery_id = null
-    let startup_auth = null
 
     try {
         // The real session still receives credentials for every supported
@@ -1513,27 +1239,13 @@ async function start_session( cmd ) {
                 file => private_credential_tmpdir( file ) || file
             ),
         } )
-        startup_status.set( `checking cached authentication` )
-        startup_auth = await time_phase( `authentication`, () => check_startup_agent_authentication( agent, {
-            workspace,
-            mode,
-            creds_mounts: credential_setup.mounts,
-            reconcile_credentials: name => credential_setup.sync?.flush?.( name ),
-            credential_source_changed: name => credential_setup.sync?.source_changed?.( name ) === true,
-            agent_args: passthrough,
-            scope: `active`,
-            before_probes: startup_status.pause,
-            // Unattended launches must not offer Enter-to-skip on the checks
-            ... cmd.recovering || cmd.batch ? { input: { isTTY: false } } : {} ,
-        } ) )
-        startup_status.pause()
     } catch ( error ) {
         startup_status.stop()
         if( credential_setup ) {
             await cleanup_failed_launch_credentials( {
                 creds_sync: credential_setup.sync,
                 recovery_id: foreground_recovery_id,
-                context: `authentication setup failure`,
+                context: `credential setup failure`,
             } )
         }
         mark_clone_launch_failed()
@@ -1550,32 +1262,16 @@ async function start_session( cmd ) {
         sync_baselines: creds_sync_baselines,
         tmpfiles: creds_tmpfiles,
     } = credential_setup
-    const {
-        results: auth_results,
-        skipped: startup_auth_skipped,
-        cache_context: startup_auth_cache_context,
-        cache_contexts: startup_auth_cache_contexts,
-    } = startup_auth
-    let auth_cache_context = startup_auth_cache_context
-    let auth_cache_contexts = startup_auth_cache_contexts
 
-    // Nudge towards the scheduled checker only when this launch paid a probe.
-    const checker_hint = auth_checker_hint( auth_results )
-    if( checker_hint ) log.info( checker_hint )
-
-    const unauthenticated_agents = unauthenticated_agent_names( auth_results )
-    const failed_agents = failed_agent_names( auth_results )
-    if( should_confirm_startup_authentication( auth_results, startup_auth_skipped ) ) {
-        auth_results
-            .filter( result => [ `unauthenticated`, `failed` ].includes( result.status ) )
-            .forEach( result => log.debug( `Auth check failed for ${ result.name }: ${ result.reason || `unknown reason` }` ) )
-
+    // Local gate, no model call: only a login that is plainly missing stops
+    // the launch. Real probes belong to doctor --auth and auth check.
+    const gate_state = local_auth_state( agent, creds_mounts, { route: claude_login.route } )
+    if( gate_state === `missing` ) {
+        startup_status.pause()
         // Recovery and directory launches cannot stop to ask, so they skip the session.
-        const should_continue = !cmd.recovering && !cmd.batch && await confirm_continue_with_unauthenticated_agents( unauthenticated_agents, {
-            failed_names: failed_agents,
-        } )
-
+        const should_continue = !cmd.recovering && !cmd.batch && await confirm_continue_with_unauthenticated_agents( [ agent.name ] )
         if( !should_continue ) {
+            startup_status.stop()
             await cleanup_failed_launch_credentials( {
                 creds_sync,
                 recovery_id: foreground_recovery_id,
@@ -1583,10 +1279,18 @@ async function start_session( cmd ) {
             } )
             mark_clone_launch_failed()
             release_clone_lock?.()
-            log.error( `Aborted because host agent authentication is incomplete.` )
+            log.error( `Aborted: ${ agent.name } has no login to stage. Log in on the host, then retry.` )
             throw new Error( `Session launch aborted; see diagnostic above` )
         }
-    }
+    } else log.debug( `Launch auth gate: ${ agent.name } ${ gate_state }` )
+
+    // Inherit fresh verified cache entries so session rotations keep them warm
+    let auth_cache_contexts = await time_phase( `authentication cache`, () => launch_auth_cache_contexts( agent, creds_mounts, {
+        workspace,
+        mode,
+        agent_args: passthrough,
+    } ) )
+    let auth_cache_context = auth_cache_contexts[ agent.name ] || null
 
     // Load the workspace config (or the --config file). Configs that omit
     // initial_prompt receive the generated mode-aware launch prompt.

@@ -124,6 +124,15 @@ export const claude = {
     // legacy sessions that captured it, never staged anew.
     credentials: {
         stage_host_login: false,
+        // Launch gate (no model call): a configured route or a staged
+        // setup-token. Setup-token expiry is estimated at import, may be absent.
+        gate: ( { route, account, now = Date.now() } ) => {
+            if( route ) return `usable`
+            if( !account ) return `missing`
+            const expires_at = Date.parse( account.expires_at )
+            if( !Number.isFinite( expires_at ) ) return `unknown`
+            return expires_at > now ? `usable` : `missing`
+        },
         darwin: {
             keychain_service: `Claude Code-credentials`,
             fallback_file: `~/.claude/.credentials.json`,

@@ -295,7 +295,9 @@ export const account_credential_mounts = account => {
     if( !account ) return []
 
     const mount = ( key, value ) => ( { type: `account_env`, key, value, account: account.name } )
-    return [ mount( CLAUDE_TOKEN_ENV, account.token ), mount( HOT_SWAP_ENV, `1` ) ]
+    // The launch gate reads the (estimated) expiry; it never reaches the file
+    const token = { ...mount( CLAUDE_TOKEN_ENV, account.token ), ...account.expires_at && { expires_at: account.expires_at } }
+    return [ token, mount( HOT_SWAP_ENV, `1` ) ]
 
 }
 

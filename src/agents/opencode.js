@@ -140,6 +140,16 @@ export const opencode = {
     bin: `opencode`,
 
     credentials: {
+        // Launch gate (no model call). Some models need no credentials, so
+        // an empty store is never missing.
+        gate: ( { file, env } ) => {
+            if( env ) return `usable`
+            try {
+                return Object.keys( JSON.parse( file ) || {} ).length ? `usable` : `unknown`
+            } catch {
+                return `unknown`
+            }
+        },
         darwin: {
             file: OPENCODE_CREDENTIAL_FILE,
         },
