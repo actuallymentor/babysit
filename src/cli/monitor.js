@@ -39,6 +39,7 @@ import {
     refresh_host_auth_cache,
 } from '../agents/auth_cache.js'
 import { resolve_checker_command } from './auth.js'
+import { flags_from_modifiers } from './registry.js'
 
 /**
  * Ask a detached `babysit auth check <agent> --force` for a verdict. It
@@ -154,16 +155,10 @@ export const was_clean_native_exit = async ( session, exit_status, { read_exit =
  * @param {string[]} modifiers - Stored session modifiers
  * @returns {Object} Mode descriptor for prompt construction
  */
-export const mode_from_modifiers = ( modifiers = [] ) => ( {
-    yolo: modifiers.includes( `yolo` ),
-    sandbox: modifiers.includes( `sandbox` ),
-    mudbox: modifiers.includes( `mudbox` ),
-    docker: modifiers.includes( `docker` ),
-    adb: modifiers.includes( `adb` ),
-    ios: modifiers.includes( `ios` ),
-    clone: modifiers.includes( `clone` ),
-    ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
-} )
+// --loop is an idle action, not part of the launch mode
+export const mode_from_modifiers = ( modifiers = [] ) => Object.fromEntries(
+    Object.entries( flags_from_modifiers( modifiers ) ).filter( ( [ key ] ) => key !== `loop` )
+)
 
 /**
  * Load babysit config for a detached monitor using the original launch mode.
