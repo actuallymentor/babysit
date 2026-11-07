@@ -321,7 +321,7 @@ export const OVERVIEW_FLAG_ROWS = FLAGS.flatMap( flag_rows )
 /**
  * Render [ usage, text ] rows as an indented two-column table. Text lines after
  * the first are aligned under the text column; usages wider than the column get
- * their text on the next line when `wrap` is set, else after four spaces.
+ * their text on the next line when `wrap` is set, else after two spaces.
  * @param {Array<[string, string|null]>} rows - Usage/text pairs; null text rows are skipped
  * @param {Object} [options]
  * @param {number} [options.width] - Usage column width (default: widest usage up to 24, plus 3)
@@ -336,8 +336,7 @@ export const format_rows = ( rows, { width, wrap = false } = {} ) => {
 
     return shown.map( ( [ usage, text ] ) => {
         const [ first, ...rest ] = text.split( `\n` )
-        const over = usage.length > column - 2
-        const head = !over ? `  ${ usage.padEnd( column ) }${ first }` : wrap ? `  ${ usage }\n${ indent }${ first }` : `  ${ usage }    ${ first }`
+        const head = wrap && usage.length > column - 2 ? `  ${ usage }\n${ indent }${ first }` : `  ${ usage.padEnd( column - 2 ) }  ${ first }`
         return [ head, ...rest.map( line => `${ indent }${ line }` ) ].join( `\n` )
     } ).join( `\n` )
 
