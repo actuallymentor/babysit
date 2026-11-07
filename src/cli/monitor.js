@@ -10,7 +10,7 @@ import { log } from '../utils/log.js'
 import { host_logout_on_record, notify_pushover } from '../utils/notify.js'
 import { load_session, session_original_workspace, session_workspace, update_session } from '../sessions/store.js'
 import { load_config } from '../babysit/yaml.js'
-import { get_agent } from '../agents/index.js'
+import { get_agent, retired_agent_message } from '../agents/index.js'
 import { apply_loop } from '../modes/loop.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { setup_credentials } from '../credentials/index.js'
@@ -277,9 +277,7 @@ export const cmd_monitor = async ( cmd ) => {
 
     const agent = get_agent( session.agent )
     if( !agent ) {
-        throw new Error( session.agent === `gemini`
-            ? `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.`
-            : `Cannot monitor unsupported agent: ${ session.agent }` )
+        throw new Error( retired_agent_message( session.agent ) || `Cannot monitor unsupported agent: ${ session.agent }` )
     }
 
     // Restore the original working directory so cwd-relative paths in

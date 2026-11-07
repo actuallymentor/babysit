@@ -32,10 +32,7 @@ export const discover_credentials = async ( {
     const secret = async ( command, args ) => {
         try {
             const { stdout } = await run( command, args, { timeout: 5000, maxBuffer: 1024 * 1024 } )
-            const value = stdout.trim()
-            const envelopes = [ [ `go-keyring-base64:`, `base64` ], [ `go-keyring-encoded:`, `hex` ] ]
-            const envelope = envelopes.find( ( [ prefix ] ) => value.startsWith( prefix ) )
-            return parse( envelope ? Buffer.from( value.slice( envelope[0].length ), envelope[1] ).toString( `utf8` ) : value )
+            return parse( stdout.trim() )
         } catch {
             return null
         }
@@ -44,24 +41,19 @@ export const discover_credentials = async ( {
     const claude_home = expand( env.CLAUDE_CONFIG_DIR || join( home, `.claude` ) )
     const codex_home = expand( env.CODEX_HOME || join( home, `.codex` ) )
     const data_home = expand( env.XDG_DATA_HOME || join( home, `.local`, `share` ) )
-    const [ claude_file, codex, opencode, antigravity_file ] = await Promise.all( [
+    const [ claude_file, codex, opencode ] = await Promise.all( [
         read( join( claude_home, `.credentials.json` ) ),
         read( join( codex_home, `auth.json` ) ),
         read( join( data_home, `opencode`, `auth.json` ) ),
-        read( join( home, `.gemini`, `antigravity-cli`, `antigravity-oauth-token` ) ),
     ] )
     const claude_keychain = platform === `darwin`
         ? await secret( `security`, [ `find-generic-password`, `-s`, `Claude Code-credentials`, `-w` ] )
         : null
-    const antigravity_keychain = platform === `darwin`
-        ? await secret( `security`, [ `find-generic-password`, `-s`, `gemini`, `-a`, `antigravity`, `-w` ] )
-        : await secret( `secret-tool`, [ `lookup`, `service`, `gemini`, `username`, `antigravity` ] )
 
     return {
         claude: claude_keychain || claude_file,
         codex,
         opencode,
-        antigravity: antigravity_keychain || antigravity_file,
         env,
     }
 

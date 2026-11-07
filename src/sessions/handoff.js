@@ -137,15 +137,6 @@ elif agent == 'opencode':
                 if part.get('type') == 'text': keep(user, part.get('text')) if roles.get(message_id) == 'user' else assistant.append(str(part.get('text') or '')[:LIMIT])
                 if part.get('type') == 'tool' and part.get('tool') in ('edit', 'write', 'patch', 'multiedit'): touch(((part.get('state') or {}).get('input') or {}).get('filePath'))
     except (sqlite3.Error, OSError, ValueError): pass
-elif agent == 'antigravity':
-    # No documented transcript format: point the fork at the conversation state
-    root_dir = home / '.gemini/antigravity-cli'
-    database = newest(root_dir.glob('conversations/' + (ident or '*') + '.db'))
-    if database: transcript = str(database)
-    logs = newest(root_dir.glob('brain/' + (ident or '*') + '/.system_generated/logs/*'))
-    if logs:
-        try: assistant.append(logs.read_text(errors='replace')[-LIMIT:])
-        except OSError: pass
 
 print(json.dumps({'transcript': transcript, 'user': user, 'assistant': list(assistant), 'files': files[:${ MAX_FILES * 2 }]}))
 `

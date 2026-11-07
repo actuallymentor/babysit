@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, statSync } from 'fs'
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, statSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { parse as parse_toml } from 'smol-toml'
@@ -10,7 +10,6 @@ import {
     build_codex_config_tmpdir,
     claude_extra_mounts,
     codex_extra_mounts,
-    antigravity_extra_mounts,
     opencode_extra_mounts,
     get_extra_mounts,
     CODEX_KNOWN_MODELS_FOR_NUX,
@@ -19,8 +18,8 @@ import {
 
 // build_claude_settings_tmpfile and build_claude_json_tmpfile are unit-tested
 // here directly because they're the seam the docker run mount actually uses.
-// claude_extra_mounts / codex_extra_mounts / antigravity_extra_mounts read from
-// the host's real ~/.claude / ~/.codex / ~/.gemini, which we can't fake
+// claude_extra_mounts / codex_extra_mounts read from
+// the host's real ~/.claude / ~/.codex, which we can't fake
 // without mounting a sandboxed HOME — so those higher-level builders only
 // get smoke tests here.
 
@@ -517,117 +516,6 @@ custom = "retained"
 
 } )
 
-describe( `antigravity_extra_mounts`, () => {
-
-    let dir
-    let original_api_key
-    let generated_mounts
-
-    beforeEach( () => {
-        dir = mkdtempSync( join( tmpdir(), `babysit-antigravity-profile-` ) )
-        original_api_key = process.env.GEMINI_API_KEY
-        delete process.env.GEMINI_API_KEY
-        generated_mounts = []
-    } )
-
-    afterEach( () => {
-        if( original_api_key === undefined ) delete process.env.GEMINI_API_KEY
-        else process.env.GEMINI_API_KEY = original_api_key
-        generated_mounts.forEach( mount => rmSync( mount.host, { force: true } ) )
-        rmSync( dir, { recursive: true, force: true } )
-    } )
-
-    const stage = options => {
-        const mounts = antigravity_extra_mounts( { antigravity_dir: dir, config_dir: dir, ...options } )
-        generated_mounts.push( ...mounts )
-        return mounts
-    }
-    const read_mount = ( mounts, suffix ) => JSON.parse( readFileSync( mounts.find( mount => mount.container.endsWith( suffix ) ).host, `utf8` ) )
-
-    it( `isolates native provider selection from host preferences`, () => {
-        writeFileSync( join( dir, `settings.json` ), JSON.stringify( {
-            modelProvider: `gemini`, theme: `dark`, model: `host-model`,
-            security: { auth: { selectedType: `legacy-gemini-oauth` } },
-        } ) )
-        const mounts = stage( { include_host_preferences: false } )
-        expect( read_mount( mounts, `/.babysit-antigravity-settings.json` ) ).toEqual( { modelProvider: `gemini` } )
-    } )
-
-    it( `selects the native Gemini API provider when an API key is supplied`, () => {
-        process.env.GEMINI_API_KEY = `test-key`
-        const mounts = stage()
-        expect( read_mount( mounts, `/.babysit-antigravity-settings.json` ) ).toEqual( { modelProvider: `gemini` } )
-    } )
-
-    it( `does not carry legacy Gemini authentication selection into an isolated profile`, () => {
-        writeFileSync( join( dir, `settings.json` ), JSON.stringify( { security: { auth: { selectedType: `oauth-personal` } } } ) )
-        const mounts = stage( { include_host_preferences: false } )
-        expect( read_mount( mounts, `/.babysit-antigravity-settings.json` ) ).toEqual( {} )
-    } )
-
-    it( `carries completed native onboarding without inventing consent`, () => {
-        const empty = stage( { include_host_preferences: false } )
-        expect( empty.some( mount => mount.container.endsWith( `/onboarding.json` ) ) ).toBe( false )
-        mkdirSync( join( dir, `cache` ) )
-        const onboarding = { consumerOnboardingComplete: true, enterpriseOnboardingComplete: false, onboardingComplete: true }
-        writeFileSync( join( dir, `cache`, `onboarding.json` ), JSON.stringify( onboarding ) )
-        const mounts = stage( { include_host_preferences: false } )
-        expect( read_mount( mounts, `/cache/onboarding.json` ) ).toEqual( onboarding )
-    } )
-
-    it( `never seeds unfinished or invalid host onboarding over completed container state`, () => {
-        mkdirSync( join( dir, `cache` ) )
-        for( const state of [ { onboardingComplete: false }, {}, null, [], `invalid` ] ) {
-            writeFileSync( join( dir, `cache`, `onboarding.json` ), JSON.stringify( state ) )
-            const mounts = stage()
-            expect( mounts.some( mount => mount.container.endsWith( `/onboarding.json` ) ) ).toBe( false )
-        }
-    } )
-
-    it( `retains host customizations and adds native hooks outside isolation`, () => {
-        for( const file of [ `config.json`, `mcp_config.json` ] ) writeFileSync( join( dir, file ), `{}` )
-        const existing = { user: { Stop: [ { type: `command`, command: `user-command` } ] } }
-        writeFileSync( join( dir, `hooks.json` ), JSON.stringify( existing ) )
-        const mounts = stage( { completion_capture: {} } )
-        expect( mounts.map( mount => mount.container ) ).toEqual( expect.arrayContaining( [
-            `/home/node/.gemini/config/config.json`, `/home/node/.gemini/config/mcp_config.json`,
-        ] ) )
-        const hooks = read_mount( mounts, `/hooks.json` )
-        expect( hooks.user ).toEqual( existing.user )
-        expect( Object.keys( hooks[ `babysit-completion` ] ) ).toEqual( [ `PreInvocation`, `Stop` ] )
-        expect( hooks[ `babysit-completion` ].Stop[0].command ).toContain( `antigravity Stop` )
-        expect( JSON.parse( readFileSync( join( dir, `hooks.json` ), `utf8` ) ) ).toEqual( existing )
-    } )
-
-    it( `omits host customizations in isolation but keeps completion hooks`, () => {
-        for( const file of [ `config.json`, `mcp_config.json`, `hooks.json` ] ) writeFileSync( join( dir, file ), `{"host":{}}` )
-        const mounts = stage( { include_host_preferences: false, completion_capture: {} } )
-        expect( mounts.map( mount => mount.container ) ).toEqual( [
-            `/home/node/.babysit-antigravity-settings.json`, `/home/node/.gemini/config/hooks.json`,
-        ] )
-        expect( Object.keys( read_mount( mounts, `/hooks.json` ) ) ).toEqual( [ `babysit-completion` ] )
-    } )
-
-    it( `auth probes omit user hooks, completion hooks, customizations, and onboarding`, () => {
-        mkdirSync( join( dir, `cache` ) )
-        for( const file of [ `config.json`, `mcp_config.json`, `hooks.json`, `cache/onboarding.json` ] ) writeFileSync( join( dir, file ), `{"host":{}}` )
-        const mounts = stage( { auth_probe: true, completion_capture: {} } )
-        expect( mounts.map( mount => mount.container ) ).toEqual( [
-            `/home/node/.babysit-antigravity-settings.json`, `/home/node/.gemini/config/hooks.json`,
-        ] )
-        expect( read_mount( mounts, `/hooks.json` ) ).toEqual( {} )
-    } )
-
-    it( `normalizes non-object native hooks before installing capture hooks`, () => {
-        for( const value of [ null, [], `invalid` ] ) {
-            writeFileSync( join( dir, `hooks.json` ), JSON.stringify( value ) )
-            const mounts = stage( { completion_capture: {} } )
-            expect( Object.keys( read_mount( mounts, `/hooks.json` ) ) ).toEqual( [ `babysit-completion` ] )
-        }
-    } )
-
-} )
-
 describe( `opencode_extra_mounts`, () => {
 
     it( `returns no extra mounts for normal sessions`, () => {
@@ -707,7 +595,6 @@ describe( `get_extra_mounts`, () => {
         // builder here would silently skip its first-run bypasses.
         expect( typeof get_extra_mounts( `claude` ) ).toBe( `function` )
         expect( typeof get_extra_mounts( `codex` ) ).toBe( `function` )
-        expect( typeof get_extra_mounts( `antigravity` ) ).toBe( `function` )
         expect( typeof get_extra_mounts( `opencode` ) ).toBe( `function` )
         // Unknown agent → no-op builder, never throws.
         expect( get_extra_mounts( `unknown` )() ).toEqual( [] )

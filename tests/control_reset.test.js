@@ -70,7 +70,6 @@ describe( `babysit reset controller`, () => {
         expect( get_agent( `claude` ).reset_command ).toBe( `/clear` )
         expect( get_agent( `codex` ).reset_command ).toBe( `/new` )
         expect( get_agent( `opencode` ).reset_command ).toBe( `/new` )
-        expect( get_agent( `antigravity` ).reset_command ).toBeUndefined()
     } )
 
 } )

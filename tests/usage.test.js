@@ -246,16 +246,13 @@ describe( `account usage`, () => {
             read_file: async path => { paths.push( path ); return `{}` },
             run: async ( command, args ) => {
                 commands.push( [ command, ...args ] )
-                return { stdout: args.includes( `Claude Code-credentials` )
-                    ? JSON.stringify( { claudeAiOauth: { accessToken: `secret` } } )
-                    : `go-keyring-base64:${ Buffer.from( JSON.stringify( { access_token: `agy-secret` } ) ).toString( `base64` ) }` }
+                return { stdout: JSON.stringify( { claudeAiOauth: { accessToken: `secret` } } ) }
             },
         } )
         expect( paths ).toContain( `/host/alice/custom-codex/auth.json` )
         expect( paths ).toContain( `/data/opencode/auth.json` )
         expect( auth.claude.claudeAiOauth.accessToken ).toBe( `secret` )
-        expect( auth.antigravity.access_token ).toBe( `agy-secret` )
-        expect( commands.every( command => command[0] === `security` ) ).toBe( true )
+        expect( commands ).toEqual( [ [ `security`, `find-generic-password`, `-s`, `Claude Code-credentials`, `-w` ] ] )
     } )
 
     it( `returns JSON and an explicit partial-failure status`, async () => {
@@ -310,7 +307,7 @@ describe( `account usage`, () => {
             } )
             expect( result.status ).toBe( 0 )
             const report = JSON.parse( result.stdout )
-            expect( report.agents ).toHaveLength( 4 )
+            expect( report.agents ).toHaveLength( 3 )
             expect( report.agents.every( agent => agent.status === `unauthenticated` ) ).toBe( true )
         } finally { rmSync( home, { recursive: true, force: true } ) }
     } )

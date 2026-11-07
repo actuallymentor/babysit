@@ -121,7 +121,6 @@ const run_agent_env = ( { rc = null, account = null } ) => {
     const source = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
     const inner = source.match( /bash -c '\n([\s\S]*?)\n {4}' babysit-agent/ )[ 1 ]
         .replaceAll( `/home/node`, home )
-        .replace( /^.*antigravity-auth\.py.*$/m, `` )
 
     if( rc !== null ) writeFileSync( join( home, `.babysitrc` ), rc )
     if( account !== null ) writeFileSync( join( home, `.babysit-claude-account.env` ), account )

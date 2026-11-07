@@ -56,14 +56,14 @@ describe( `auth cache status`, () => {
             claude: { authenticated_at: new Date( NOW - 3_600_000 ).toISOString(), image_identity: IMAGE_IDENTITY },
             codex: { authenticated_at: new Date( NOW - AUTH_CHECK_REFRESH_AFTER_MS - 1 ).toISOString(), image_identity: IMAGE_IDENTITY },
             opencode: { authenticated_at: new Date( NOW - HOST_AUTH_CACHE_TTL_MS ).toISOString(), image_identity: IMAGE_IDENTITY },
-            antigravity: { authenticated_at: new Date( NOW - 1_000 ).toISOString(), image_identity: `sha256:old` },
+            legacy: { authenticated_at: new Date( NOW - 1_000 ).toISOString(), image_identity: `sha256:old` },
         } }
         const options = { image_identity: IMAGE_IDENTITY, now: NOW }
 
         expect( describe_auth_cache_entry( `claude`, cache, options ) ).toMatchObject( { state: `fresh`, age: `1.0h` } )
         expect( describe_auth_cache_entry( `codex`, cache, options ).state ).toBe( `due for refresh` )
         expect( describe_auth_cache_entry( `opencode`, cache, options ).state ).toBe( `expired` )
-        expect( describe_auth_cache_entry( `antigravity`, cache, options ).state ).toBe( `stale image` )
+        expect( describe_auth_cache_entry( `legacy`, cache, options ).state ).toBe( `stale image` )
         expect( describe_auth_cache_entry( `nobody`, cache, options ) ).toEqual( { name: `nobody`, verified: `-`, age: `-`, state: `missing` } )
 
         const table = format_auth_status_table( [ describe_auth_cache_entry( `claude`, cache, options ) ] )
@@ -639,10 +639,10 @@ describe( `auth check`, () => {
             const cache = { agents: {
                 codex: { credential_kinds: [ `env`, `file` ] },
                 claude: { credential_kinds: [ `file` ] },
-                antigravity: {},
+                opencode: {},
             } }
             let reads = 0
-            const found = await find_offline_logouts( [ get_agent( `codex` ), get_agent( `claude` ), get_agent( `antigravity` ) ], {
+            const found = await find_offline_logouts( [ get_agent( `codex` ), get_agent( `claude` ), get_agent( `opencode` ) ], {
                 cache,
                 wait: async () => {},
                 read_credential: agent => {

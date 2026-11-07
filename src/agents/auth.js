@@ -28,16 +28,6 @@ const authentication_abort_reason = signal => {
     return `cancelled`
 }
 
-const isolated_antigravity_auth_settings = raw => {
-
-    let settings = {}
-    try {
-        settings = JSON.parse( raw )
-    } catch { /* Invalid settings use native defaults. */ }
-    return JSON.stringify( settings?.modelProvider === `gemini` ? { modelProvider: `gemini` } : {} )
-
-}
-
 // Claude rewrites ~/.claude.json on nearly every run (startup counters, tips,
 // project lists). Only the login-identity fields can change who a probe
 // authenticates as, so hash those alone and keep cache hits across churn.
@@ -165,12 +155,9 @@ export const resolve_host_auth_context_files = ( mode = {}, {
         codex: {
             codex_config: join( codex_home, `config.toml` ),
         },
-        antigravity: {
-            antigravity_settings: join( home_dir, `.gemini`, `antigravity-cli`, `settings.json` ),
-        },
     }
 
-    const agent_context = mode.ignore_host_agents_md && agent?.name !== `antigravity`
+    const agent_context = mode.ignore_host_agents_md
         ? {}
         : agent_context_candidates[ agent?.name ] || {}
 
@@ -184,13 +171,6 @@ export const resolve_host_auth_context_files = ( mode = {}, {
         context_files.claude_account = {
             path: context_files.claude_account,
             transform: claude_account_auth_fields,
-        }
-    }
-
-    if( mode.ignore_host_agents_md && context_files.antigravity_settings ) {
-        context_files.antigravity_settings = {
-            path: context_files.antigravity_settings,
-            transform: isolated_antigravity_auth_settings,
         }
     }
 

@@ -54,7 +54,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tmux python3 jq rsync acl
-          bash src/docker/assets/install-antigravity.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
           npm ci

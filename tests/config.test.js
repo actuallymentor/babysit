@@ -46,10 +46,10 @@ describe( `babysit config`, () => {
     } )
 
     it( `parses direct auth-check agent input`, () => {
-        expect( parse_auth_check_agent_selection( `codex, antigravity` ) ).toEqual( [ `codex`, `antigravity` ] )
-        expect( parse_auth_check_agent_selection( `all` ) ).toEqual( [ `claude`, `codex`, `antigravity`, `opencode` ] )
+        expect( parse_auth_check_agent_selection( `codex, opencode` ) ).toEqual( [ `codex`, `opencode` ] )
+        expect( parse_auth_check_agent_selection( `all` ) ).toEqual( [ `claude`, `codex`, `opencode` ] )
         expect( parse_auth_check_agent_selection( `none` ) ).toEqual( [] )
-        expect( parse_auth_check_agent_selection( ``, { current: [ `antigravity` ] } ) ).toEqual( [ `antigravity` ] )
+        expect( parse_auth_check_agent_selection( ``, { current: [ `opencode` ] } ) ).toEqual( [ `opencode` ] )
         expect( () => parse_auth_check_agent_selection( `codex,missing` ) ).toThrow( /Unsupported agent/ )
     } )
 
@@ -71,7 +71,7 @@ describe( `babysit config`, () => {
         try {
             await cmd_config( {
                 flags: {
-                    auth_check_agents: `antigravity,opencode`,
+                    auth_check_agents: `codex,opencode`,
                 },
             }, {
                 output,
@@ -80,8 +80,8 @@ describe( `babysit config`, () => {
 
             const saved = JSON.parse( readFileSync( config_path, `utf-8` ) )
 
-            expect( saved.auth_check_agents ).toEqual( [ `antigravity`, `opencode` ] )
-            expect( rendered ).toContain( `Legacy authentication selection saved: antigravity, opencode` )
+            expect( saved.auth_check_agents ).toEqual( [ `codex`, `opencode` ] )
+            expect( rendered ).toContain( `Legacy authentication selection saved: codex, opencode` )
             expect( rendered ).toContain( `deprecated` )
         } finally {
             rmSync( dir, { recursive: true, force: true } )
@@ -134,9 +134,9 @@ describe( `babysit config`, () => {
             expect( existsSync( marker ) ).toBe( true )
 
             mkdirSync( state )
-            writeFileSync( join( state, `launch-defaults.json` ), JSON.stringify( { global: { agent: `antigravity`, mode: `mudbox`, yolo: true } } ) )
+            writeFileSync( join( state, `launch-defaults.json` ), JSON.stringify( { global: { agent: `opencode`, mode: `mudbox`, yolo: true } } ) )
             const configured = run_config()
-            expect( configured ).toMatch( /Menu default agent:\s+antigravity/ )
+            expect( configured ).toMatch( /Menu default agent:\s+opencode/ )
             expect( configured ).toMatch( /Menu default mode:\s+mudbox/ )
             expect( configured ).toContain( `yolo on` )
         } finally {

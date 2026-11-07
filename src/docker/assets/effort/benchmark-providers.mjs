@@ -26,11 +26,10 @@ const creator_names = {
 export const benchmark_providers = async ( { discover = discover_credentials, has_cli = installed } = {} ) => {
     const auth = await discover()
     const env = auth.env || {}
-    const [ codex, claude, agy, opencode ] = await Promise.all( [ `codex`, `claude`, `agy`, `opencode` ].map( has_cli ) )
+    const [ codex, claude, opencode ] = await Promise.all( [ `codex`, `claude`, `opencode` ].map( has_cli ) )
     const providers = new Set()
     if( codex && ( auth.codex?.tokens?.access_token || auth.codex?.OPENAI_API_KEY || env.OPENAI_API_KEY || env.CODEX_API_KEY ) ) providers.add( `OpenAI` )
     if( claude && ( auth.claude?.claudeAiOauth?.accessToken || env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY ) ) providers.add( `Anthropic` )
-    if( agy && ( auth.antigravity?.access_token || auth.antigravity?.refresh_token || env.GEMINI_API_KEY ) ) providers.add( `Google` )
     if( opencode ) {
         for( const [ provider, credential ] of Object.entries( auth.opencode || {} ) ) {
             if( ( credential?.key || credential?.access ) && creator_names[provider] ) providers.add( creator_names[provider] )

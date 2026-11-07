@@ -94,7 +94,7 @@ Filesystem (asked when interactive; the default is in capitals):
 
 History:
   Same agent: the agent's own fork (claude --fork-session, codex fork, opencode --fork).
-  Other agent, Antigravity, or a sandbox parent: babysit writes a handoff summary of
+  Other agent or a sandbox parent: babysit writes a handoff summary of
   the parent transcript to /tmp/babysit-fork-handoff.md and asks the fork to read it.
 
 Options:
@@ -397,7 +397,7 @@ and when it ends. That is every message, tool call, tool result and per-turn
 token usage, subagents included (Claude subagents/*.jsonl, Codex subagent
 rollouts). Files stay in each agent's own format (JSONL, SQLite); credential
 files are skipped. Tool output can still contain secrets: the archive is 0700.
-  volumes/<volume>/         Claude, Codex, OpenCode, Antigravity state volumes
+  volumes/<volume>/         Claude, Codex, OpenCode state volumes
   sandbox/<babysit_id>/     sandbox sessions, copied before the container goes
   sessions/<babysit_id>.json  agent, workspace, Claude account, native session id
 PATH is a host directory (~ expands, relative resolves here); off disables;
@@ -629,8 +629,7 @@ export const help_topic = argv => {
     if( !words.length ) return null
 
     const [ first, second ] = words
-    const agent = first === `agy` ? `antigravity` : first
-    if( is_agent( agent ) ) return TOPICS[ second === `resume` ? `agent resume` : `agent` ]( agent )
+    if( is_agent( first ) ) return TOPICS[ second === `resume` ? `agent resume` : `agent` ]( first )
 
     const key = [ `${ first } ${ second }`, first ].find( candidate => Object.hasOwn( TOPICS, candidate ) )
     return key ? TOPICS[ key ]() : null

@@ -54,9 +54,10 @@ describe( `fork parsing`, () => {
 
     } )
 
-    it( `maps agy, keeps booleans from eating the selector, and rejects contradictions`, () => {
+    it( `keeps booleans from eating the selector, and rejects contradictions`, () => {
 
-        expect( parse_args( [ `fork`, `--share`, `3`, `agy` ] ) ).toMatchObject( { session_id: `3`, agent: `antigravity`, flags: { share: true } } )
+        expect( parse_args( [ `fork`, `--share`, `3`, `codex` ] ) ).toMatchObject( { session_id: `3`, agent: `codex`, flags: { share: true } } )
+        expect( () => parse_args( [ `fork`, `3`, `agy` ] ) ).toThrow( /support was removed/ )
         expect( () => parse_args( [ `fork`, `1`, `--share`, `--clone` ] ) ).toThrow( /mutually exclusive/ )
         expect( () => parse_args( [ `fork`, `1`, `--regular`, `--sandbox` ] ) ).toThrow( /--regular/ )
         expect( () => parse_args( [ `fork`, `1`, `nope` ] ) ).toThrow( /Unknown agent/ )
@@ -216,7 +217,6 @@ describe( `fork history plan`, () => {
 
         expect( plan_fork_history( { parent, agent: claude, flags: {} } ).kind ).toBe( `native` )
         expect( plan_fork_history( { parent, agent: get_agent( `codex` ), flags: {} } ).kind ).toBe( `handoff` )
-        expect( plan_fork_history( { parent: { ...parent, agent: `antigravity` }, agent: get_agent( `antigravity` ), flags: {} } ).kind ).toBe( `handoff` )
         expect( plan_fork_history( { parent: { ...parent, modifiers: [ `sandbox` ] }, agent: claude, flags: {} } ).kind ).toBe( `handoff` )
         expect( plan_fork_history( { parent, agent: claude, flags: { sandbox: true } } ).kind ).toBe( `handoff` )
         expect( plan_fork_history( { parent: { ...parent, agent_session_id: null }, agent: claude, flags: {} } ).kind ).toBe( `handoff` )
@@ -229,7 +229,6 @@ describe( `fork history plan`, () => {
         expect( claude.flags.fork( `id` ) ).toEqual( [ `--resume`, `id`, `--fork-session` ] )
         expect( get_agent( `codex` ).flags.fork( `id` ) ).toEqual( [ `fork`, `id` ] )
         expect( get_agent( `opencode` ).flags.fork( `id` ) ).toEqual( [ `--session`, `id`, `--fork` ] )
-        expect( get_agent( `antigravity` ).flags.fork ).toBe( null )
 
     } )
 

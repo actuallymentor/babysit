@@ -28,7 +28,6 @@ import {
 } from '../src/docker/run.js'
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
-import { antigravity } from '../src/agents/antigravity.js'
 import { OPENCODE_OPENROUTER_DEFAULT_MODEL, opencode } from '../src/agents/opencode.js'
 
 const chrome_seccomp_profile_path = fileURLToPath(
@@ -277,7 +276,7 @@ describe( `docker image`, () => {
 
         const dockerfile = readFileSync( new URL( `../src/docker/assets/Dockerfile`, import.meta.url ), `utf8` )
 
-        for( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `gh`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `docker`, `codex`, `agy`, `claude`, `opencode` ] ) {
+        for( const cmd of [ `rg`, `fd`, `bat`, `fzf`, `yq`, `gh`, `scc`, `uv`, `uvx`, `bun`, `pnpm`, `yarn`, `pipx`, `just`, `docker`, `codex`, `claude`, `opencode` ] ) {
             expect( dockerfile ).toContain( ` ${ cmd }` )
         }
         expect( dockerfile ).toContain( `command -v "$1"' babysit-command "$cmd"` )
@@ -417,7 +416,6 @@ describe( `resume fallback flags`, () => {
 
     it( `uses native latest-session flags for agents when Babysit only has metadata`, () => {
         expect( claude.flags.resume_latest() ).toEqual( [ `--continue` ] )
-        expect( antigravity.flags.resume_latest() ).toEqual( [ `--continue` ] )
         expect( opencode.flags.resume_latest() ).toEqual( [ `--continue` ] )
     } )
 
@@ -442,7 +440,7 @@ describe( `user-globals bind-mount target`, () => {
     // Each non-claude agent declares the container path where the host's
     // ~/.agents/AGENTS.md gets bind-mounted (read-only) so the agent picks
     // it up via its own native discovery — codex's CODEX_HOME/AGENTS.md,
-    // antigravity's GEMINI.md, opencode's AGENTS.md, claude's CLAUDE.md.
+    // opencode's AGENTS.md, claude's CLAUDE.md.
     // Targets must be container-local — /workspace is read-only in mudbox
     // and ephemeral in sandbox, so the bind would silently fail there.
 
@@ -453,11 +451,6 @@ describe( `user-globals bind-mount target`, () => {
         expect( codex.container_paths.user_globals_file ).toBe( `/home/node/.codex/AGENTS.md` )
         expect( codex.container_paths.user_globals_file ).not.toMatch( /instructions\.md$/ )
         expect( codex.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
-    } )
-
-    it( `antigravity uses ~/.gemini/GEMINI.md`, () => {
-        expect( antigravity.container_paths.user_globals_file ).toBe( `/home/node/.gemini/GEMINI.md` )
-        expect( antigravity.container_paths.user_globals_file ).not.toMatch( /^\/workspace/ )
     } )
 
     it( `opencode uses ~/.config/opencode/AGENTS.md`, () => {
@@ -496,11 +489,6 @@ describe( `agent home env vars`, () => {
     it( `codex declares CODEX_HOME pointing at the container codex dir`, () => {
         expect( codex.home.env_var ).toBe( `CODEX_HOME` )
         expect( codex.home.dir ).toBe( `/home/node/.codex` )
-    } )
-
-    it( `antigravity declares HOME for its native .gemini state`, () => {
-        expect( antigravity.home.env_var ).toBe( `HOME` )
-        expect( antigravity.home.dir ).toBe( `/home/node` )
     } )
 
     it( `opencode declares OPENCODE_CONFIG_DIR pointing at the config dir directly`, () => {
@@ -653,7 +641,7 @@ describe( `build_docker_command`, () => {
 
     it( `isolates host agent profiles while preserving credential mounts`, () => {
 
-        for( const agent of [ claude, codex, antigravity, opencode ] ) {
+        for( const agent of [ claude, codex, opencode ] ) {
             const credential_source = `/tmp/${ agent.name }-credential`
             const args = build_docker_command_args( make_options( {
                 agent,
@@ -731,7 +719,7 @@ describe( `build_docker_command`, () => {
 
     it( `keeps initial prompts out of the docker command`, () => {
 
-        for( const a of [ claude, codex, antigravity, opencode ] ) {
+        for( const a of [ claude, codex, opencode ] ) {
             const cmd = build_docker_command( make_options( {
                 agent: a,
                 config: {
@@ -753,14 +741,11 @@ describe( `build_docker_command`, () => {
 
     it( `pins each agent's home dir via its own env var`, () => {
 
-        // CODEX_HOME / HOME / OPENCODE_CONFIG_DIR / CLAUDE_CONFIG_DIR
+        // CODEX_HOME / OPENCODE_CONFIG_DIR / CLAUDE_CONFIG_DIR
         // are baked into the docker run so the agent reads global
         // instructions from a path babysit controls.
         expect( build_docker_command( make_options( { agent: codex } ) ) )
             .toContain( `CODEX_HOME=/home/node/.codex` )
-
-        expect( build_docker_command( make_options( { agent: antigravity } ) ) )
-            .toContain( `HOME=/home/node` )
 
         expect( build_docker_command( make_options( { agent: opencode } ) ) )
             .toContain( `OPENCODE_CONFIG_DIR=/home/node/.config/opencode` )
@@ -927,7 +912,7 @@ describe( `build_docker_command`, () => {
 
     it( `preserves explicit native model arguments without injecting a second model`, () => {
 
-        for( const agent of [ codex, claude, antigravity, opencode ] ) {
+        for( const agent of [ codex, claude, opencode ] ) {
             const forms = [ [ `--model`, `chosen-model` ], [ `--model=chosen-model` ] ]
             if( agent.name !== `claude` ) forms.push( [ `-m`, `chosen-model` ], [ `-m=chosen-model` ] )
             if( agent.name === `codex` ) forms.push( [ `-mchosen-model` ] )
@@ -1030,11 +1015,6 @@ describe( `build_docker_command`, () => {
             agent_args: codex.flags.resume( uuid ),
         } ) ) ).toContain( ` codex --dangerously-bypass-approvals-and-sandbox --model gpt-6-astra -c 'model_reasoning_effort="medium"' resume ${ uuid }` )
 
-        expect( build_docker_command( make_options( {
-            agent: antigravity,
-            agent_args: antigravity.flags.resume( uuid ),
-        } ) ) ).toContain( ` agy --dangerously-skip-permissions --conversation ${ uuid }` )
-
         const opencode_session_id = `ses_66a71b6f4ffeq796jvvOpJQ04m`
         const opencode_args = build_docker_command_args( make_options( {
             agent: opencode,
@@ -1070,17 +1050,11 @@ describe( `build_docker_command`, () => {
             agent: codex,
             extra_env: codex.extra_env(),
         } ) )
-        const antigravity_cmd = build_docker_command( make_options( { agent: antigravity } ) )
         const opencode_cmd = build_docker_command( make_options( { agent: opencode } ) )
 
         expect( codex_cmd ).toContain( `:/home/node/.codex/sessions` )
         expect( codex_cmd ).toContain( `:/home/node/.codex/sqlite` )
         expect( codex_cmd_with_env ).toContain( `CODEX_SQLITE_HOME=/home/node/.codex/sqlite` )
-        expect( antigravity_cmd ).toContain( `:/home/node/.gemini/antigravity-cli` )
-        expect( get_agent_state_mounts( antigravity, `/tmp/empty`, { yolo: true } ) ).toEqual( [ {
-            source: expect.stringMatching( /^babysit-antigravity-state-[0-9a-f]{12}$/ ),
-            target: `/home/node/.gemini/antigravity-cli`,
-        } ] )
         expect( opencode_cmd ).toContain( `:/home/node/.local/share/opencode` )
 
     } )
@@ -1097,7 +1071,7 @@ describe( `build_docker_command`, () => {
 
     it( `skips persistent native resume state in sandbox mode`, () => {
 
-        for( const a of [ claude, codex, antigravity, opencode ] ) {
+        for( const a of [ claude, codex, opencode ] ) {
             expect( get_agent_state_mounts( a, `/tmp/empty`, { sandbox: true } ) ).toEqual( [] )
         }
 
@@ -1163,14 +1137,12 @@ describe( `build_docker_command`, () => {
             creds_mounts: [
                 { type: `volume`, source: `/tmp/claude-creds.json`, target: `/home/node/.claude/.credentials.json` },
                 { type: `volume`, source: `/tmp/codex-auth.json`, target: `/home/node/.codex/auth.json` },
-                { type: `volume`, source: `/tmp/antigravity-oauth.json`, target: `/home/node/.gemini/antigravity-cli/antigravity-oauth-token` },
                 { type: `volume`, source: `/tmp/opencode-auth.json`, target: `/home/node/.local/share/opencode/auth.json` },
             ],
         } ) )
 
         expect( cmd ).toContain( `/tmp/claude-creds.json:/home/node/.claude/.credentials.json` )
         expect( cmd ).toContain( `/tmp/codex-auth.json:/home/node/.codex/auth.json` )
-        expect( cmd ).toContain( `/tmp/antigravity-oauth.json:/home/node/.gemini/antigravity-cli/antigravity-oauth-token` )
         expect( cmd ).toContain( `/tmp/opencode-auth.json:/home/node/.local/share/opencode/auth.json` )
 
     } )

@@ -55,7 +55,7 @@ export const resolve_host_bin = ( bin, env = process.env ) => {
 export const host_credential_file = ( agent, { platform = detect_platform() } = {} ) => {
 
     const config = agent?.credentials?.[ platform ]
-    if( !config?.file || config.keychain_service || config.secret_service ) return null
+    if( !config?.file || config.keychain_service ) return null
     return resolve_credential_file( config.file )
 
 }

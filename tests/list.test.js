@@ -125,7 +125,7 @@ describe( `print_active_sessions_table`, () => {
             },
             {
                 tmux_session: `babysit_canonical`,
-                agent: `antigravity`,
+                agent: `antigravity`, // retired agents still list
                 babysit_id: `baby-3`,
                 modifiers: [],
                 config_flags: [ `on:idle/30m` ],

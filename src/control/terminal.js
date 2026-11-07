@@ -24,9 +24,6 @@ const owned_dialog = ( agent, screen ) => {
         return /Select model\s+esc[\s\S]*?Connect provider ctrl\+a/i.test( tail )
             || /(?:^|\n)\s*Select variant\s+esc\s*\n/i.test( tail )
     }
-    if( agent === `antigravity` ) {
-        return /(?:Switch Model|Set Effort)\s*\n[\s\S]*?Keyboard:/i.test( tail )
-    }
     return false
 }
 
@@ -97,12 +94,6 @@ const ensure_safe = ( agent, screen, busy ) => {
         if( composer_end < 0 ) throw pending( `Claude's composer border is not visible.` )
         const composer = screen.slice( composer_start + 2, composer_end ).trim()
         if( composer && !/^Try "[^"]+"$/.test( composer ) ) throw pending( `Claude has a draft in its composer.` )
-    }
-
-    if( agent === `antigravity` ) {
-        const prompt = [ ...screen.matchAll( /^>[ \t]*(.*)$/gm ) ].at( -1 )?.[ 1 ]?.trim()
-        if( prompt === undefined ) throw pending( `Antigravity's composer is not visible.` )
-        if( prompt ) throw pending( `Antigravity has a draft in its composer.` )
     }
 
     if( agent === `opencode` ) {
@@ -428,52 +419,6 @@ const opencode_control = async ( { operation, value, target, capture, send_text,
     return { message: `Model selected: ${ target.id }${ effort && effort !== `default` ? ` (${ effort })` : `` }. It applies to the next OpenCode request.${ target.notice ? ` ${ target.notice }` : `` }`, applied: target.id }
 }
 
-const antigravity_rows = screen => screen.split( `\n` ).flatMap( line => {
-    const match = line.match( /^\s*(>)?\s*(Gemini|Claude)\s+(.+?)(?:\s+\(current\))?\s*$/ )
-    if( !match ) return []
-    return [ { name: `${ match[ 2 ] } ${ match[ 3 ] }`.trim().replace( /\s+\(current\)$/, `` ), selected: Boolean( match[ 1 ] ) } ]
-} )
-
-const antigravity_control = async ( { operation, value, target, capture, send_text, send_keys, timeout_ms } ) => {
-    // The exact slug form is native in agy 1.2.9. The family picker can silently
-    // choose a different effort when rapid arrow events arrive together.
-    if( operation === `model` && value ) {
-        if( !target?.name ) throw new Error( `Antigravity model selection needs a resolved catalog target.` )
-        if( value !== target.id || !/^[a-zA-Z0-9_.:/[\]-]+$/.test( value ) ) throw new Error( `Antigravity model ID is not a safe catalog slug.` )
-        const family = target.name.replace( /\s*\((?:Low|Medium|High)\)\s*$/, `` )
-        const effort = target.effort || value.match( /-(low|medium|high)$/ )?.[ 1 ]
-        await send_text( `/model ${ value }` )
-        const result = await wait_for( capture, screen => screen.includes( `Model set to ${ target.name }` ), timeout_ms )
-        const footer = result.split( `\n` ).find( line => line.includes( `? for shortcuts` ) ) || ``
-        if( !footer.includes( family ) || effort && !footer.includes( `· ${ effort }` ) ) {
-            throw new Error( `Antigravity model readback differed from ${ value }.` )
-        }
-        return { message: `Model selected: ${ value } for this Antigravity session.`, applied: value }
-    }
-
-    await send_text( `/${ operation }` )
-    const title = operation === `model` ? /Switch Model\n/i : /Set Effort\n/i
-    const picker = await wait_for( capture, screen => title.test( screen ), timeout_ms )
-
-    if( !value ) {
-        const entries = operation === `model` ? antigravity_rows( picker ).map( row => row.name ) : effort_labels( picker )
-        await send_keys( `Escape` )
-        return { message: entries.join( `\n` ), models: operation === `model` ? entries : undefined, supported: operation === `effort` ? entries : undefined }
-    }
-
-    if( operation === `effort` ) {
-        const levels = effort_labels( picker )
-        if( !levels.includes( value ) ) {
-            throw unsupported( `${ value } is unavailable for this Antigravity model. Supported: ${ levels.join( `, ` ) }.` )
-        }
-        await send_keys( `Escape` )
-        await wait_for( capture, screen => !/Set Effort\n/i.test( screen ), timeout_ms )
-        await send_text( `/effort ${ value }` )
-        await wait_for( capture, screen => screen.includes( `Effort set to ${ value }` ) && new RegExp( `· ${ value }\\b` ).test( screen ), timeout_ms )
-        return { message: `Effort set to ${ value } for this Antigravity session.`, applied: value }
-    }
-}
-
 /**
  * Drive one Babysit-owned native TUI control through its exact tmux pane.
  * The host serializes calls and retries CONTROL_PENDING until a safe screen.
@@ -504,7 +449,6 @@ export const terminal_control = async ( {
         switch ( agent ) {
         case `claude`: return await claude_control( context )
         case `opencode`: return await opencode_control( context )
-        case `antigravity`: return await antigravity_control( context )
         default: throw unsupported( `${ agent } does not have a native terminal controller.` )
         }
     } catch ( error ) {

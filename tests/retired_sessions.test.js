@@ -6,20 +6,23 @@ import { spawnSync } from 'node:child_process'
 import { cmd_start } from '../src/cli/start.js'
 import { recovery_blocker, recover_session } from '../src/cli/recover.js'
 
-const diagnostic = `Gemini CLI sessions are no longer supported and cannot resume in Antigravity`
+const diagnostic = `support was removed from babysit`
 
-describe( `retired Gemini sessions`, () => {
+describe( `retired agent sessions`, () => {
 
-    it( `rejects old launches and attempts to resume their IDs with Antigravity`, async () => {
-        for( const agent of [ `gemini`, `antigravity` ] ) {
-            await expect( cmd_start( {
-                agent, stored_session: { agent: `gemini`, babysit_id: `old-session` },
-                flags: {}, passthrough: [],
-            } ) ).rejects.toThrow( diagnostic )
+    it( `rejects old launches and attempts to resume their IDs with another agent`, async () => {
+        for( const retired of [ `gemini`, `antigravity` ] ) {
+            for( const agent of [ retired, `claude` ] ) {
+                await expect( cmd_start( {
+                    agent, stored_session: { agent: retired, babysit_id: `old-session` },
+                    flags: {}, passthrough: [],
+                } ) ).rejects.toThrow( diagnostic )
+            }
         }
     } )
 
     it( `explains incompatibility before legacy recovery or monitor repair`, async () => {
+        expect( recovery_blocker( { agent: `antigravity`, babysit_id: `old-session` } ) ).toContain( `Antigravity support was removed` )
         const session = { agent: `gemini`, babysit_id: `old-session` }
         expect( recovery_blocker( session ) ).toContain( diagnostic )
         const result = await recover_session( session, {}, {
@@ -37,7 +40,7 @@ describe( `retired Gemini sessions`, () => {
         const directory = mkdtempSync( join( tmpdir(), `babysit-retired-monitor-` ) )
         const sessions = join( directory, `sessions` )
         mkdirSync( sessions )
-        const session = { agent: `gemini`, babysit_id: `old-session`, status: `interrupted` }
+        const session = { agent: `antigravity`, babysit_id: `old-session`, status: `interrupted` }
         writeFileSync( join( sessions, `old-session.json` ), JSON.stringify( session ) )
         try {
             const module = new URL( `../src/cli/monitor.js`, import.meta.url ).href

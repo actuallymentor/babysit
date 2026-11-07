@@ -5,7 +5,6 @@ import {
 } from '../src/deps/agent_update.js'
 import { claude } from '../src/agents/claude.js'
 import { codex } from '../src/agents/codex.js'
-import { antigravity } from '../src/agents/antigravity.js'
 import { opencode } from '../src/agents/opencode.js'
 
 describe( `agent update strategies`, () => {
@@ -38,15 +37,6 @@ describe( `agent update strategies`, () => {
 
     } )
 
-    it( `antigravity updates through its native agy command`, () => {
-
-        const strategies = build_update_strategies( antigravity )
-        expect( strategies.map( s => s.name ) ).toEqual( [ `self-update` ] )
-        expect( strategies[0].cmd ).toBe( `agy` )
-        expect( strategies[0].args ).toEqual( [ `update` ] )
-
-    } )
-
     it( `opencode prefers its built-in upgrade subcommand`, () => {
 
         const strategies = build_update_strategies( opencode )
@@ -74,7 +64,7 @@ describe( `agent update strategies`, () => {
         // installed claude with npm available shouldn't trigger an `npm install -g`
         // and end up with a second copy. The detect functions guard this; verify
         // they exist and are actually called by build_update_strategies.
-        for( const agent of [ claude, codex, antigravity, opencode ] ) {
+        for( const agent of [ claude, codex, opencode ] ) {
             const strategies = build_update_strategies( agent )
             for( const s of strategies ) {
                 if( s.name === `npm` || s.name === `brew` ) {

@@ -156,8 +156,6 @@ RUN mkdir -p \
         /home/node/.claude/todos \
         /home/node/.codex/sessions \
         /home/node/.codex/sqlite \
-        /home/node/.gemini/antigravity-cli/cache \
-        /home/node/.gemini/config \
         /home/node/.config/gh \
         /home/node/.config/opencode/plugins \
         /home/node/.local/share/opencode \
@@ -178,8 +176,6 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY claude-shim.sh /opt/babysit-bin/claude
 # Rewrites a hot-swappable session's Claude token: see claude-token.sh
 COPY claude-token.sh /usr/local/bin/babysit-claude-token
-COPY antigravity-auth.py /usr/local/bin/antigravity-auth.py
-COPY install-antigravity.sh /usr/local/bin/install-antigravity.sh
 COPY effort/ /opt/babysit-effort/
 COPY usage/ /opt/usage/
 COPY adb/ /opt/adb/
@@ -222,7 +218,7 @@ RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignor
 USER node
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV NVM_DIR=/home/node/.nvm
-# Claude and Antigravity use ~/.local/bin; user npm packages use the prefix.
+# Claude uses ~/.local/bin; user npm packages use the prefix.
 # /opt/babysit-bin holds the claude shim that restores the session's account token.
 ENV PATH="/opt/babysit-bin:/home/node/.npm-global/bin:/home/node/.local/bin:$PATH"
 
@@ -235,9 +231,6 @@ RUN set -eux; \
         '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"' \
         '[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"' \
         >> /home/node/.bashrc
-
-# Antigravity — native amd64/arm64 CLI, checksum verified.
-RUN bash /usr/local/bin/install-antigravity.sh
 
 # Claude Code — installs into /home/node
 RUN curl -fsSL https://claude.ai/install.sh | bash -s -- latest
@@ -264,7 +257,7 @@ RUN set -eux; \
         pkgconf pkg-config pstree fuser killall socat getfacl setfacl \
         inotifywait inotifywatch entr shfmt git-filter-repo \
         ctags ctags-universal readtags qpdf \
-        codex agy claude opencode babysit babysit-claude-token \
+        codex claude opencode babysit babysit-claude-token \
     ; do \
         gosu node sh -c 'command -v "$1"' babysit-command "$cmd"; \
     done; \
@@ -272,7 +265,6 @@ RUN set -eux; \
     docker buildx version; \
     gosu node codex --version; \
     gosu node claude --version; \
-    gosu node agy --version; \
     gosu node opencode --version; \
     gosu node pkgconf --version; \
     gosu node pkg-config --version; \

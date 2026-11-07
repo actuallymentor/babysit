@@ -7,7 +7,7 @@ import { wait } from 'mentie'
 
 import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
-import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
+import { get_agent, retired_agent_message, SUPPORTED_AGENTS } from '../agents/index.js'
 import { config_flags, load_config, load_clone_config } from '../babysit/yaml.js'
 import { cleanup_stale_ephemeral_credential_mounts, setup_credentials } from '../credentials/index.js'
 import {
@@ -1067,9 +1067,8 @@ export const cmd_start = async ( cmd, {
     if( cmd.verb === `resume` ) cmd = resolve_numbered_resume( cmd, { list_stored_sessions_fn, get_cwd } )
 
     const stored = cmd.stored_session || resolve_stored_agent_resume_session( cmd, get_agent( cmd.agent ) || {}, load_session_fn )
-    if( cmd.agent === `gemini` || stored?.agent === `gemini` || stored?.agent_mismatch === `gemini` ) {
-        throw new Error( `Gemini CLI sessions are no longer supported and cannot resume in Antigravity. Start a new session with babysit antigravity.` )
-    }
+    const retired = retired_agent_message( cmd.agent ) || retired_agent_message( stored?.agent ) || retired_agent_message( stored?.agent_mismatch )
+    if( retired ) throw new Error( retired )
     const release = cmd.lifecycle_locked ? () => {} : acquire_lock( stored ? session_lock_key( stored ) : `launch:${ randomUUID() }` )
     let released = false
     const handoff = () => {

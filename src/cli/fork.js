@@ -7,7 +7,7 @@ import { createInterface } from 'readline/promises'
 import { log } from '../utils/log.js'
 import { BABYSIT_DIR, CLONES_DIR } from '../utils/paths.js'
 import { run } from '../utils/exec.js'
-import { get_agent } from '../agents/index.js'
+import { get_agent, retired_agent_message } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { get_image_name } from '../docker/update.js'
 import { attach_session, list_sessions } from '../tmux/session.js'
@@ -336,7 +336,7 @@ exit 0
 `
 
 /**
- * Codex, OpenCode and Antigravity keep conversations in volumes keyed by
+ * Codex and OpenCode keep conversations in volumes keyed by
  * the workspace path. A fork in another workspace gets a copy of the
  * parent's volumes so its native fork (or later resume) finds the history.
  * Claude's volumes are global and need nothing.
@@ -479,7 +479,7 @@ export const cmd_fork = async ( cmd, {
     const parent_sandbox = Boolean( parent.modifiers?.includes( `sandbox` ) )
 
     const agent = get_agent( cmd.agent || parent.agent )
-    if( !agent ) throw new Error( `Unknown agent: ${ cmd.agent || parent.agent }` )
+    if( !agent ) throw new Error( retired_agent_message( cmd.agent || parent.agent ) || `Unknown agent: ${ cmd.agent || parent.agent }` )
 
     const by_tmux = stored_by_tmux( stored )
     const taken = ordered.map( row => by_tmux.get( row.name )?.name ).filter( Boolean )

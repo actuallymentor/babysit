@@ -99,10 +99,6 @@ export const collect_usage = async ( {
             throw error
         }
     } )
-    query( `antigravity`, `google`, () => auth.antigravity || env.GEMINI_API_KEY
-        ? unavailable( `Account quota integration unavailable for this Antigravity credential; run /usage in agy` )
-        : unauthenticated()
-    )
 
     const provider_auth = { ...auth.opencode }
     // OpenCode also resolves standard provider environment keys. Their budgets

@@ -7,7 +7,6 @@ import { get_agent } from '../src/agents/index.js'
 import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
 import { setup_darwin_credentials } from '../src/credentials/darwin.js'
 import { setup_linux_credentials } from '../src/credentials/linux.js'
-import { decode_keyring_secret } from '../src/credentials/keyring.js'
 import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
 
 // Regression suite for the monitor-tmpfile fix.
@@ -438,19 +437,16 @@ describe( `setup_credentials multi-agent capture`, () => {
     let original_codex_home
     let original_codex_api_key
     let original_openai_api_key
-    let original_gemini_api_key
 
     const credential_paths = {
         claude: `.claude/.credentials.json`,
         codex: `.codex/auth.json`,
-        antigravity: `.gemini/antigravity-cli/antigravity-oauth-token`,
         opencode: `.local/share/opencode/auth.json`,
     }
 
     const container_targets = {
         claude: `/home/node/.claude/.credentials.json`,
         codex: `/home/node/.codex/auth.json`,
-        antigravity: `/home/node/.gemini/antigravity-cli/antigravity-oauth-token`,
         opencode: `/home/node/.local/share/opencode/auth.json`,
     }
 
@@ -460,7 +456,6 @@ describe( `setup_credentials multi-agent capture`, () => {
 
         mkdirSync( join( dir, `.claude` ), { recursive: true } )
         mkdirSync( join( dir, `.codex` ), { recursive: true } )
-        mkdirSync( join( dir, `.gemini/antigravity-cli` ), { recursive: true } )
         mkdirSync( join( dir, `.local/share/opencode` ), { recursive: true } )
 
         for( const [ agent_name, relative_path ] of Object.entries( credential_paths ) ) {
@@ -478,13 +473,11 @@ describe( `setup_credentials multi-agent capture`, () => {
         original_codex_home = process.env.CODEX_HOME
         original_codex_api_key = process.env.CODEX_API_KEY
         original_openai_api_key = process.env.OPENAI_API_KEY
-        original_gemini_api_key = process.env.GEMINI_API_KEY
 
         process.env.HOME = dir
         delete process.env.CODEX_HOME
         delete process.env.CODEX_API_KEY
         delete process.env.OPENAI_API_KEY
-        delete process.env.GEMINI_API_KEY
 
     } )
 
@@ -501,9 +494,6 @@ describe( `setup_credentials multi-agent capture`, () => {
         if( original_openai_api_key === undefined ) delete process.env.OPENAI_API_KEY
         else process.env.OPENAI_API_KEY = original_openai_api_key
 
-        if( original_gemini_api_key === undefined ) delete process.env.GEMINI_API_KEY
-        else process.env.GEMINI_API_KEY = original_gemini_api_key
-
         rmSync( dir, { recursive: true, force: true } )
 
     } )
@@ -516,8 +506,8 @@ describe( `setup_credentials multi-agent capture`, () => {
             .map( mount => mount.target )
 
         expect( volume_targets ).toEqual( expect.arrayContaining( Object.values( container_targets ) ) )
-        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `antigravity`, `claude`, `codex`, `opencode` ] )
-        expect( Object.keys( result.sync_baselines ).sort() ).toEqual( [ `antigravity`, `claude`, `codex`, `opencode` ] )
+        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `claude`, `codex`, `opencode` ] )
+        expect( Object.keys( result.sync_baselines ).sort() ).toEqual( [ `claude`, `codex`, `opencode` ] )
         expect( result.creds_tmpfile ).toBeUndefined()
 
         await result.sync.stop()
@@ -587,169 +577,5 @@ describe( `setup_credentials multi-agent capture`, () => {
             .toBe( `{"agent":"codex","refresh_token":"legacy-rotated"}` )
 
     } )
-
-} )
-
-describe( `Antigravity native keyring credentials`, () => {
-
-    const raw_credential = JSON.stringify( {
-        token: { access_token: `test-access`, refresh_token: `test-refresh` },
-        project_id: `test-project`,
-    } )
-    const rotated_credential = raw_credential.replace( `test-access`, `rotated-access` )
-
-    for( const [ platform, setup ] of [ [ `linux`, setup_linux_credentials ], [ `darwin`, setup_darwin_credentials ] ] ) {
-
-        it( `${ platform }: selects the native account, preserves raw JSON, and reuses source-only sync`, async () => {
-
-            const directory = mkdtempSync( join( tmpdir(), `babysit-antigravity-keyring-test-` ) )
-            const agent = get_agent( `antigravity` )
-            const fallback = join( directory, `antigravity-oauth-token` )
-            const fake_agent = {
-                ...agent,
-                credentials: {
-                    [ platform ]: { ...agent.credentials[ platform ], file: fallback, fallback_file: fallback, env_key: null },
-                },
-            }
-            const commands = []
-            let keyring_available = true
-            const run_command = ( command, options ) => {
-                commands.push( command )
-                expect( options.timeout_ms ).toBe( 10_000 )
-                if( !keyring_available ) return null
-                return platform === `darwin`
-                    ? command.includes( ` -w ` ) ? `go-keyring-base64:${ Buffer.from( raw_credential ).toString( `base64` ) }` : `found`
-                    : raw_credential
-            }
-            let foreground
-            let monitor
-
-            try {
-                foreground = await setup( fake_agent, { run_command } )
-                const [ mount ] = foreground.mounts
-                expect( readFileSync( mount.source, `utf-8` ) ).toBe( raw_credential )
-                expect( mount.target ).toBe( agent.container_paths.creds )
-                expect( foreground.sync_baseline.credential_source ).toBe( `keyring` )
-                expect( statSync( dirname( mount.source ) ).mode & 0o777 ).toBe( 0o700 )
-                await foreground.sync.stop()
-
-                // A monitor can start after a container refresh and the desktop
-                // keyring becomes unavailable. Neither event permits a file write.
-                writeFileSync( mount.source, rotated_credential )
-                keyring_available = false
-                monitor = await setup( fake_agent, {
-                    existing_tmpfile: mount.source,
-                    sync_baseline: foreground.sync.baseline(),
-                    run_command,
-                } )
-                expect( monitor.mounts ).toEqual( [] )
-                await monitor.sync.stop()
-                expect( readFileSync( mount.source, `utf-8` ) ).toBe( rotated_credential )
-                expect( existsSync( fallback ) ).toBe( false )
-                expect( monitor.sync.baseline().credential_source ).toBe( `keyring` )
-
-                if( platform === `linux` ) {
-                    expect( commands.every( command => command === `secret-tool lookup service "gemini" username "antigravity" 2>/dev/null` ) ).toBe( true )
-                } else {
-                    expect( commands.every( command => command.startsWith( `security find-generic-password -s "gemini" -a "antigravity"` ) ) ).toBe( true )
-                    expect( commands.some( command => command.includes( ` -w ` ) ) ).toBe( true )
-                }
-            } finally {
-                await monitor?.sync?.stop()
-                await foreground?.sync?.stop()
-                if( foreground?.cleanup_path ) rmSync( foreground.cleanup_path, { recursive: true, force: true } )
-                rmSync( directory, { recursive: true, force: true } )
-            }
-
-        } )
-
-        it( `${ platform }: falls back to the native file when the keyring is unavailable`, async () => {
-
-            const directory = mkdtempSync( join( tmpdir(), `babysit-antigravity-fallback-test-` ) )
-            const fallback = join( directory, `antigravity-oauth-token` )
-            const agent = get_agent( `antigravity` )
-            const fake_agent = {
-                ...agent,
-                credentials: {
-                    [ platform ]: { ...agent.credentials[ platform ], file: fallback, fallback_file: fallback, env_key: null },
-                },
-            }
-            let result
-
-            try {
-                writeFileSync( fallback, raw_credential )
-                result = await setup( fake_agent, { run_command: () => null } )
-                const [ mount ] = result.mounts
-                expect( readFileSync( mount.source, `utf-8` ) ).toBe( raw_credential )
-                writeFileSync( mount.source, rotated_credential )
-                await result.sync.stop()
-                expect( readFileSync( fallback, `utf-8` ) ).toBe( rotated_credential )
-            } finally {
-                await result?.sync?.stop()
-                if( result?.cleanup_path ) rmSync( result.cleanup_path, { recursive: true, force: true } )
-                rmSync( directory, { recursive: true, force: true } )
-            }
-
-        } )
-
-    }
-
-} )
-
-describe( `native macOS go-keyring encoding`, () => {
-
-    it( `decodes current base64 and legacy hex while preserving plain JSON`, () => {
-        const value = JSON.stringify( { token: { refresh_token: `test-token` }, label: `café` } )
-        expect( decode_keyring_secret( `go-keyring-base64:${ Buffer.from( value ).toString( `base64` ) }` ) ).toBe( value )
-        expect( decode_keyring_secret( `go-keyring-encoded:${ Buffer.from( value ).toString( `hex` ) }` ) ).toBe( value )
-        expect( decode_keyring_secret( value ) ).toBe( value )
-    } )
-
-    it( `rejects malformed encoded secrets`, () => {
-        for( const value of [ null, ``, `go-keyring-base64:!invalid!`, `go-keyring-encoded:123`, `go-keyring-encoded:xx` ] ) {
-            expect( decode_keyring_secret( value ) ).toBeNull()
-        }
-    } )
-
-} )
-
-describe( `Antigravity credential source pinning`, () => {
-
-    for( const [ platform, setup ] of [ [ `linux`, setup_linux_credentials ], [ `darwin`, setup_darwin_credentials ] ] ) {
-
-        it( `${ platform }: retains bidirectional file sync when the desktop keyring unlocks before monitor handoff`, async () => {
-            const directory = mkdtempSync( join( tmpdir(), `babysit-keyring-unlock-test-` ) )
-            const path = join( directory, `antigravity-oauth-token` )
-            const native = get_agent( `antigravity` )
-            const agent = { ...native, credentials: { [ platform ]: { ...native.credentials[ platform ], file: path, fallback_file: path, env_key: null } } }
-            let foreground
-            let monitor
-            let lookups = 0
-            try {
-                writeFileSync( path, `file-original` )
-                foreground = await setup( agent, { run_command: () => null } )
-                await foreground.sync.stop()
-                const [ mount ] = foreground.mounts
-                writeFileSync( mount.source, `container-rotated` )
-                monitor = await setup( agent, {
-                    existing_tmpfile: mount.source,
-                    sync_baseline: foreground.sync.baseline(),
-                    run_command: () => {
-                        lookups += 1; return `stale-keyring` 
-                    },
-                } )
-                await monitor.sync.stop()
-                expect( lookups ).toBe( 0 )
-                expect( readFileSync( path, `utf8` ) ).toBe( `container-rotated` )
-                expect( readFileSync( mount.source, `utf8` ) ).toBe( `container-rotated` )
-            } finally {
-                await monitor?.sync?.stop()
-                await foreground?.sync?.stop()
-                if( foreground?.cleanup_path ) rmSync( foreground.cleanup_path, { recursive: true, force: true } )
-                rmSync( directory, { recursive: true, force: true } )
-            }
-        } )
-
-    }
 
 } )
