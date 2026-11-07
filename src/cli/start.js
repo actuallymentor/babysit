@@ -41,11 +41,6 @@ import { image_facts } from '../docker/facts.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { clone as clone_prompt } from '../system_prompt/index.js'
 import { confirm_continue_with_unauthenticated_agents } from '../agents/auth.js'
-import {
-    clear_host_auth_cache,
-    refresh_file_credential_parts,
-    refresh_host_auth_cache,
-} from '../agents/auth_cache.js'
 import { launch_auth_cache_contexts, local_auth_state } from '../agents/auth_gate.js'
 import { acquire_host_auth_lease } from '../agents/auth_lease.js'
 import { start_startup_status } from './startup_status.js'
@@ -70,7 +65,7 @@ import { time_phase, time_phase_sync } from '../utils/timing.js'
 import { acquire_clone_lock, grant_clone_source_access, prepare_clone_workspace } from '../clone.js'
 import { cmd_resume, resolve_numbered_resume } from './resume.js'
 import { cmd_open } from './open.js'
-import { cmd_monitor } from './monitor.js'
+import { cmd_monitor, refresh_session_auth_cache } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { format_session_status_label } from './list.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
@@ -846,7 +841,69 @@ export const cmd_start = async ( cmd, {
 
 }
 
-async function start_session( cmd ) {
+/**
+ * The one failure path of a launch, from the saved record to monitor handoff.
+ * Phases register what they own (sync controller, prepared container,
+ * recovery marker, status line); `fail()` tears it down once. A failed final
+ * credential flush retains the stopped container and the private sync copies
+ * and states (gotcha 81): they may hold the only rotated token.
+ * @param {Object} options
+ * @param {string} options.babysit_id - Saved session record
+ * @param {boolean} [options.recovering] - Recovery launches keep expected_open
+ * @param {Function|null} [options.release_clone_lock] - Clone workspace lock
+ * @param {Function} [options.cleanup] - Credential/container teardown seam
+ * @param {Function} [options.mark_failed] - Record status seam
+ * @returns {Object} Transaction: owned resources plus `fail( error )`
+ */
+export const create_launch_transaction = ( {
+    babysit_id,
+    recovering = false,
+    release_clone_lock = null,
+    cleanup = cleanup_failed_launch_credentials,
+    mark_failed = () => record_launch_progress( babysit_id, { status: `failed` }, { recovering } ),
+} = {} ) => {
+
+    const transaction = {
+        release_clone_lock,
+        context: `launch failure`,
+        creds_sync: null,
+        prepared_launch: null,
+        recovery_id: null,
+        startup_status: null,
+        after_failure: [],
+        failed: null,
+    }
+
+    transaction.fail = async () => {
+        if( transaction.failed ) return transaction.failed
+        transaction.failed = ( async () => {
+            transaction.startup_status?.stop()
+            const result = await cleanup( {
+                creds_sync: transaction.creds_sync,
+                prepared_launch: transaction.prepared_launch,
+                recovery_id: transaction.recovery_id,
+                context: transaction.context,
+            } )
+            transaction.after_failure.forEach( task => task() )
+            mark_failed()
+            release_clone_lock?.()
+            return result
+        } )()
+        return transaction.failed
+    }
+
+    return transaction
+
+}
+
+/**
+ * Phase 1: everything decided before any credential is touched (agent,
+ * resume target, mode, Claude login, workspace/clone, launch identity),
+ * ending with the saved `preparing` record so a power loss can recover it.
+ * @param {Object} cmd - Parsed command
+ * @returns {Promise<Object>} Launch context, with its failure transaction
+ */
+async function resolve_launch( cmd ) {
 
     const { agent: agent_name, flags, passthrough } = cmd
 
@@ -1202,115 +1259,117 @@ async function start_session( cmd ) {
         // forked_from, fork_base, fork_filesystem, fork_history, fork_handoff
         ...cmd.fork?.record,
     }
-    const mark_clone_launch_failed = () => {
-        record_launch_progress( babysit_id, { status: `failed` }, { recovering: cmd.recovering } )
-    }
-
     save_session( base_session_data )
     if( stored_resume_session ) update_session( stored_resume_session.babysit_id, {
         superseded_by: babysit_id,
         expected_open: false,
     } )
 
-    if( stored_resume_session && !cmd.container_reconciled ) {
-        try {
-            await recover_clone_container( stored_resume_session )
-        } catch ( error ) {
-            mark_clone_launch_failed()
-            release_clone_lock?.()
-            throw error
-        }
+    return {
+        cmd, agent, flags, passthrough, mode,
+        stored_resume_session, session_display_name,
+        docker_socket_path, watchtower_check, claude_login,
+        workspace, original_workspace, original_mount, config_path,
+        fork_launch, modifiers,
+        babysit_id, session_name, container_name, monitor_token,
+        base_session_data,
+        // The record exists from here on: every later failure goes through it
+        transaction: create_launch_transaction( {
+            babysit_id,
+            recovering: cmd.recovering,
+            release_clone_lock,
+        } ),
     }
 
-    // Serialize capture with auth probes: a concurrent doctor/checker probe
-    // can rotate a one-use refresh token while this launch copies it
-    // (gotcha 94). One live line names the blocking step so a slow host
-    // never looks hung.
-    const startup_status = start_startup_status( `Starting ${ agent.name }` )
-    const auth_lease = await time_phase( `authentication lease`, () => acquire_host_auth_lease( {
-        on_wait: () => startup_status.set( `waiting for another authentication check to finish` ),
+}
+
+/**
+ * Phase 2: capture every agent's login under the host auth lease, run the
+ * local auth gate, and inherit fresh cache trust. No model call.
+ * @param {Object} launch - resolve_launch context; gains `credentials` and auth cache contexts
+ * @param {Object} [seams] - Lease, capture and gate seams
+ */
+export const acquire_credentials = async ( launch, {
+    acquire_lease = acquire_host_auth_lease,
+    setup = setup_credentials,
+    register_recovery = register_credential_recovery,
+    gate = local_auth_state,
+    confirm = confirm_continue_with_unauthenticated_agents,
+    cache_contexts = launch_auth_cache_contexts,
+} = {} ) => {
+
+    const { agent, cmd, transaction } = launch
+    transaction.context = `credential setup failure`
+
+    // Gotcha 94: lease BEFORE capture. A concurrent doctor/checker probe can
+    // rotate a one-use refresh token while this launch copies it. One live
+    // line names the blocking step so a slow host never looks hung.
+    const { startup_status } = launch
+    const auth_lease = await time_phase( `authentication lease`, () => acquire_lease( {
+        on_wait: () => startup_status?.set( `waiting for another authentication check to finish` ),
     } ) )
-    let credential_setup = null
-    let foreground_recovery_id = null
 
     try {
         // The real session still receives credentials for every supported
         // agent so nested coding-agent calls remain authenticated.
-        startup_status.set( `loading credentials` )
-        credential_setup = await time_phase(
-            `credential discovery`,
-            () => setup_credentials( agent )
-        )
+        startup_status?.set( `loading credentials` )
+        const credentials = await time_phase( `credential discovery`, () => setup( agent ) )
+        transaction.creds_sync = credentials.sync
         // The Claude account rides along as a staged file that outranks the rc token
-        credential_setup.mounts.push( ...claude_login.mounts )
-        foreground_recovery_id = register_credential_recovery( {
-            sync_paths: Object.values( credential_setup.tmpfiles ).map(
-                file => private_credential_tmpdir( file ) || file
-            ),
+        credentials.mounts.push( ...launch.claude_login.mounts )
+        // Gotcha 84: register ownership right after capture
+        transaction.recovery_id = register_recovery( {
+            sync_paths: Object.values( credentials.tmpfiles ).map( file => private_credential_tmpdir( file ) || file ),
         } )
-    } catch ( error ) {
-        startup_status.stop()
-        if( credential_setup ) {
-            await cleanup_failed_launch_credentials( {
-                creds_sync: credential_setup.sync,
-                recovery_id: foreground_recovery_id,
-                context: `credential setup failure`,
-            } )
-        }
-        mark_clone_launch_failed()
-        release_clone_lock?.()
-        throw error
+        launch.credentials = credentials
     } finally {
         auth_lease.release()
     }
 
-    const {
-        mounts: creds_mounts,
-        sync: creds_sync,
-        states: creds_states,
-        tmpfiles: creds_tmpfiles,
-    } = credential_setup
-
     // Local gate, no model call: only a login that is plainly missing stops
     // the launch. Real probes belong to doctor --auth and auth check.
-    const gate_state = local_auth_state( agent, creds_mounts, { route: claude_login.route } )
+    const { mounts } = launch.credentials
+    const gate_state = gate( agent, mounts, { route: launch.claude_login.route } )
     if( gate_state === `missing` ) {
-        startup_status.pause()
+        startup_status?.pause()
         // Recovery and directory launches cannot stop to ask, so they skip the session.
-        const should_continue = !cmd.recovering && !cmd.batch && await confirm_continue_with_unauthenticated_agents( [ agent.name ] )
-        if( !should_continue ) {
-            startup_status.stop()
-            await cleanup_failed_launch_credentials( {
-                creds_sync,
-                recovery_id: foreground_recovery_id,
-                context: `authentication abort`,
-            } )
-            mark_clone_launch_failed()
-            release_clone_lock?.()
+        const proceed = !cmd.recovering && !cmd.batch && await confirm( [ agent.name ] )
+        if( !proceed ) {
+            transaction.context = `authentication abort`
             log.error( `Aborted: ${ agent.name } has no login to stage. Log in on the host, then retry.` )
             throw new Error( `Session launch aborted; see diagnostic above` )
         }
     } else log.debug( `Launch auth gate: ${ agent.name } ${ gate_state }` )
 
     // Inherit fresh verified cache entries so session rotations keep them warm
-    let auth_cache_contexts = await time_phase( `authentication cache`, () => launch_auth_cache_contexts( agent, creds_mounts, {
-        workspace,
-        mode,
-        agent_args: passthrough,
+    launch.auth_cache_contexts = await time_phase( `authentication cache`, () => cache_contexts( agent, mounts, {
+        workspace: launch.workspace,
+        mode: launch.mode,
+        agent_args: launch.passthrough,
     } ) )
-    let auth_cache_context = auth_cache_contexts[ agent.name ] || null
+
+}
+
+/**
+ * Phase 3: config, prompt, agent args, and the stopped (or gated) container.
+ * @param {Object} launch - Context; gains config, prompt, log paths and `prepared_launch`
+ */
+const prepare_container = async launch => {
+
+    const { agent, cmd, flags, mode, workspace, config_path, fork_launch, transaction, base_session_data } = launch
+    transaction.context = `launch failure`
 
     // Load the workspace config (or the --config file). Configs that omit
     // initial_prompt receive the generated mode-aware launch prompt.
     const { config, rules } = load_config( workspace, {
         default_initial_prompt: build_system_prompt( mode ),
         config_path,
-        source_dir: mode.clone ? original_workspace : null,
+        source_dir: mode.clone ? launch.original_workspace : null,
     } )
 
     base_session_data.launch_spec.config_hash = workspace_config_hash( workspace, config_path )
     // The yaml's rules as list/watch FLAGS; --loop's rule is already the `loop` modifier
-    update_session( babysit_id, { launch_spec: base_session_data.launch_spec, config_flags: config_flags( rules, config_path ) } )
+    update_session( launch.babysit_id, { launch_spec: base_session_data.launch_spec, config_flags: config_flags( rules, config_path ) } )
 
     // Initialize the loop deadline file before docker mounts it.
     // "idle" tells the statusline there's no active countdown yet.
@@ -1330,32 +1389,24 @@ async function start_session( cmd ) {
         ? ensure_clone_safety_prompt( resolve_initial_prompt( config ), mode )
         : ``
     // A fork adds its notes; after a native fork they replace the launch prompt
-    const initial_prompt = fork_launch ? fork_launch.prompt( launch_prompt ) : launch_prompt
-
-    // Get agent-specific extra env
-    const extra_env = agent.extra_env ? agent.extra_env( mode ) : {}
+    launch.initial_prompt = fork_launch ? fork_launch.prompt( launch_prompt ) : launch_prompt
 
     // Handle resume by injecting the resume flag
-    const agent_args = [ ...passthrough ]
+    const agent_args = [ ...launch.passthrough ]
     if( cmd.verb === `resume` ) {
         const resume_target = resolve_agent_resume_target( cmd, agent )
 
         if( resume_target.agent_mismatch ) {
-            mark_clone_launch_failed()
-            release_clone_lock?.()
             log.error( `Session ${ cmd.session_id } belongs to ${ resume_target.agent_mismatch }, not ${ agent.name }` )
             throw new Error( `Session launch aborted; see diagnostic above` )
         }
 
-        if( resume_target.resume_latest && agent.flags.resume_latest ) {
-            const resume_flag = agent.flags.resume_latest()
-            if( Array.isArray( resume_flag ) ) agent_args.unshift( ...resume_flag )
-            else agent_args.unshift( resume_flag )
-        } else if( resume_target.session_id && agent.flags.resume ) {
-            const resume_flag = agent.flags.resume( resume_target.session_id )
-            if( Array.isArray( resume_flag ) ) agent_args.unshift( ...resume_flag )
-            else agent_args.unshift( resume_flag )
-        }
+        const resume_flag = resume_target.resume_latest && agent.flags.resume_latest
+            ? agent.flags.resume_latest()
+            : resume_target.session_id && agent.flags.resume
+                ? agent.flags.resume( resume_target.session_id )
+                : []
+        agent_args.unshift( ...[ resume_flag ].flat() )
     }
 
     // A native fork opens the parent's conversation as a new branch of it
@@ -1364,21 +1415,18 @@ async function start_session( cmd ) {
     // Start tmux output logging if --log was passed. The header goes in BEFORE
     // the pane command runs, so each session block opens with a clean
     // "Babysit session start: ..." line.
-    let log_path = null
+    launch.log_path = null
     if( typeof flags.log === `string` ) {
-
         const candidate = resolve_log_path( flags.log, { cwd: workspace } )
-        if( append_session_header( candidate ) ) log_path = candidate
-
+        if( append_session_header( candidate ) ) launch.log_path = candidate
     }
 
-    // Create tmux session (detached — we'll attach the foreground in a moment)
     const agent_exit_sentinel = randomUUID()
     const completion_capture = {
         launch_id: agent_exit_sentinel,
         file: `/tmp/.babysit-completion-${ agent_exit_sentinel }/message.json`,
     }
-    const diagnostic_log_path = log_path || startup_diagnostic_log_path( session_name )
+    launch.diagnostic_log_path = launch.log_path || startup_diagnostic_log_path( launch.session_name )
 
     // GitHub's isolated credential profile is uploaded through Docker's API to
     // a stopped container. The host file is removed only after `docker cp`
@@ -1387,253 +1435,248 @@ async function start_session( cmd ) {
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
     // Fork handoff files ride the same pre-start upload as credentials
-    const all_creds_mounts = [ ...github_cli_mounts, ...creds_mounts, ...fork_launch?.mounts || [] ]
+    const all_creds_mounts = [ ...github_cli_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
 
-    let pipe_started = false
+    launch.startup_status?.set( `preparing container` )
+    const prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
+        agent, workspace, original_workspace: launch.original_mount, mode,
+        agent_args,
+        creds_mounts: all_creds_mounts,
+        config,
+        extra_env: agent.extra_env ? agent.extra_env( mode ) : {},
+        modifiers: launch.modifiers,
+        ports: flags.ports || [],
+        docker_socket_path: launch.docker_socket_path,
+        container_name: launch.container_name,
+        exit_sentinel: agent_exit_sentinel,
+        completion_capture,
+        deferred_upload: true,
+    } ) )
+    transaction.prepared_launch = prepared_launch
+    launch.prepared_launch = prepared_launch
 
-    let prepared_launch = null
+    // Connect before the tmux pane can start Docker. A very fast agent may
+    // refresh and exit before await_started() observes a running state; the
+    // failure cleanup still needs a transport for its final credential pull.
+    // With a deferred upload the agent is gated, so sync connects after the
+    // files land (gotcha 57): a host re-login must not race the bootstrap archive.
+    const { sync } = launch.credentials
+    if( sync && prepared_launch.container_id && !prepared_launch.deferred ) sync.connect( prepared_launch.container_id )
 
-    try {
-        startup_status.set( `preparing container` )
-        prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
-            agent, workspace, original_workspace: original_mount, mode,
-            agent_args,
-            creds_mounts: all_creds_mounts,
-            config,
-            extra_env,
-            modifiers,
-            ports: flags.ports || [],
-            docker_socket_path,
-            container_name,
-            exit_sentinel: agent_exit_sentinel,
-            completion_capture,
-            deferred_upload: true,
-        } ) )
+    // Persist the container and capture identity before it can start work.
+    Object.assign( base_session_data, {
+        completion_capture,
+        control_id: completion_capture.launch_id,
+        agent_exit_sentinel,
+        container_id: prepared_launch.container_id,
+        image_id: await container_image( prepared_launch.container_id ),
+    } )
+    record_launch_progress( launch.babysit_id, base_session_data )
 
-        // Connect before the tmux pane can start Docker. A very fast agent may
-        // refresh and exit before await_started() observes a running state; the
-        // failure cleanup still needs a transport for its final credential pull.
-        // With a deferred upload the agent is gated, so sync connects after the
-        // files land: a host re-login must not race the bootstrap archive.
-        if( creds_sync && prepared_launch.container_id && !prepared_launch.deferred ) {
-            creds_sync.connect( prepared_launch.container_id )
-        }
+}
 
-        // Persist the container and capture identity before it can start work.
-        base_session_data.completion_capture = completion_capture
-        base_session_data.control_id = completion_capture.launch_id
-        base_session_data.agent_exit_sentinel = agent_exit_sentinel
-        base_session_data.container_id = prepared_launch.container_id
-        base_session_data.image_id = await container_image( prepared_launch.container_id )
-        record_launch_progress( babysit_id, base_session_data )
+/**
+ * Phase 4: tmux pane, container start, deferred credential upload, gate
+ * release, and the initial prompt.
+ * @param {Object} launch - Context; gains `pipe_started`
+ */
+const start_tmux_and_prompt = async launch => {
 
-        await watchtower_check
+    const { agent, session_name, prepared_launch, log_path, diagnostic_log_path, transaction } = launch
+    const { sync } = launch.credentials
 
-        startup_status.set( `creating tmux session` )
-        const { pipe_started: started_pipe } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
-            log_path,
-            startup_log_path: log_path ? null : diagnostic_log_path,
-            status_label: format_session_status_label( {
-                name: session_display_name,
-                pwd: original_workspace,
-                modifiers,
-            } ),
-        } ) )
-        pipe_started = started_pipe
+    await launch.watchtower_check
 
-        startup_status.set( `waiting for the container to start` )
-        if( !await time_phase( `main container start`, () => prepared_launch.await_started() ) ) {
-            throw new Error( `Docker container did not reach a running state after launch` )
-        }
+    launch.startup_status?.set( `creating tmux session` )
+    const { pipe_started } = await time_phase( `tmux session creation`, () => create_session( session_name, prepared_launch.command, {
+        log_path,
+        startup_log_path: log_path ? null : diagnostic_log_path,
+        status_label: format_session_status_label( {
+            name: launch.session_display_name,
+            pwd: launch.original_workspace,
+            modifiers: launch.modifiers,
+        } ),
+    } ) )
+    launch.pipe_started = pipe_started
 
-        if( prepared_launch.deferred ) {
-            startup_status.set( `uploading credentials` )
-            await time_phase( `deferred credential upload`, () => prepared_launch.upload() )
-            // Sync must be live before the gate opens: if the release exec
-            // loses its acknowledgement the agent may already be rotating
-            // tokens, and failure cleanup pulls through this transport.
-            if( creds_sync ) creds_sync.connect( prepared_launch.container_id )
-            await time_phase( `bootstrap release`, () => prepared_launch.release() )
-        }
-
-        if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
-        else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
-
-        startup_status.stop()
-        let prompt_ready = false
-        if( initial_prompt ) {
-            const readiness_timeout_ms = resolve_initial_prompt_ready_timeout( agent )
-            log.info( `Waiting up to ${ readiness_timeout_ms / 1_000 }s for ${ agent.name } to accept the initial prompt` )
-            prompt_ready = await time_phase(
-                `tui readiness`,
-                () => wait_for_initial_prompt_ready( session_name, agent, {
-                    timeout_ms: readiness_timeout_ms,
-                } )
-            )
-            if( prompt_ready ) {
-                log.info( `Sending initial prompt` )
-                await send_text( session_name, initial_prompt )
-            } else {
-                log.warn( `Skipped initial prompt because ${ agent.name } did not reach its ready screen.` )
-            }
-        }
-
-        // Give very fast Docker/container failures a chance to close the tmux
-        // session before we save resumable metadata. Without this, tmux attach
-        // can print only "no sessions" while the Docker error disappears. A TUI
-        // observed on screen already proves the container survived its boot.
-        if( !prompt_ready ) await wait( STARTUP_EXIT_GRACE_MS )
-    } catch ( e ) {
-        startup_status.stop()
-        await cleanup_failed_launch_credentials( {
-            creds_sync,
-            prepared_launch,
-            recovery_id: foreground_recovery_id,
-            context: `launch failure`,
-        } )
-        mark_clone_launch_failed()
-        release_clone_lock?.()
-        throw e
+    launch.startup_status?.set( `waiting for the container to start` )
+    if( !await time_phase( `main container start`, () => prepared_launch.await_started() ) ) {
+        throw new Error( `Docker container did not reach a running state after launch` )
     }
+
+    if( prepared_launch.deferred ) {
+        launch.startup_status?.set( `uploading credentials` )
+        await time_phase( `deferred credential upload`, () => prepared_launch.upload() )
+        // Gotcha 57: sync must be live before the gate opens. If the release
+        // exec loses its acknowledgement the agent may already be rotating
+        // tokens, and failure cleanup pulls through this transport.
+        if( sync ) sync.connect( prepared_launch.container_id )
+        await time_phase( `bootstrap release`, () => prepared_launch.release() )
+    }
+
+    if( pipe_started && log_path ) log.info( `Logging tmux output to ${ log_path }` )
+    else if( pipe_started ) log.debug( `Capturing startup diagnostics to ${ diagnostic_log_path }` )
+
+    launch.startup_status?.stop()
+    let prompt_ready = false
+    if( launch.initial_prompt ) {
+        const readiness_timeout_ms = resolve_initial_prompt_ready_timeout( agent )
+        log.info( `Waiting up to ${ readiness_timeout_ms / 1_000 }s for ${ agent.name } to accept the initial prompt` )
+        prompt_ready = await time_phase( `tui readiness`, () => wait_for_initial_prompt_ready( session_name, agent, {
+            timeout_ms: readiness_timeout_ms,
+        } ) )
+        if( prompt_ready ) {
+            log.info( `Sending initial prompt` )
+            await send_text( session_name, launch.initial_prompt )
+        } else {
+            log.warn( `Skipped initial prompt because ${ agent.name } did not reach its ready screen.` )
+        }
+    }
+
+    // Give very fast Docker/container failures a chance to close the tmux
+    // session before we save resumable metadata. Without this, tmux attach
+    // can print only "no sessions" while the Docker error disappears. A TUI
+    // observed on screen already proves the container survived its boot.
+    if( !prompt_ready ) await wait( STARTUP_EXIT_GRACE_MS )
 
     if( !await has_session( session_name ) ) {
         report_startup_failure( agent, diagnostic_log_path )
-        await cleanup_failed_launch_credentials( {
-            creds_sync,
-            prepared_launch,
-            recovery_id: foreground_recovery_id,
-            context: `startup failure`,
-        } )
-        if( !log_path ) remove_startup_diagnostic_log( diagnostic_log_path )
-        mark_clone_launch_failed()
-        release_clone_lock?.()
+        transaction.context = `startup failure`
+        if( !log_path ) transaction.after_failure.push( () => remove_startup_diagnostic_log( diagnostic_log_path ) )
         throw new Error( `Session launch aborted; see diagnostic above` )
     }
 
-    let session_data
+}
 
-    try {
-        await stop_startup_diagnostics( session_name, {
-            uses_user_log: Boolean( log_path ),
-            pipe_started,
-            diagnostic_log_path,
-        } )
+/**
+ * Phase 5: final foreground flush, durable record, monitor spawn. Gotcha 84:
+ * the foreground controller ends BEFORE the monitor starts, so two Docker-copy
+ * queues never race on the same sync copies; the durable sync states carry
+ * the resulting hashes across.
+ * @param {Object} launch - Context
+ * @returns {Promise<Object>} Saved session record
+ */
+const handoff_to_monitor = async launch => {
 
-        // End the foreground controller before the monitor starts. Awaiting its
-        // final pull gives the two processes an exclusive handoff instead of
-        // letting independent Docker-copy queues race on the same sync files.
-        // The durable sync states carry the resulting hashes to the monitor.
-        if( creds_sync ) {
-            await creds_sync.stop()
+    const { agent, cmd, session_name, prepared_launch, base_session_data, babysit_id, transaction } = launch
+    const { sync, states, tmpfiles } = launch.credentials
+    transaction.context = `monitor handoff failure`
 
-            auth_cache_contexts = Object.fromEntries(
-                Object.entries( auth_cache_contexts ).flatMap( ( [ name, context ] ) => {
-                    if( creds_sync.source_changed?.( name ) ) {
-                        clear_host_auth_cache( name, {
-                            expected_credential_fingerprint: context.credential_fingerprint,
-                            image_identity: context.image_identity,
-                        } )
-                        return []
-                    }
+    await stop_startup_diagnostics( session_name, {
+        uses_user_log: Boolean( launch.log_path ),
+        pipe_started: launch.pipe_started,
+        diagnostic_log_path: launch.diagnostic_log_path,
+    } )
 
-                    const refreshed_identity = refresh_file_credential_parts(
-                        context.credential_parts,
-                        creds_tmpfiles[ name ]
-                    )
-                    const refreshed = refreshed_identity && refresh_host_auth_cache( name, {
-                        expected_credential_fingerprint: context.credential_fingerprint,
-                        next_credential_fingerprint: refreshed_identity.fingerprint,
-                        image_identity: context.image_identity,
-                    } )
-
-                    return [ [ name, refreshed ? {
-                        ...context,
-                        credential_fingerprint: refreshed_identity.fingerprint,
-                        credential_parts: refreshed_identity.parts,
-                    } : context ] ]
-                } )
-            )
-            auth_cache_context = auth_cache_contexts[ agent.name ] || null
-        }
-
-        // Save durable ownership metadata before spawning the monitor. The
-        // prepared launch keeps its signal/error cleanup until the detached
-        // monitor process has acknowledged that it spawned successfully.
-        const identity_reader = create_identity_reader( base_session_data )
-        try {
-            const identity = await identity_reader.refresh()
-            if( identity ) {
-                if( cmd.recovering && identity.session_id !== base_session_data.recovery_native_id ) throw new Error( `Agent resumed a different conversation` )
-                base_session_data.agent_session_id = identity.session_id
-                base_session_data.agent_session_id_source = `structured`
-            }
-        } finally {
-            identity_reader.close()
-        }
-        const pane = await get_session_pane( session_name )
-        session_data = {
-            ...base_session_data,
-            pane_id: pane.pane_id,
-            // Durable sync states: the monitor resumes their hashes
-            creds_states,
-            auth_cache_context,
-            auth_cache_contexts,
-            agent_exit_sentinel,
-            completion_capture,
-            container_id: prepared_launch.container_id,
-            control_id: completion_capture.launch_id,
-            status: `active`,
-        }
-        session_data = record_launch_progress( babysit_id, session_data )
-        clear_credential_recovery( foreground_recovery_id )
-
-        const monitor_pid = await time_phase(
-            `monitor handoff`,
-            () => spawn_monitor_daemon( babysit_id, monitor_token )
-        )
-        update_session( babysit_id, { monitor_pid } )
-        session_data.monitor_pid = monitor_pid
-        prepared_launch.handoff()
-        release_clone_lock?.()
-    } catch ( error ) {
-        await cleanup_failed_launch_credentials( {
-            creds_sync,
-            prepared_launch,
-            recovery_id: foreground_recovery_id,
-            context: `monitor handoff failure`,
-        } )
-        mark_clone_launch_failed()
-        release_clone_lock?.()
-        throw error
+    const auth_cache_contexts = launch.auth_cache_contexts || {}
+    if( sync ) {
+        await sync.stop()
+        // Same re-stamp the monitor runs after each rotation it pulls back
+        refresh_session_auth_cache( { auth_cache_contexts }, agent, sync, tmpfiles )
     }
 
-    log.info( `Session started: ${ agent.name } (${ babysit_id })` )
+    // Save durable ownership metadata before spawning the monitor. The
+    // prepared launch keeps its signal/error cleanup until the detached
+    // monitor process has acknowledged that it spawned successfully.
+    const identity_reader = create_identity_reader( base_session_data )
+    try {
+        const identity = await identity_reader.refresh()
+        if( identity ) {
+            if( cmd.recovering && identity.session_id !== base_session_data.recovery_native_id ) throw new Error( `Agent resumed a different conversation` )
+            base_session_data.agent_session_id = identity.session_id
+            base_session_data.agent_session_id_source = `structured`
+        }
+    } finally {
+        identity_reader.close()
+    }
+    const pane = await get_session_pane( session_name )
+    const session_data = record_launch_progress( babysit_id, {
+        ...base_session_data,
+        pane_id: pane.pane_id,
+        // Durable sync states: the monitor resumes their hashes
+        creds_states: states,
+        auth_cache_context: auth_cache_contexts[ agent.name ] || null,
+        auth_cache_contexts,
+        container_id: prepared_launch.container_id,
+        status: `active`,
+    } )
+    // The session record owns the sync paths now
+    clear_credential_recovery( transaction.recovery_id )
 
-    cmd.on_handoff?.()
-    if( cmd.detached ) return session_data
+    const monitor_pid = await time_phase( `monitor handoff`, () => spawn_monitor_daemon( babysit_id, launch.monitor_token ) )
+    update_session( babysit_id, { monitor_pid } )
+    session_data.monitor_pid = monitor_pid
+    prepared_launch.handoff()
+    launch.transaction.release_clone_lock?.()
+    return session_data
 
-    // Hand the user's terminal over to tmux. Blocks until they detach
-    // (Ctrl+B d) or the agent exits and the session terminates.
-    // Stays in-process even under the shell-init wrapper (empty env): the
+}
+
+/**
+ * Hand the user's terminal to tmux, then say how to come back.
+ * @param {Object} launch - Context
+ * @param {Object} session_data - Saved session record
+ */
+const attach_foreground = async ( launch, session_data ) => {
+
+    const { session_name, babysit_id } = launch
+
+    // Blocks until they detach (Ctrl+B d) or the agent exits. Stays
+    // in-process even under the shell-init wrapper (empty env): the
     // re-attach/resume hint below needs babysit alive after the detach.
     log.info( `Attaching to tmux session: ${ session_name }` )
     time_phase_sync( `foreground tmux attach`, () => attach_session( session_name, { env: {} } ), { slow_ms: Infinity } )
 
-    // Tell the user how to come back to or resume this session. Both branches
-    // print the command unquoted on its own line so a triple-click selects it
-    // cleanly for copy/paste. The bare `babysit resume <id>` form looks the
-    // agent up from session metadata, so we don't need to pre-pend the agent
-    // name.
+    // Print the command unquoted on its own line so a triple-click selects it.
+    // The bare `babysit resume <id>` form looks the agent up from metadata.
     if( await has_session( session_name ) ) {
         console.log( `\nDetached. Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
     } else {
-        // Prefer the agent's own session id when the daemon captured it —
-        // that's what the agent's CLI accepts for its native --resume flag,
-        // and load_session knows how to resolve either form back to the record.
+        // Prefer the agent's own session id: its native --resume accepts it,
+        // and load_session resolves either form back to the record.
         const final = load_session( babysit_id ) || session_data
-        const resume_id = final.agent_session_id || babysit_id
-        console.log( `\nTo resume this session, run:\nbabysit resume ${ resume_id }` )
+        console.log( `\nTo resume this session, run:\nbabysit resume ${ final.agent_session_id || babysit_id }` )
     }
+
+}
+
+/**
+ * Launch one session: resolve → acquire credentials → prepare container →
+ * tmux + prompt → monitor handoff, under one failure transaction from the
+ * moment the session record exists.
+ * @param {Object} cmd - Parsed command
+ * @returns {Promise<Object|undefined>} Session record when detached
+ */
+async function start_session( cmd ) {
+
+    const launch = await resolve_launch( cmd )
+    const { transaction, stored_resume_session } = launch
+
+    let session_data
+    try {
+        // A resume first finalizes the container its previous launch left
+        if( stored_resume_session && !cmd.container_reconciled ) {
+            transaction.context = `previous container recovery`
+            await recover_clone_container( stored_resume_session )
+        }
+
+        launch.startup_status = start_startup_status( `Starting ${ launch.agent.name }` )
+        transaction.startup_status = launch.startup_status
+        await acquire_credentials( launch )
+        await prepare_container( launch )
+        await start_tmux_and_prompt( launch )
+        session_data = await handoff_to_monitor( launch )
+    } catch ( error ) {
+        await transaction.fail( error )
+        throw error
+    }
+
+    log.info( `Session started: ${ launch.agent.name } (${ launch.babysit_id })` )
+
+    cmd.on_handoff?.()
+    if( cmd.detached ) return session_data
+
+    await attach_foreground( launch, session_data )
 
 }
 
