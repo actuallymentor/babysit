@@ -5,8 +5,7 @@ import { tmpdir } from 'os'
 
 import { get_agent } from '../src/agents/index.js'
 import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
-import { setup_darwin_credentials } from '../src/credentials/darwin.js'
-import { setup_linux_credentials } from '../src/credentials/linux.js'
+import { setup_agent_credentials } from '../src/credentials/setup.js'
 import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
 
 // Regression suite for the monitor-tmpfile fix.
@@ -142,7 +141,7 @@ describe( `aggregate credential sync`, () => {
 
 } )
 
-describe( `setup_darwin_credentials Keychain handoff`, () => {
+describe( `setup_agent_credentials Keychain sources`, () => {
 
     it( `uses the foreground baseline instead of overwriting a refreshed container credential`, async () => {
 
@@ -155,14 +154,15 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
             name: `claude`,
             bin: `claude`,
             credentials: {
-                darwin: { keychain_service: `Claude Code-credentials` },
+                sources: { darwin: [ { keychain: `Claude Code-credentials` } ] },
             },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }
         try {
             writeFileSync( tmpfile, container_credential )
 
-            const result = await setup_darwin_credentials( fake_agent, {
+            const result = setup_agent_credentials( fake_agent, {
+                platform: `darwin`,
                 existing_tmpfile: tmpfile,
                 sync_baseline: {
                     baseline_source_hash: initial_hash,
@@ -183,13 +183,14 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
     it( `captures a fresh Keychain item with one shell-free read`, async () => {
 
         const reads = []
-        const result = await setup_darwin_credentials( {
+        const result = setup_agent_credentials( {
             name: `claude`,
             bin: `claude`,
-            credentials: { darwin: { keychain_service: `Claude Code-credentials` } },
+            credentials: { sources: { darwin: [ { keychain: `Claude Code-credentials` } ] } },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }, {
-            read_keychain: config => reads.push( config.keychain_service ) && { state: `present`, text: `{"refresh_token":"held"}` },
+            platform: `darwin`,
+            read_keychain: source => reads.push( source.keychain ) && { state: `present`, text: `{"refresh_token":"held"}` },
         } )
 
         try {
@@ -204,7 +205,97 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
 
 } )
 
-describe( `setup_linux_credentials existing_tmpfile`, () => {
+describe( `setup_agent_credentials source order and flags`, () => {
+
+    let dir
+    beforeEach( () => {
+        dir = mkdtempSync( join( tmpdir(), `babysit-creds-order-` ) )
+    } )
+    afterEach( () => rmSync( dir, { recursive: true, force: true } ) )
+
+    const agent = ( credentials ) => ( {
+        name: `fake`,
+        container_paths: { creds: `/home/node/.fake/auth.json` },
+        credentials,
+    } )
+
+    it( `falls through a missing or locked Keychain item to the next file source`, async () => {
+
+        const file = join( dir, `auth.json` )
+        writeFileSync( file, `{"from":"file"}` )
+        const fake = agent( { sources: { darwin: [ { keychain: `svc` }, { file } ] } } )
+
+        for( const state of [ `missing`, `unknown` ] ) {
+            const result = setup_agent_credentials( fake, { platform: `darwin`, read_keychain: () => ( { state } ) } )
+            expect( readFileSync( result.mounts[0].source, `utf-8` ) ).toBe( `{"from":"file"}` )
+            expect( result.sync_baseline.credential_source ).toBeUndefined()
+            await result.sync.stop()
+            rmSync( result.cleanup_path, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `reattaches a monitor to the source kind the foreground captured`, async () => {
+
+        const file = join( dir, `auth.json` )
+        const tmpfile = join( dir, `sync.json` )
+        writeFileSync( file, `{"from":"file"}` )
+        writeFileSync( tmpfile, `{"from":"keychain"}` )
+        const fake = agent( { sources: { darwin: [ { keychain: `svc` }, { file } ] } } )
+        const reads = []
+
+        const result = setup_agent_credentials( fake, {
+            platform: `darwin`,
+            existing_tmpfile: tmpfile,
+            sync_baseline: { credential_source: `keyring` },
+            read_keychain: () => reads.push( `read` ) && { state: `present`, text: `{"from":"keychain"}` },
+        } )
+
+        expect( result.mounts ).toEqual( [] )
+        expect( result.sync_baseline.credential_source ).toBe( `keyring` )
+        // Keychain sync is one-way: a container change never reaches the host file
+        writeFileSync( tmpfile, `{"from":"container"}` )
+        await result.sync.stop()
+        expect( readFileSync( file, `utf-8` ) ).toBe( `{"from":"file"}` )
+        expect( reads.length ).toBeGreaterThan( 0 )
+
+    } )
+
+    it( `file_required: absence is logout, other read errors keep recovery state`, async () => {
+
+        const file = join( dir, `auth.json` )
+        writeFileSync( file, `{"tokens":{}}` )
+        const required = setup_agent_credentials( agent( { sources: { linux: [ { file } ] }, file_required: true } ), { platform: `linux` } )
+        const optional = setup_agent_credentials( agent( { sources: { linux: [ { file } ] } } ), { platform: `linux` } )
+
+        rmSync( file )
+        mkdirSync( file )
+        await expect( required.sync.flush() ).rejects.toThrow()
+        await optional.sync.flush()
+
+        rmSync( file, { recursive: true } )
+        await required.sync.stop()
+        expect( required.sync.source_changed() ).toBe( true )
+        await optional.sync.stop()
+        rmSync( required.cleanup_path, { recursive: true, force: true } )
+        rmSync( optional.cleanup_path, { recursive: true, force: true } )
+
+    } )
+
+    it( `stacks an env key on the file login and falls back to the fallback variable`, () => {
+
+        const fake = agent( { sources: { linux: [] }, env_key: `KEY`, fallback_env: `FALLBACK` } )
+        expect( setup_agent_credentials( fake, { platform: `linux`, env: { KEY: `k`, FALLBACK: `f` } } ).mounts )
+            .toEqual( [ { type: `env`, key: `KEY`, value: `k` } ] )
+        expect( setup_agent_credentials( fake, { platform: `linux`, env: { FALLBACK: `f` } } ).mounts )
+            .toEqual( [ { type: `env`, key: `KEY`, value: `f` } ] )
+        expect( setup_agent_credentials( agent( {} ), { platform: `linux` } ).mounts ).toEqual( [] )
+
+    } )
+
+} )
+
+describe( `setup_agent_credentials file sources`, () => {
 
     let dir
     let original_home
@@ -212,7 +303,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         name: `codex-test`,
         bin: `codex-test`,
         credentials: {
-            linux: { file: `~/.codex/auth.json` },
+            sources: { linux: [ { file: `~/.codex/auth.json` } ] },
         },
         container_paths: { creds: `/home/node/.codex/auth.json` },
     }
@@ -235,7 +326,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `creates a fresh tmpfile + mount on the foreground call`, async () => {
 
-        const { mounts, sync, cleanup_path } = await setup_linux_credentials( fake_agent )
+        const { mounts, sync, cleanup_path } = setup_agent_credentials( fake_agent, { platform: `linux` } )
 
         const volume = mounts.find( m => m.type === `synced_file` )
 
@@ -255,11 +346,11 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
     it( `re-uses the existing tmpfile when passed — no new file, no new mount`, async () => {
 
         // Foreground path
-        const fg = await setup_linux_credentials( fake_agent )
+        const fg = setup_agent_credentials( fake_agent, { platform: `linux` } )
         const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         // Monitor path: same agent, but pass the foreground's tmpfile
-        const mon = await setup_linux_credentials( fake_agent, { existing_tmpfile: fg_tmpfile } )
+        const mon = setup_agent_credentials( fake_agent, { platform: `linux`, existing_tmpfile: fg_tmpfile } )
 
         // Monitor must not add a new volume mount — the container is already
         // mounting the foreground's tmpfile.
@@ -283,7 +374,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `preserves a tmpfile rotation that happened before the monitor starts`, async () => {
 
-        const fg = await setup_linux_credentials( fake_agent )
+        const fg = setup_agent_credentials( fake_agent, { platform: `linux` } )
         const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         // Simulate codex refreshing during startup before the detached monitor
@@ -292,7 +383,8 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         // the host file is stale and the tmpfile is fresh.
         writeFileSync( fg_tmpfile, `{"refresh_token":"startup-rotated"}` )
 
-        const mon = await setup_linux_credentials( fake_agent, {
+        const mon = setup_agent_credentials( fake_agent, {
+            platform: `linux`,
             existing_tmpfile: fg_tmpfile,
             sync_baseline: fg.sync_baseline,
         } )
@@ -311,10 +403,10 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `with existing_tmpfile, host-file changes still flow to the tmpfile (direction 1)`, async () => {
 
-        const fg = await setup_linux_credentials( fake_agent )
+        const fg = setup_agent_credentials( fake_agent, { platform: `linux` } )
         const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
-        const mon = await setup_linux_credentials( fake_agent, { existing_tmpfile: fg_tmpfile } )
+        const mon = setup_agent_credentials( fake_agent, { platform: `linux`, existing_tmpfile: fg_tmpfile } )
 
         // Stop the foreground's sync so only the monitor's sync is watching —
         // otherwise both syncs race on the same tmpfile and the test gets noisy.

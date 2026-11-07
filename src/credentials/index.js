@@ -5,8 +5,7 @@ import { join } from 'path'
 import { detect_platform } from '../utils/platform.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import { log } from '../utils/log.js'
-import { setup_darwin_credentials } from './darwin.js'
-import { setup_linux_credentials } from './linux.js'
+import { setup_agent_credentials } from './setup.js'
 import { create_docker_file_transport } from '../docker/file_transport.js'
 
 const EPHEMERAL_CREDENTIAL_PREFIXES = [
@@ -200,10 +199,7 @@ export const aggregate_syncs = ( syncs, {
  */
 export const setup_credentials = async ( agent, options = {} ) => {
 
-    const platform = detect_platform()
-    const setup_platform_credentials = platform === `darwin`
-        ? setup_darwin_credentials
-        : setup_linux_credentials
+    const platform = options.platform || detect_platform()
 
     const is_monitor_reuse = Object.hasOwn( options, `existing_tmpfile` )
         || Object.hasOwn( options, `existing_tmpfiles` )
@@ -235,9 +231,11 @@ export const setup_credentials = async ( agent, options = {} ) => {
         const sync_baseline = sync_baselines[ credential_agent.name ]
             || ( is_active_agent ? options.sync_baseline : null )
 
-        const result = await setup_platform_credentials( credential_agent, {
+        const result = setup_agent_credentials( credential_agent, {
+            platform,
             existing_tmpfile,
             sync_baseline,
+            ...options.read_keychain && { read_keychain: options.read_keychain },
         } )
 
         mounts.push( ...result.mounts )

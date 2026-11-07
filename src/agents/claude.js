@@ -133,15 +133,11 @@ export const claude = {
             if( !Number.isFinite( expires_at ) ) return `unknown`
             return expires_at > now ? `usable` : `missing`
         },
-        darwin: {
-            keychain_service: `Claude Code-credentials`,
-            fallback_file: `~/.claude/.credentials.json`,
-            env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
+        sources: {
+            darwin: [ { keychain: `Claude Code-credentials` }, { file: `~/.claude/.credentials.json` } ],
+            linux: [ { file: `~/.claude/.credentials.json` } ],
         },
-        linux: {
-            file: `~/.claude/.credentials.json`,
-            env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
-        },
+        env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
     },
 
     // CLAUDE_CONFIG_DIR controls where claude reads its config / credentials /
