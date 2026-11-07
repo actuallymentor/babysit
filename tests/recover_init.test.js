@@ -47,7 +47,10 @@ describe( `boot recovery service`, () => {
             copyFileSync( `/usr/bin/true`, executable )
             writeFileSync( file, render_recovery_service( { ...settings, command: [ executable ], home: `/home/space user`, babysit_home: `/mnt/state 100% $literal`, workspaces: [ `/mnt/space work` ] } ) )
             const result = spawnSync( `/usr/bin/systemd-analyze`, [ `verify`, file ], { encoding: `utf8`, timeout: 10_000 } )
-            expect( result.stderr ).toBe( `` )
+            // The verifier also lints the host's own units (e.g. CI runners warn about
+            // their removed CPUAccounting=); only complaints about our unit count
+            const ours = result.stderr.split( `\n` ).filter( line => line.includes( file ) || line.includes( `babysit-recover` ) )
+            expect( ours ).toEqual( [] )
             expect( result.status ).toBe( 0 )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
