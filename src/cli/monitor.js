@@ -560,7 +560,7 @@ export const cmd_monitor = async ( cmd ) => {
                 restage: name => creds_sync?.flush( name ),
             } ),
             // Claude limit hit: move to another registered account with headroom
-            on_limit_screen: agent.name === `claude` && config.claude_account_auto_switch !== false
+            on_limit_screen: agent.accounts && config.claude_account_auto_switch !== false
                 ? create_account_switcher( session ) : null,
             approve_dialogs: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target,

@@ -121,6 +121,9 @@ export const claude = {
     // not change authentication state.
     credential_preflight: true,
 
+    // Named subscriptions (`babysit auth accounts`, `--account`, limit-hit switching)
+    accounts: true,
+
     // CLAUDE_CODE_OAUTH_TOKEN is the one-year `claude setup-token` login. It
     // outranks the /login file and never rotates, so sessions cannot race
     // each other for a one-use refresh token. It only makes model requests.
