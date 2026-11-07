@@ -148,14 +148,11 @@ describe( `credential coverage`, () => {
 
 } )
 
-describe( `credential preflight`, () => {
+describe( `Claude login staging`, () => {
 
-    it( `is declared only by Claude`, () => {
-        const preflight_agents = SUPPORTED_AGENTS.filter(
-            name => get_agent( name ).credential_preflight
-        )
-
-        expect( preflight_agents ).toEqual( [ `claude` ] )
+    it( `stages only the setup-token: no adapter refreshes on --version, Claude's host /login stays home`, () => {
+        expect( SUPPORTED_AGENTS.filter( name => get_agent( name ).credential_preflight ) ).toEqual( [] )
+        expect( SUPPORTED_AGENTS.filter( name => get_agent( name ).credentials?.stage_host_login === false ) ).toEqual( [ `claude` ] )
     } )
 
 } )

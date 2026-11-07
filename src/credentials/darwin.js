@@ -1,6 +1,5 @@
 import { spawnSync } from 'child_process'
 import { readFileSync, writeFileSync } from 'fs'
-import { run_sync } from '../utils/exec.js'
 import { log } from '../utils/log.js'
 import {
     build_private_tmpfile,
@@ -54,14 +53,12 @@ export const read_keychain_item = ( cred_config, { spawn_sync = spawnSync } = {}
  *   pulls reach the same credential baseline.
  * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used by
  *   the monitor so pre-monitor tmpfile refreshes are not mistaken for stale host state
- * @param {Function} [options.run_command=run_sync] - Host command runner
  * @returns {{ mounts: Array, sync: Object|null, sync_baseline: Object|null, cleanup_path: string|null }} Credential specs and sync controller
  */
 export const setup_darwin_credentials = async ( agent, {
     existing_tmpfile = null,
     sync_baseline = null,
-    preflight = true,
-    run_command = run_sync,
+    read_keychain: read_item = read_keychain_item,
 } = {} ) => {
 
     const cred_config = agent.credentials?.darwin
@@ -75,20 +72,12 @@ export const setup_darwin_credentials = async ( agent, {
     // Keychain-based credentials (e.g. Claude on macOS)
     if( cred_config.keychain_service ) {
 
-        const keychain_selector = `-s "${ cred_config.keychain_service }"${ cred_config.keychain_account ? ` -a "${ cred_config.keychain_account }"` : `` }`
-        const read_keychain = () => run_command(
-            `security find-generic-password ${ keychain_selector } -w 2>/dev/null`,
-            { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
-        )
-
-        // Preserve the foreground source when reconnecting a monitor. Legacy
-        // Claude captures lack source metadata, so retain their detection path.
+        // Keep the foreground source when reconnecting a monitor. Legacy
+        // captures lack source metadata, so retain their detection path.
         const pinned_source = existing_tmpfile && baseline?.credential_source
-        const exists = pinned_source ? null : run_command(
-            `security find-generic-password ${ keychain_selector } 2>/dev/null`,
-            { timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS }
-        )
-        const use_keychain = pinned_source ? baseline?.credential_source === `keyring` : exists !== null
+        const item = pinned_source ? null : read_item( cred_config )
+        const use_keychain = pinned_source ? baseline?.credential_source === `keyring` : item.state !== `missing`
+        const read_keychain = () => read_item( cred_config ).text || null
 
         if( use_keychain ) {
 
@@ -96,18 +85,7 @@ export const setup_darwin_credentials = async ( agent, {
 
             if( !tmpfile ) {
 
-                // Pre-flight: invoke the agent CLI so any near-expiry token gets
-                // refreshed by the agent itself before we capture. Without this,
-                // a stale token would ride the container until our 5-minute sync
-                // daemon catches up.
-                if( preflight && agent.credential_preflight ) {
-                    run_command( `${ agent.bin } --version 2>/dev/null`, {
-                        timeout_ms: CREDENTIAL_COMMAND_TIMEOUT_MS,
-                    } )
-                }
-
-                // Phase 2: capture after pre-flight rotation
-                const creds_json = read_keychain()
+                const creds_json = item?.text
 
                 if( creds_json ) {
 

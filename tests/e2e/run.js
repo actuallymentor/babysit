@@ -62,6 +62,8 @@ const e2e_env = () => {
     const env = {
         ...host_env,
         HOME: home,
+        // Claude runs on a setup-token only; a fake one satisfies the launch gate
+        CLAUDE_CODE_OAUTH_TOKEN: `sk-ant-oat01-e2e-fake-token`,
         BABYSIT_HOME: babysit_home,
         TMPDIR: workspace_tmp,
         CODEX_HOME: join( home, `.codex` ),

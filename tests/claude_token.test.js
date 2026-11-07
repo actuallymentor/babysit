@@ -2,7 +2,7 @@ import { describe, it, expect } from 'bun:test'
 import { PassThrough } from 'node:stream'
 import { spawnSync } from 'node:child_process'
 
-import { read_pasted_token, save_claude_token, setup_claude_token, token_probe_env } from '../src/cli/claude_token.js'
+import { claude_api_route, read_pasted_token, read_token_stdin, save_claude_token, setup_claude_token, token_probe_env } from '../src/cli/claude_token.js'
 
 const TOKEN = `sk-ant-oat01-Abc_def-123`
 
@@ -71,6 +71,42 @@ describe( `claude setup-token in auth init`, () => {
         expect( rejected ).toMatchObject( { result: `failed`, calls: { saved: null } } )
         expect( rejected.rendered ).toContain( `Could not prove the token (401)` )
         expect( ( await run( {}, { verify: async () => null } ) ).calls.saved ).toBe( null )
+    } )
+
+    it( `imports a piped token without a TTY, proving it only when a host claude exists`, async () => {
+        const proven = await run( { token_stdin: true }, { read_stdin: async () => TOKEN } )
+        expect( proven ).toMatchObject( { result: `saved`, calls: { setup: 0, saved: TOKEN } } )
+        expect( proven.rendered ).toContain( `Checking the token` )
+
+        const unproven = await run( { token_stdin: true }, { read_stdin: async () => TOKEN, resolve_bin: () => null, verify: async () => {
+            throw new Error( `must not probe` )
+        } } )
+        expect( unproven ).toMatchObject( { result: `saved`, calls: { saved: TOKEN } } )
+        expect( unproven.rendered ).toContain( `format check only` )
+
+        expect( ( await run( { token_stdin: true }, { read_stdin: async () => `nope` } ) ).result ).toBe( `failed` )
+
+        const piped = new PassThrough()
+        const reading = read_token_stdin( piped )
+        piped.end( `  ${ TOKEN.slice( 0, 9 ) }\n${ TOKEN.slice( 9 ) }\n` )
+        expect( await reading ).toBe( TOKEN )
+    } )
+
+    it( `without a host claude, an explicit request takes a token pasted from elsewhere`, async () => {
+        const { result, calls, rendered } = await run( { claude_token: true }, { resolve_bin: () => null } )
+        expect( result ).toBe( `saved` )
+        expect( calls ).toEqual( { setup: 0, saved: TOKEN } )
+        expect( rendered ).toContain( `any machine with Claude Code` )
+    } )
+
+    it( `detects routes that outrank a setup-token in the env or Claude settings`, () => {
+        const read = () => ( { env: { CLAUDE_CODE_USE_VERTEX: `1` } } )
+        expect( claude_api_route( { env: { ANTHROPIC_API_KEY: `k` }, read } ) ).toBe( `ANTHROPIC_API_KEY` )
+        expect( claude_api_route( { env: { HOME: `/h` }, read } ) ).toBe( `CLAUDE_CODE_USE_VERTEX` )
+        expect( claude_api_route( { env: { HOME: `/h` }, read: () => ( { apiKeyHelper: `/bin/key` } ) } ) ).toBe( `apiKeyHelper` )
+        expect( claude_api_route( { env: { HOME: `/h`, CLAUDE_CONFIG_DIR: `/c` }, read: () => {
+            throw new Error( `ENOENT` )
+        } } ) ).toBe( null )
     } )
 
     it( `proves the pasted token alone, never a route that outranks it`, () => {

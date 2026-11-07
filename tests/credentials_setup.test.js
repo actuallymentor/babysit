@@ -154,14 +154,11 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
         const fake_agent = {
             name: `claude`,
             bin: `claude`,
-            credential_preflight: true,
             credentials: {
                 darwin: { keychain_service: `Claude Code-credentials` },
             },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }
-        const commands = []
-
         try {
             writeFileSync( tmpfile, container_credential )
 
@@ -171,79 +168,33 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
                     baseline_source_hash: initial_hash,
                     baseline_tmpfile_hash: initial_hash,
                 },
-                run_command: command => {
-                    commands.push( command )
-                    return command.includes( ` -w ` )
-                        ? keychain_credential
-                        : `credential exists`
-                },
+                read_keychain: () => ( { state: `present`, text: keychain_credential } ),
             } )
 
             await result.sync.stop()
 
             expect( readFileSync( tmpfile, `utf-8` ) ).toBe( container_credential )
-            expect( commands.some( command => command.includes( `--version` ) ) ).toBe( false )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
 
     } )
 
-    it( `preflights fresh Claude Keychain credentials before capture`, async () => {
+    it( `captures a fresh Keychain item with one shell-free read`, async () => {
 
-        const keychain_credential = `{"refresh_token":"keychain-original"}`
-        const commands = []
-        const fake_agent = {
-            name: `claude`,
-            bin: `claude`,
-            credential_preflight: true,
-            credentials: {
-                darwin: { keychain_service: `Claude Code-credentials` },
-            },
-            container_paths: { creds: `/home/node/.claude/.credentials.json` },
-        }
-
-        const result = await setup_darwin_credentials( fake_agent, {
-            run_command: command => {
-                commands.push( command )
-                return command.includes( ` -w ` )
-                    ? keychain_credential
-                    : `credential exists`
-            },
-        } )
-
-        try {
-            expect( commands.slice( 0, 3 ) ).toEqual( [
-                `security find-generic-password -s "Claude Code-credentials" 2>/dev/null`,
-                `claude --version 2>/dev/null`,
-                `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null`,
-            ] )
-        } finally {
-            await result.sync.stop()
-            rmSync( result.cleanup_path, { recursive: true, force: true } )
-        }
-
-    } )
-
-    it( `skips the pre-flight when asked, so staging never refreshes a held token`, async () => {
-
-        const commands = []
+        const reads = []
         const result = await setup_darwin_credentials( {
             name: `claude`,
             bin: `claude`,
-            credential_preflight: true,
             credentials: { darwin: { keychain_service: `Claude Code-credentials` } },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }, {
-            preflight: false,
-            run_command: command => {
-                commands.push( command )
-                return command.includes( ` -w ` ) ? `{"refresh_token":"held"}` : `credential exists`
-            },
+            read_keychain: config => reads.push( config.keychain_service ) && { state: `present`, text: `{"refresh_token":"held"}` },
         } )
 
         try {
-            expect( commands.some( command => command.includes( `--version` ) ) ).toBe( false )
+            expect( reads ).toEqual( [ `Claude Code-credentials` ] )
+            expect( readFileSync( result.mounts[0].source, `utf-8` ) ).toBe( `{"refresh_token":"held"}` )
         } finally {
             await result.sync.stop()
             rmSync( result.cleanup_path, { recursive: true, force: true } )
@@ -298,51 +249,6 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         await sync.stop()
         rmSync( cleanup_path, { recursive: true, force: true } )
         expect( existsSync( cleanup_path ) ).toBe( false )
-
-    } )
-
-    it( `runs a declared preflight once and skips it for monitor reuse`, async () => {
-
-        const commands = []
-        const preflight_agent = {
-            ...fake_agent,
-            name: `claude-test`,
-            bin: `claude-test`,
-            credential_preflight: true,
-        }
-        const options = {
-            run_command: command => commands.push( command ),
-        }
-        const foreground = await setup_linux_credentials( preflight_agent, options )
-        const tmpfile = foreground.mounts.find( mount => mount.type === `synced_file` ).source
-        const monitor = await setup_linux_credentials( preflight_agent, {
-            ...options,
-            existing_tmpfile: tmpfile,
-        } )
-
-        try {
-            expect( commands ).toEqual( [ `claude-test --version 2>/dev/null` ] )
-        } finally {
-            await monitor.sync.stop()
-            await foreground.sync.stop()
-            rmSync( foreground.cleanup_path, { recursive: true, force: true } )
-        }
-
-    } )
-
-    it( `skips fresh-capture preflight when the adapter omits the capability`, async () => {
-
-        const commands = []
-        const result = await setup_linux_credentials( fake_agent, {
-            run_command: command => commands.push( command ),
-        } )
-
-        try {
-            expect( commands ).toEqual( [] )
-        } finally {
-            await result.sync.stop()
-            rmSync( result.cleanup_path, { recursive: true, force: true } )
-        }
 
     } )
 
@@ -505,9 +411,9 @@ describe( `setup_credentials multi-agent capture`, () => {
             .filter( mount => mount.type === `synced_file` )
             .map( mount => mount.target )
 
-        expect( volume_targets ).toEqual( expect.arrayContaining( Object.values( container_targets ) ) )
-        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `claude`, `codex`, `opencode` ] )
-        expect( Object.keys( result.sync_baselines ).sort() ).toEqual( [ `claude`, `codex`, `opencode` ] )
+        expect( volume_targets.sort() ).toEqual( [ container_targets.opencode, container_targets.codex ].sort() )
+        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `codex`, `opencode` ] )
+        expect( Object.keys( result.sync_baselines ).sort() ).toEqual( [ `codex`, `opencode` ] )
         expect( result.creds_tmpfile ).toBeUndefined()
 
         await result.sync.stop()
@@ -516,19 +422,42 @@ describe( `setup_credentials multi-agent capture`, () => {
 
     } )
 
-    it( `passes a Claude setup-token into the container next to the /login file`, async () => {
+    it( `never stages Claude's host /login or env token; the setup-token rides the account env file`, async () => {
 
-        process.env.CLAUDE_CODE_OAUTH_TOKEN = `sk-ant-oat-test`
+        process.env.CLAUDE_CODE_OAUTH_TOKEN = `sk-ant-oat01-test`
 
         try {
             const result = await setup_credentials( get_agent( `claude` ) )
-            expect( result.mounts ).toContainEqual( { type: `env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: `sk-ant-oat-test` } )
-            expect( result.mounts.some( mount => mount.target === container_targets.claude ) ).toBe( true )
+            expect( result.mounts.some( mount => mount.target === container_targets.claude ) ).toBe( false )
+            expect( result.mounts.some( mount => mount.key === `CLAUDE_CODE_OAUTH_TOKEN` ) ).toBe( false )
+            expect( result.tmpfiles.claude ).toBeUndefined()
             await result.sync.stop()
             result.sync.cleanup()
         } finally {
             delete process.env.CLAUDE_CODE_OAUTH_TOKEN
         }
+
+    } )
+
+    it( `legacy session records keep syncing their captured Claude /login until the final flush`, async () => {
+
+        // A pre-setup-token launch staged Claude's /login and stored its tmpfile
+        const legacy = mkdtempSync( join( tmpdir(), `babysit-creds-legacy-` ) )
+        const tmpfile = join( legacy, `claude.json` )
+        writeFileSync( tmpfile, readFileSync( host_credential_path( `claude` ), `utf-8` ) )
+
+        const monitor = await setup_credentials( get_agent( `codex` ), {
+            existing_tmpfiles: { claude: tmpfile },
+            sync_baselines: {},
+        } )
+
+        expect( Object.keys( monitor.tmpfiles ) ).toEqual( [ `claude` ] )
+        writeFileSync( tmpfile, `{"agent":"claude","refresh_token":"rotated"}` )
+        await monitor.sync.stop()
+
+        expect( readFileSync( host_credential_path( `claude` ), `utf-8` ) )
+            .toBe( `{"agent":"claude","refresh_token":"rotated"}` )
+        rmSync( legacy, { recursive: true, force: true } )
 
     } )
 
@@ -544,13 +473,13 @@ describe( `setup_credentials multi-agent capture`, () => {
         expect( monitor.mounts.find( mount => mount.type === `synced_file` ) ).toBeUndefined()
         expect( monitor.tmpfiles ).toEqual( foreground.tmpfiles )
 
-        writeFileSync( foreground.tmpfiles.claude, `{"agent":"claude","refresh_token":"rotated"}` )
+        writeFileSync( foreground.tmpfiles.opencode, `{"agent":"opencode","refresh_token":"rotated"}` )
         await monitor.sync.stop()
         monitor.sync.cleanup()
         expect( Object.values( foreground.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
 
-        expect( readFileSync( host_credential_path( `claude` ), `utf-8` ) )
-            .toBe( `{"agent":"claude","refresh_token":"rotated"}` )
+        expect( readFileSync( host_credential_path( `opencode` ), `utf-8` ) )
+            .toBe( `{"agent":"opencode","refresh_token":"rotated"}` )
 
     } )
 

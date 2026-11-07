@@ -5,7 +5,6 @@ import { join } from 'node:path'
 
 import {
     account_credential_mounts,
-    account_hot_swap,
     hot_swap_env_file,
     account_headroom,
     account_usage_report,
@@ -17,6 +16,7 @@ import {
     probe_accounts,
     read_account_registry,
     remove_account,
+    resolve_claude_login,
     resolve_launch_account,
     save_account,
     validate_account_name,
@@ -150,27 +150,36 @@ describe( `headroom selection`, () => {
         const probe = async () => {
             throw new Error( `must not probe` )
         }
-        // The default mounts nothing (as before); a lone named token must reach the container
+        // A lone account, default or named, is used without a probe
         expect( await resolve_launch_account( {}, { list: () => accounts.slice( 0, 1 ), probe } ) ).toEqual( { account: accounts[ 0 ], reason: `single account` } )
         expect( await resolve_launch_account( {}, { list: () => accounts.slice( 1 ), probe } ) ).toEqual( { account: accounts[ 1 ], reason: `single account` } )
-        expect( account_credential_mounts( accounts[ 1 ] ) ).toHaveLength( 1 )
+        expect( account_credential_mounts( accounts[ 1 ] ) ).toHaveLength( 2 )
         expect( await resolve_launch_account( {}, { list: () => [], probe } ) ).toEqual( { account: null, reason: `single account` } )
     } )
 
-    it( `only a named account gets a staged credential, never the default`, () => {
+    it( `every account, the default included, is staged hot-swappable`, () => {
         expect( account_credential_mounts( null ) ).toEqual( [] )
-        expect( account_credential_mounts( { name: `default`, token: RC } ) ).toEqual( [] )
-        expect( account_credential_mounts( { name: `work`, token: WORK } ) ).toEqual( [ { type: `account_env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: WORK, account: `work` } ] )
-    } )
-
-    it( `hot swap stages every account, the default included, plus the flag`, () => {
-        expect( account_credential_mounts( { name: `default`, token: RC }, { hot_swap: true } ) ).toEqual( [
+        expect( account_credential_mounts( { name: `default`, token: RC } ) ).toEqual( [
             { type: `account_env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: RC, account: `default` },
             { type: `account_env`, key: `BABYSIT_CLAUDE_HOT_SWAP`, value: `1`, account: `default` },
         ] )
         expect( hot_swap_env_file( { name: `work`, token: WORK } ) ).toBe( `CLAUDE_CODE_OAUTH_TOKEN=${ WORK }\nBABYSIT_CLAUDE_HOT_SWAP=1\n` )
-        expect( account_hot_swap( { list: () => [ { name: `default` } ] } ) ).toBe( false )
-        expect( account_hot_swap( { list: () => [ { name: `default` }, { name: `work` } ] } ) ).toBe( true )
+    } )
+
+    it( `resolves a login for any frontend: a route needs no token, non-Claude launches read cached quota only`, async () => {
+        const list = () => accounts
+        const probe = async () => {
+            throw new Error( `must not probe` )
+        }
+        const routed = await resolve_claude_login( {}, { list, probe, route: () => `ANTHROPIC_API_KEY` } )
+        expect( routed ).toEqual( { account: null, route: `ANTHROPIC_API_KEY`, reason: `ANTHROPIC_API_KEY route`, mounts: [] } )
+
+        const cached = async listed => listed.map( ( { name } ) => ( { name, status: `error`, limits: [], headroom: null } ) )
+        const nested = await resolve_claude_login( { probe_quota: false }, { list, probe, cached, route: () => null } )
+        expect( nested.account.name ).toBe( `default` )
+        expect( nested.mounts.map( mount => mount.key ) ).toEqual( [ `CLAUDE_CODE_OAUTH_TOKEN`, `BABYSIT_CLAUDE_HOT_SWAP` ] )
+
+        expect( await resolve_claude_login( {}, { list: () => [], probe, route: () => null } ) ).toMatchObject( { account: null, route: null, mounts: [] } )
     } )
 
     it( `the staged account token reaches Claude's probe and keys its auth cache`, () => {
