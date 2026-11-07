@@ -77,10 +77,23 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
 
     const invoke = payload => execute( [ ...notify, JSON.stringify( payload ) ] )
 
+    // Turn boundaries for the launch event channel. The Python helper only
+    // chains user notify callbacks for agent-turn-complete, never these.
+    const boundary = ( type, thread_id, turn, status ) => invoke( {
+        type, 'thread-id': thread_id, 'turn-id': turn.id, ...status ? { status } : {},
+    } )
+
     const capture = async ( thread_id, turn ) => {
-        if( turn.status !== `completed` || delivered.has( `${ thread_id }/${ turn.id }` ) ) return
+        if( turn.status === `inProgress` || delivered.has( `${ thread_id }/${ turn.id }` ) ) return
         const thread = await root_thread( thread_id )
         if( !thread ) return
+
+        // Interrupted and failed turns end without a reply
+        if( turn.status !== `completed` ) {
+            await boundary( `babysit-turn-ended`, thread_id, turn, turn.status === `interrupted` ? `interrupted` : `error` )
+            delivered.add( `${ thread_id }/${ turn.id }` )
+            return
+        }
 
         let items = turn.items || []
         if( turn.itemsView !== `full` ) {
@@ -93,7 +106,11 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
             } while( cursor )
         }
         const text = final_text( items )
-        if( !text ) return
+        if( !text ) {
+            await boundary( `babysit-turn-ended`, thread_id, turn, `completed` )
+            delivered.add( `${ thread_id }/${ turn.id }` )
+            return
+        }
         await invoke( { type: `agent-turn-complete`, 'thread-id': thread_id, 'turn-id': turn.id, cwd: thread.cwd, 'last-assistant-message': text } )
         delivered.add( `${ thread_id }/${ turn.id }` )
     }
@@ -106,6 +123,10 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
             // Publish root identity before the first response; identity events
             // bypass user completion callbacks and never select a latest log.
             await execute( [ `python3`, capture_path, `codex`, `[]`, JSON.stringify( { type: `babysit-session-identity`, 'thread-id': thread_id } ) ] )
+        }
+        if( method === `turn/started` ) {
+            if( await root_thread( thread_id ) ) await boundary( `babysit-turn-started`, thread_id, params.turn )
+            return
         }
         if( method === `turn/completed` ) return capture( thread_id, params.turn )
         if( method !== `thread/status/changed` ) return
@@ -127,7 +148,7 @@ export const observe_completions = async ( endpoint, { env = process.env, args =
         rpc = await connect_rpc( endpoint, {
             timeout_ms: 3_000,
             on_notification: message => {
-                if( !accepting || ![ `thread/started`, `thread/status/changed`, `turn/completed` ].includes( message.method ) ) return
+                if( !accepting || ![ `thread/started`, `thread/status/changed`, `turn/started`, `turn/completed` ].includes( message.method ) ) return
                 if( initialized ) enqueue( message )
                 else notifications.push( message )
             },

@@ -7,7 +7,7 @@ import { wait } from 'mentie'
 
 import { log, print_error } from '../utils/log.js'
 import { CLONES_DIR, BABYSIT_DIR, ensure_dirs, TMUX_SOCKET } from '../utils/paths.js'
-import { get_agent, retired_agent_message } from '../agents/index.js'
+import { get_agent, has_accounts, retired_agent_message } from '../agents/index.js'
 import { config_flags, load_config, load_clone_config } from '../babysit/yaml.js'
 import {
     cleanup_stale_ephemeral_credential_mounts,
@@ -71,7 +71,7 @@ import { format_session_status_label } from './list.js'
 import { modifiers_from_flags } from './registry.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
 import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
-import { create_identity_reader } from '../sessions/identity.js'
+import { create_launch_channel } from '../sessions/launch_channel.js'
 import { get_session_pane } from '../tmux/session.js'
 
 const INITIAL_PROMPT_READY_TIMEOUT_MS = 60_000
@@ -1050,7 +1050,7 @@ async function resolve_launch( cmd ) {
         requested: flags.account,
         // A fork keeps its parent's subscription
         stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
-        probe_quota: agent.name === `claude`,
+        probe_quota: has_accounts( agent ),
     } ) )
     const launch_account = claude_login.account
     if( launch_account ) log[ claude_login.reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ claude_login.reason })` )
@@ -1576,16 +1576,16 @@ const handoff_to_monitor = async launch => {
     // Save durable ownership metadata before spawning the monitor. The
     // prepared launch keeps its signal/error cleanup until the detached
     // monitor process has acknowledged that it spawned successfully.
-    const identity_reader = create_identity_reader( base_session_data )
+    const launch_channel = create_launch_channel( base_session_data )
     try {
-        const identity = await identity_reader.refresh()
+        const identity = await launch_channel.refresh()
         if( identity ) {
             if( cmd.recovering && identity.session_id !== base_session_data.recovery_native_id ) throw new Error( `Agent resumed a different conversation` )
             base_session_data.agent_session_id = identity.session_id
             base_session_data.agent_session_id_source = `structured`
         }
     } finally {
-        identity_reader.close()
+        launch_channel.close()
     }
     const pane = await get_session_pane( session_name )
     const session_data = record_launch_progress( babysit_id, {

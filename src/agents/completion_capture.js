@@ -4,6 +4,9 @@ import { build_private_tmpfile } from '../utils/tmpfile.js'
 export const COMPLETION_HELPER_PATH = `/home/node/.babysit-capture/capture.py`
 export const COMPLETION_PLUGIN_PATH = `/home/node/.config/opencode/plugins/babysit-completion.js`
 
+// Claude hooks feeding message.json, identity.json and events.jsonl
+export const COMPLETION_HOOK_EVENTS = [ `SessionStart`, `UserPromptSubmit`, `Stop`, `StopFailure`, `Notification` ]
+
 // Kept in an imported JS module so Bun's standalone build includes the helper.
 // Python is already installed in the image; its TOML parser preserves arbitrary
 // existing Codex notify arrays without guessing at TOML syntax. The shared
@@ -85,19 +88,112 @@ def persist_receipt(agent, name, content):
     durable_write(persisted / (os.environ['BABYSIT_COMPLETION_LAUNCH_ID'] + name + '.json'), content)
 
 
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+
+# One events.jsonl per launch, beside message.json. Each line is one write far
+# below PIPE_BUF under the capture lock, so lines stay whole and ordered; seq
+# survives rotation, letting readers resume after it.
+EVENTS_MAX_BYTES = 256 * 1024
+
+
+def lock_capture():
+    directory = pathlib.Path(os.environ['BABYSIT_COMPLETION_FILE']).parent
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    lock = (directory / 'lock').open('a')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    return lock
+
+
+def replace_file(path, content):
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'wb') as file:
+            file.write(content)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def append_event(kind, agent, **fields):
+    # Callers hold lock_capture(): a second flock in this process would block.
+    directory = pathlib.Path(os.environ['BABYSIT_COMPLETION_FILE']).parent
+    path = directory / 'events.jsonl'
+    counter = directory / 'events.seq'
+    try:
+        seq = int(counter.read_text()) + 1
+    except (OSError, ValueError):
+        seq = 1
+    # Count first: a crash leaves a gap, never a reused sequence number.
+    replace_file(counter, str(seq).encode())
+    record = dict(version=1, seq=seq, type=kind, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'], agent=agent, at=now())
+    record.update({key: value for key, value in fields.items() if value is not None})
+    line = (json.dumps(record, ensure_ascii=True, separators=(',', ':')) + '\n').encode()
+    try:
+        size = os.lstat(path).st_size
+    except FileNotFoundError:
+        size = 0
+    if size + len(line) > EVENTS_MAX_BYTES:
+        # Keep the newest half under a new inode; readers resync by seq.
+        kept = path.read_bytes()[-(EVENTS_MAX_BYTES // 2):]
+        replace_file(path, kept[kept.find(b'\n') + 1:])
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        os.write(descriptor, line)
+    finally:
+        os.close(descriptor)
+
+
 def save_exit(agent, status, interrupted):
     receipt = json.dumps(dict(version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'],
                               agent=agent, exit_status=int(status), interrupted=interrupted == '1',
-                              exited_at=datetime.datetime.now(datetime.timezone.utc).isoformat()))
+                              exited_at=now()))
     persist_receipt(agent, '.exit', receipt)
+    # Best effort: the durable receipt above stays the record of the exit.
+    if os.environ.get('BABYSIT_COMPLETION_FILE'):
+        try:
+            lock = lock_capture()
+            append_event('exit', agent, exit_status=int(status), interrupted=interrupted == '1')
+            lock.close()
+        except Exception:
+            pass
+
+
+# Native signal -> (event, completion status). Claude hook names (2.1.318:
+# Escape interrupts fire no hook at all). Codex notify types plus the managed
+# app-server observer's babysit-* types. OpenCode plugin payloads name events.
+CLAUDE_EVENTS = {
+    'SessionStart': ('session_id', None), 'UserPromptSubmit': ('turn_started', None),
+    'Stop': ('turn_completed', 'completed'), 'StopFailure': ('turn_completed', 'error'),
+    'Notification': ('permission_prompt', None),
+}
+CODEX_EVENTS = {
+    'babysit-session-identity': ('session_id', None), 'babysit-turn-started': ('turn_started', None),
+    'agent-turn-complete': ('turn_completed', 'completed'), 'babysit-turn-ended': ('turn_completed', None),
+}
+STATUSES = ('completed', 'interrupted', 'error')
+
+
+def classify(agent, payload):
+    if agent == 'claude':
+        # Idle reminders and auth notices are not permission prompts
+        if payload.get('hook_event_name') == 'Notification' and payload.get('notification_type') != 'permission_prompt':
+            return None, None
+        return CLAUDE_EVENTS.get(payload.get('hook_event_name'), (None, None))
+    if agent == 'codex':
+        return CODEX_EVENTS.get(payload.get('type'), (None, None))
+    event = payload.get('event')
+    if event in ('session_id', 'turn_started', 'turn_completed'):
+        return event, None
+    # Unnamed payloads: a reply completes a turn, anything else binds identity.
+    return ('turn_completed', 'completed') if payload.get('text') else ('session_id', None)
 
 
 def save(agent, payload):
-    if agent == 'codex' and payload.get('type') not in ('agent-turn-complete', 'babysit-session-identity'):
-        return
-    if agent == 'claude' and payload.get('hook_event_name') not in ('SessionStart', 'Stop'):
-        return
-    if not root_hook(agent):
+    kind, status = classify(agent, payload)
+    if not kind or not root_hook(agent):
         return
     session = payload.get('thread-id') if agent == 'codex' else payload.get('session_id')
     if not isinstance(session, str) or not session or len(session) > 256:
@@ -107,40 +203,55 @@ def save(agent, payload):
     if agent == 'codex' and not codex_root_session(session):
         return
     path = pathlib.Path(os.environ['BABYSIT_COMPLETION_FILE'])
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    lock = (path.parent / 'lock').open('a')
-    fcntl.flock(lock, fcntl.LOCK_EX)
+    lock = lock_capture()  # noqa: F841 - held until exit
     binding = path.parent / 'session'
-    if binding.exists() and binding.read_text() != session:
+    bound = binding.read_text() if binding.exists() else None
+    if bound is not None and bound != session:
         if payload.get('hook_event_name') != 'SessionStart' and agent not in ('codex', 'opencode'):
             return
-    identity = json.dumps(dict(
-        version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'], agent=agent,
-        session_id=session, captured_at=datetime.datetime.now(datetime.timezone.utc).isoformat()))
-    persist_receipt(agent, '', identity)
-    durable_write(binding, session)
-    durable_write(path.parent / 'identity.json', identity)
-    if agent == 'codex':
-        if payload.get('type') != 'agent-turn-complete':
-            return
-        text = payload.get('last-assistant-message')
-    elif agent == 'claude':
-        if payload.get('hook_event_name') != 'Stop':
-            return
-        text = payload.get('last_assistant_message')
-    else:
-        text = payload.get('text')
+    # Claude blocks prompt submission on UserPromptSubmit: skip the fsyncs
+    # when a turn or prompt event only repeats the bound session.
+    if bound != session or kind in ('session_id', 'turn_completed'):
+        identity = json.dumps(dict(
+            version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'], agent=agent,
+            session_id=session, captured_at=now()))
+        persist_receipt(agent, '', identity)
+        durable_write(binding, session)
+        durable_write(path.parent / 'identity.json', identity)
+    if bound != session:
+        append_event('session_id', agent, session_id=session)
+    turn = str(payload.get('turn-id') or payload.get('turn_id') or payload.get('prompt_id') or '')[:256] or None
+    if kind == 'turn_started':
+        append_event('turn_started', agent, session_id=session, turn_id=turn)
+    elif kind == 'permission_prompt':
+        append_event('permission_prompt', agent, session_id=session, message=str(payload.get('message') or '')[:200])
+    if kind != 'turn_completed':
+        return
+    status = status or (payload.get('status') if payload.get('status') in STATUSES else 'completed')
+    try:
+        # Only a finished reply is a message; error text stays in the pane.
+        if status == 'completed':
+            save_message(agent, payload, path, session, turn)
+    finally:
+        # After the reply lands, so a reader that sees the event can read it.
+        append_event('turn_completed', agent, session_id=session, turn_id=turn, status=status,
+                     error=str(payload.get('error') or '')[:100] or None)
+
+
+def save_message(agent, payload, path, session, turn):
+    key = {'codex': 'last-assistant-message', 'claude': 'last_assistant_message'}.get(agent, 'text')
+    text = payload.get(key)
     if not isinstance(text, str) or not text.strip():
         return
     text = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]|\x1b[@-_]', '', text)
-    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]', '', text)
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f‪-‮⁦-⁩]', '', text)
     maximum = 256 * 1024
     if len(text.encode()) > maximum:
         notice = '\n\n[Message truncated at 256 KiB]'
         text = text.encode()[:maximum - len(notice.encode())].decode('utf-8', errors='ignore') + notice
     record = dict(version=1, launch_id=os.environ['BABYSIT_COMPLETION_LAUNCH_ID'], agent=agent,
-                  session_id=session, turn_id=str(payload.get('turn-id') or payload.get('turn_id') or uuid.uuid4())[:256],
-                  text=text, completed_at=datetime.datetime.now(datetime.timezone.utc).isoformat())
+                  session_id=session, turn_id=turn or str(uuid.uuid4()),
+                  text=text, completed_at=now())
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
     try:
         with os.fdopen(descriptor, 'w') as file:
@@ -224,6 +335,7 @@ export const COMPLETION_PLUGIN_SOURCE = String.raw`import { spawn } from 'node:c
 
 export const BabysitCompletion = async ( { client } ) => {
     let active_session = null
+    let busy = false
     const publish = payload => new Promise( resolve => {
         const child = spawn( 'python3', [ '/home/node/.babysit-capture/capture.py', 'opencode' ], { stdio: [ 'pipe', 'ignore', 'ignore' ] } )
         child.on( 'error', resolve )
@@ -252,20 +364,35 @@ export const BabysitCompletion = async ( { client } ) => {
         } catch { /* Ignore sessions that cannot be verified. */ }
     },
     event: async ( { event } ) => {
+        const session_id = event.properties?.sessionID
+        if( !session_id || session_id !== active_session ) return
+
+        // 1.19.5 repeats busy within one turn: one turn_started per busy stretch
+        if( event.type === 'session.status' && event.properties.status?.type === 'busy' ) {
+            if( busy ) return
+            busy = true
+            await publish( { event: 'turn_started', session_id } )
+            return
+        }
         if( event.type !== 'session.idle' ) return
+        busy = false
+        let completion = { event: 'turn_completed', session_id, status: 'completed' }
         try {
-            const session_id = event.properties.sessionID
-            if( session_id !== active_session ) return
             const { data: session } = await client.session.get( { path: { id: session_id } } )
             if( !session || session.parentID ) return
             const { data: messages } = await client.session.messages( { path: { id: session_id } } )
             const latest = messages?.at( -1 )
-            if( latest?.info.role !== 'assistant' || !latest.info.time?.completed || latest.info.error ) return
-            if( latest.info.finish !== 'stop' && latest.info.finish !== 'end_turn' ) return
+            if( latest?.info.role !== 'assistant' ) return publish( completion )
+            completion.turn_id = latest.info.id
+            const error = latest.info.error
+            if( error ) completion.status = error.name === 'MessageAbortedError' ? 'interrupted' : 'error'
+            if( error ) completion.error = String( error.name || 'error' )
+            if( error || !latest.info.time?.completed ) return publish( completion )
+            if( latest.info.finish !== 'stop' && latest.info.finish !== 'end_turn' ) return publish( completion )
             const text = latest.parts.filter( part => part.type === 'text' && !part.synthetic && !part.ignored ).map( part => part.text ).join( '\n\n' )
-            if( !text.trim() ) return
-            await publish( { session_id, turn_id: latest.info.id, text } )
+            if( text.trim() ) completion = { ...completion, text }
         } catch { /* An unavailable message must not interrupt the agent. */ }
+        await publish( completion )
     },
     }
 }
@@ -300,8 +427,11 @@ export const add_completion_hooks = ( settings, agent ) => {
     const command = `python3 ${ COMPLETION_HELPER_PATH } ${ agent }`
     const hook = { hooks: [ { type: `command`, command, timeout: 5 } ] }
     settings.hooks = { ...settings.hooks }
-    for( const name of [ `SessionStart`, `Stop` ] ) {
-        settings.hooks[ name ] = [ ...settings.hooks[ name ] || [], hook ]
+
+    // Identity + reply (SessionStart, Stop) and the turn event channel
+    for( const name of COMPLETION_HOOK_EVENTS ) {
+        const entry = name === `Notification` ? { matcher: `permission_prompt`, ...hook } : hook
+        settings.hooks[ name ] = [ ...settings.hooks[ name ] || [], entry ]
     }
     return settings
 

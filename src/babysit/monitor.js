@@ -7,7 +7,7 @@ import { IdleTracker, strip_ansi, evaluate_rule, idle_timeout_for } from './matc
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
 import { write_loop_deadline } from '../statusline/render.js'
-import { agent_status as detect_agent_status } from './activity.js'
+import { agent_status as detect_agent_status, turn_running } from './activity.js'
 import { WATCHDOG_NUDGE } from './watchdog.js'
 
 // Poll interval for pane capture
@@ -205,6 +205,7 @@ export const should_fire_rule = ( rule, context, now ) => {
  * @param {Function} [options.is_frozen] - Async: the current `babysit freeze` mark, falsy when not frozen
  * @param {Function} [options.on_frozen] - Called with each mark once the monitor stood down for it (freeze waits for that), null on thaw
  * @param {Function} [options.on_exit] - Callback when session ends
+ * @param {Object|null} [options.launch_channel] - Live launch events (sessions/launch_channel.js); null = pane only
  * @returns {Promise<void>}
  */
 export const start_monitor = async ( {
@@ -229,6 +230,7 @@ export const start_monitor = async ( {
     on_frozen = null,
     on_exit,
     agent_exit_sentinel = null,
+    launch_channel = null,
     has_session_fn = has_session,
     capture_pane_fn = capture_pane,
     kill_session_fn = kill_session,
@@ -266,7 +268,7 @@ export const start_monitor = async ( {
         // monitor heartbeat and pane publishing alive while that happens, but
         // give the action exclusive ownership of tmux input.
         action_task = Promise.resolve()
-            .then( () => execute_action_fn( agent_target, rule.do, config ) )
+            .then( () => execute_action_fn( agent_target, rule.do, config, { launch_channel } ) )
             .catch( error => log.error( `Action failed: ${ error.message }` ) )
             .finally( () => {
                 action_busy = false
@@ -386,7 +388,15 @@ export const start_monitor = async ( {
 
             // Track idle state
             const idle_seconds = idle_tracker.update( clean_output )
-            const agent_status = detect_agent_status( clean_output, agent?.name, idle_seconds )
+
+            // Launch events refine pane activity when this launch reports turn
+            // starts. Poll the channel at its fast cadence while the agent looks busy.
+            launch_channel?.tick( { eager: last_agent_status === `running` } )
+            const turn = launch_channel?.reports_turns() ? { ...launch_channel.turn(), reports_turns: true } : null
+            const agent_status = detect_agent_status( clean_output, agent?.name, idle_seconds, turn )
+
+            // Running only because events say so: the pane alone would call it idle
+            const events_running = agent_status === `running` && turn_running( turn, idle_seconds )
 
             // Background terminals are unfinished work, even when their pane
             // is static. Restart the idle timer once their footer disappears.
@@ -418,8 +428,9 @@ export const start_monitor = async ( {
                 if( next_turn !== last_next_turn && await set_next_turn_fn( session_name, next_turn ) ) last_next_turn = next_turn
             }
 
-            // Try to capture session ID from agent output (one-time)
-            if( !session_id_captured && agent?.session_id_pattern ) {
+            // Try to capture session ID from agent output (one-time). A structured
+            // identity from the launch channel outranks scraping, so skip it then.
+            if( !session_id_captured && agent?.session_id_pattern && !launch_channel?.identity() ) {
                 const captured_id = extract_session_id( clean_output, agent.session_id_pattern )
                 if( captured_id ) {
                     session_id_captured = true
@@ -447,7 +458,9 @@ export const start_monitor = async ( {
             // daemon finishes its bounded stream/task cleanup. Capture the native
             // session id first, then end tmux so the foreground CLI can return while
             // the detached monitor finalises credentials safely.
-            const exit_status = agent_exit_status( clean_output, agent_exit_sentinel )
+            // The exit event is a second witness for the same status: a pane
+            // that never painted the sentinel (cleared, scrolled) still ends here.
+            const exit_status = agent_exit_status( clean_output, agent_exit_sentinel ) ?? launch_channel?.exit()?.exit_status ?? null
             if( exit_status !== null ) {
                 const exit_started_at = Date.now()
 
@@ -534,7 +547,7 @@ export const start_monitor = async ( {
 
             for( const rule of rules ) {
 
-                if( rule.on.type === `idle` && agent_status === `waiting` ) continue
+                if( rule.on.type === `idle` && ( agent_status === `waiting` || events_running ) ) continue
                 if( !should_fire_rule( rule, context, now ) ) continue
 
                 begin_action( rule, now )

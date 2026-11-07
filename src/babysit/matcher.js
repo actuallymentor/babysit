@@ -69,7 +69,8 @@ export const last_n_lines = ( text, n ) => {
  */
 export class IdleTracker {
 
-    constructor() {
+    constructor( now_fn = Date.now ) {
+        this.now_fn = now_fn
         this.last_hash = null
         this.unchanged_since = null
     }
@@ -82,7 +83,7 @@ export class IdleTracker {
     update( output ) {
 
         const current_hash = quick_hash( output )
-        const now = Date.now()
+        const now = this.now_fn()
 
         if( current_hash !== this.last_hash ) {
             this.last_hash = current_hash
