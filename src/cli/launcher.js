@@ -6,21 +6,17 @@ import { command_to_launch, launch_to_command, read_launch_section, validate_lau
 import { log } from '../utils/log.js'
 import { list_sessions } from '../tmux/session.js'
 import { list_stored_sessions } from '../sessions/store.js'
-import { FORK_NEGATABLE_FLAGS, parse_args } from './parse.js'
+import { parse_args } from './parse.js'
+// Top-level switches are the only ones the menu remembers per project. Advanced
+// ones are never remembered, prefilled only from flags, --config or a fork's parent.
+import { FORK_NEGATABLE_FLAGS, MENU_ADVANCED_TOGGLES as ADVANCED_TOGGLES, MENU_LABELS as LABELS, MENU_TOGGLES as TOGGLES } from './registry.js'
 import { cached_account_usage, list_claude_accounts, probe_accounts } from './claude_accounts.js'
 import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './list.js'
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
 
-// Top-level switches: the only ones the menu remembers per project
-const TOGGLES = [ `docker`, `devices`, `yolo`, `clone`, `loop` ]
-
-// Behind Advanced: never remembered, prefilled only from flags, --config or a fork's parent
-const ADVANCED_TOGGLES = [ `adb`, `ios`, `ignore_host_agents_md` ]
 const ADVANCED_TEXT = [ `ports`, `log`, `args` ]
-
-const LABELS = { adb: `ADB`, ios: `iOS`, yolo: `YOLO`, devices: `Devices`, ignore_host_agents_md: `Ignore host AGENTS.md` }
 const TEXT_LABELS = { name: `Name`, ports: `Ports`, log: `Log`, args: `Args` }
 const TEXT_HINTS = { name: `(optional)`, ports: `(e.g. 5173, 3000:80)`, log: `(off; "on" for the default path)`, args: `(agent arguments, e.g. --model opus)` }
 

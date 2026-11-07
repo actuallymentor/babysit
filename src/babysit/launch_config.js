@@ -3,9 +3,12 @@ import { parse } from 'yaml'
 
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { parse_args } from '../cli/parse.js'
+import { FLAGS, LAUNCH_TOGGLES, launch_flags } from '../cli/registry.js'
 
-export const LAUNCH_MODES = [ `regular`, `sandbox`, `mudbox` ]
-export const LAUNCH_TOGGLES = [ `yolo`, `docker`, `adb`, `ios`, `devices`, `clone`, `loop`, `ignore_host_agents_md` ]
+// Toggles and the flags a section stands for come from the flag registry
+export { LAUNCH_TOGGLES, launch_flags }
+
+export const LAUNCH_MODES = [ `regular`, ...FLAGS.filter( flag => flag.yaml === `mode` ).map( flag => flag.name ) ]
 
 // Every key a `launch:` section accepts. Only `agent` is required; the rest fall
 // back to the defaults, and `name` to the yaml path in directory launches.
@@ -109,19 +112,6 @@ export const validate_launch = ( raw, { strict = false } = {} ) => {
 }
 
 /**
- * The Babysit flags a launch section stands for, minus agent and name.
- * @param {Object} launch - Validated launch section
- * @returns {string[]} e.g. `[ '--yolo', '--docker', '--port=3000' ]`
- */
-export const launch_flags = launch => [
-    ...[ `yolo`, `docker`, `adb`, `ios`, `devices`, `clone`, `loop` ].filter( key => launch[ key ] ).map( key => `--${ key }` ),
-    ...launch.mode === `regular` ? [] : [ `--${ launch.mode }` ],
-    ...launch.ignore_host_agents_md ? [ `--ignore-host-agents-md` ] : [],
-    ...launch.ports.map( port => `--port=${ port }` ),
-    ...launch.log === false ? [] : [ launch.log === true ? `--log` : `--log=${ launch.log }` ],
-]
-
-/**
  * Build the start command a launch section describes.
  * @param {Object} launch - Validated launch section
  * @param {Object} [options]
@@ -182,6 +172,11 @@ export const build_launch_yaml = launch => {
         return `${ is_default ? `# ` : `` }${ key }: ${ value }`
     }
 
+    // One line per toggle, with its registry note above it
+    const toggles = FLAGS.filter( flag => LAUNCH_TOGGLES.includes( flag.yaml ) )
+        .flatMap( flag => [ ...flag.yaml_note ? [ `# ${ flag.yaml_note }` ] : [], entry( flag.yaml, launch[ flag.yaml ] ) ] )
+        .join( `\n    ` )
+
     return `# How the session starts. \`babysit --config DIR/\` starts one session per yaml in
 # DIR and needs only agent; commented keys show their defaults. A bare
 # \`babysit --config FILE\` opens the launch menu with these values.
@@ -195,16 +190,7 @@ launch:
     # regular | sandbox | mudbox; clone needs regular.
     ${ entry( `mode`, launch.mode ) }
 
-    ${ entry( `yolo`, launch.yolo ) }
-    # Mounts the host Docker socket (sibling containers); agents always run in a container.
-    ${ entry( `docker`, launch.docker ) }
-    # Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.
-    ${ entry( `adb`, launch.adb ) }
-    ${ entry( `ios`, launch.ios ) }
-    ${ entry( `devices`, launch.devices ) }
-    ${ entry( `clone`, launch.clone ) }
-    ${ entry( `loop`, launch.loop ) }
-    ${ entry( `ignore_host_agents_md`, launch.ignore_host_agents_md ) }
+    ${ toggles }
 
     # PORT or HOST:CONTAINER entries.
     ${ entry( `ports`, list( launch.ports ) ) }

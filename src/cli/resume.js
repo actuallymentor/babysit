@@ -13,6 +13,7 @@ import { cmd_open } from './open.js'
 import { cmd_start, spawn_monitor_daemon } from './start.js'
 import { recovery_candidates, resolve_current_session } from '../sessions/recovery.js'
 import { is_monitor_alive } from './monitor_process.js'
+import { flags_from_modifiers } from './registry.js'
 
 export { is_monitor_alive } from './monitor_process.js'
 
@@ -162,15 +163,7 @@ export const print_resumable_sessions_table = ( sessions, { workspace = null, al
  * @returns {Object} Flag object
  */
 const rebuild_flags = ( modifiers = [], session = {} ) => ( {
-    yolo: modifiers.includes( `yolo` ),
-    sandbox: modifiers.includes( `sandbox` ),
-    mudbox: modifiers.includes( `mudbox` ),
-    docker: modifiers.includes( `docker` ),
-    adb: modifiers.includes( `adb` ),
-    ios: modifiers.includes( `ios` ),
-    clone: modifiers.includes( `clone` ),
-    loop: modifiers.includes( `loop` ),
-    ignore_host_agents_md: modifiers.includes( `ignore-host-agents-md` ),
+    ...flags_from_modifiers( modifiers ),
     name: session.name || false,
     log: false,
     config: false,
