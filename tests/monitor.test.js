@@ -710,3 +710,107 @@ describe( `session liveness`, () => {
     } )
 
 } )
+
+describe( `launch events in the monitor`, () => {
+
+    // A still Claude pane with no idle-only control: pane alone reads idle
+    const quiet = `● Reading files\n❯ \n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
+
+    const fake_channel = ( { turn = null, reports_turns = true, identity = null, exit = null } = {} ) => ( {
+        ticks: [],
+        tick( options ) { this.ticks.push( options?.eager || false ) },
+        turn: () => turn,
+        reports_turns: () => reports_turns,
+        identity: () => identity,
+        exit: () => exit,
+        last_seq: () => 0,
+        set( next ) { turn = next },
+    } )
+
+    // Runs `ticks` monitor ticks, 10s apart, over a still pane
+    const run = async ( { launch_channel, ticks = 6, on_tick = null, capture = quiet, agent = { name: `claude` }, ...rest } ) => {
+        const original_now = Date.now
+        let now = 1_000_000
+        let tick = 0
+        const statuses = []
+        const fired = []
+        Date.now = () => now
+        try {
+            await start_monitor( {
+                session_name: `babysit_events`,
+                config: { idle_timeout_s: 30 },
+                rules: [ make_rule( { on: { type: `idle` }, timeout_s: 30 } ) ],
+                agent,
+                launch_channel,
+                has_session_fn: async () => tick < ticks,
+                capture_pane_fn: async () => capture,
+                publish_agent_status_fn: async ( { agent_status } ) => {
+                    statuses.push( agent_status )
+                    return agent_status
+                },
+                execute_action_fn: async ( target, action, config, options ) => fired.push( [ tick, options.launch_channel === launch_channel ] ),
+                write_loop_deadline_fn: () => null,
+                set_next_turn_fn: async () => true,
+                kill_session_fn: async () => {},
+                wait_fn: async () => {
+                    await Promise.resolve()
+                    tick++
+                    now += 10_000
+                    on_tick?.( tick, launch_channel )
+                },
+                ...rest,
+            } )
+        } finally {
+            Date.now = original_now
+        }
+        return { statuses, fired }
+    }
+
+    it( `an open turn holds idle rules through a still pane until it goes stale`, async () => {
+        const launch_channel = fake_channel( { turn: { state: `open` } } )
+        const { statuses, fired } = await run( { launch_channel, ticks: 16 } )
+        // Running for OPEN_TURN_STALE_S (120s) of stillness, then pane fallback
+        expect( statuses.slice( 0, 12 ).every( status => status === `running` ) ).toBe( true )
+        expect( statuses ).toContain( `idle` )
+        expect( fired.length ).toBeGreaterThan( 0 )
+        expect( fired[ 0 ][ 0 ] ).toBeGreaterThanOrEqual( 12 )
+        // The segment action gets the channel; the monitor polls it eagerly while running
+        expect( fired[ 0 ][ 1 ] ).toBe( true )
+        expect( launch_channel.ticks.slice( 1, 4 ) ).toEqual( [ true, true, true ] )
+    } )
+
+    it( `a completed turn releases the idle rule at its normal pane timing`, async () => {
+        const launch_channel = fake_channel( { turn: { state: `open` } } )
+        const { fired } = await run( { launch_channel, on_tick: ( tick, channel ) => tick === 2 && channel.set( { state: `closed`, status: `completed` } ) } )
+        // Quiet since tick 0: the 30s idle rule fires as soon as events stop holding it
+        expect( fired[ 0 ][ 0 ] ).toBe( 3 )
+    } )
+
+    it( `without events (old container) the pane alone decides, unchanged`, async () => {
+        for( const launch_channel of [ null, fake_channel(), fake_channel( { turn: { state: `open` }, reports_turns: false } ) ] ) {
+            const { statuses, fired } = await run( { launch_channel } )
+            expect( statuses[ 0 ] ).toBe( `running` )
+            expect( statuses[ 1 ] ).toBe( `idle` )
+            expect( fired[ 0 ][ 0 ] ).toBe( 3 )
+        }
+    } )
+
+    it( `a structured identity skips session-id scraping; the exit event ends the session`, async () => {
+        const seen = []
+        const exits = []
+        const launch_channel = fake_channel( { identity: { session_id: `structured` } } )
+        await run( {
+            launch_channel, ticks: 3, rules: [],
+            capture: `session: 00000000-0000-4000-8000-000000000001`,
+            agent: { name: `claude`, session_id_pattern: /session: ([0-9a-f-]+)/i },
+            on_session_id: id => seen.push( id ),
+            on_tick: ( tick, channel ) => {
+                if( tick === 1 ) channel.exit = () => ( { exit_status: 0 } )
+            },
+            on_exit: async ( { exit_status } ) => exits.push( exit_status ),
+        } )
+        expect( seen ).toEqual( [] )
+        expect( exits ).toEqual( [ 0 ] )
+    } )
+
+} )
