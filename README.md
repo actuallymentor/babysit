@@ -209,48 +209,59 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit update` | Update Babysit, agent tools, image, running web container; show image version |
 | `babysit update --auto` | Ask `Enable automatic updates? Y/n`; when on, a newer release triggers one background `babysit update` (log `~/.babysit/auto-update.log`, retried daily on failure) |
 
-Detach or agent exit shows remaining sessions. `list` samples panes for 1s:
-input/interrupt controls → idle/running; background shells/terminals or Claude subagent rows → waiting; otherwise output stability; unreadable → unknown.
-Status is grey when idle, green when running, orange when waiting, red when the agent ran `babysit stuck`
-(cleared by typing into that tmux session or sending input from the web companion). CPU/MEM come from a cache each session's
-monitor refreshes every 30s from `docker stats` (CPU: 100% = one core; MEM: used, whole MiB); `-` when no sample
-is younger than 5 minutes. The totals row is green under 50% of the Docker host's cores/memory, yellow under 70%, red above.
-Colors follow `NO_COLOR`, `TERM=dumb`, and non-TTY output.
-Attachment is separate. Pruning needs free space for locks/journals.
-Launch makes no model call: it checks the launched agent's staged login locally (Codex: an expired access token with a
-refresh token still starts, since Codex refreshes it; OpenCode: no credentials is fine for free models; Claude: a
-setup-token or route) and asks before starting only when there is nothing to log in with. Every installed agent still
-receives credentials, so each session's nested `claude` and `codex` are logged in.
-OpenCode also borrows the Codex ChatGPT login for its `openai` provider: access token only (never the single-use
-refresh token, which would log Codex out), refreshed from Codex every sync tick, never written to the host's OpenCode
-`auth.json`; an OpenCode `openai` login of its own wins. A ChatGPT subscription is then OpenCode's default over
-OpenRouter. Claude subscriptions stay out of OpenCode's own provider: Anthropic permits them only in Claude Code. Real prompts are `doctor --auth` and the checker:
-run `babysit auth init` once so a 10-minute host-level checker keeps logins verified (`babysit config` shows its state).
-The checker covers every agent whose credentials are on the host (Claude: a setup-token or route) and leaves
-OpenCode (whose identity depends on the project's provider route) to `doctor --auth`. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`
-(or exported when you run `babysit auth init`), the checker also pushes an alert when a verified agent logs out (deleted or expired credentials offline, an hourly ~3s host CLI probe, or a running session's pane showing the agent's logged-out message), and once per
-limit window when any usage limit (session/daily/weekly/credit) reaches 90% (one push per check, however many limits crossed); without them it's a no-op. Running sessions re-stamp the cache
-when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);
-any step over 5s is reported by name.
+**Status detection** (`list` samples panes for 1s):
 
-**Claude login.** Inside containers Claude runs only on a one-year `claude setup-token` (the host `/login` and its
-macOS Keychain item are never staged, so sessions cannot log each other out by rotating one refresh token). No token
-and no other route → a Claude launch fails fast and says how to import one. Import, with or without a host `claude`:
+- Input/interrupt controls → idle/running; background shells/terminals or Claude subagent rows → waiting; else output stability; unreadable → unknown
+- Colors: grey idle, green running, orange waiting, red after `babysit stuck` (cleared by typing into the tmux session or web input)
+- CPU/MEM: cached by each session's monitor every 30s from `docker stats` (CPU 100% = one core; MEM whole MiB); `-` if no sample under 5 min old
+- Totals row: green <50% of Docker host cores/memory, yellow <70%, red above
+- Colors follow `NO_COLOR`, `TERM=dumb`, non-TTY. Detach or agent exit shows remaining sessions. Attachment is separate
+
+**Launch login check** (no model call):
+
+- Local check of the launched agent's staged login; asks only when there is nothing to log in with
+- Codex: expired access token + refresh token still starts. OpenCode: no credentials fine for free models. Claude: setup-token or route
+- Every installed agent still gets credentials, so nested `claude`/`codex` are logged in
+- OpenCode borrows the Codex ChatGPT login for `openai`: access token only (never the single-use refresh token, which would log Codex out), refreshed from Codex every sync tick, never written to host OpenCode `auth.json`. Its own `openai` login wins. A ChatGPT subscription then beats OpenRouter as default
+- Claude subscriptions stay out of OpenCode's provider: Anthropic permits them only in Claude Code
+- Startup shows `Starting claude: …`; steps over 5s are named
+
+**Real auth checks** (`doctor --auth` + scheduled checker):
+
+- `babysit auth init` once → 10-min host checker (`babysit config` shows state)
+- Covers every agent with host credentials (Claude: setup-token or route); OpenCode (identity depends on project provider route) is left to `doctor --auth`
+- Running sessions re-stamp the cache when they rotate a token
+- With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc` (or exported at `auth init`), pushes on:
+  - a verified agent logging out (offline credential check, hourly ~3s host probe, or logged-out pane message)
+  - any usage limit (session/daily/weekly/credit) hitting 90%, once per limit window, one push per check
+- Without them: no-op
+
+**Claude login.** In containers Claude runs only on a one-year `claude setup-token`; host `/login` and macOS Keychain are never staged, so sessions can't log each other out by rotating a refresh token. No token and no other route → launch fails fast with import instructions.
 
 ```bash
 babysit auth init --claude-token                                  # runs claude setup-token if installed, else paste one minted elsewhere
 echo "$TOKEN" | babysit auth init --claude-token --token-stdin    # no TTY; add --name NAME for a named account
 ```
 
-With a host `claude` the token is proven with one prompt before saving; without one only its format is checked (the
-command says so). The default token lands in `~/.babysitrc` (0600) as `export CLAUDE_CODE_OAUTH_TOKEN=…`; `--name`
-tokens go to the account registry. `babysit auth init` also offers the token when `CLAUDE_CODE_OAUTH_TOKEN` is unset
-(Claude installed, in a terminal); `--claude-token` mints a replacement, `--no-claude-token` skips. Restart running
-Claude sessions to switch. It only makes model requests (claude.ai connectors/Remote Control need `/login`). An
-`ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry route (in `~/.babysitrc` or Claude's
-`settings.json`) works instead and needs no token. Env logins skip the offline and host CLI checks; the 6h container
-check and the pane trigger still alert, and the alert says to rerun `babysit auth init --claude-token`.
-Docker cleanup removes stopped containers and images not needed by this account's saved Babysit sessions, plus unused networks and build cache across the current Docker daemon. Babysit-named containers, images still used by containers, and volumes stay intact. Cleanup requires a separate confirmation and is skipped when Docker cannot be listed. Saved sessions are re-read right before deleting, so anything saved while the prompt waited stays. Images with several repository tags are skipped (`rm <id>` refuses them). Estimates: build cache from `buildx du` row ages, as a range (shared rows only raise the upper bound); images as a range (bytes no other image shares to the summed sizes; the range needs direct Docker socket access, a sudo setup shows the upper bound); container sizes are not measured. Freed space is the before/after free-space delta per disk; ZFS keeps freeing in the background. Quarantined clones with root-owned files (written via `sudo` or Docker inside a session) are deleted through a root container; if that fails, prune prints the `sudo rm -rf` path and continues.
+- With host `claude`: token proven with one prompt before saving; without: format check only (said so)
+- Default token → `~/.babysitrc` (0600) as `export CLAUDE_CODE_OAUTH_TOKEN=…`; `--name` tokens → account registry
+- `auth init` offers the token when `CLAUDE_CODE_OAUTH_TOKEN` is unset (Claude installed, TTY); `--claude-token` mints a replacement, `--no-claude-token` skips
+- Restart running Claude sessions to switch
+- Model requests only: claude.ai connectors/Remote Control need `/login`
+- `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, Bedrock, Vertex or Foundry route (in `~/.babysitrc` or Claude `settings.json`) works instead, no token needed
+- Env logins skip offline + host CLI checks; the 6h container check and pane trigger still alert, telling you to rerun `babysit auth init --claude-token`
+
+**Docker cleanup** (`prune`):
+
+- Removes stopped containers and images not needed by this account's saved sessions, plus unused networks and build cache daemon-wide
+- Kept: Babysit-named containers, images used by containers, volumes
+- Separate confirmation; skipped when Docker can't be listed. Saved sessions re-read right before deleting
+- Images with several repo tags skipped (`rm <id>` refuses them)
+- Estimates: build cache from `buildx du` row ages as a range (shared rows raise only the upper bound); images as a range (unshared bytes → summed sizes; needs direct Docker socket access, sudo setups show the upper bound); containers not measured
+- Freed = before/after free-space delta per disk; ZFS keeps freeing in the background
+- Quarantined clones with root-owned files (from `sudo`/Docker in a session) deleted via a root container; on failure prints the `sudo rm -rf` path and continues
+- Needs free space for locks/journals
+
 Old resume IDs follow their latest launch; history shows current launches and saved status.
 
 Numbers use each command's current listing:
