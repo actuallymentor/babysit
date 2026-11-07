@@ -150,11 +150,10 @@ export const opencode = {
                 return `unknown`
             }
         },
-        darwin: {
-            file: OPENCODE_CREDENTIAL_FILE,
-        },
-        linux: {
-            file: OPENCODE_CREDENTIAL_FILE,
+        // No Keychain on any platform
+        sources: {
+            darwin: [ { file: OPENCODE_CREDENTIAL_FILE } ],
+            linux: [ { file: OPENCODE_CREDENTIAL_FILE } ],
         },
     },
 

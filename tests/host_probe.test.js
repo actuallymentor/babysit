@@ -7,7 +7,7 @@ import { join } from 'path'
 import { is_authentication_failure } from '../src/agents/auth.js'
 import { get_agent } from '../src/agents/index.js'
 import { read_host_credential, resolve_host_bin, run_host_cli_auth_check } from '../src/agents/host_probe.js'
-import { read_keychain_item } from '../src/credentials/darwin.js'
+import { read_keychain_item } from '../src/credentials/keychain.js'
 
 const claude = get_agent( `claude` )
 const codex = get_agent( `codex` )
@@ -142,13 +142,13 @@ describe( `host CLI auth probe`, () => {
             return result
         }
 
-        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 0, stdout: `{"a":1}\n` } ) } ) )
+        expect( read_keychain_item( claude.credentials.sources.darwin[ 0 ], { spawn_sync: spawn_sync( { status: 0, stdout: `{"a":1}\n` } ) } ) )
             .toEqual( { state: `present`, text: `{"a":1}` } )
         expect( calls[0] ).toEqual( [ `security`, `find-generic-password`, `-s`, `Claude Code-credentials`, `-w` ] )
 
-        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 44, stdout: `` } ) } ) ).toEqual( { state: `missing` } )
-        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: 51, stdout: `` } ) } ) ).toEqual( { state: `unknown` } )
-        expect( read_keychain_item( claude.credentials.darwin, { spawn_sync: spawn_sync( { status: null, error: new Error( `ETIMEDOUT` ) } ) } ) ).toEqual( { state: `unknown` } )
+        expect( read_keychain_item( claude.credentials.sources.darwin[ 0 ], { spawn_sync: spawn_sync( { status: 44, stdout: `` } ) } ) ).toEqual( { state: `missing` } )
+        expect( read_keychain_item( claude.credentials.sources.darwin[ 0 ], { spawn_sync: spawn_sync( { status: 51, stdout: `` } ) } ) ).toEqual( { state: `unknown` } )
+        expect( read_keychain_item( claude.credentials.sources.darwin[ 0 ], { spawn_sync: spawn_sync( { status: null, error: new Error( `ETIMEDOUT` ) } ) } ) ).toEqual( { state: `unknown` } )
 
     } )
 

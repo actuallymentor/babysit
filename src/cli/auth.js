@@ -15,7 +15,7 @@ import { read_host_credential, run_host_cli_auth_check } from '../agents/host_pr
 import { list_sessions } from '../tmux/session.js'
 import { acquire_host_auth_lease, is_host_auth_lease_wanted } from '../agents/auth_lease.js'
 import { run } from '../utils/exec.js'
-import { detect_platform } from '../utils/platform.js'
+import { credential_env_keys } from '../credentials/paths.js'
 import { alert_high_usage, alert_logouts, pushover_configured } from '../utils/notify.js'
 import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
@@ -56,8 +56,7 @@ export const has_host_credentials = ( agent, {
     // Claude sessions never stage the host /login, only a setup-token
     if( agent.credentials?.stage_host_login === false ) return claude_accounts( { env } ).length > 0 || Boolean( claude_route( { env } ) )
 
-    const config = agent.credentials?.[ detect_platform() ]
-    if( [ config?.env_key, config?.fallback_env ].some( key => key && env[ key ] ) ) return true
+    if( credential_env_keys( agent ).some( key => env[ key ] ) ) return true
     return read_credential( agent ).state === `present`
 
 }
@@ -505,10 +504,7 @@ export const cmd_auth_check = async ( {
         // Judged on what this probe will stage now, not on the launch the
         // cache recorded: a token in this env outranks the file, else the
         // file is the login and its refresh token is the one sessions share
-        const env_login = agent => {
-            const config = agent.credentials?.[ detect_platform() ]
-            return [ config?.env_key, config?.fallback_env ].some( key => key && env[ key ] )
-        }
+        const env_login = agent => credential_env_keys( agent ).some( key => env[ key ] )
         // A setup-token never rotates, so Claude's container probe never waits
         const may_rotate_held_token = agent => sessions_active
             && agent.credentials?.stage_host_login !== false

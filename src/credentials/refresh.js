@@ -82,11 +82,12 @@ const validate_source = ( content ) => {
  * @param {string|null} [options.baseline_source_hash] - Hash of the host source when the tmpfile
  *   was captured by the foreground process
  * @param {string|null} [options.baseline_tmpfile_hash] - Hash of the sync copy when captured
+ * @param {string|null} [options.credential_source] - Source kind (file/keyring) kept in baselines
  * @returns {{ baseline: Function, set_transport: Function, flush: Function, stop: Function }} Sync controller
  */
 export const start_credential_sync = ( read_source, tmpfile_path, write_destination = null, options = {} ) => {
 
-    const { baseline_source_hash = null, baseline_tmpfile_hash = null, source_path = null } = options
+    const { baseline_source_hash = null, baseline_tmpfile_hash = null, source_path = null, credential_source = null } = options
 
     let last_source_hash = baseline_source_hash
     let last_tmpfile_hash = baseline_tmpfile_hash || baseline_source_hash
@@ -280,9 +281,11 @@ export const start_credential_sync = ( read_source, tmpfile_path, write_destinat
     interval.unref?.()
 
     return {
+        // The source kind rides along so a monitor reattaches to the same one
         baseline: () => ( {
             baseline_source_hash: last_source_hash,
             baseline_tmpfile_hash: last_tmpfile_hash,
+            ...credential_source && { credential_source },
         } ),
         source_changed: () => source_changed,
         // Observe each container → host writeback of a rotated credential.

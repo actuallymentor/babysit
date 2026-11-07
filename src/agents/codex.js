@@ -87,16 +87,15 @@ export const codex = {
         // what `codex login` populates by default. The resolver intentionally
         // reads the host's CODEX_HOME; the container CODEX_HOME is pinned
         // separately below.
-        darwin: {
-            file: get_host_codex_auth_file,
-            env_key: `CODEX_API_KEY`,
-            fallback_env: `OPENAI_API_KEY`,
+        sources: {
+            darwin: [ { file: get_host_codex_auth_file } ],
+            linux: [ { file: get_host_codex_auth_file } ],
         },
-        linux: {
-            file: get_host_codex_auth_file,
-            env_key: `CODEX_API_KEY`,
-            fallback_env: `OPENAI_API_KEY`,
-        },
+        env_key: `CODEX_API_KEY`,
+        fallback_env: `OPENAI_API_KEY`,
+        // auth.json is the login: deleting it logs out, partial writes are
+        // retried, and a host re-login is watched for
+        file_required: true,
     },
 
     // Pin the codex home dir inside the container so we control exactly where

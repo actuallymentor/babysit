@@ -4,8 +4,8 @@ import { tmpdir } from 'os'
 import { delimiter, isAbsolute, join } from 'path'
 
 import { strip_ansi } from '../babysit/matcher.js'
-import { resolve_credential_file } from '../credentials/paths.js'
-import { read_keychain_item } from '../credentials/darwin.js'
+import { credential_sources, resolve_credential_file } from '../credentials/paths.js'
+import { read_keychain_item } from '../credentials/keychain.js'
 import { answered_ok, build_host_auth_prompt, is_authentication_failure, last_nonempty_line } from './auth.js'
 
 /*
@@ -54,9 +54,8 @@ export const resolve_host_bin = ( bin, env = process.env ) => {
  */
 export const host_credential_file = ( agent, { platform = detect_platform() } = {} ) => {
 
-    const config = agent?.credentials?.[ platform ]
-    if( !config?.file || config.keychain_service ) return null
-    return resolve_credential_file( config.file )
+    const [ first ] = credential_sources( agent, platform )
+    return first?.file ? resolve_credential_file( first.file ) : null
 
 }
 
@@ -83,16 +82,16 @@ export const read_host_credential = ( agent, {
     read_keychain = read_keychain_item,
 } = {} ) => {
 
-    const config = agent?.credentials?.[ platform ]
+    const [ first, second ] = credential_sources( agent, platform )
 
-    if( config?.keychain_service ) {
+    if( first?.keychain ) {
 
-        const item = read_keychain( config )
+        const item = read_keychain( first )
         if( item.state === `present` ) return { state: `present`, text: item.text }
 
-        // Launches use the fallback file only when the item does not exist
-        const fallback = item.state === `missing` && config.fallback_file
-            ? read_file_state( resolve_credential_file( config.fallback_file ), read_file )
+        // Launches use the next file only when the item does not exist
+        const fallback = item.state === `missing` && second?.file
+            ? read_file_state( resolve_credential_file( second.file ), read_file )
             : null
         return fallback?.state === `present` ? fallback : { state: `unknown` }
 
