@@ -160,6 +160,15 @@ describe( `account switcher`, () => {
         expect( calls.swaps.length ).toBe( 1 )
     } )
 
+    it( `a frozen or recovering pane gets the new token but no keystrokes`, async () => {
+        for( const record of [ { frozen_at: `2026-10-17T11:00:00Z` }, { continuation: `pending` } ] ) {
+            const { calls, switcher } = harness( { record: { claude_hot_swap: true, container_id: `c1`, ...record } } )
+            await switcher()
+            expect( calls.swaps ).toEqual( [ [ `c1`, `work` ] ] )
+            expect( calls.nudges ).toEqual( [] )
+        }
+    } )
+
     it( `an attached person gets the new token but types the continue themselves`, async () => {
         const { calls, switcher } = harness( { record: { claude_hot_swap: true, container_id: `c1` }, attached: true } )
         await switcher()

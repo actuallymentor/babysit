@@ -573,7 +573,8 @@ babysit config --transcripts off                # disable; `default` restores ~/
 | `sandbox/<babysit_id>/` | Sandbox sessions: state copied out before the container is removed |
 | `sessions/<babysit_id>.json` | Index: agent, workspace, start, native session id, Claude account + switches, transcript paths |
 
-- Runs every 10 min while a session runs and once at its end; incremental (exact mtime), SQLite via the backup API (WAL included); a read-only, offline container per pass
+- Runs every 10 min while a session runs and once at its end; incremental (exact mtime), SQLite via its live backup API (consistent, WAL included); an offline container per pass
+- Best effort: a failed pass is logged and retried next time, but a sandbox whose final copy fails is still removed (sandboxes stay ephemeral)
 - Files stay in each agent's own format (JSONL, SQLite): nothing is converted, so CLI format changes cost nothing. Claude transcripts also hold the system prompt, tool definitions and request params (`api-request*` records)
 - Credential-looking files (`*auth*.json`, `*cred*.json`, …) are skipped. Tool output can still contain secrets: the archive is `0700`, files `0600`
 - Setting lives in `~/.babysit/config.json` (`transcript_archive`); a session reads it when its monitor starts. The path is a host path
