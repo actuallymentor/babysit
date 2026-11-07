@@ -1,13 +1,15 @@
-import { readdirSync, rmSync, statSync } from 'fs'
+import { randomUUID } from 'crypto'
+import { readdirSync, readFileSync, rmSync, statSync } from 'fs'
 import { tmpdir } from 'os'
-import { join } from 'path'
+import { basename, join } from 'path'
 
 import { detect_platform } from '../utils/platform.js'
 import { get_agent, SUPPORTED_AGENTS } from '../agents/index.js'
 import { log } from '../utils/log.js'
-import { setup_darwin_credentials } from './darwin.js'
-import { setup_linux_credentials } from './linux.js'
+import { setup_agent_credentials } from './setup.js'
 import { create_docker_file_transport } from '../docker/file_transport.js'
+import { CREDENTIAL_STATE_DIR } from '../utils/paths.js'
+import { hash_credential_content, read_sync_state, remove_sync_state, write_sync_state } from './refresh.js'
 
 const EPHEMERAL_CREDENTIAL_PREFIXES = [
     `babysit-chrome-chrome-seccomp.json-`,
@@ -146,9 +148,15 @@ export const aggregate_syncs = ( syncs, {
                 controller.set_transport( create_transport( container_id, target ) )
             } )
         },
-        cleanup: () => cleanup_ephemeral_credential_mounts(
-            active_syncs.map( ( { cleanup_path } ) => ( { cleanup: cleanup_path } ) )
-        ),
+        // After a successful final flush only: copies first, then the
+        // durable states that pointed at them
+        cleanup: () => {
+            const copies_removed = cleanup_ephemeral_credential_mounts(
+                active_syncs.map( ( { cleanup_path } ) => ( { cleanup: cleanup_path } ) )
+            )
+            if( !copies_removed ) return false
+            return active_syncs.map( ( { state_path } ) => remove_sync_state( state_path ) ).every( Boolean )
+        },
         flush: async name => {
             const selected_syncs = active_syncs.filter( sync => !name || sync.name === name )
             const results = await Promise.allSettled(
@@ -181,90 +189,130 @@ export const aggregate_syncs = ( syncs, {
 }
 
 /**
- * Set up credential passthrough for every supported agent, choosing the right platform adapter
+ * One-time reader shim for session records written before durable sync
+ * state: turn `creds_tmpfile(s)` + `creds_sync_baseline(s)` into state files.
+ * Records that already carry `creds_states` return them unchanged.
+ * @param {Object} session - Stored session record
+ * @param {Object} [options]
+ * @param {string} [options.state_dir=CREDENTIAL_STATE_DIR] - State directory
+ * @returns {Object} agent name → state file path
+ */
+export const session_credential_states = ( session = {}, { state_dir = CREDENTIAL_STATE_DIR } = {} ) => {
+
+    if( session.creds_states ) return session.creds_states
+
+    const tmpfiles = session.creds_tmpfiles || ( session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {} )
+
+    return Object.fromEntries( Object.entries( tmpfiles ).filter( ( [ , tmpfile ] ) => tmpfile ).map( ( [ name, tmpfile ] ) => {
+
+        const path = join( state_dir, `${ basename( String( session.babysit_id || `legacy` ) ) }-${ name }.json` )
+        if( read_sync_state( path ) ) return [ name, path ]
+
+        // Without stored hashes the copy itself is the agreed point, as the
+        // legacy monitor seeded it
+        const baseline = session.creds_sync_baselines?.[ name ]
+            || ( name === session.agent ? session.creds_sync_baseline : null )
+            || {}
+        let copy_hash = null
+        try {
+            copy_hash = hash_credential_content( readFileSync( tmpfile, `utf-8` ) )
+        } catch { /* Recovery may rebuild a copy /tmp lost at boot */ }
+
+        write_sync_state( path, {
+            tmpfile,
+            source_hash: baseline.baseline_source_hash ?? copy_hash,
+            synced_hash: baseline.baseline_tmpfile_hash ?? baseline.baseline_source_hash ?? copy_hash,
+            ...baseline.credential_source && { credential_source: baseline.credential_source },
+        } )
+        return [ name, path ]
+
+    } ) )
+
+}
+
+/**
+ * Staged copy paths named by durable sync states.
+ * @param {Object} states - agent name → state file path
+ * @returns {Object} agent name → copy path
+ */
+export const credential_state_tmpfiles = ( states = {} ) => Object.fromEntries(
+    Object.entries( states )
+        .map( ( [ name, path ] ) => [ name, read_sync_state( path )?.tmpfile ] )
+        .filter( ( [ , tmpfile ] ) => tmpfile )
+)
+
+/**
+ * Set up credential passthrough for every supported agent. Fresh captures
+ * write one durable sync state per staged login; a monitor (or recovery)
+ * passes those states back to reattach to the same copies.
  * @param {Object} agent - Agent adapter
  * @param {Object} [options]
- * @param {string} [options.existing_tmpfile] - Re-use this tmpfile (monitor case)
- *   instead of creating a new one. Legacy monitor handoff for pre-multi-agent sessions.
- * @param {Object} [options.existing_tmpfiles] - Per-agent tmpfiles to re-use in the monitor
- * @param {Object|null} [options.sync_baseline] - Foreground-capture hashes used
- *   when reusing an existing tmpfile in the monitor. Legacy active-agent shape.
- * @param {Object|null} [options.sync_baselines] - Per-agent foreground-capture hashes
- * @param {string[]} [options.exclude] - Agent names whose host credentials are skipped
- * @returns {Promise<{
- *   mounts: Array,
- *   sync: Object|null,
- *   sync_baseline: Object|null,
- *   sync_baselines: Object,
- *   tmpfiles: Object
- * }>}
+ * @param {Object} [options.existing_states] - agent name → state path to reattach (monitor case)
+ * @param {string} [options.state_dir=CREDENTIAL_STATE_DIR] - Where fresh captures keep state
+ * @param {'darwin'|'linux'} [options.platform] - Host platform seam
+ * @returns {Promise<{ mounts: Array, sync: Object|null, states: Object, tmpfiles: Object }>}
  */
 export const setup_credentials = async ( agent, options = {} ) => {
 
-    const platform = detect_platform()
-    const setup_platform_credentials = platform === `darwin`
-        ? setup_darwin_credentials
-        : setup_linux_credentials
-
-    const is_monitor_reuse = Object.hasOwn( options, `existing_tmpfile` )
-        || Object.hasOwn( options, `existing_tmpfiles` )
-
-    const existing_tmpfiles = options.existing_tmpfiles || {}
-    const sync_baselines = options.sync_baselines || {}
+    const platform = options.platform || detect_platform()
+    const state_dir = options.state_dir || CREDENTIAL_STATE_DIR
+    const is_monitor_reuse = Object.hasOwn( options, `existing_states` )
+    const existing_states = options.existing_states || {}
+    const capture_id = randomUUID()
 
     const mounts = []
     const syncs = []
     const tmpfiles = {}
-    const next_sync_baselines = {}
+    const states = {}
 
-    // A hot-swappable Claude session owns its credentials file: the host
-    // /login must neither be staged nor receive the swapped setup-token back
-    const excluded = new Set( options.exclude || [] )
-    const credential_agents = get_credential_agents( agent ).filter( ( { name } ) => !excluded.has( name ) )
+    for( const credential_agent of get_credential_agents( agent ) ) {
 
-    for( const credential_agent of credential_agents ) {
-
-        const is_active_agent = credential_agent.name === agent.name
-        const existing_tmpfile = existing_tmpfiles[ credential_agent.name ]
-            || ( is_active_agent ? options.existing_tmpfile : null )
+        const { name } = credential_agent
+        const existing_state = existing_states[ name ] ? read_sync_state( existing_states[ name ] ) : null
 
         // Monitor processes cannot stage new files into an unrelated launch.
-        // Only reattach sync to tmpfiles captured by the foreground.
-        if( is_monitor_reuse && !existing_tmpfile ) continue
+        // Only reattach sync to copies captured by the foreground.
+        if( is_monitor_reuse && !existing_state ) {
+            if( existing_states[ name ] ) log.warn( `Credential sync state for ${ name } is missing: ${ existing_states[ name ] }` )
+            continue
+        }
 
-        const sync_baseline = sync_baselines[ credential_agent.name ]
-            || ( is_active_agent ? options.sync_baseline : null )
+        // Claude's subscription login enters containers only as a setup-token
+        // (account env file, hot swap). Its host /login is never staged, so it
+        // neither races sessions for one-use refresh tokens nor receives the
+        // token back. Only legacy sessions that captured it keep their sync.
+        if( !existing_state && credential_agent.credentials?.stage_host_login === false ) continue
 
-        // A scheduled auth check skips the pre-flight while sessions run: it
-        // could refresh, and so rotate, a token one of them holds
-        const result = await setup_platform_credentials( credential_agent, {
-            existing_tmpfile,
-            sync_baseline,
-            preflight: options.preflight !== false,
+        const state_path = existing_states[ name ] || join( state_dir, `${ capture_id }-${ name }.json` )
+        const result = setup_agent_credentials( credential_agent, {
+            platform,
+            state_path,
+            existing_tmpfile: existing_state?.tmpfile || null,
+            sync_baseline: existing_state?.credential_source ? { credential_source: existing_state.credential_source } : null,
+            ...options.read_keychain && { read_keychain: options.read_keychain },
         } )
 
         mounts.push( ...result.mounts )
         if( result.sync ) {
             syncs.push( {
                 controller: result.sync,
-                name: credential_agent.name,
+                name,
                 target: credential_agent.container_paths.creds,
                 cleanup_path: result.cleanup_path,
+                state_path,
             } )
+            states[ name ] = state_path
         }
 
-        const mounted_tmpfile = result.mounts.find( m => m.type === `synced_file` )?.source
-        const tmpfile = existing_tmpfile || mounted_tmpfile
-        if( tmpfile ) tmpfiles[ credential_agent.name ] = tmpfile
-        if( result.sync_baseline ) next_sync_baselines[ credential_agent.name ] = result.sync_baseline
+        const tmpfile = existing_state?.tmpfile || result.mounts.find( m => m.type === `synced_file` )?.source
+        if( tmpfile ) tmpfiles[ name ] = tmpfile
 
     }
 
     return {
         mounts,
         sync: aggregate_syncs( syncs ),
-        sync_baseline: next_sync_baselines[ agent.name ] || null,
-        sync_baselines: next_sync_baselines,
+        states,
         tmpfiles,
     }
 

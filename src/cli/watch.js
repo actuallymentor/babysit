@@ -131,7 +131,8 @@ export const session_usage_limits = ( report, session ) => {
 
     return ( report?.agents || [] )
         .filter( result => result.agent === session?.agent && result.status === `ok` )
-        .filter( result => ( result.account || DEFAULT_ACCOUNT ) === ( session?.claude_account || DEFAULT_ACCOUNT ) )
+        // Codex/OpenCode sessions carry a Claude account too, for nested claude only
+        .filter( result => session?.agent !== `claude` || ( result.account || DEFAULT_ACCOUNT ) === ( session?.claude_account || DEFAULT_ACCOUNT ) )
         .filter( result => provider === undefined || result.provider === provider )
         .flatMap( result => result.limits || [] )
 

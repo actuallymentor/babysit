@@ -81,7 +81,7 @@ export const FLAGS = [
     { name: `log`, type: `optional`, scope: `launch`, yaml: `log`, usage: `--log[=PATH]`,
         summary: `Append raw tmux output to PATH (default .YYYY_MM_DD_HH_MM.babysit.log)` },
     { name: `account`, type: `value`, scope: `launch`, arg: `NAME`,
-        summary: `Claude: run on this subscription (babysit auth accounts); default picks most headroom` },
+        summary: `Claude subscription for this session, or for nested claude in other agents (babysit auth accounts); default picks most headroom` },
 
     // `babysit config` settings; consumed anywhere like launch flags
     { name: `transcripts`, type: `value`, scope: `global`, commands: [ `config` ] },
@@ -98,6 +98,8 @@ export const FLAGS = [
         summary: `With "babysit auth init", do not enable loginctl lingering (checks then stop at logout)` },
     { name: `claude-token`, type: `boolean`, scope: `command`, commands: [ `auth` ],
         summary: `With "babysit auth init", mint a new Claude setup-token even if one is set (--no-claude-token skips)` },
+    { name: `token-stdin`, type: `boolean`, scope: `command`, commands: [ `auth` ],
+        summary: `With "babysit auth init --claude-token", read the token from a pipe (no TTY or host claude needed)` },
     { name: `all`, type: `boolean`, scope: `command`, commands: [ `list`, `watch`, `resume` ],
         summary: `With "list", show full details; with "resume [number]", use every workspace and show every row` },
     { name: `n`, type: `value`, scope: `command`, commands: [ `resume` ], key: `limit`, arg: `N`,
@@ -230,6 +232,7 @@ export const COMMANDS = [
             [ `--claude-token`, `Mint a new Claude token even if one is set (e.g. after an alert)` ],
             [ `--no-claude-token`, `Skip the Claude token step` ],
             [ `--name NAME`, `Save the token as an extra Claude account; installs no checker` ],
+            [ `--token-stdin`, `Read the token from stdin (with --claude-token); installs no checker` ],
         ] },
         accounts: {},
     } },

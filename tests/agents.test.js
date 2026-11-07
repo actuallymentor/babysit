@@ -71,8 +71,8 @@ describe( `agent adapter shape`, () => {
             } )
 
             it( `has credentials for both platforms`, () => {
-                expect( agent.credentials.darwin ).toBeDefined()
-                expect( agent.credentials.linux ).toBeDefined()
+                expect( agent.credentials.sources.darwin.length ).toBeGreaterThan( 0 )
+                expect( agent.credentials.sources.linux.length ).toBeGreaterThan( 0 )
             } )
 
         } )
@@ -101,12 +101,12 @@ describe( `credential coverage`, () => {
         try {
 
             delete process.env.CODEX_HOME
-            expect( codex.credentials.darwin.file() ).toBe( `~/.codex/auth.json` )
-            expect( codex.credentials.linux.file() ).toBe( `~/.codex/auth.json` )
+            expect( codex.credentials.sources.darwin[0].file() ).toBe( `~/.codex/auth.json` )
+            expect( codex.credentials.sources.linux[0].file() ).toBe( `~/.codex/auth.json` )
 
             process.env.CODEX_HOME = `/tmp/host-codex-home/`
-            expect( codex.credentials.darwin.file() ).toBe( `/tmp/host-codex-home/auth.json` )
-            expect( codex.credentials.linux.file() ).toBe( `/tmp/host-codex-home/auth.json` )
+            expect( codex.credentials.sources.darwin[0].file() ).toBe( `/tmp/host-codex-home/auth.json` )
+            expect( codex.credentials.sources.linux[0].file() ).toBe( `/tmp/host-codex-home/auth.json` )
 
         } finally {
             if( original_codex_home === undefined ) delete process.env.CODEX_HOME
@@ -114,20 +114,22 @@ describe( `credential coverage`, () => {
         }
 
         // env-key fallback for API-key users stays available
-        expect( codex.credentials.darwin.env_key ).toBe( `CODEX_API_KEY` )
+        expect( codex.credentials.env_key ).toBe( `CODEX_API_KEY` )
+        expect( codex.credentials.file_required ).toBe( true )
     } )
 
-    it( `claude accepts a setup-token login alongside its /login credentials`, () => {
-        expect( claude.credentials.linux.env_key ).toBe( `CLAUDE_CODE_OAUTH_TOKEN` )
-        expect( claude.credentials.darwin.env_key ).toBe( `CLAUDE_CODE_OAUTH_TOKEN` )
+    it( `claude reads the Keychain before its /login file on macOS, the file on Linux`, () => {
+        expect( claude.credentials.env_key ).toBe( `CLAUDE_CODE_OAUTH_TOKEN` )
+        expect( claude.credentials.sources.darwin ).toEqual( [ { keychain: `Claude Code-credentials` }, { file: `~/.claude/.credentials.json` } ] )
+        expect( claude.credentials.sources.linux ).toEqual( [ { file: `~/.claude/.credentials.json` } ] )
     } )
 
     it( `opencode declares its file path on darwin (no Keychain — opencode does not use it)`, () => {
         // opencode stores tokens in a plain file even on macOS. Pre-fix, darwin
         // adapter only handled keychain_service + fallback_file, so opencode's
         // creds were silently skipped.
-        expect( opencode.credentials.darwin.file ).toBe( `~/.local/share/opencode/auth.json` )
-        expect( opencode.credentials.linux.file ).toBe( `~/.local/share/opencode/auth.json` )
+        expect( opencode.credentials.sources.darwin ).toEqual( [ { file: `~/.local/share/opencode/auth.json` } ] )
+        expect( opencode.credentials.sources.linux ).toEqual( [ { file: `~/.local/share/opencode/auth.json` } ] )
     } )
 
     it( `each agent declares a container target for its credential file`, () => {
@@ -148,14 +150,11 @@ describe( `credential coverage`, () => {
 
 } )
 
-describe( `credential preflight`, () => {
+describe( `Claude login staging`, () => {
 
-    it( `is declared only by Claude`, () => {
-        const preflight_agents = SUPPORTED_AGENTS.filter(
-            name => get_agent( name ).credential_preflight
-        )
-
-        expect( preflight_agents ).toEqual( [ `claude` ] )
+    it( `stages only the setup-token: no adapter refreshes on --version, Claude's host /login stays home`, () => {
+        expect( SUPPORTED_AGENTS.filter( name => get_agent( name ).credential_preflight ) ).toEqual( [] )
+        expect( SUPPORTED_AGENTS.filter( name => get_agent( name ).credentials?.stage_host_login === false ) ).toEqual( [ `claude` ] )
     } )
 
 } )

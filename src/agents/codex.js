@@ -68,22 +68,38 @@ export const codex = {
     bin: `codex`,
 
     credentials: {
+        // Launch gate (no model call). Codex refreshes an expired access
+        // token itself, so a refresh token alone still logs in. Only an absent
+        // file or tokens with neither access nor refresh count as missing.
+        gate: ( { file, env, now = Date.now() } ) => {
+            if( env ) return `usable`
+            if( file === null ) return `missing`
+            try {
+                const { tokens, OPENAI_API_KEY: api_key } = JSON.parse( file ) || {}
+                if( api_key ) return `usable`
+                // A shape this gate does not know is no evidence of logout
+                if( !tokens ) return `unknown`
+                if( jwt_expiry( tokens?.access_token ) > now ) return `usable`
+                return tokens?.refresh_token ? `refreshable` : `missing`
+            } catch {
+                return `unknown`
+            }
+        },
         // Codex caches OAuth credentials at `${CODEX_HOME}/auth.json` (the
         // ChatGPT-login flow writes tokens here). API-key users can also set
         // CODEX_API_KEY / OPENAI_API_KEY — try the file first because it is
         // what `codex login` populates by default. The resolver intentionally
         // reads the host's CODEX_HOME; the container CODEX_HOME is pinned
         // separately below.
-        darwin: {
-            file: get_host_codex_auth_file,
-            env_key: `CODEX_API_KEY`,
-            fallback_env: `OPENAI_API_KEY`,
+        sources: {
+            darwin: [ { file: get_host_codex_auth_file } ],
+            linux: [ { file: get_host_codex_auth_file } ],
         },
-        linux: {
-            file: get_host_codex_auth_file,
-            env_key: `CODEX_API_KEY`,
-            fallback_env: `OPENAI_API_KEY`,
-        },
+        env_key: `CODEX_API_KEY`,
+        fallback_env: `OPENAI_API_KEY`,
+        // auth.json is the login: deleting it logs out, partial writes are
+        // retried, and a host re-login is watched for
+        file_required: true,
     },
 
     // Pin the codex home dir inside the container so we control exactly where

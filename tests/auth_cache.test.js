@@ -89,10 +89,8 @@ describe( `host authentication cache`, () => {
 
         const agent = {
             credentials: {
-                linux: {
-                    env_key: `PRIMARY_TOKEN`,
-                    fallback_env: `FALLBACK_TOKEN`,
-                },
+                env_key: `PRIMARY_TOKEN`,
+                fallback_env: `FALLBACK_TOKEN`,
             },
             container_paths: { creds: `/agent/credential.json` },
         }

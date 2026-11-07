@@ -117,27 +117,31 @@ export const claude = {
     name: `claude`,
     bin: `claude`,
 
-    // Claude's version command refreshes near-expiry host credentials.
-    // Other adapters omit this capability because their version commands do
-    // not change authentication state.
-    credential_preflight: true,
-
     // Named subscriptions (`babysit auth accounts`, `--account`, limit-hit switching)
     accounts: true,
 
     // CLAUDE_CODE_OAUTH_TOKEN is the one-year `claude setup-token` login. It
     // outranks the /login file and never rotates, so sessions cannot race
     // each other for a one-use refresh token. It only makes model requests.
+    // It is the only subscription login staged into containers (account env
+    // file, hot swap); the host /login below is read for host probes and for
+    // legacy sessions that captured it, never staged anew.
     credentials: {
-        darwin: {
-            keychain_service: `Claude Code-credentials`,
-            fallback_file: `~/.claude/.credentials.json`,
-            env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
+        stage_host_login: false,
+        // Launch gate (no model call): a configured route or a staged
+        // setup-token. Setup-token expiry is estimated at import, may be absent.
+        gate: ( { route, account, now = Date.now() } ) => {
+            if( route ) return `usable`
+            if( !account ) return `missing`
+            const expires_at = Date.parse( account.expires_at )
+            if( !Number.isFinite( expires_at ) ) return `unknown`
+            return expires_at > now ? `usable` : `missing`
         },
-        linux: {
-            file: `~/.claude/.credentials.json`,
-            env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
+        sources: {
+            darwin: [ { keychain: `Claude Code-credentials` }, { file: `~/.claude/.credentials.json` } ],
+            linux: [ { file: `~/.claude/.credentials.json` } ],
         },
+        env_key: `CLAUDE_CODE_OAUTH_TOKEN`,
     },
 
     // CLAUDE_CONFIG_DIR controls where claude reads its config / credentials /

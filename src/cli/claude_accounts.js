@@ -8,7 +8,7 @@ import { within_deadline } from '../utils/deadline.js'
 import { write_atomic_json } from '../web_bridge/files.js'
 import { claude_header_request } from '../docker/assets/usage/providers.mjs'
 import { collect_usage } from '../docker/assets/usage/command.mjs'
-import { CLAUDE_TOKEN_ENV } from './claude_token.js'
+import { CLAUDE_TOKEN_ENV, claude_api_route } from './claude_token.js'
 
 /*
  * Several Claude subscriptions, each a named `claude setup-token`. The token in
@@ -250,7 +250,7 @@ export const most_headroom_account = async ( { list = list_claude_accounts, prob
  * @param {string|false} [options.requested] - `--account` value
  * @param {string|null} [options.stored] - Resumed session's claude_account
  * @param {Object} [options.seams] - list/probe seams
- * @returns {Promise<{ account: Object|null, reason: string }>} account null (no accounts) means "leave the default route alone"
+ * @returns {Promise<{ account: Object|null, reason: string }>} account null: no setup-token registered
  */
 export const resolve_launch_account = async ( { requested = false, stored = null } = {}, {
     list = list_claude_accounts,
@@ -268,7 +268,7 @@ export const resolve_launch_account = async ( { requested = false, stored = null
 
     if( stored && find( stored ) ) return { account: find( stored ), reason: `resumed` }
 
-    // One account is used as is; the default one mounts nothing, a lone named one must
+    // One account is used as is
     if( accounts.length < 2 ) return { account: accounts[ 0 ] || null, reason: `single account` }
 
     const best = pick_account( await probe( accounts, { deadline_ms: LAUNCH_PROBE_DEADLINE_MS } ) )
@@ -282,29 +282,22 @@ export const resolve_launch_account = async ( { requested = false, stored = null
 export const HOT_SWAP_ENV = `BABYSIT_CLAUDE_HOT_SWAP`
 
 /**
- * Whether a Claude launch can change subscriptions without a restart: only
- * with two or more accounts. Claude re-reads its credentials file before every
- * request, so such a session keeps its token there instead of in the env.
- * @param {Object} [options] - list seam
- * @returns {boolean}
- */
-export const account_hot_swap = ( { list = list_claude_accounts } = {} ) => list().length >= 2
-
-/**
- * Credential mount for a chosen account: a private env file the launcher copies
- * in with `docker cp`, sourced after ~/.babysitrc so it wins. Without hot swap
- * `default` needs none; with it every account rides along, plus the flag.
+ * Credential mounts for a chosen account: a private env file the launcher
+ * copies in with `docker cp`, sourced after ~/.babysitrc so it wins. Every
+ * account is hot-swappable: the entrypoint moves the token into Claude's
+ * credentials file, which Claude re-reads before every request, so a limit
+ * switches subscriptions in place instead of restarting the session.
  * @param {Object|null} account - Chosen account
- * @param {Object} [options]
- * @param {boolean} [options.hot_swap] - Token goes to the credentials file
  * @returns {Object[]} `account_env` mounts
  */
-export const account_credential_mounts = ( account, { hot_swap = false } = {} ) => {
+export const account_credential_mounts = account => {
 
-    if( !account || !hot_swap && account.name === DEFAULT_ACCOUNT ) return []
+    if( !account ) return []
 
     const mount = ( key, value ) => ( { type: `account_env`, key, value, account: account.name } )
-    return [ mount( CLAUDE_TOKEN_ENV, account.token ), ...hot_swap ? [ mount( HOT_SWAP_ENV, `1` ) ] : [] ]
+    // The launch gate reads the (estimated) expiry; it never reaches the file
+    const token = { ...mount( CLAUDE_TOKEN_ENV, account.token ), ...account.expires_at && { expires_at: account.expires_at } }
+    return [ token, mount( HOT_SWAP_ENV, `1` ) ]
 
 }
 
@@ -313,9 +306,53 @@ export const account_credential_mounts = ( account, { hot_swap = false } = {} ) 
  * @param {Object} account - Account with token
  * @returns {string} KEY=value lines
  */
-export const hot_swap_env_file = account => account_credential_mounts( account, { hot_swap: true } )
+export const hot_swap_env_file = account => account_credential_mounts( account )
     .map( ( { key, value } ) => `${ key }=${ value }\n` )
     .join( `` )
+
+/**
+ * probe_accounts' shape from the cache alone. Spends nothing, never waits:
+ * a non-Claude launch picks a nested-claude account without a request.
+ * @param {Array<Object>} accounts - From list_claude_accounts
+ * @param {Object} [options] - Cache path seam
+ * @returns {Promise<Array<Object>>} Readings; uncached accounts read as unknown
+ */
+export const cached_account_readings = async ( accounts, { cache_path = ACCOUNT_USAGE_PATH } = {} ) => {
+    const usage = cached_account_usage( { cache_path } )
+    return accounts.map( ( { name } ) => usage[ name ]
+        ? { name, status: `ok`, message: null, ...usage[ name ] }
+        : { name, status: `error`, limits: [], message: `No cached reading`, headroom: null } )
+}
+
+/**
+ * The Claude login a session stages, whatever its frontend: Codex and
+ * OpenCode sessions get one too, for nested `claude` calls. A configured API
+ * key, Bedrock, Vertex or Foundry route outranks any token and needs none.
+ * Otherwise the chosen setup-token account rides in as hot-swap mounts.
+ * @param {Object} [options]
+ * @param {string|false} [options.requested] - `--account` value
+ * @param {string|null} [options.stored] - Resumed session's claude_account
+ * @param {boolean} [options.probe_quota=true] - Probe quota (Claude launches); false reads the cache only
+ * @param {Object} [seams] - list/probe/route/cached seams
+ * @returns {Promise<{ account: Object|null, route: string|null, reason: string, mounts: Object[] }>}
+ */
+export const resolve_claude_login = async ( { requested = false, stored = null, probe_quota = true } = {}, {
+    list = list_claude_accounts,
+    probe = probe_accounts,
+    route = claude_api_route,
+    cached = cached_account_readings,
+} = {} ) => {
+
+    const api_route = route()
+    if( api_route && !requested ) return { account: null, route: api_route, reason: `${ api_route } route`, mounts: [] }
+
+    const { account, reason } = await resolve_launch_account( { requested, stored }, {
+        list,
+        probe: probe_quota ? probe : accounts => cached( accounts ),
+    } )
+    return { account, route: api_route, reason, mounts: account_credential_mounts( account ) }
+
+}
 
 /**
  * Per-account Claude usage in collect_usage's shape, so `babysit usage`,
@@ -435,7 +472,7 @@ export const cmd_auth_accounts = async ( cmd, {
     }
 
     output.write( format_accounts_table( accounts, usage() ) )
-    if( accounts.length < 2 ) output.write( `One account: launches use it as before. Add another with babysit auth init --claude-token --name <account>.\n` )
+    if( accounts.length < 2 ) output.write( `One account: every session uses it. Add another with babysit auth init --claude-token --name <account>.\n` )
     return 0
 
 }

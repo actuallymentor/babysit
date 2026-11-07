@@ -17,7 +17,6 @@ import {
     AUTH_CHECK_REFRESH_AFTER_MS,
     find_offline_logouts,
     HOST_CHECK_AFTER_MS,
-    auth_checker_hint,
     checker_environment,
     cmd_auth_check,
     cmd_auth_init,
@@ -27,6 +26,7 @@ import {
     render_auth_launch_agent,
     render_auth_timer_units,
     resolve_checker_scheduler,
+    has_host_credentials,
     select_auth_check_agents,
 } from '../src/cli/auth.js'
 
@@ -115,6 +115,7 @@ describe( `auth check`, () => {
             output,
             cache_path,
             setup: async () => ( { mounts, sync: null, tmpfiles: {} } ),
+            claude_login: async () => ( { mounts: [] } ),
             resolve_image_identity: async () => IMAGE_IDENTITY,
             resolve_context_files: () => ( {} ),
             acquire_lease: async () => lease,
@@ -266,8 +267,35 @@ describe( `auth check`, () => {
 
         // OpenCode's identity includes the launching project's route; a
         // scheduler-side probe would replace that entry with its own.
-        expect( names( select_auth_check_agents( { cache } ) ) ).toEqual( [ `claude`, `codex` ] )
-        expect( names( select_auth_check_agents( { cache: { version: 1, agents: {} } } ) ) ).toEqual( [] )
+        const none = () => false
+        expect( names( select_auth_check_agents( { cache, has_credentials: none } ) ) ).toEqual( [ `claude`, `codex` ] )
+        expect( names( select_auth_check_agents( { cache: { version: 1, agents: {} }, has_credentials: none } ) ) ).toEqual( [] )
+
+    } )
+
+    it( `enrols agents whose credentials are present, before any probe verified them`, () => {
+
+        const names = agents => agents.map( agent => agent.name )
+        const empty = { version: 1, agents: {} }
+
+        expect( names( select_auth_check_agents( { cache: empty, has_credentials: agent => agent.name === `codex` } ) ) ).toEqual( [ `codex` ] )
+        // OpenCode stays launch-only even with credentials
+        expect( names( select_auth_check_agents( { cache: empty, has_credentials: () => true } ) ) ).toEqual( [ `claude`, `codex` ] )
+
+    } )
+
+    it( `judges Claude by its setup-token or route, never the host /login`, () => {
+
+        const claude = get_agent( `claude` )
+        const login = { read_credential: () => ( { state: `present`, text: `{}` } ), claude_route: () => null }
+        expect( has_host_credentials( claude, { ...login, claude_accounts: () => [] } ) ).toBe( false )
+        expect( has_host_credentials( claude, { ...login, claude_accounts: () => [ { name: `default` } ] } ) ).toBe( true )
+        expect( has_host_credentials( claude, { ...login, claude_accounts: () => [], claude_route: () => `ANTHROPIC_API_KEY` } ) ).toBe( true )
+
+        const codex = get_agent( `codex` )
+        expect( has_host_credentials( codex, { env: {}, read_credential: () => ( { state: `absent` } ) } ) ).toBe( false )
+        expect( has_host_credentials( codex, { env: { OPENAI_API_KEY: `k` }, read_credential: () => ( { state: `absent` } ) } ) ).toBe( true )
+        expect( has_host_credentials( codex, { env: {}, read_credential: () => ( { state: `present`, text: `{}` } ) } ) ).toBe( true )
 
     } )
 
@@ -294,7 +322,7 @@ describe( `auth check`, () => {
         const { exit_code, rendered, probes } = check( { select_agents: () => [] } )
 
         expect( await exit_code ).toBe( 0 )
-        expect( rendered() ).toContain( `No previously verified agents` )
+        expect( rendered() ).toContain( `No agents with credentials to keep warm` )
         expect( probes ).toEqual( [] )
 
     } )
@@ -495,21 +523,6 @@ describe( `auth check`, () => {
 
             } )
 
-            it( `stages without the token-refreshing pre-flight while sessions run`, async () => {
-
-                const staged = []
-                const setup = async ( agent, options = {} ) => {
-                    staged.push( options.preflight )
-                    return { mounts: [], sync: null, tmpfiles: {} }
-                }
-                due()
-                await check( { ...codex_only, ...live, setup, read_credential: fresh_token } ).exit_code
-                due()
-                await check( { ...codex_only, setup, read_credential: fresh_token } ).exit_code
-                expect( staged ).toEqual( [ false, true ] )
-
-            } )
-
             it( `counts a session's token rotation as the proof that keeps the entry warm`, async () => {
 
                 due()
@@ -608,16 +621,16 @@ describe( `auth check`, () => {
             } )
 
             expect( await exit_code ).toBe( 1 )
+            // Claude sessions run on a setup-token: its host /login is no evidence
             expect( probes ).toEqual( [] )
             expect( calls[0].found.map( logout => [ logout.agent, logout.reason ] ) ).toEqual( [
                 [ `codex`, `its credential file was deleted` ],
-                [ `claude`, `its refresh token expired` ],
             ] )
-            expect( read_host_auth_cache( { cache_path } ).agents ).toEqual( {} )
+            expect( Object.keys( read_host_auth_cache( { cache_path } ).agents ) ).toEqual( [ `claude` ] )
 
         } )
 
-        it( `finds an expired Claude refresh token in the macOS Keychain`, async () => {
+        it( `never reads Claude's host /login or Keychain item as a logout: sessions run on the setup-token`, async () => {
 
             const cache = { agents: { claude: { credential_kinds: [ `file` ] } } }
             const expired = JSON.stringify( { claudeAiOauth: { refreshTokenExpiresAt: Date.now() - 1 } } )
@@ -627,9 +640,7 @@ describe( `auth check`, () => {
             } )
             const find = state => find_offline_logouts( [ get_agent( `claude` ) ], { cache, wait: async () => {}, read_credential: keychain( state ) } )
 
-            expect( ( await find( `present` ) ).map( logout => logout.reason ) ).toEqual( [ `its refresh token expired` ] )
-
-            // A locked or unreachable Keychain proves nothing
+            expect( await find( `present` ) ).toEqual( [] )
             expect( await find( `unknown` ) ).toEqual( [] )
 
         } )
@@ -637,8 +648,8 @@ describe( `auth check`, () => {
         it( `never calls a missing file a logout when the login had another source or the file came back`, async () => {
 
             const cache = { agents: {
-                codex: { credential_kinds: [ `env`, `file` ] },
-                claude: { credential_kinds: [ `file` ] },
+                codex: { credential_kinds: [ `file` ] },
+                claude: { credential_kinds: [ `env`, `file` ] },
                 opencode: {},
             } }
             let reads = 0
@@ -646,8 +657,8 @@ describe( `auth check`, () => {
                 cache,
                 wait: async () => {},
                 read_credential: agent => {
-                    if( agent.name === `claude` ) reads += 1
-                    return agent.name === `claude` && reads > 1 ? { state: `present`, text: `{}` } : { state: `absent` }
+                    if( agent.name === `codex` ) reads += 1
+                    return agent.name === `codex` && reads > 1 ? { state: `present`, text: `{}` } : { state: `absent` }
                 },
             } )
 
@@ -667,22 +678,6 @@ describe( `auth check`, () => {
         expect( await exit_code ).toBe( 1 )
         expect( rendered() ).toContain( `codex: unauthenticated (401)` )
         expect( read_host_auth_cache( { cache_path } ).agents.codex ).toBeUndefined()
-
-    } )
-
-} )
-
-describe( `auth checker hint`, () => {
-
-    const probed = [ { name: `claude`, status: `authenticated`, authenticated: true } ]
-    const cached = [ { name: `claude`, status: `cached`, authenticated: true } ]
-
-    it( `nudges only after a real probe on a host without the checker`, () => {
-
-        expect( auth_checker_hint( probed, { scheduler: { installed: false } } ) ).toContain( `babysit auth init` )
-        expect( auth_checker_hint( cached, { scheduler: { installed: false } } ) ).toBeNull()
-        expect( auth_checker_hint( probed, { scheduler: { installed: true } } ) ).toBeNull()
-        expect( auth_checker_hint( probed, { scheduler: null } ) ).toBeNull()
 
     } )
 
