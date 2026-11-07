@@ -167,6 +167,15 @@ describe( `session_usage_limits`, () => {
 
     } )
 
+    it( `keeps a Codex session's own usage when it carries a Claude account for nested claude`, () => {
+
+        const window = used_percent => ( { name: `five_hour`, kind: `window`, used_percent } )
+        const report = { agents: [ { agent: `codex`, status: `ok`, limits: [ window( 40 ) ] } ] }
+
+        expect( session_usage_limits( report, { agent: `codex`, claude_account: `work` } ) ).toEqual( [ window( 40 ) ] )
+
+    } )
+
     it( `counts only the provider an OpenCode session's model runs on`, () => {
 
         const window = used_percent => ( { name: `five_hour`, kind: `window`, used_percent } )

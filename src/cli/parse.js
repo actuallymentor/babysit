@@ -96,6 +96,8 @@ export const parse_args = ( argv ) => {
         linger: verb === `auth` && args.linger !== false,
         // Unset: offer the token when missing. --claude-token re-mints, --no-claude-token skips.
         claude_token: verb === `auth` && typeof args[ `claude-token` ] === `boolean` ? args[ `claude-token` ] : undefined,
+        // --token-stdin imports a piped setup-token (no TTY, no host claude needed)
+        token_stdin: verb === `auth` && ( args[ `token-stdin` ] || false ),
         // --port accepts either PORT or HOSTPORT:CONTAINERPORT. Repeated flags
         // are preserved as an ordered list of Docker publish mappings.
         ports: normalise_port_mappings( args.port ),

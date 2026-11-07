@@ -4,10 +4,9 @@ import { dirname, join } from 'path'
 import { tmpdir } from 'os'
 
 import { get_agent } from '../src/agents/index.js'
-import { aggregate_syncs, setup_credentials } from '../src/credentials/index.js'
-import { setup_darwin_credentials } from '../src/credentials/darwin.js'
-import { setup_linux_credentials } from '../src/credentials/linux.js'
-import { hash_credential_content, start_credential_sync } from '../src/credentials/refresh.js'
+import { aggregate_syncs, session_credential_states, setup_credentials } from '../src/credentials/index.js'
+import { setup_agent_credentials } from '../src/credentials/setup.js'
+import { hash_credential_content, read_sync_state, start_credential_sync, write_sync_state } from '../src/credentials/refresh.js'
 
 // Regression suite for the monitor-tmpfile fix.
 //
@@ -142,7 +141,7 @@ describe( `aggregate credential sync`, () => {
 
 } )
 
-describe( `setup_darwin_credentials Keychain handoff`, () => {
+describe( `setup_agent_credentials Keychain sources`, () => {
 
     it( `uses the foreground baseline instead of overwriting a refreshed container credential`, async () => {
 
@@ -154,96 +153,49 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
         const fake_agent = {
             name: `claude`,
             bin: `claude`,
-            credential_preflight: true,
             credentials: {
-                darwin: { keychain_service: `Claude Code-credentials` },
+                sources: { darwin: [ { keychain: `Claude Code-credentials` } ] },
             },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }
-        const commands = []
-
         try {
             writeFileSync( tmpfile, container_credential )
 
-            const result = await setup_darwin_credentials( fake_agent, {
+            const result = setup_agent_credentials( fake_agent, {
+                platform: `darwin`,
                 existing_tmpfile: tmpfile,
                 sync_baseline: {
                     baseline_source_hash: initial_hash,
                     baseline_tmpfile_hash: initial_hash,
                 },
-                run_command: command => {
-                    commands.push( command )
-                    return command.includes( ` -w ` )
-                        ? keychain_credential
-                        : `credential exists`
-                },
+                read_keychain: () => ( { state: `present`, text: keychain_credential } ),
             } )
 
             await result.sync.stop()
 
             expect( readFileSync( tmpfile, `utf-8` ) ).toBe( container_credential )
-            expect( commands.some( command => command.includes( `--version` ) ) ).toBe( false )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
 
     } )
 
-    it( `preflights fresh Claude Keychain credentials before capture`, async () => {
+    it( `captures a fresh Keychain item with one shell-free read`, async () => {
 
-        const keychain_credential = `{"refresh_token":"keychain-original"}`
-        const commands = []
-        const fake_agent = {
+        const reads = []
+        const result = setup_agent_credentials( {
             name: `claude`,
             bin: `claude`,
-            credential_preflight: true,
-            credentials: {
-                darwin: { keychain_service: `Claude Code-credentials` },
-            },
-            container_paths: { creds: `/home/node/.claude/.credentials.json` },
-        }
-
-        const result = await setup_darwin_credentials( fake_agent, {
-            run_command: command => {
-                commands.push( command )
-                return command.includes( ` -w ` )
-                    ? keychain_credential
-                    : `credential exists`
-            },
-        } )
-
-        try {
-            expect( commands.slice( 0, 3 ) ).toEqual( [
-                `security find-generic-password -s "Claude Code-credentials" 2>/dev/null`,
-                `claude --version 2>/dev/null`,
-                `security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null`,
-            ] )
-        } finally {
-            await result.sync.stop()
-            rmSync( result.cleanup_path, { recursive: true, force: true } )
-        }
-
-    } )
-
-    it( `skips the pre-flight when asked, so staging never refreshes a held token`, async () => {
-
-        const commands = []
-        const result = await setup_darwin_credentials( {
-            name: `claude`,
-            bin: `claude`,
-            credential_preflight: true,
-            credentials: { darwin: { keychain_service: `Claude Code-credentials` } },
+            credentials: { sources: { darwin: [ { keychain: `Claude Code-credentials` } ] } },
             container_paths: { creds: `/home/node/.claude/.credentials.json` },
         }, {
-            preflight: false,
-            run_command: command => {
-                commands.push( command )
-                return command.includes( ` -w ` ) ? `{"refresh_token":"held"}` : `credential exists`
-            },
+            platform: `darwin`,
+            read_keychain: source => reads.push( source.keychain ) && { state: `present`, text: `{"refresh_token":"held"}` },
         } )
 
         try {
-            expect( commands.some( command => command.includes( `--version` ) ) ).toBe( false )
+            expect( reads ).toEqual( [ `Claude Code-credentials` ] )
+            expect( readFileSync( result.mounts[0].source, `utf-8` ) ).toBe( `{"refresh_token":"held"}` )
         } finally {
             await result.sync.stop()
             rmSync( result.cleanup_path, { recursive: true, force: true } )
@@ -253,7 +205,97 @@ describe( `setup_darwin_credentials Keychain handoff`, () => {
 
 } )
 
-describe( `setup_linux_credentials existing_tmpfile`, () => {
+describe( `setup_agent_credentials source order and flags`, () => {
+
+    let dir
+    beforeEach( () => {
+        dir = mkdtempSync( join( tmpdir(), `babysit-creds-order-` ) )
+    } )
+    afterEach( () => rmSync( dir, { recursive: true, force: true } ) )
+
+    const agent = ( credentials ) => ( {
+        name: `fake`,
+        container_paths: { creds: `/home/node/.fake/auth.json` },
+        credentials,
+    } )
+
+    it( `falls through a missing or locked Keychain item to the next file source`, async () => {
+
+        const file = join( dir, `auth.json` )
+        writeFileSync( file, `{"from":"file"}` )
+        const fake = agent( { sources: { darwin: [ { keychain: `svc` }, { file } ] } } )
+
+        for( const state of [ `missing`, `unknown` ] ) {
+            const result = setup_agent_credentials( fake, { platform: `darwin`, read_keychain: () => ( { state } ) } )
+            expect( readFileSync( result.mounts[0].source, `utf-8` ) ).toBe( `{"from":"file"}` )
+            expect( result.sync_baseline.credential_source ).toBeUndefined()
+            await result.sync.stop()
+            rmSync( result.cleanup_path, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `reattaches a monitor to the source kind the foreground captured`, async () => {
+
+        const file = join( dir, `auth.json` )
+        const tmpfile = join( dir, `sync.json` )
+        writeFileSync( file, `{"from":"file"}` )
+        writeFileSync( tmpfile, `{"from":"keychain"}` )
+        const fake = agent( { sources: { darwin: [ { keychain: `svc` }, { file } ] } } )
+        const reads = []
+
+        const result = setup_agent_credentials( fake, {
+            platform: `darwin`,
+            existing_tmpfile: tmpfile,
+            sync_baseline: { credential_source: `keyring` },
+            read_keychain: () => reads.push( `read` ) && { state: `present`, text: `{"from":"keychain"}` },
+        } )
+
+        expect( result.mounts ).toEqual( [] )
+        expect( result.sync_baseline.credential_source ).toBe( `keyring` )
+        // Keychain sync is one-way: a container change never reaches the host file
+        writeFileSync( tmpfile, `{"from":"container"}` )
+        await result.sync.stop()
+        expect( readFileSync( file, `utf-8` ) ).toBe( `{"from":"file"}` )
+        expect( reads.length ).toBeGreaterThan( 0 )
+
+    } )
+
+    it( `file_required: absence is logout, other read errors keep recovery state`, async () => {
+
+        const file = join( dir, `auth.json` )
+        writeFileSync( file, `{"tokens":{}}` )
+        const required = setup_agent_credentials( agent( { sources: { linux: [ { file } ] }, file_required: true } ), { platform: `linux` } )
+        const optional = setup_agent_credentials( agent( { sources: { linux: [ { file } ] } } ), { platform: `linux` } )
+
+        rmSync( file )
+        mkdirSync( file )
+        await expect( required.sync.flush() ).rejects.toThrow()
+        await optional.sync.flush()
+
+        rmSync( file, { recursive: true } )
+        await required.sync.stop()
+        expect( required.sync.source_changed() ).toBe( true )
+        await optional.sync.stop()
+        rmSync( required.cleanup_path, { recursive: true, force: true } )
+        rmSync( optional.cleanup_path, { recursive: true, force: true } )
+
+    } )
+
+    it( `stacks an env key on the file login and falls back to the fallback variable`, () => {
+
+        const fake = agent( { sources: { linux: [] }, env_key: `KEY`, fallback_env: `FALLBACK` } )
+        expect( setup_agent_credentials( fake, { platform: `linux`, env: { KEY: `k`, FALLBACK: `f` } } ).mounts )
+            .toEqual( [ { type: `env`, key: `KEY`, value: `k` } ] )
+        expect( setup_agent_credentials( fake, { platform: `linux`, env: { FALLBACK: `f` } } ).mounts )
+            .toEqual( [ { type: `env`, key: `KEY`, value: `f` } ] )
+        expect( setup_agent_credentials( agent( {} ), { platform: `linux` } ).mounts ).toEqual( [] )
+
+    } )
+
+} )
+
+describe( `setup_agent_credentials file sources`, () => {
 
     let dir
     let original_home
@@ -261,7 +303,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         name: `codex-test`,
         bin: `codex-test`,
         credentials: {
-            linux: { file: `~/.codex/auth.json` },
+            sources: { linux: [ { file: `~/.codex/auth.json` } ] },
         },
         container_paths: { creds: `/home/node/.codex/auth.json` },
     }
@@ -284,7 +326,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `creates a fresh tmpfile + mount on the foreground call`, async () => {
 
-        const { mounts, sync, cleanup_path } = await setup_linux_credentials( fake_agent )
+        const { mounts, sync, cleanup_path } = setup_agent_credentials( fake_agent, { platform: `linux` } )
 
         const volume = mounts.find( m => m.type === `synced_file` )
 
@@ -301,59 +343,14 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     } )
 
-    it( `runs a declared preflight once and skips it for monitor reuse`, async () => {
-
-        const commands = []
-        const preflight_agent = {
-            ...fake_agent,
-            name: `claude-test`,
-            bin: `claude-test`,
-            credential_preflight: true,
-        }
-        const options = {
-            run_command: command => commands.push( command ),
-        }
-        const foreground = await setup_linux_credentials( preflight_agent, options )
-        const tmpfile = foreground.mounts.find( mount => mount.type === `synced_file` ).source
-        const monitor = await setup_linux_credentials( preflight_agent, {
-            ...options,
-            existing_tmpfile: tmpfile,
-        } )
-
-        try {
-            expect( commands ).toEqual( [ `claude-test --version 2>/dev/null` ] )
-        } finally {
-            await monitor.sync.stop()
-            await foreground.sync.stop()
-            rmSync( foreground.cleanup_path, { recursive: true, force: true } )
-        }
-
-    } )
-
-    it( `skips fresh-capture preflight when the adapter omits the capability`, async () => {
-
-        const commands = []
-        const result = await setup_linux_credentials( fake_agent, {
-            run_command: command => commands.push( command ),
-        } )
-
-        try {
-            expect( commands ).toEqual( [] )
-        } finally {
-            await result.sync.stop()
-            rmSync( result.cleanup_path, { recursive: true, force: true } )
-        }
-
-    } )
-
     it( `re-uses the existing tmpfile when passed — no new file, no new mount`, async () => {
 
         // Foreground path
-        const fg = await setup_linux_credentials( fake_agent )
+        const fg = setup_agent_credentials( fake_agent, { platform: `linux` } )
         const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         // Monitor path: same agent, but pass the foreground's tmpfile
-        const mon = await setup_linux_credentials( fake_agent, { existing_tmpfile: fg_tmpfile } )
+        const mon = setup_agent_credentials( fake_agent, { platform: `linux`, existing_tmpfile: fg_tmpfile } )
 
         // Monitor must not add a new volume mount — the container is already
         // mounting the foreground's tmpfile.
@@ -377,7 +374,7 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `preserves a tmpfile rotation that happened before the monitor starts`, async () => {
 
-        const fg = await setup_linux_credentials( fake_agent )
+        const fg = setup_agent_credentials( fake_agent, { platform: `linux` } )
         const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
         // Simulate codex refreshing during startup before the detached monitor
@@ -386,7 +383,8 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
         // the host file is stale and the tmpfile is fresh.
         writeFileSync( fg_tmpfile, `{"refresh_token":"startup-rotated"}` )
 
-        const mon = await setup_linux_credentials( fake_agent, {
+        const mon = setup_agent_credentials( fake_agent, {
+            platform: `linux`,
             existing_tmpfile: fg_tmpfile,
             sync_baseline: fg.sync_baseline,
         } )
@@ -405,10 +403,10 @@ describe( `setup_linux_credentials existing_tmpfile`, () => {
 
     it( `with existing_tmpfile, host-file changes still flow to the tmpfile (direction 1)`, async () => {
 
-        const fg = await setup_linux_credentials( fake_agent )
+        const fg = setup_agent_credentials( fake_agent, { platform: `linux` } )
         const fg_tmpfile = fg.mounts.find( m => m.type === `synced_file` ).source
 
-        const mon = await setup_linux_credentials( fake_agent, { existing_tmpfile: fg_tmpfile } )
+        const mon = setup_agent_credentials( fake_agent, { platform: `linux`, existing_tmpfile: fg_tmpfile } )
 
         // Stop the foreground's sync so only the monitor's sync is watching —
         // otherwise both syncs race on the same tmpfile and the test gets noisy.
@@ -498,32 +496,43 @@ describe( `setup_credentials multi-agent capture`, () => {
 
     } )
 
-    it( `captures credential mounts for every supported agent on a codex launch`, async () => {
+    const state_dir = () => join( dir, `state` )
 
-        const result = await setup_credentials( get_agent( `codex` ) )
+    it( `captures credential mounts for every supported agent on a codex launch, one durable state each`, async () => {
+
+        const result = await setup_credentials( get_agent( `codex` ), { state_dir: state_dir() } )
         const volume_targets = result.mounts
             .filter( mount => mount.type === `synced_file` )
             .map( mount => mount.target )
 
-        expect( volume_targets ).toEqual( expect.arrayContaining( Object.values( container_targets ) ) )
-        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `claude`, `codex`, `opencode` ] )
-        expect( Object.keys( result.sync_baselines ).sort() ).toEqual( [ `claude`, `codex`, `opencode` ] )
-        expect( result.creds_tmpfile ).toBeUndefined()
+        expect( volume_targets.sort() ).toEqual( [ container_targets.opencode, container_targets.codex ].sort() )
+        expect( Object.keys( result.tmpfiles ).sort() ).toEqual( [ `codex`, `opencode` ] )
+        expect( Object.keys( result.states ).sort() ).toEqual( [ `codex`, `opencode` ] )
+        expect( read_sync_state( result.states.codex ) ).toMatchObject( {
+            tmpfile: result.tmpfiles.codex,
+            source_hash: hash_credential_content( `{"agent":"codex","refresh_token":"original"}` ),
+            synced_hash: hash_credential_content( `{"agent":"codex","refresh_token":"original"}` ),
+        } )
+        // Hashes only, never the secret
+        expect( readFileSync( result.states.codex, `utf-8` ) ).not.toContain( `original` )
 
         await result.sync.stop()
-        result.sync.cleanup()
+        expect( result.sync.cleanup() ).toBe( true )
         expect( Object.values( result.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
+        expect( Object.values( result.states ).every( path => !existsSync( path ) ) ).toBe( true )
 
     } )
 
-    it( `passes a Claude setup-token into the container next to the /login file`, async () => {
+    it( `never stages Claude's host /login or env token; the setup-token rides the account env file`, async () => {
 
-        process.env.CLAUDE_CODE_OAUTH_TOKEN = `sk-ant-oat-test`
+        process.env.CLAUDE_CODE_OAUTH_TOKEN = `sk-ant-oat01-test`
 
         try {
-            const result = await setup_credentials( get_agent( `claude` ) )
-            expect( result.mounts ).toContainEqual( { type: `env`, key: `CLAUDE_CODE_OAUTH_TOKEN`, value: `sk-ant-oat-test` } )
-            expect( result.mounts.some( mount => mount.target === container_targets.claude ) ).toBe( true )
+            const result = await setup_credentials( get_agent( `claude` ), { state_dir: state_dir() } )
+            expect( result.mounts.some( mount => mount.target === container_targets.claude ) ).toBe( false )
+            expect( result.mounts.some( mount => mount.key === `CLAUDE_CODE_OAUTH_TOKEN` ) ).toBe( false )
+            expect( result.tmpfiles.claude ).toBeUndefined()
+            expect( result.states.claude ).toBeUndefined()
             await result.sync.stop()
             result.sync.cleanup()
         } finally {
@@ -532,49 +541,90 @@ describe( `setup_credentials multi-agent capture`, () => {
 
     } )
 
-    it( `monitor handoff reuses every foreground tmpfile without creating new mounts`, async () => {
+    it( `legacy session records keep syncing their captured Claude /login until the final flush`, async () => {
 
-        const foreground = await setup_credentials( get_agent( `codex` ) )
+        // A pre-setup-token launch staged Claude's /login and stored its tmpfile
+        const legacy = mkdtempSync( join( tmpdir(), `babysit-creds-legacy-` ) )
+        const tmpfile = join( legacy, `claude.json` )
+        const original = readFileSync( host_credential_path( `claude` ), `utf-8` )
+        writeFileSync( tmpfile, original )
+
+        // One-time shim: old creds_tmpfiles + baselines become durable states
+        const states = session_credential_states( {
+            babysit_id: `legacy-session`,
+            agent: `codex`,
+            creds_tmpfiles: { claude: tmpfile },
+            creds_sync_baselines: { claude: {
+                baseline_source_hash: hash_credential_content( original ),
+                baseline_tmpfile_hash: hash_credential_content( original ),
+            } },
+        }, { state_dir: state_dir() } )
+        expect( Object.keys( states ) ).toEqual( [ `claude` ] )
+        expect( session_credential_states( { creds_states: states } ) ).toBe( states )
+
+        const monitor = await setup_credentials( get_agent( `codex` ), { existing_states: states } )
+
+        expect( Object.keys( monitor.tmpfiles ) ).toEqual( [ `claude` ] )
+        expect( monitor.mounts ).toEqual( [] )
+        writeFileSync( tmpfile, `{"agent":"claude","refresh_token":"rotated"}` )
+        await monitor.sync.stop()
+
+        expect( readFileSync( host_credential_path( `claude` ), `utf-8` ) )
+            .toBe( `{"agent":"claude","refresh_token":"rotated"}` )
+        expect( read_sync_state( states.claude ).synced_hash ).toBe( hash_credential_content( `{"agent":"claude","refresh_token":"rotated"}` ) )
+        rmSync( legacy, { recursive: true, force: true } )
+
+    } )
+
+    it( `monitor handoff resumes every foreground state without creating new mounts`, async () => {
+
+        const foreground = await setup_credentials( get_agent( `codex` ), { state_dir: state_dir() } )
         await foreground.sync.stop()
-        const monitor = await setup_credentials( get_agent( `codex` ), {
-            existing_tmpfiles: foreground.tmpfiles,
-            sync_baselines: foreground.sync.baselines(),
-        } )
+
+        // A rotation before the monitor attaches: the state knows the host is stale
+        writeFileSync( foreground.tmpfiles.codex, `{"agent":"codex","refresh_token":"startup-rotated"}` )
+
+        const monitor = await setup_credentials( get_agent( `codex` ), { existing_states: foreground.states } )
 
         expect( monitor.mounts.find( mount => mount.type === `synced_file` ) ).toBeUndefined()
         expect( monitor.tmpfiles ).toEqual( foreground.tmpfiles )
+        expect( monitor.states ).toEqual( foreground.states )
 
-        writeFileSync( foreground.tmpfiles.claude, `{"agent":"claude","refresh_token":"rotated"}` )
+        writeFileSync( foreground.tmpfiles.opencode, `{"agent":"opencode","refresh_token":"rotated"}` )
         await monitor.sync.stop()
         monitor.sync.cleanup()
         expect( Object.values( foreground.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
 
-        expect( readFileSync( host_credential_path( `claude` ), `utf-8` ) )
-            .toBe( `{"agent":"claude","refresh_token":"rotated"}` )
+        expect( readFileSync( host_credential_path( `opencode` ), `utf-8` ) )
+            .toBe( `{"agent":"opencode","refresh_token":"rotated"}` )
+        expect( readFileSync( host_credential_path( `codex` ), `utf-8` ) )
+            .toBe( `{"agent":"codex","refresh_token":"startup-rotated"}` )
 
     } )
 
-    it( `legacy monitor handoff syncs only the active agent tmpfile`, async () => {
+    it( `the durable state survives tmp cleanup; a rebuilt copy is filled by the final pull`, async () => {
 
-        const foreground = await setup_credentials( get_agent( `codex` ) )
-        const legacy_monitor = await setup_credentials( get_agent( `codex` ), {
-            existing_tmpfile: foreground.tmpfiles.codex,
-            sync_baseline: foreground.sync_baselines.codex,
-        } )
-
-        expect( legacy_monitor.mounts.find( mount => mount.type === `synced_file` ) ).toBeUndefined()
-        expect( Object.keys( legacy_monitor.tmpfiles ) ).toEqual( [ `codex` ] )
-
+        const foreground = await setup_credentials( get_agent( `codex` ), { state_dir: state_dir() } )
         await foreground.sync.stop()
+        const state_path = foreground.states.codex
 
-        writeFileSync( foreground.tmpfiles.codex, `{"agent":"codex","refresh_token":"legacy-rotated"}` )
-        await legacy_monitor.sync.stop()
-        legacy_monitor.sync.cleanup()
-        foreground.sync.cleanup()
-        expect( Object.values( foreground.tmpfiles ).every( path => !existsSync( path ) ) ).toBe( true )
+        // Reboot: /tmp is wiped, BABYSIT_DIR is not
+        rmSync( dirname( foreground.tmpfiles.codex ), { recursive: true, force: true } )
+        expect( read_sync_state( state_path ) ).not.toBeNull()
+
+        const rebuilt = join( mkdtempSync( join( tmpdir(), `babysit-creds-rebuilt-` ) ), `recovered.json` )
+        writeFileSync( rebuilt, `` )
+        write_sync_state( state_path, { ...read_sync_state( state_path ), tmpfile: rebuilt } )
+
+        const recovery = await setup_credentials( get_agent( `codex` ), { existing_states: { codex: state_path } } )
+        // Stand-in for the final pull from the stopped container
+        writeFileSync( rebuilt, `{"agent":"codex","refresh_token":"in-container"}` )
+        await recovery.sync.stop()
 
         expect( readFileSync( host_credential_path( `codex` ), `utf-8` ) )
-            .toBe( `{"agent":"codex","refresh_token":"legacy-rotated"}` )
+            .toBe( `{"agent":"codex","refresh_token":"in-container"}` )
+        rmSync( dirname( rebuilt ), { recursive: true, force: true } )
+        foreground.sync.cleanup()
 
     } )
 

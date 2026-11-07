@@ -396,11 +396,12 @@ Examples:
     auth: () => `Usage: babysit auth [status]
        babysit auth check [agent] [--force]
        babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]
-       babysit auth init --claude-token --name NAME
+       babysit auth init --claude-token [--token-stdin] [--name NAME]
        babysit auth accounts [remove NAME]
 
 Keeps agent logins verified so launches start fast, and tells you when one
-breaks. A launch or babysit doctor --auth verifies a login and caches it for
+breaks. Launches make no model call (a local check only stops a launch with
+no login at all); babysit doctor --auth verifies a login and caches it for
 12h. The checker (installed by babysit auth init) runs babysit auth check every
 10 minutes to keep those entries warm and catch logouts:
   offline        every run: credential file deleted, Claude refresh token expired
@@ -433,13 +434,15 @@ session keeps its account through resume, restart, and recovery. When a session
 hits its limit, the monitor moves it to another account with headroom, never
 back to one it left while that limit window is open
 (config.claude_account_auto_switch, default true).
-Sessions started with two or more accounts switch in place: Claude re-reads its
+Codex and OpenCode sessions get an account too (from cached readings, never a
+probe), so a nested claude call runs on a setup-token.
+Sessions switch in place: Claude re-reads its
 credentials file before every request, so Babysit rewrites the token there,
 presses Esc and types a continue prompt (or, while you are attached, leaves the
 typing to you). No restart, same process and conversation; the prompt cache is
-per account, so the first request after a switch re-reads the context. Such
-sessions do not use the host /login file. Older sessions switch by restart
-(resume plus a continue prompt) and only while detached.
+per account, so the first request after a switch re-reads the context. No
+session uses the host /login file. Sessions from before 2.0 with one account
+switch by restart (resume plus a continue prompt) and only while detached.
 The token reaches the container as a private file copied in with docker cp,
 never a docker -e flag.
 
@@ -455,7 +458,7 @@ Examples:
 
 Shows each agent's cached login: when it was verified, how old that is, and
 whether the scheduled checker is installed. Missing entries mean the next
-launch probes first.
+check (babysit auth check or doctor --auth) probes first.
 
 Examples:
   babysit auth
@@ -463,7 +466,8 @@ Examples:
 
     'auth check': () => `Usage: babysit auth check [agent] [--force]
 
-What the scheduled checker runs. Only agents verified before are checked,
+What the scheduled checker runs. Agents with credentials on the host (Claude:
+a setup-token or route; OpenCode stays with doctor --auth) are checked,
 cheapest first: offline file checks, then a host CLI prompt once the last proof
 is 1h old, then a container re-verify after 6h. A host probe waits while a
 session might be refreshing the same token. Network failures never alert.
@@ -477,7 +481,7 @@ Examples:
   babysit auth check claude --force`,
 
     'auth init': () => `Usage: babysit auth init [--remove] [--no-linger] [--claude-token | --no-claude-token]
-       babysit auth init --claude-token --name NAME
+       babysit auth init --claude-token [--token-stdin] [--name NAME]
 
 1. Installs the 10-minute checker for your user: a systemd user timer on Linux
    (and enables lingering so it runs while you are logged out), a launchd agent
@@ -485,11 +489,15 @@ Examples:
 2. Offers a one-year Claude token when CLAUDE_CODE_OAUTH_TOKEN is unset: runs
    claude setup-token (approve in the browser), then asks you to paste the
    printed token, proves it with one prompt, and saves it to ~/.babysitrc
-   (0600). Sessions then use it instead of the rotating /login token, so they
-   stop logging each other out. Restart running Claude sessions to switch.
+   (0600). Without a host claude, --claude-token takes a token minted on any
+   other machine (claude setup-token) and only checks its format.
+Containers run Claude only on this token (the rotating /login is never staged),
+so a Claude launch without one fails unless an API key, Bedrock, Vertex or
+Foundry route is configured. Restart running Claude sessions to switch.
 Rerun after upgrading Babysit to pick up schedule changes.
-With --name NAME only step 2 runs, and the token becomes a named Claude account
-(see babysit auth accounts --help) instead of replacing ~/.babysitrc.
+With --name NAME or --token-stdin only step 2 runs. --name makes the token a
+named Claude account (see babysit auth accounts --help) instead of replacing
+~/.babysitrc; --token-stdin reads it from a pipe, no terminal needed.
 
 ${ options_table( `auth`, `init` ) }
 
@@ -498,7 +506,8 @@ Examples:
   babysit auth init --claude-token
   babysit auth init --no-claude-token --no-linger
   babysit auth init --remove
-  babysit auth init --claude-token --name work`,
+  babysit auth init --claude-token --name work
+  echo "$TOKEN" | babysit auth init --claude-token --token-stdin`,
 
     web: () => `Usage: babysit web init | babysit web key add|list|remove [NAME]
 

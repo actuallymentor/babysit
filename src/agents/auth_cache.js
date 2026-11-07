@@ -15,6 +15,7 @@ import { docker_command_prefix } from '../docker/run.js'
 import { run } from '../utils/exec.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { image_facts } from '../docker/facts.js'
+import { credential_env_keys } from '../credentials/paths.js'
 
 export const HOST_AUTH_CACHE_PATH = join( BABYSIT_DIR, `host-auth-cache.json` )
 export const HOST_AUTH_CACHE_TTL_MS = 12 * 60 * 60 * 1_000
@@ -28,12 +29,7 @@ const lock_waiter = new Int32Array( new SharedArrayBuffer( 4 ) )
 
 const wait_sync = milliseconds => Atomics.wait( lock_waiter, 0, 0, milliseconds )
 
-const credential_environment_keys = agent => new Set(
-    [ agent?.credentials?.linux, agent?.credentials?.darwin ]
-        .filter( Boolean )
-        .flatMap( config => [ config.env_key, config.fallback_env ] )
-        .filter( Boolean )
-)
+const credential_environment_keys = agent => new Set( credential_env_keys( agent ) )
 
 const with_cache_lock = ( cache_path, task, {
     now = Date.now,

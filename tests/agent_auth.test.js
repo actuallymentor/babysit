@@ -14,7 +14,6 @@ import {
     build_host_auth_prompt,
     check_host_agent_authentication,
     confirm_continue_with_unauthenticated_agents,
-    failed_agent_names,
     format_host_auth_status_message,
     format_utc_timestamp,
     last_nonempty_line,
@@ -23,7 +22,6 @@ import {
     run_host_agent_auth_check,
     select_host_auth_check_agents,
     should_continue_with_unauthenticated_agents,
-    unauthenticated_agent_names,
 } from '../src/agents/auth.js'
 import {
     OPENCODE_FREE_DEFAULT_MODEL,
@@ -1039,7 +1037,7 @@ describe( `host agent auth checks`, () => {
 
         expect( calls.map( call => call.name ) ).toEqual( SUPPORTED_AGENTS )
         expect( calls.every( call => call.prompt.includes( `2026-06-09 12:34:56 UTC` ) ) ).toBe( true )
-        expect( unauthenticated_agent_names( results ) ).toEqual( [ `codex` ] )
+        expect( results.filter( result => !result.authenticated ).map( result => result.name ) ).toEqual( [ `codex` ] )
     } )
 
     it( `starts every host auth check before waiting for results`, async () => {
@@ -1082,22 +1080,6 @@ describe( `host agent auth checks`, () => {
             authenticated: false,
             reason: `runner exploded`,
         } ] )
-    } )
-
-    it( `does not classify skipped or cancelled checks as unauthenticated`, () => {
-        const names = unauthenticated_agent_names( [
-            { name: `codex`, status: `skipped`, authenticated: false },
-            { name: `claude`, status: `cancelled`, authenticated: false },
-            { name: `other`, status: `unauthenticated`, authenticated: false },
-            { name: `opencode`, status: `failed`, authenticated: false },
-            { name: `legacy`, authenticated: false },
-        ] )
-
-        expect( names ).toEqual( [ `other`, `legacy` ] )
-        expect( failed_agent_names( [
-            { name: `other`, status: `unauthenticated` },
-            { name: `opencode`, status: `failed` },
-        ] ) ).toEqual( [ `opencode` ] )
     } )
 
     it( `defaults the unauthenticated prompt to exit unless the user says no`, () => {

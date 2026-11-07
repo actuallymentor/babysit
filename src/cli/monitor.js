@@ -13,7 +13,7 @@ import { load_config } from '../babysit/yaml.js'
 import { get_agent, retired_agent_message } from '../agents/index.js'
 import { apply_loop } from '../modes/loop.js'
 import { build_system_prompt } from '../modes/prompt.js'
-import { setup_credentials } from '../credentials/index.js'
+import { credential_state_tmpfiles, session_credential_states, setup_credentials } from '../credentials/index.js'
 import { LOGOUT_RECHECK_MS, start_monitor } from '../babysit/monitor.js'
 import { create_watchdog } from '../babysit/watchdog.js'
 import { create_account_switcher } from '../babysit/account_switch.js'
@@ -294,12 +294,13 @@ export const cmd_monitor = async ( cmd ) => {
     } )
 
 
-    const existing_tmpfiles = session.creds_tmpfiles || (
-        session.creds_tmpfile ? { [ session.agent ]: session.creds_tmpfile } : {}
-    )
-    const sync_baselines = session.creds_sync_baselines || (
-        session.creds_sync_baseline ? { [ session.agent ]: session.creds_sync_baseline } : {}
-    )
+    // Durable sync states from the foreground capture. Records written
+    // before them (creds_tmpfile(s) + baselines) are converted once.
+    const credential_states = session_credential_states( session )
+    if( !session.creds_states && Object.keys( credential_states ).length ) {
+        update_session( session.babysit_id, { creds_states: credential_states } )
+    }
+    const existing_tmpfiles = credential_state_tmpfiles( credential_states )
 
     const identity_reader = create_identity_reader( session )
     let frozen_checked_at = 0
@@ -347,7 +348,7 @@ export const cmd_monitor = async ( cmd ) => {
         if( credential_cleanup_result !== null ) return credential_cleanup_result
         if( credentials_cleaned ) return true
         if( !credential_setup_complete ) {
-            const has_recovery_files = Object.keys( existing_tmpfiles ).length > 0
+            const has_recovery_files = Object.keys( credential_states ).length > 0
             if( has_recovery_files ) {
                 log.warn( `Credential recovery could not start; retaining container and private recovery files.` )
                 credential_cleanup_result = false
@@ -425,8 +426,7 @@ export const cmd_monitor = async ( cmd ) => {
         // If config parsing then fails, the outer teardown can still perform a
         // final Docker pull instead of deleting the only refreshed copy.
         const credential_setup = await setup_credentials( agent, {
-            existing_tmpfiles,
-            sync_baselines,
+            existing_states: credential_states,
         } )
         creds_sync = credential_setup.sync
         credential_setup_complete = true

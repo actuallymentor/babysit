@@ -6,8 +6,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { promisify } from 'node:util'
 
-import { setup_linux_credentials } from '../../src/credentials/linux.js'
-import { setup_darwin_credentials } from '../../src/credentials/darwin.js'
+import { setup_agent_credentials } from '../../src/credentials/setup.js'
 import { create_docker_file_transport } from '../../src/docker/file_transport.js'
 
 // Real host watchers and Docker copies, isolated from all user credentials.
@@ -22,7 +21,7 @@ const original = `{"tokens":{"access_token":"dummy-original"}}`
 const renewed = `{"tokens":{"access_token":"dummy-renewed"}}`
 const adapter = {
     name: `codex`,
-    credentials: { linux: { file: host }, darwin: { file: host } },
+    credentials: { sources: { linux: [ { file: host } ], darwin: [ { file: host } ] }, file_required: true },
     container_paths: { creds: target },
 }
 const replace_host = content => {
@@ -48,9 +47,9 @@ try {
     ] )
     await docker( [ `exec`, container, `mkdir`, `-p`, `/tmp/credential-watch` ] )
 
-    for( const setup of [ setup_linux_credentials, setup_darwin_credentials ] ) {
+    for( const platform of [ `linux`, `darwin` ] ) {
         writeFileSync( host, original )
-        credentials = await setup( adapter )
+        credentials = setup_agent_credentials( adapter, { platform } )
         const [ mount ] = credentials.mounts
         const transport = create_docker_file_transport( container, target )
         await transport.push( mount.source )

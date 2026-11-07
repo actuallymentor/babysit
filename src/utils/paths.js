@@ -26,6 +26,8 @@ export const BABYSIT_DIR = resolve_babysit_home()
 export const SESSIONS_DIR = join( BABYSIT_DIR, `sessions` )
 export const CLONES_DIR = join( BABYSIT_DIR, `clones` )
 export const CREDENTIAL_RECOVERY_DIR = join( BABYSIT_DIR, `credential-recovery` )
+// Durable credential sync state (hashes + copy location), never secrets
+export const CREDENTIAL_STATE_DIR = join( BABYSIT_DIR, `credential-sync` )
 export const AGENTS_DIR = join( home, `.agents` )
 export const TMUX_SOCKET = process.env.BABYSIT_TMUX_SOCKET || `babysit`
 
