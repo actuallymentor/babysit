@@ -307,6 +307,10 @@ const assert_no_orphans = async () => {
 
     ensure( recovery_markers.length === 0, `E2E left credential recovery markers behind` )
     ensure( private_credentials.length === 0, `E2E left private credential sync directories behind` )
+
+    const state_dir = join( babysit_home, `credential-sync` )
+    const sync_states = existsSync( state_dir ) ? readdirSync( state_dir ).filter( file => file.endsWith( `.json` ) ) : []
+    ensure( sync_states.length === 0, `E2E left durable credential sync states behind` )
 }
 
 const build_images = async () => {
