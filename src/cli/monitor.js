@@ -1,4 +1,4 @@
-import { create_identity_reader } from '../sessions/identity.js'
+import { create_launch_channel } from '../sessions/launch_channel.js'
 import { continuation_awaits_person, continue_recovered_session } from '../sessions/continuation.js'
 import { get_boot_id } from '../sessions/lock.js'
 import { read_durable_exit } from '../sessions/transcript.js'
@@ -302,7 +302,8 @@ export const cmd_monitor = async ( cmd ) => {
     }
     const existing_tmpfiles = credential_state_tmpfiles( credential_states )
 
-    const identity_reader = create_identity_reader( session )
+    // One live exec per poll feeds identity, the web bridge reply and turn events
+    const launch_channel = create_launch_channel( session )
     let frozen_checked_at = 0
     let observed_identity = session.agent_session_id
     let { continuation } = session
@@ -459,7 +460,7 @@ export const cmd_monitor = async ( cmd ) => {
             const { wait_for_initial_prompt_ready } = await import( './start.js' )
             continuation = await continue_recovered_session( session, {
                 ready: name => wait_for_initial_prompt_ready( name, agent ),
-                read_identity: () => identity_reader.refresh(),
+                read_identity: () => launch_channel.refresh(),
             } )
         }
 
@@ -531,7 +532,8 @@ export const cmd_monitor = async ( cmd ) => {
             config,
             rules,
             agent,
-            open_web_bridge_fn: () => open_web_bridge( { session } ),
+            open_web_bridge_fn: () => open_web_bridge( { session, bridge_options: { completion_reader: launch_channel.completion_reader } } ),
+            launch_channel,
             control_bridge: create_control_bridge( session, { handlers: {
                 exit: () => exit_controller.request(),
                 stuck: () => stuck_controller.request(),
@@ -561,7 +563,7 @@ export const cmd_monitor = async ( cmd ) => {
             tmux_target,
             agent_exit_sentinel: session.agent_exit_sentinel,
             on_tick: () => {
-                const identity = identity_reader.read()
+                const identity = launch_channel.identity()
                 if( identity && ( identity.session_id !== observed_identity || session.agent_session_id_source !== `structured` ) ) {
                     observed_identity = identity.session_id
                     session.agent_session_id_source = `structured`
@@ -602,7 +604,7 @@ export const cmd_monitor = async ( cmd ) => {
         exit_controller?.stop()
         await usage_sampler?.stop()
         await final_archive()
-        identity_reader.close()
+        launch_channel.close()
         const credentials_recovered = await cleanup_credentials()
         const container_removed = credentials_recovered
             ? await cleanup_container()
