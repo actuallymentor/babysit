@@ -1,78 +1,34 @@
+import { get_agent } from '../agents/index.js'
 import { strip_ansi } from './matcher.js'
 
-const SUPPORTED_AGENTS = new Set( [ `codex`, `claude`, `opencode` ] )
+// Interrupt hints remain present while a tool waits without printing output
+const INTERRUPT = /(?:^\s*|[·•(]\s*|\s{2,})esc(?:ape)?\s+(?:to\s+)?(?:interrupt|cancel|stop)\b/i
 
 /**
  * Read activity from the agent's visible controls, rather than transcript motion.
- * Unknown screens deliberately fall back to output stability in agent_status.
+ * Each adapter's `screen` reads its own footer; unknown screens deliberately
+ * fall back to output stability in agent_status.
  * @param {string} output - Current visible tmux pane
  * @param {string} agent_name - Native agent name
  * @returns {'idle'|'running'|'waiting'|null} Activity when a known control is visible
  */
 export const agent_activity = ( output, agent_name ) => {
 
-    if( !SUPPORTED_AGENTS.has( agent_name ) ) return null
+    const rules = get_agent( agent_name )?.screen
+    if( !rules?.activity ) return null
 
-    // Ignore trailing blank rows and old transcript text above the controls.
-    // Interrupt hints remain present while a tool waits without printing output.
+    // Ignore trailing blank rows and old transcript text above the controls
     const screen = strip_ansi( output ).trimEnd().split( `\n` )
     const lines = screen.slice( -8 )
-    const footer = lines.join( `\n` )
-    const interrupt = /(?:^\s*|[·•(]\s*|\s{2,})esc(?:ape)?\s+(?:to\s+)?(?:interrupt|cancel|stop)\b/i
 
     // The newest explicit control wins if an older dialog or working line is
     // still visible. Approval controls also say Escape but await user input.
     for( const line of lines.toReversed() ) {
-        if( agent_name === `codex`
-            && /^\s*Press enter to confirm or esc to (?:cancel|go back)\s*$/i.test( line ) ) return `idle`
-        if( agent_name === `claude`
-            && /^\s*Esc to cancel\s*·\s*Tab to amend\b/i.test( line ) ) return `idle`
-        if( interrupt.test( line ) ) return `running`
+        if( rules.approval?.test( line ) ) return `idle`
+        if( INTERRUPT.test( line ) ) return `running`
     }
 
-    switch ( agent_name ) {
-    case `codex`: {
-        // A turn can end while a shell it started keeps running. The native
-        // line sits right above the composer; tool output quoting it does not:
-        // "1 background terminal running · /ps to view · /stop to close"
-        const composer = lines.findLastIndex( line => /^\s*›/.test( line ) )
-        const above = lines.slice( 0, Math.max( composer, 0 ) ).findLast( line => line.trim() )
-        if( /^\s*[1-9]\d* background terminals? running · \/ps to view\b/.test( above || `` ) ) return `waiting`
-        if( /^\s*›\s*(?:Ask Codex to do anything|Ask a follow-up question)\s*$/m.test( footer )
-            || /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
-        break
-    }
-
-    case `claude`: {
-        // A completed foreground reply can leave background shells or
-        // monitors alive: "2 shells, 2 monitors · ← for agents", sometimes
-        // followed by more segments ("· 1 feedback draft"). Only read the
-        // native footer below the composer (❯, or › in newer builds), never
-        // transcript prose. The expanded agent list can push that footer well
-        // above the last 8 rows, so search the whole pane but require the composer.
-        const composer = screen.findLastIndex( line => /^\s*[❯›]/.test( line ) )
-        const controls = composer < 0 ? `` : screen.slice( composer + 1 ).join( `\n` )
-        const counts = controls.match( /(?:^|[·•])\s*(\d+ [a-z]+(?:,\s*\d+ [a-z]+)*)\s*[·•]\s*← for agents\s*(?:[·•].*)?$/m )
-        if( counts && /\b[1-9]\d* [a-z]+/.test( counts[ 1 ] ) ) return `waiting`
-
-        // 2.1.30x drops the agents hint: "⏵⏵ bypass permissions on · 1 shell".
-        // Without that anchor, only shell and monitor counts qualify.
-        const bare = controls.match( /(?:^|[·•])\s*(\d+ (?:shells?|monitors?)(?:,\s*\d+ (?:shells?|monitors?))*)\s*(?:[·•].*)?$/m )
-        if( bare && /\b[1-9]\d* [a-z]+/.test( bare[ 1 ] ) ) return `waiting`
-
-        // Background subagents carry no count; each one gets a row under
-        // "● main": "◯ general-purpose  Checking MTU   2m 59s · ↓ 35.6k tokens"
-        if( /^\s*[○◯◉●]\s+(?!main\s*$)\S/m.test( controls ) ) return `waiting`
-        if( /^\s*\?\s+for shortcuts\b/m.test( footer ) ) return `idle`
-        break
-    }
-
-    case `opencode`:
-        if( /^\s*tab\s+agents\s+ctrl\+p\s+commands\s*$/m.test( footer ) ) return `idle`
-        break
-    }
-
-    return null
+    return rules.activity( { screen, lines, footer: lines.join( `\n` ) } )
 
 }
 

@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 
 import { resolve_opencode_route_config } from './opencode_config.js'
+import { opencode_screen } from './screens/opencode.js'
 
 export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
 export const OPENCODE_OPENROUTER_DEFAULT_MODEL = `openrouter/openai/gpt-5.6-sol`
@@ -243,6 +244,9 @@ export const opencode = {
     // Provider/auth modals and model errors can leave that composer visible in
     // the background, so reject their stable headings before sending.
     initial_prompt_ready_pattern: /^(?![\s\S]*(?:Connect a provider|Select auth method|Manually enter API Key|Model .+ is not valid))[\s\S]*Ask anything(?:\.\.\.|…)/i,
+
+    // Pane knowledge: activity, owned dialogs, composer drafts, native controls
+    screen: opencode_screen,
 
     // `babysit reset`: new conversation in the same process
     reset_command: `/new`,

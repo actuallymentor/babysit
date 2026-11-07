@@ -4,6 +4,7 @@
  */
 import { homedir } from 'os'
 import { join, resolve } from 'path'
+import { claude_screen } from './screens/claude.js'
 
 // A probe with this much access left uses the token as is, so it cannot
 // rotate a refresh token that a running session holds too
@@ -261,6 +262,9 @@ export const claude = {
 
     // `babysit reset`: new conversation in the same process
     reset_command: `/clear`,
+
+    // Pane knowledge: activity, owned dialogs, composer drafts, native controls
+    screen: claude_screen,
 
     // YOLO monitors answer this bypass-immune prompt with Enter on "Yes".
     yolo_dialog: find_yolo_dialog,
