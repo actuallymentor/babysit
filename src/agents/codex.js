@@ -2,6 +2,7 @@
  * OpenAI Codex CLI adapter
  * CLI docs: https://developers.openai.com/codex/cli
  */
+import { codex_screen } from './screens/codex.js'
 
 /**
  * Resolve the host Codex home. Users can set CODEX_HOME to move Codex's
@@ -182,6 +183,9 @@ export const codex = {
     // dialogs keep that composer behind them and consume Enter themselves, so
     // reject every known startup blocker before typing.
     initial_prompt_ready: is_initial_prompt_ready,
+
+    // Pane knowledge: activity, owned dialogs, composer drafts, native controls
+    screen: codex_screen,
 
     // `babysit reset`: new conversation in the same process
     reset_command: `/new`,

@@ -3,7 +3,7 @@ import { close_session, select_each, snapshot_selector, use_launch_environment }
 import { most_headroom_account } from './claude_accounts.js'
 import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
-import { assert_account_support, has_accounts } from '../agents/index.js'
+import { assert_account_support, get_agent, has_accounts } from '../agents/index.js'
 import { agent_activity } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
 import { capture_pane } from '../tmux/capture.js'
@@ -62,10 +62,11 @@ const settled_activity = async ( target, agent, { capture, activity, sleep } ) =
 
     const first = await capture( target )
     const status = activity( first, agent )
-    if( status || agent !== `claude` ) return status
+    const settle = get_agent( agent )?.screen?.settle_footer
+    if( status || !settle ) return status
 
     const footer = strip_ansi( first ).trimEnd().split( `\n` ).slice( -8 ).join( `\n` )
-    if( !/\(shift\+tab to cycle\)/.test( footer ) ) return null
+    if( !settle.test( footer ) ) return null
 
     await sleep( SETTLE_MS )
     return await capture( target ) === first ? `idle` : `running`
