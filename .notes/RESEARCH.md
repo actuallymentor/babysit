@@ -278,3 +278,12 @@ Claude's binary hardcodes lists of auth vars (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHRO
 - Mechanism: `docker pause`/`unpause` (cgroup v2 freezer), tested on Docker 28.3.3: atomic, `docker run` client stays attached, `docker cp` works while paused, `docker exec` fails fast. SIGSTOP = host-mode fallback only; CRIU checkpoint not viable (no experimental daemon, TTY containers).
 - Resume: agents retry timed-out API streams (Claude `API_TIMEOUT_MS`, Codex `stream_idle_timeout_ms`); in-flight Bash tool timeouts fire on resume (monotonic clock).
 - Must change: monitor skips capture/rules/watchdog while `frozen_at` (else idle rules + WATCHDOG_NUDGE queue keystrokes replayed on thaw); reset idle tracker on thaw; recover.js treats `paused` as alive; close unpauses before stop; list/watch `frozen` status. Reconcile with `docker inspect .State.Paused` (reboot ends freeze). ~350 LOC incl. tests. Host-mode: refuse in v1.
+
+## Token/traffic archive research (2026-11-07)
+
+- Verified in container (Claude Code 2.1.318, codex-cli 0.166.0) with a local HTTP sink, no inference spent:
+  - Claude honors `ANTHROPIC_BASE_URL` under subscription OAuth: `POST /v1/messages?beta=true`, `Authorization: Bearer sk-ant-...`, `oauth-2025-04-20` beta. Contradicts an unconfirmed upstream issue claiming otherwise.
+  - Codex ChatGPT-auth honors `-c openai_base_url=` / `-c chatgpt_base_url=`; inference arrives as `GET /v1/responses` (WebSocket upgrade) with the ChatGPT JWT, plus plugin/analytics/MCP noise on `/backend-api/*`. A tap proxy must pass WS upgrades (or disable Codex response websockets).
+- OpenCode: per-provider `provider.<id>.options.baseURL`; native usage lives in `~/.local/share/opencode/opencode.db` (`message.data` JSON has tokens incl. cache r/w).
+- LiteLLM: Claude-subscription forwarding works only on direct `anthropic/` routes, needs Postgres, computes API-list-price cost; ChatGPT provider runs its own OAuth (conflicts with babysit credential sync). Poor fit as a passive recorder.
+- MITM (HTTPS_PROXY + CA via NODE_EXTRA_CA_CERTS / CODEX_CA_CERTIFICATE) works but adds a CA in-container and captures telemetry noise; fallback only for agents without a base-URL knob.
