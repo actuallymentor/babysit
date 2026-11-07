@@ -69,7 +69,7 @@ Use explicit commands in scripts.
 | `--port PORT` | Publish host PORT to the same container port; repeatable |
 | `--port H:C` | Publish host port H to container port C |
 | `--log[=PATH]` | Append raw tmux output to PATH (default `.YYYY_MM_DD_HH_MM.babysit.log`) |
-| `--account NAME` | Claude: run on this subscription (babysit auth accounts); default picks most headroom |
+| `--account NAME` | Claude subscription for this session, or for nested claude in other agents (babysit auth accounts); default picks most headroom |
 | `--config DIR/` | Start one detached session per `DIR/*.yaml` (see [Directory launch](#directory-launch)) |
 
 `babysit --help` prints the same rows (one registry, `src/cli/registry.js`; a test keeps this table in sync).
