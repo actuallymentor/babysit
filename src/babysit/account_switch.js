@@ -180,6 +180,16 @@ const nudge_after_swap = async target => {
 }
 
 /**
+ * Whether babysit may type into the session now: not frozen (the keys would
+ * replay on thaw) and no recovery continuation owns the pane. Pure.
+ * @param {Object|null} session - Fresh stored session
+ * @returns {boolean}
+ */
+export const may_type = session => Boolean( session )
+    && !session.frozen_at
+    && ![ `pending`, `sending`, `blocked` ].includes( session.continuation )
+
+/**
  * Whether a person has the session's tmux open. Unreadable counts as detached:
  * the session is likely gone and the restart reports that itself.
  * @param {string} tmux_session - Exact tmux session name
@@ -290,8 +300,10 @@ export const create_account_switcher = ( session, {
                 await swap( latest.container_id, account )
                 const entry = { at: new Date( now() ).toISOString(), from: plan.from, to: plan.to, resets_at: plan.resets_at, hot_swap: true }
                 update( session.babysit_id, current => ( { claude_account: plan.to, account_switches: [ ...current.account_switches || [], entry ] } ) )
-                const present = latest.tmux_session && await attached( latest.tmux_session )
-                if( !present ) await nudge( latest.pane_id || latest.tmux_session )
+                // Re-read after the awaits: a freeze or recovery may have taken the pane since
+                const typed = !( latest.tmux_session && await attached( latest.tmux_session ) ) && may_type( load( session.babysit_id ) )
+                if( typed ) await nudge( latest.pane_id || latest.tmux_session )
+                const present = !typed
                 log.info( `Claude limit hit on account ${ plan.from }; switched session ${ session.babysit_id } to ${ plan.to } in place (${ plan.headroom }% left)` )
                 await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from }; switched ${ label( latest ) } to ${ plan.to } (${ plan.headroom }% left)${ present ? `. Type continue to resume` : `` }.` } )
                 return { ...plan, hot_swap: true }

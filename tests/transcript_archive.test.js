@@ -3,7 +3,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { archive_index_entry, archive_session_transcripts, start_transcript_archiver } from '../src/sessions/transcript_archive.js'
+import { spawnSync } from 'child_process'
+
+import { MIRROR_SCRIPT, archive_index_entry, archive_session_transcripts, start_transcript_archiver } from '../src/sessions/transcript_archive.js'
 
 const session = { babysit_id: `b1`, agent: `codex`, pwd: `/work/repo`, started_at: `2026-11-07T10:00:00.000Z`, container_id: `c1`, image_id: `sha256:${ `a`.repeat( 64 ) }` }
 
@@ -15,15 +17,15 @@ describe( `transcript archive`, () => {
         expect( calls ).toEqual( [] )
     } )
 
-    it( `mirrors the state volumes read-only, offline, as the host user, and writes the index`, async () => {
+    it( `mirrors the state volumes offline, as the host user, and writes the index`, async () => {
         const root = mkdtempSync( join( tmpdir(), `babysit-archive-` ) )
         const calls = []
         expect( await archive_session_transcripts( session, { root, run_command: async ( ...call ) => calls.push( call ) } ) ).toBe( true )
         const [ [ , args ] ] = calls
         const line = args.join( ` ` )
         expect( line ).toContain( `--network none` )
-        expect( line ).toMatch( /-v babysit-codex-sessions-[a-f0-9]{12}:\/src\/0:ro/ )
-        expect( line ).toMatch( /-v babysit-codex-sqlite-[a-f0-9]{12}:\/src\/1:ro/ )
+        expect( line ).toMatch( /-v babysit-codex-sessions-[a-f0-9]{12}:\/src\/0 / )
+        expect( line ).toMatch( /-v babysit-codex-sqlite-[a-f0-9]{12}:\/src\/1 / )
         expect( line ).toContain( `${ join( root, `volumes` ) }:/archive` )
         expect( args ).toContain( session.image_id )
         const index = JSON.parse( readFileSync( join( root, `sessions`, `b1.json` ), `utf8` ) )
@@ -71,6 +73,33 @@ describe( `transcript archive`, () => {
         expect( peak ).toBe( 1 )
         expect( runs ).toBeGreaterThan( 1 )
         expect( active ).toBe( 0 )
+    } )
+
+    // The real generated script: filtering, SQLite snapshots, incremental passes
+    it.skipIf( spawnSync( `python3`, [ `--version` ] ).status !== 0 )( `the mirror script skips credentials, snapshots SQLite in WAL mode, and copies only changes`, () => {
+        const work = mkdtempSync( join( tmpdir(), `babysit-mirror-` ) )
+        const source = join( work, `src` )
+        const archive = join( work, `out` )
+        mkdirSync( join( source, `nested` ), { recursive: true } )
+        writeFileSync( join( source, `auth.json` ), `{"token":"secret"}` )
+        writeFileSync( join( source, `.credentials.json` ), `{}` )
+        writeFileSync( join( source, `nested`, `chat.jsonl` ), `{"role":"user"}\n` )
+        const setup = `import sqlite3,sys\nd=sqlite3.connect(sys.argv[1]);d.execute('pragma journal_mode=wal');d.execute('create table t(x)');d.execute("insert into t values ('kept')");d.commit()\nimport os;os._exit(0)`
+        expect( spawnSync( `python3`, [ `-c`, setup, join( source, `state.sqlite` ) ] ).status ).toBe( 0 )
+
+        const mirror = () => spawnSync( `python3`, [ `-c`, MIRROR_SCRIPT, archive, source, `vol` ], { encoding: `utf8` } )
+        const first = mirror()
+        expect( first.status ).toBe( 0 )
+        expect( first.stdout.trim() ).toBe( `2` )
+        expect( existsSync( join( archive, `vol`, `auth.json` ) ) ).toBe( false )
+        expect( existsSync( join( archive, `vol`, `.credentials.json` ) ) ).toBe( false )
+        expect( readFileSync( join( archive, `vol`, `nested`, `chat.jsonl` ), `utf8` ) ).toContain( `user` )
+        const read = `import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('select x from t').fetchone()[0])`
+        expect( spawnSync( `python3`, [ `-c`, read, join( archive, `vol`, `state.sqlite` ) ], { encoding: `utf8` } ).stdout.trim() ).toBe( `kept` )
+
+        // Nothing changed: nothing copied
+        expect( mirror().stdout.trim() ).toBe( `0` )
+        rmSync( work, { recursive: true, force: true } )
     } )
 
 } )

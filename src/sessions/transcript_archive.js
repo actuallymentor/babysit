@@ -38,14 +38,15 @@ const SECRET_FILE = /(auth|cred|token|secret|key)[^/]*\.json$/i
  * Incremental mirror, run inside the session image: argv is the destination
  * root, then (source dir, destination name) pairs. A copy carries its
  * source's exact mtime, so an unchanged file costs one stat. SQLite databases
- * go through the backup API from a private copy (the volumes are read-only,
- * WAL contents included), stamped with the newest mtime of the db and its WAL.
+ * go through the backup API against the live file (its locking makes the
+ * snapshot consistent, WAL included; the volume is mounted writable only for
+ * the -shm lock file), stamped with the newest mtime of the db and its WAL.
  * Unique temp names keep concurrent monitors sharing a volume from colliding.
  */
 export const MIRROR_SCRIPT = `
 import os, re, shutil, sqlite3, sys, tempfile
 root, pairs = sys.argv[1], sys.argv[2:]
-secret = re.compile(r${ JSON.stringify( SECRET_FILE.source ) }, re.I)
+secret = re.compile(${ JSON.stringify( SECRET_FILE.source ) }, re.I)
 os.umask(0o077)
 copied = 0
 
@@ -61,6 +62,13 @@ def is_sqlite(path):
     except OSError: return False
 
 def backup(source, target):
+    # Live first: SQLite's own locking gives a consistent snapshot, WAL included
+    try:
+        with sqlite3.connect('file:' + source + '?mode=ro', uri=True, timeout=10) as reader, sqlite3.connect(target) as writer:
+            reader.backup(writer)
+        return
+    except sqlite3.Error: pass
+    # Unlockable (foreign filesystem, missing -shm): back up a private copy instead
     with tempfile.TemporaryDirectory() as directory:
         private = os.path.join(directory, 'db')
         shutil.copyfile(source, private)
@@ -178,13 +186,14 @@ export const archive_session_transcripts = async ( session, {
 
         } else {
 
-            // Read-only volumes, no network, files owned by the host user
+            // No network, files owned by the host user. Writable mounts only so
+            // SQLite can take its read lock (-shm); the script never writes there
             mkdirSync( join( root, `volumes` ), { recursive: true, mode: 0o700 } )
             const user = process.getuid ? [ `--user`, `${ process.getuid() }:${ process.getgid() }` ] : []
             const pairs = mounts.flatMap( ( { source }, index ) => [ `/src/${ index }`, source ] )
             await run_command( command, [
                 ...prefix, `run`, `--rm`, `--network`, `none`, ...user,
-                ...mounts.flatMap( ( { source }, index ) => [ `-v`, `${ source }:/src/${ index }:ro` ] ),
+                ...mounts.flatMap( ( { source }, index ) => [ `-v`, `${ source }:/src/${ index }` ] ),
                 `-v`, `${ join( root, `volumes` ) }:/archive`,
                 `--entrypoint`, `python3`, session.image_id || get_image_name(), `-c`, MIRROR_SCRIPT, `/archive`, ...pairs,
             ], {}, ARCHIVE_TIMEOUT_MS )
