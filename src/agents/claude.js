@@ -146,6 +146,17 @@ export const claude = {
         dir: `/home/node/.claude`,
     },
 
+    // Native state that outlives a container (resume, fork, recovery). A
+    // `name` volume is shared by every workspace, a `label` one is scoped to
+    // the workspace. The first volume also holds Babysit's durable receipts.
+    state: {
+        volumes: [
+            { name: `babysit-claude-projects`, target: `/home/node/.claude/projects` },
+            { name: `babysit-claude-plans`, target: `/home/node/.claude/plans` },
+            { name: `babysit-claude-todos`, target: `/home/node/.claude/todos` },
+        ],
+    },
+
     container_paths: {
         creds: `/home/node/.claude/.credentials.json`,
         config: `/home/node/.claude/settings.json`,
@@ -203,6 +214,27 @@ export const claude = {
 
         // Past this the login is gone, no network needed to know it
         refresh_expires_at: credential => oauth_field( credential, `refreshTokenExpiresAt` ),
+    },
+
+    // Passthrough option rules Babysit reads before the args reach the CLI
+    options: {
+        // Claude's Commander parser consumes required operands even when they
+        // look like options, so `--name --model` names a session `--model`.
+        // Optional-value flags are intentionally absent: they consume nothing.
+        // Claude has no `-m` short form for --model.
+        value_options: new Set( [
+            `--add-dir`, `--agent`, `--agents`, `--allowedTools`, `--allowed-tools`,
+            `--append-system-prompt`, `--append-system-prompt-file`, `--autocompact`,
+            `--betas`, `--debug-file`, `--disallowedTools`, `--disallowed-tools`,
+            `--effort`, `--environment`, `--fallback-model`, `--file`, `--input-format`,
+            `--json-schema`, `--max-budget-usd`, `--mcp-config`, `-n`, `--name`, `--output-format`,
+            `--permission-mode`, `--permission-prompts`, `--plugin-dir`, `--plugin-url`,
+            `--remote-control-session-name-prefix`, `--session-id`, `--setting-sources`,
+            `--settings`, `--system-prompt`, `--system-prompt-file`,
+            `--system-prompt-snapshot`, `--tools`,
+        ] ),
+        // Recovery saves the default effort as a replayable `--effort` flag
+        replay_effort: true,
     },
 
     defaults: {

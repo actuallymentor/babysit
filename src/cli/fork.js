@@ -144,7 +144,7 @@ export const merge_fork_passthrough = ( parent, agent_name, passthrough = [] ) =
     if( parent.agent !== agent_name ) return passthrough
 
     // Compare canonical names, so a typed `-m` replaces a saved `--model`
-    const options = replayable_options( { name: agent_name } )
+    const options = replayable_options( get_agent( agent_name ) || {} )
     const canonical = argument => options.get( argument.split( `=` )[0] )
     const saved = parent.launch_spec?.args || []
     const typed = new Set( passthrough.map( canonical ).filter( Boolean ) )

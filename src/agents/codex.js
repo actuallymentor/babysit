@@ -96,6 +96,14 @@ export const codex = {
         dir: `/home/node/.codex`,
     },
 
+    // Rollouts and the SQLite thread index, scoped to the workspace
+    state: {
+        volumes: [
+            { label: `sessions`, target: `/home/node/.codex/sessions` },
+            { label: `sqlite`, target: `/home/node/.codex/sqlite` },
+        ],
+    },
+
     container_paths: {
         // Mirror `${CODEX_HOME}/auth.json` from host into container so OAuth
         // sessions started with `codex auth login` flow through.
@@ -148,6 +156,12 @@ export const codex = {
         session_alert_pattern: /^[\s■]*(?:Your )?(?:access token could not be refreshed|refresh token (?:was |has )?already (?:been )?used)/i,
 
         refresh_free,
+    },
+
+    // `-m` is --model, its value attached too (`-mgpt-6`)
+    options: {
+        model_short: `-m`,
+        model_short_attached: true,
     },
 
     defaults: {
