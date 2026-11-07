@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 
 import { resolve_opencode_route_config } from './opencode_config.js'
+import { opencode_screen } from './screens/opencode.js'
 
 export const OPENCODE_DEFAULT_MODEL = `openai/gpt-5.6-sol`
 export const OPENCODE_OPENROUTER_DEFAULT_MODEL = `openrouter/openai/gpt-5.6-sol`
@@ -158,6 +159,13 @@ export const opencode = {
         dir: `/home/node/.config/opencode`,
     },
 
+    // OpenCode's whole data dir (SQLite sessions), scoped to the workspace
+    state: {
+        volumes: [
+            { label: `data`, target: `/home/node/.local/share/opencode` },
+        ],
+    },
+
     container_paths: {
         creds: `/home/node/.local/share/opencode/auth.json`,
         // ${OPENCODE_CONFIG_DIR}/AGENTS.md — opencode's global instructions
@@ -214,6 +222,11 @@ export const opencode = {
         },
     },
 
+    // `-m` is --model (separate or `=` value; see opencode_model_flag)
+    options: {
+        model_short: `-m`,
+    },
+
     // Keep the launch model on the provider the user authenticated. Explicit
     // passthrough flags still win because they are appended after defaults.
     defaults: {
@@ -231,6 +244,9 @@ export const opencode = {
     // Provider/auth modals and model errors can leave that composer visible in
     // the background, so reject their stable headings before sending.
     initial_prompt_ready_pattern: /^(?![\s\S]*(?:Connect a provider|Select auth method|Manually enter API Key|Model .+ is not valid))[\s\S]*Ask anything(?:\.\.\.|…)/i,
+
+    // Pane knowledge: activity, owned dialogs, composer drafts, native controls
+    screen: opencode_screen,
 
     // `babysit reset`: new conversation in the same process
     reset_command: `/new`,

@@ -30,6 +30,24 @@ export const get_agent = ( name ) => agents[ name ] || null
  */
 export const is_agent = ( name ) => Object.hasOwn( agents, name )
 
+/**
+ * Whether an agent runs on named subscription accounts (`babysit auth accounts`).
+ * Only Claude does today; its adapter sets `accounts: true`.
+ * @param {string|Object|null} agent - Agent name or adapter
+ * @returns {boolean}
+ */
+export const has_accounts = agent => Boolean( ( typeof agent === `string` ? get_agent( agent ) : agent )?.accounts )
+
+/**
+ * Refuse `--account` for an agent that has no subscription accounts.
+ * @param {string} agent_name - Agent name
+ * @param {string} [detail] - Message tail naming what was refused
+ * @throws {Error} When the agent has no accounts
+ */
+export const assert_account_support = ( agent_name, detail = `${ agent_name } has none` ) => {
+    if( !has_accounts( agent_name ) ) throw new Error( `--account picks a Claude subscription; ${ detail }` )
+}
+
 // Agents babysit no longer runs. Old session records may still name them.
 const RETIRED_AGENTS = { gemini: `Gemini CLI`, antigravity: `Antigravity`, agy: `Antigravity` }
 

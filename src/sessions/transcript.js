@@ -1,6 +1,7 @@
 import { get_agent } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { run } from '../utils/exec.js'
+import { STATE_READERS } from './state_readers.js'
 import { session_workspace } from './store.js'
 
 // Include Docker's start/remove overhead, which can exceed 30 seconds even for
@@ -9,27 +10,12 @@ const PROBE_TIMEOUT_MS = 60_000
 
 // Inspect only native state volumes, without network, credentials or workspace
 // writes. A missing conversation must never turn an unattended resume into new work.
-export const CHECK_TRANSCRIPT = `
-import json, pathlib, sqlite3, sys, tempfile, shutil
-agent, ident = sys.argv[1:]
-home = pathlib.Path('/home/node')
+// Arguments: agent, native id, then the agent's state roots in adapter order.
+export const CHECK_TRANSCRIPT = STATE_READERS + `
+import sys
+agent, ident, *roots = sys.argv[1:]
+state = pathlib.Path(roots[0])
 found = False
-
-
-def records(file, maximum=1048576):
-    if file.is_symlink() or not file.is_file(): return
-    try:
-        with file.open() as stream:
-            # Claude may prepend queue/title events. Bound individual records,
-            # but inspect enough history to find real root conversation data.
-            for _ in range(256):
-                line = stream.readline(maximum + 1)
-                if not line or len(line) > maximum: break
-                try:
-                    value = json.loads(line)
-                    if isinstance(value, dict): yield value
-                except ValueError: pass
-    except (OSError, UnicodeError): pass
 
 
 def document(file):
@@ -42,35 +28,23 @@ def document(file):
 
 
 if agent == 'claude':
-    for file in (home / '.claude/projects').glob('*/' + ident + '.jsonl'):
+    # Claude may prepend queue/title events. Bound individual records, but
+    # inspect enough history to find real root conversation data.
+    for file in state.glob('*/' + ident + '.jsonl'):
         found = found or any(record.get('sessionId') == ident and record.get('type') in ('user', 'assistant')
-                            and not record.get('isSidechain') for record in records(file))
+                            and not record.get('isSidechain') for record in json_records(file, 256))
 elif agent == 'codex':
-    for file in (home / '.codex/sessions').glob('**/rollout-*' + ident + '.jsonl'):
-        record = next(records(file), {})
-        data = record.get('payload', {})
-        if record.get('type') == 'session_meta' and isinstance(data, dict):
-            found = found or data.get('id') == ident and data.get('source') in ('cli', 'vscode')
+    found = codex_root_rollout(state, ident)
 elif agent == 'opencode':
-    root = home / '.local/share/opencode'
-    for file in root.glob('storage/session/*/' + ident + '.json'):
+    for file in state.glob('storage/session/*/' + ident + '.json'):
         record = document(file)
         found = found or record.get('id') == ident and not record.get('parentID')
-    for file in root.glob('**/*.db'):
+    for file in state.glob('**/*.db'):
         if found: break
         if file.is_symlink() or not file.is_file(): continue
         try:
-            # A crashed SQLite writer can leave a hot journal or a WAL without
-            # SHM. Recover an isolated copy; never modify the original volume.
-            with tempfile.TemporaryDirectory(prefix='babysit-transcript-') as directory:
-                target = pathlib.Path(directory) / file.name
-                shutil.copyfile(file, target)
-                for suffix in ('-wal', '-journal'):
-                    sidecar = pathlib.Path(str(file) + suffix)
-                    if sidecar.is_file() and not sidecar.is_symlink():
-                        shutil.copyfile(sidecar, str(target) + suffix)
-                with sqlite3.connect(target, timeout=2) as db:
-                    found = db.execute('SELECT 1 FROM session WHERE id = ? AND parent_id IS NULL LIMIT 1', (ident,)).fetchone() is not None
+            with isolated_sqlite(file) as db:
+                found = db.execute('SELECT 1 FROM session WHERE id = ? AND parent_id IS NULL LIMIT 1', (ident,)).fetchone() is not None
         except (sqlite3.Error, OSError): pass
 sys.exit(0 if found else 1)
 `
@@ -93,7 +67,7 @@ export const verify_session_transcript = async ( session, { run_command = run } 
             ...prefix, `run`, `--rm`, `--network`, `none`, `--read-only`, `--tmpfs`, `/tmp:rw,nosuid,nodev,size=512m`, `--user`, `0`,
             ...mounts.flatMap( mount => [ `-v`, `${ mount.source }:${ mount.target }:ro` ] ),
             `--entrypoint`, `python3`, session.image_id, `-c`, CHECK_TRANSCRIPT,
-            session.agent, session.agent_session_id,
+            session.agent, session.agent_session_id, ...mounts.map( mount => mount.target ),
         ], {}, PROBE_TIMEOUT_MS )
     } catch {
         throw new Error( `Exact conversation could not be read from its saved volumes: ${ session.agent_session_id }` )

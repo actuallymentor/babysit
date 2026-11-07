@@ -2,6 +2,7 @@
  * OpenAI Codex CLI adapter
  * CLI docs: https://developers.openai.com/codex/cli
  */
+import { codex_screen } from './screens/codex.js'
 
 /**
  * Resolve the host Codex home. Users can set CODEX_HOME to move Codex's
@@ -96,6 +97,14 @@ export const codex = {
         dir: `/home/node/.codex`,
     },
 
+    // Rollouts and the SQLite thread index, scoped to the workspace
+    state: {
+        volumes: [
+            { label: `sessions`, target: `/home/node/.codex/sessions` },
+            { label: `sqlite`, target: `/home/node/.codex/sqlite` },
+        ],
+    },
+
     container_paths: {
         // Mirror `${CODEX_HOME}/auth.json` from host into container so OAuth
         // sessions started with `codex auth login` flow through.
@@ -150,6 +159,12 @@ export const codex = {
         refresh_free,
     },
 
+    // `-m` is --model, its value attached too (`-mgpt-6`)
+    options: {
+        model_short: `-m`,
+        model_short_attached: true,
+    },
+
     defaults: {
         // Pin the audited frontier model with balanced reasoning.
         // Users can override either setting through agent passthrough flags.
@@ -168,6 +183,9 @@ export const codex = {
     // dialogs keep that composer behind them and consume Enter themselves, so
     // reject every known startup blocker before typing.
     initial_prompt_ready: is_initial_prompt_ready,
+
+    // Pane knowledge: activity, owned dialogs, composer drafts, native controls
+    screen: codex_screen,
 
     // `babysit reset`: new conversation in the same process
     reset_command: `/new`,
