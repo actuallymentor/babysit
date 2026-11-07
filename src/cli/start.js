@@ -82,6 +82,7 @@ import { cmd_open } from './open.js'
 import { cmd_monitor } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { format_session_status_label } from './list.js'
+import { modifiers_from_flags } from './registry.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
 import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
 import { create_identity_reader } from '../sessions/identity.js'
@@ -1392,10 +1393,7 @@ async function start_session( cmd ) {
 
     // Compute immutable launch identity before authentication or Docker create
     // so a power loss leaves enough metadata to recover the clone.
-    const modifiers = Object.entries( mode )
-        .filter( ( [ , value ] ) => value )
-        .map( ( [ key ] ) => key === `ignore_host_agents_md` ? `ignore-host-agents-md` : key )
-    if( flags.loop ) modifiers.push( `loop` )
+    const modifiers = modifiers_from_flags( { ...mode, loop: flags.loop } )
 
     const session_name = make_session_name( workspace, agent.name )
     const container_name = `babysit-${ babysit_id }`

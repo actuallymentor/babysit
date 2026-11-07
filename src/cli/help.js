@@ -1,5 +1,12 @@
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { help_topic } from './help_topics.js'
+import { COMMANDS, OVERVIEW_FLAG_ROWS, format_rows } from './registry.js'
+
+// Overview rows of one command context, in registry order
+const command_rows = context => format_rows(
+    COMMANDS.filter( command => ( command.context || `host` ) === context && command.usage ).flatMap( command => command.usage ),
+    { width: 38 },
+)
 
 /**
  * Print help: the command's own page when argv names one, else the overview
@@ -16,85 +23,15 @@ export const show_help = ( argv = [] ) => {
 babysit — supervisor for LLM coding agent CLIs
 
 Usage:
-  babysit ["session name"]           Open the interactive launch menu
-  babysit <agent> [flags]              Start a new session
-  babysit <agent> resume <id|number>  Resume a previous session
-  babysit init [file.yaml]             Write a default config; asks for the file name and launch settings
-  babysit --config DIR/ [--yes]        Start one detached session per DIR/*.yaml, skipping running ones
-  babysit audit --config FILE|DIR/     Fix yaml files so babysit --config DIR/ accepts them; --yes, comments kept
-  babysit clean --config FILE|DIR/    Strip full-line comments and blank lines from config yaml; inline comments stay
-  babysit list [--all]                 List active sessions and launch flags
-  babysit watch [--usage|--all]        Live sessions with usage headroom (--usage: usage only, --all: both)
-  babysit watch --interactive          Same, and typing a session number opens it; detaching comes back here
-  babysit open [id|name|number]        Attach to an active session; with shell-init, detaching lands in its workspace
-  babysit shell-init [bash|zsh|fish]   Shell function so open can cd: eval "$(babysit shell-init)" in your rc
-  babysit resume [id|number] [flags]  List this workspace's sessions or resume one
-  babysit fork <number|id> [agent]     Continue a session in a new one (share or clone the tree, chat kept); --takeover
-  babysit prune [--list]               Prune unused Docker data and clone workspaces
-  babysit recover [id|number]         Recover interrupted sessions, detached
-  babysit recover init                Install this account's Ubuntu boot recovery service
-  babysit close <number|id>...         Close intentionally; disable recovery for these launches
-  babysit restart <number|id|all>...   Rebuild idle session(s) on the current image, keeping the conversation; --force, --detach, --continue
-  babysit archive [<number|id>...]     Dim sessions and sink them to the bottom of babysit list; none offers the grey-dot ones; open un-archives
-  babysit freeze <number|id|all>...    Pause session containers in place (docker pause); unfreeze resumes them
-  babysit config                       Show settings and setup status
-  babysit config --transcripts PATH    Archive agent transcripts in PATH (off disables; default ~/.babysit/transcripts)
-  babysit mode                         Print container inside a babysit agent container, else host
-  babysit effort [level]               Inspect/change effort inside a managed agent session
-  babysit model [model-name]           List/change models in the current agent session
-  babysit model --benchmarks           Compare benchmarks; --sort intelligence is default
-  babysit exit [--yes]                 Inside a session: end it gracefully after the current turn (asks first)
-  babysit stuck                        Inside a session: show "stuck" in babysit list until the user types
-  babysit loop                         Inside a session: toggle --loop (list flags and tmux bar follow)
-  babysit reset                        Inside a session: clear context and resend the initial prompt
-  babysit usage [--json]               Account usage and limits, on host or in container
-  babysit web init                     Initialize or rotate babysit-web access
-  babysit web key add|list|remove      Read-only API keys for the babysit-web JSON API
-  babysit doctor --auth [agent|all]    Verify real agent authentication
-  babysit auth [status]                Show cached authentication ages and the checker state
-  babysit auth check [agent] [--force] Re-verify logins quietly (what the checker runs); --force probes now
-  babysit auth init [--remove]         Install (or remove) the 10-minute host-level auth checker
-                                       Linux: also enables user lingering; --no-linger opts out
-                                       Offers a one-year Claude token (claude setup-token) when none is set
-  babysit auth accounts [remove NAME]  Claude subscriptions; add one with auth init --claude-token --name NAME
-  babysit update                       Refresh babysit, ~/.agents, docker image, running web (verbose)
-  babysit update --auto                Ask to turn background updates on new releases on or off
+${ command_rows( `host` ) }
+
+In a session (managed agent container):
+${ command_rows( `container` ) }
 
 Agents: ${ agents }
 
 Flags:
-  --yolo          Maximum agent autonomy (skip permissions, AGENT_AUTONOMY_MODE=yolo)
-  --sandbox       Ephemeral container, no workspace mount
-  --mudbox        Read-only workspace mount
-  --clone         Work in a copy while mounting the original at /original
-  --docker        Mount the host Docker socket for Docker-outside-of-Docker testing
-  --adb           Android Debug Bridge access with adb keys shared across sessions
-  --ios           iPhone/iPad access (WebDriverAgent) with a pairing shared across sessions
-  --devices       All external device access: --adb and --ios, plus future kinds
-  --yes           Skip clone safety and --config DIR/ confirmation prompts; with "audit", apply required fixes
-  --ignore-host-agents-md
-                  Keep host agent instructions, skills, and preferences out of the container
-  --name NAME     Give the session a human-readable name
-  --config FILE   Use FILE instead of ./babysit.yaml for this session (kept on resume)
-  --config DIR/   Start every DIR/*.yaml from its launch: section, after a y/N overview
-  --port PORT     Publish host PORT to the same container port
-  --port H:C      Publish host port H to container port C
-  --auth          With "babysit doctor", make real model-backed auth checks
-  --refresh       With "babysit doctor --auth", bypass the 12-hour success cache
-  --remove        With "babysit auth init", uninstall the scheduled checker
-  --no-linger     With "babysit auth init", do not enable loginctl lingering (checks then stop at logout)
-  --claude-token  With "babysit auth init", mint a new Claude setup-token even if one is set (--no-claude-token skips)
-  --account NAME  Claude: run on this subscription (start, resume, restart); default picks most headroom
-  --all           With "list", show full details; with "resume [number]", use every workspace and show every row
-  -n N            With "resume", show N history rows (default 10)
-  --dry-run       With "recover", inspect without restarting
-  --json          With "recover", print machine-readable results
-  --no-continue   With "recover", reopen without submitting a continuation
-  --list          With "prune", list clone workspaces and directory sizes
-  --loop          Override idle action with LOOP.md or "Keep going"
-  --log[=PATH]    Append tmux output to PATH (default: .YYYY_MM_DD_HH_MM.babysit.log)
-  -h, --help      Show this help
-  -v, --version   Show version
+${ format_rows( OVERVIEW_FLAG_ROWS, { width: 16, wrap: true } ) }
 
 Session numbers:
   open/close/archive/fork: Rows from babysit list (forks nest under their parent)

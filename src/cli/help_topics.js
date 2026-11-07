@@ -1,6 +1,7 @@
-import { SUPPORTED_AGENTS, is_agent } from '../agents/index.js'
+import { is_agent } from '../agents/index.js'
 import { effort_help, exit_help, loop_help, model_help, reset_help, stuck_help } from '../docker/assets/effort/command.mjs'
 import { usage_help } from '../docker/assets/usage/command.mjs'
+import { FLAGS, LAUNCH_FLAG_ROWS, dashed, format_rows, options_table } from './registry.js'
 
 /*
  * Per-command help: `babysit <command> [sub] --help` or `babysit help <command> [sub]`.
@@ -9,23 +10,9 @@ import { usage_help } from '../docker/assets/usage/command.mjs'
  * text in the container assets so the image's helper prints the same thing.
  */
 
+// Launch flags of babysit <agent>, from the registry
 const AGENT_FLAGS = `Options:
-  --yolo                    Maximum autonomy: skip agent permission prompts, AGENT_AUTONOMY_MODE=yolo
-  --sandbox                 No workspace mount; the container and its files are thrown away
-  --mudbox                  Read-only workspace mount
-  --clone                   Work in a durable copy; the original is mounted read-only at /original
-  --yes                     Accept clone safety prompts (e.g. chmod of unreadable paths)
-  --docker                  Mount the host Docker socket (controls the host daemon, even in sandbox)
-  --adb                     Android adb with a key shared by every session (network devices only)
-  --ios                     iOS 16 devices via WebDriverAgent, pairing shared by every session (network only)
-  --devices                 Every device kind: --adb and --ios
-  --ignore-host-agents-md   Leave out host instructions, skills, preferences, and ~/.babysitrc setup; keep credentials
-  --name NAME               Human-readable session name (shown in babysit list, usable with open)
-  --config FILE             Use FILE instead of ./babysit.yaml; kept on resume and in clones
-  --port PORT | H:C         Publish a port; repeatable
-  --loop                    When idle, type ./LOOP.md, ~/.agents/LOOP.md, or "Keep going"
-  --log[=PATH]              Append raw tmux output to PATH (default .YYYY_MM_DD_HH_MM.babysit.log)
-  --account NAME            Claude: run on this subscription (babysit auth accounts); default picks most headroom
+${ format_rows( LAUNCH_FLAG_ROWS, { width: 26 } ) }
 
 Unknown flags pass through to the agent CLI (e.g. --model, --effort).`
 
@@ -67,9 +54,7 @@ Without a selector: list this workspace's saved sessions, newest 10 rows.
 With one: restore that session (conversation, modes, ports) on the current image and attach.
 Numbers follow the current listing; IDs are durable.
 
-Options:
-  --all       Every workspace and every row (numbers then refer to this listing)
-  -n N        Show N rows instead of 10
+${ options_table( `resume` ) }
   (launch flags such as --yolo or --loop override the saved ones)
 
 Examples:
@@ -97,14 +82,7 @@ History:
   Other agent or a sandbox parent: babysit writes a handoff summary of
   the parent transcript to /tmp/babysit-fork-handoff.md and asks the fork to read it.
 
-Options:
-  --share | --clone         Pick the filesystem without asking
-  --yes                     Take the defaults (as does --yolo); required on non-interactive stdin without --share/--clone
-  --no-history              Start a fresh conversation
-  --takeover                Close the live parent once the fork runs (otherwise: Close #N? [y/N])
-  --regular | --sandbox | --mudbox    Switch mode
-  --no-yolo, --no-docker, --no-adb, --no-loop    Drop a flag the parent had
-  --account NAME            Claude subscription; a Claude → Claude fork otherwise keeps the parent's
+${ options_table( `fork` ) }
   (plus the launch flags of babysit <agent>: --yolo, --docker, --adb, --name, --config, --port, --loop, --log)
 
 Examples:
@@ -155,9 +133,7 @@ config:, babysit:) are never offered. Shows a diff, then Write? [Y/n].
 
 Without a terminal it only reports. Exit 1 while any file still fails.
 
-Options:
-  --yes      Apply every fix without asking, add nothing.
-             A missing agent still needs a terminal.
+${ options_table( `audit` ) }
 
 Examples:
   babysit audit --config review.yaml
@@ -175,8 +151,7 @@ and a file is only rewritten if it still parses to the same values. Invalid
 yaml is reported and left alone; exit 1 if any file could not be cleaned.
 Not undoable outside version control: try --dry-run first.
 
-Options:
-  --dry-run  Report what would be removed without writing
+${ options_table( `clean` ) }
 
 Examples:
   babysit clean --config babysit/config.yaml
@@ -188,8 +163,7 @@ Active sessions as a tree: workspace trunks with numbered leaves, colored status
 (idle grey, running green, waiting orange, stuck red), container CPU/MEM, and a
 totals row. Numbers are what open, close, archive, and restart accept.
 
-Options:
-  --all      Add tmux attachment, session IDs, and tmux names
+${ options_table( `list` ) }
 
 For a live view with account usage, run babysit watch --all.
 
@@ -220,10 +194,7 @@ limit with a bar, % used and time to reset. Balances and lifetime spend stay in
 babysit usage. With two or more Claude accounts, each gets its own rows
 (claude / <account>).
 
-Options:
-  --usage        Only the usage panel
-  --all          Session tree plus the usage panel
-  --interactive  Open a session by typing its number
+${ options_table( `watch` ) }
 
 Examples:
   babysit watch
@@ -277,12 +248,7 @@ detached, skipping (and reporting) any that refuse; numbers mean the list as
 it was before the first restart. Claude sessions move to the subscription with
 most headroom. Without --continue, a terminal asks once whether to send one.
 
-Options:
-  --force           Restart even when busy or without a captured id
-  --detach          Return instead of attaching
-  --continue        Tell the agent to continue unfinished work once it is back
-  --account NAME    Claude: this subscription instead of the one with most headroom
-                    (with several sessions or "all": its Claude sessions only)
+${ options_table( `restart` ) }
 
 Examples:
   babysit restart 1
@@ -346,8 +312,7 @@ and build cache unused for 7 days (Babysit containers, in-use images, and
 volumes stay). Clones: managed clone workspaces by age. Each part asks for
 its own confirmation.
 
-Options:
-  --list    Only show the reclaimable estimates and clone workspaces (no prompts)
+${ options_table( `prune` ) }
 
 Examples:
   babysit prune
@@ -361,10 +326,7 @@ across workspaces. Each resumes its saved conversation and is told: "You were
 interrupted. Check the current state, then continue unfinished work." Live
 agents are left alone; closed sessions are never recovered.
 
-Options:
-  --dry-run       Show candidates and blockers; change nothing
-  --json          Machine-readable results
-  --no-continue   Reopen without sending the continuation message
+${ options_table( `recover` ) }
 
 Examples:
   babysit recover --dry-run
@@ -424,9 +386,7 @@ Real model-backed login check for every installed agent (or one): each runs a
 tiny prompt in a throwaway container with the credentials sessions get.
 Successes are cached 12h, which also lets launches skip their own check.
 
-Options:
-  --auth       Run the authentication diagnostic (required)
-  --refresh    Ignore the 12h cache and probe again
+${ options_table( `doctor` ) }
 
 Examples:
   babysit doctor --auth
@@ -509,9 +469,7 @@ is 1h old, then a container re-verify after 6h. A host probe waits while a
 session might be refreshing the same token. Network failures never alert.
 Skips when a launch or another check holds the authentication lease.
 
-Options:
-  agent      Check only this agent (${ SUPPORTED_AGENTS.join( `, ` ) })
-  --force    Probe now regardless of age (session monitors use this)
+${ options_table( `auth`, `check` ) }
 
 Examples:
   babysit auth check
@@ -533,13 +491,7 @@ Rerun after upgrading Babysit to pick up schedule changes.
 With --name NAME only step 2 runs, and the token becomes a named Claude account
 (see babysit auth accounts --help) instead of replacing ~/.babysitrc.
 
-Options:
-  --remove            Uninstall the checker (the Claude token stays)
-  --no-linger         Linux: leave lingering as it is (without it, checks stop when you log out;
-                      undo an earlier enable with loginctl disable-linger)
-  --claude-token      Mint a new Claude token even if one is set (e.g. after an alert)
-  --no-claude-token   Skip the Claude token step
-  --name NAME         Save the token as an extra Claude account; installs no checker
+${ options_table( `auth`, `init` ) }
 
 Examples:
   babysit auth init
@@ -609,8 +561,8 @@ Examples:
 
 }
 
-// Flags whose next argument is a value, not a command word
-const VALUE_FLAGS = new Set( [ `--name`, `--log`, `--port`, `--config`, `-n`, `--status`, `--sort`, `--limit`, `--auth-check-agents`, `--transcripts` ] )
+// Flags whose next argument is a value, not a command word (registry, every scope)
+const VALUE_FLAGS = new Set( FLAGS.filter( flag => flag.type !== `boolean` ).map( flag => dashed( flag.name ) ) )
 
 // After `--` everything is literal agent input, `-h` included
 const babysit_args = argv => argv.includes( `--` ) ? argv.slice( 0, argv.indexOf( `--` ) ) : argv

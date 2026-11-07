@@ -4,48 +4,23 @@ import { is_agent, retired_agent_message } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
 import { SHELLS } from './shell_init.js'
 
-// Flags babysit recognises — everything else passes through to the agent CLI
-const KNOWN_FLAGS = [
-    `help`,
-    `version`,
-    `yolo`,
-    `sandbox`,
-    `mudbox`,
-    `clone`,
-    `loop`,
-    `docker`,
-    `adb`,
-    `ios`,
-    `devices`,
-    `yes`,
-    `ignore-host-agents-md`,
-    `name`,
-    `log`,
-    `port`,
-    `auth-check-agents`,
-    `transcripts`,
-    `config`,
-    `account`,
-]
+import { BOOLEAN_FLAGS, FLAGS, FORK_NEGATABLE_FLAGS, KNOWN_FLAGS, OPTIONAL_FLAGS, VALUE_FLAGS, command_named, flag_key, local_flags, option_tokens } from './registry.js'
 
-const BOOLEAN_FLAGS = [ `help`, `version`, `yolo`, `sandbox`, `mudbox`, `clone`, `loop`, `docker`, `adb`, `ios`, `devices`, `yes`, `ignore-host-agents-md`, `all`, `list`, `auth`, `refresh`, `remove`, `linger`, `dry-run`, `json`, `continue`, `boot`, `shutdown`, `watch`, `force`, `detach`, `claude-token` ]
-const AUTH_VERBS = [ `status`, `check`, `init`, `accounts` ]
+// Flag lists come from the registry (src/cli/registry.js); re-exported for older importers
+export { FORK_NEGATABLE_FLAGS }
 
-// `babysit fork` only: filesystem/takeover/mode switches, plus --no-history and
-// --no-<flag> to drop a switch inherited from the parent
-const FORK_FLAGS = [ `share`, `takeover`, `regular`, `history` ]
-export const FORK_NEGATABLE_FLAGS = [ `yolo`, `docker`, `adb`, `ios`, `loop` ]
+const AUTH_VERBS = Object.keys( command_named( `auth` ).subcommands )
+const WEB_VERBS = Object.keys( command_named( `web` ).subcommands )
 
-// `babysit watch` only: --usage shows the usage panel alone, --interactive opens sessions by number
-const WATCH_FLAGS = [ `usage`, `interactive` ]
+// Strict commands (recover, web, prune, restart) accept help; all but restart accept version
+const HELP_TOKENS = [ `--help`, `-h` ]
+const VERSION_TOKENS = [ `--version`, `-v` ]
 
-// `babysit update` only: --auto toggles automatic background updates
-const UPDATE_FLAGS = [ `auto` ]
+// Plain switches: `args.flag || false`, plus whatever implies them (--devices -> --adb, --ios)
+const SWITCHES = FLAGS.filter( flag => [ `global`, `launch` ].includes( flag.scope ) && flag.type === `boolean` )
 
-// Flags that take an explicit value (e.g. `--log path.log`). collect_passthrough
-// uses this to skip the value token too — without that, the user's `--log foo`
-// would leak `foo` to the agent CLI.
-const VALUE_FLAGS = new Set( [ `name`, `log`, `port`, `auth-check-agents`, `transcripts`, `config`, `n`, `account` ] )
+// Command switches that land in cmd.flags only for their own commands
+const GATED = FLAGS.filter( flag => flag.gated )
 
 /**
  * Parse CLI arguments into a structured command descriptor
@@ -71,8 +46,7 @@ export const parse_args = ( argv ) => {
     // numbers (01 -> 1, large IDs -> 1e+33). Give bare booleans an explicit
     // value for parsing only; agent passthrough retains the original tokens.
     const separator = prepared.indexOf( `--` )
-    const command_booleans = argv[0] === `fork` ? FORK_FLAGS : argv[0] === `watch` ? WATCH_FLAGS : argv[0] === `update` ? UPDATE_FLAGS : []
-    const booleans = [ ...BOOLEAN_FLAGS, ...command_booleans ]
+    const booleans = [ ...BOOLEAN_FLAGS, ...local_flags( argv[0] ) ]
     const parseable = prepared.map( ( arg, index ) => {
         if( separator !== -1 && index > separator ) return arg
         const name = arg.replace( /^-+/, `` )
@@ -82,8 +56,8 @@ export const parse_args = ( argv ) => {
     } )
     const parse = tokens => mri( tokens, {
         boolean: [ ...booleans ],
-        string: [ `name`, `log`, `port`, `auth-check-agents`, `transcripts`, `config`, `n`, `account` ],
-        alias: { h: `help`, v: `version` },
+        string: [ ...VALUE_FLAGS ],
+        alias: Object.fromEntries( FLAGS.filter( flag => flag.alias ).map( flag => [ flag.alias, flag.name ] ) ),
     } )
 
     const args = parse( parseable )
@@ -98,33 +72,13 @@ export const parse_args = ( argv ) => {
     const uses_resume_history = verb === `resume` && !positionals[1] || numbered_resume
     const resume_listing = verb === `resume` && !positionals[1]
     const flags = {
-        help: args.help || false,
-        version: args.version || false,
-        yolo: args.yolo || false,
-        sandbox: args.sandbox || false,
-        mudbox: args.mudbox || false,
-        clone: args.clone || false,
-        loop: args.loop || false,
-        docker: args.docker || false,
-        // --devices: every kind of external device access (Android + iOS)
-        adb: args.adb || args.devices || false,
-        ios: args.ios || args.devices || false,
-        devices: args.devices || false,
-        yes: args.yes || false,
-        ignore_host_agents_md: args[ `ignore-host-agents-md` ] || false,
+        ...Object.fromEntries( SWITCHES.map( flag => [ flag_key( flag ), args[ flag.name ] || flag.implied_by && args[ flag.implied_by ] || false ] ) ),
+        ...Object.fromEntries( GATED.map( flag => [ flag_key( flag ), flag.commands.includes( verb ) && ( args[ flag.name ] || false ) ] ) ),
         // Command-scoped: list and resume history/number selectors consume `--all`, while
         // agent commands retain the raw flag in passthrough below.
         all: ( verb === `list` || verb === `watch` || uses_resume_history ) && ( args.all || false ),
-        // `watch --usage`: the account usage panel alone
-        usage: verb === `watch` && ( args.usage || false ),
-        interactive: verb === `watch` && ( args.interactive || false ),
-        // `update --auto`: ask whether to update automatically
-        auto: verb === `update` && ( args.auto || false ),
         // `-n N` caps the resume history listing; numbered resumes ignore it.
         limit: resume_listing ? normalise_limit( args.n ) : null,
-        // `list --watch` is retired in favor of `babysit watch`; kept to explain the move.
-        watch: verb === `list` && ( args.watch || false ),
-        list: verb === `prune` && ( args.list || false ),
         name: normalise_session_name( args.name ),
         // Three forms accepted: `--log` (default path), `--log=path`, `--log path`.
         // mri normalises the first two to args.log = '' / args.log = 'path'.
@@ -138,9 +92,6 @@ export const parse_args = ( argv ) => {
         transcripts: typeof args.transcripts === `string` ? args.transcripts : false,
         // Claude subscription for this launch (babysit auth accounts); false picks by headroom
         account: normalise_account( args.account ),
-        auth: verb === `doctor` && ( args.auth || false ),
-        refresh: verb === `doctor` && ( args.refresh || false ),
-        remove: verb === `auth` && ( args.remove || false ),
         // Lingering is on by default; --no-linger opts out.
         linger: verb === `auth` && args.linger !== false,
         // Unset: offer the token when missing. --claude-token re-mints, --no-claude-token skips.
@@ -193,8 +144,7 @@ export const parse_args = ( argv ) => {
         const selector = positionals[1] || null
         // close takes several selectors at once; recover takes one
         const selectors = verb === `close` ? positionals.slice( 1 ) : positionals.slice( 1, 2 )
-        const allowed = new Set( [ `--help`, `-h`, `--version`, `-v`, ... verb === `recover` && selector !== `init`
-            ? [ `--dry-run`, `--json`, `--no-continue`, `--boot`, `--shutdown` ] : []  ] )
+        const allowed = new Set( [ ...HELP_TOKENS, ...VERSION_TOKENS, ...verb === `recover` && selector !== `init` ? option_tokens( `recover` ) : [] ] )
         const unexpected = prepared.slice( 1 ).filter( argument => !selectors.includes( argument ) && !allowed.has( argument ) )
         if( unexpected.length || positionals.length > selectors.length + 1 ) throw new Error( `Unknown ${ verb } argument: ${ unexpected[0] || positionals[2] }` )
         if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <number|session_id>...` )
@@ -226,14 +176,14 @@ export const parse_args = ( argv ) => {
     // babysit web key add|list|remove [NAME] — read-only API keys
     if( verb === `web` ) {
         const web_verb = positionals[1]
-        const allowed = new Set( [ `--help`, `-h`, `--version`, `-v` ] )
+        const allowed = new Set( [ ...HELP_TOKENS, ...VERSION_TOKENS ] )
         const key_args = web_verb === `key` ? positionals.slice( 2, 4 ).map( String ) : []
         const unexpected = prepared.slice( 2 ).filter( argument => !allowed.has( argument ) && !key_args.includes( argument ) )
 
         if( !web_verb && ( flags.help || flags.version ) ) {
             return { verb: `web`, web_verb: null, agent: null, flags, passthrough: [] }
         }
-        if( ![ `init`, `key` ].includes( web_verb ) ) throw new Error( `Unknown web command: ${ web_verb || `(missing)` }` )
+        if( !WEB_VERBS.includes( web_verb ) ) throw new Error( `Unknown web command: ${ web_verb || `(missing)` }` )
         if( unexpected.length ) throw new Error( `Unknown web argument: ${ unexpected[0] }` )
 
         const [ key_action = null, key_name = null ] = key_args
@@ -248,7 +198,7 @@ export const parse_args = ( argv ) => {
 
     // babysit prune [--list]
     if( verb === `prune` ) {
-        const allowed = new Set( [ `--list`, `--help`, `-h`, `--version`, `-v` ] )
+        const allowed = new Set( [ ...option_tokens( `prune` ), ...HELP_TOKENS, ...VERSION_TOKENS ] )
         const unexpected = prepared.slice( 1 ).filter( argument => !allowed.has( argument ) )
 
         if( unexpected.length ) {
@@ -315,7 +265,8 @@ export const parse_args = ( argv ) => {
     if( verb === `restart` ) {
         const selector = positionals[1] || null
         const selectors = positionals.slice( 1 )
-        const allowed = new Set( [ `--help`, `-h`, `--force`, `--detach`, `--continue` ] )
+        // Restart never took --version; --account is matched with its value below
+        const allowed = new Set( [ ...HELP_TOKENS, ...option_tokens( `restart` ).filter( token => token !== `--account` ) ] )
         // `--account NAME` / `--account=NAME` switch the Claude subscription on the way
         const account_value = prepared.findIndex( ( argument, index ) => index > 0 && prepared[ index - 1 ] === `--account` )
         const is_account = ( argument, index ) => argument === `--account` || argument.startsWith( `--account=` ) || index === account_value
@@ -338,6 +289,7 @@ export const parse_args = ( argv ) => {
         if( args.regular && ( args.sandbox || args.mudbox ) ) throw new Error( `--regular cannot be combined with --sandbox or --mudbox` )
 
         const negations = [ ...FORK_NEGATABLE_FLAGS, `history` ].map( flag => `no-${ flag }` )
+        const fork_flags = local_flags( `fork` )
         return {
             verb: `fork`,
             agent,
@@ -351,7 +303,7 @@ export const parse_args = ( argv ) => {
                 // --no-yolo etc.: drop that switch even though the parent had it
                 unset: FORK_NEGATABLE_FLAGS.filter( flag => args[ flag ] === false ),
             },
-            passthrough: collect_passthrough( prepared.slice( 1 ), agent, selector, [ ...FORK_FLAGS, ...negations ] ),
+            passthrough: collect_passthrough( prepared.slice( 1 ), agent, selector, [ ...fork_flags, ...negations ] ),
         }
     }
 
@@ -515,7 +467,7 @@ const collect_passthrough = ( argv, agent_name, session_id = null, command_flags
         // leaks `foo.log` into the agent's argv.
         const [ clean ] = arg.replace( /^-+/, `` ).split( `=` )
         if( KNOWN_FLAGS.includes( clean ) || command_flags.includes( clean ) ) {
-            if( VALUE_FLAGS.has( clean ) && !arg.includes( `=` ) ) skip_next = true
+            if( VALUE_FLAGS.includes( clean ) && !arg.includes( `=` ) ) skip_next = true
             continue
         }
 
@@ -563,11 +515,11 @@ const normalise_value_flags = ( argv ) => {
 
         const arg = argv[i]
 
-        if( arg === `--log` ) {
+        if( OPTIONAL_FLAGS.some( name => arg === `--${ name }` ) ) {
 
             const next = argv[i + 1]
             const has_value = next !== undefined && !next.startsWith( `-` )
-            out.push( has_value ? arg : `--log=` )
+            out.push( has_value ? arg : `${ arg }=` )
             continue
 
         }
