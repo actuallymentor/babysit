@@ -295,9 +295,16 @@ export const create_account_switcher = ( session, {
             }
 
             // In place: swap the token, then type the nudge unless a person is there
-            if( hot_swap ) {
-                const account = accounts.find( ( { name } ) => name === plan.to )
-                await swap( latest.container_id, account )
+            // An image without babysit-claude-token (pre-2.0) cannot swap in place: restart instead
+            const swapped = hot_swap && await swap( latest.container_id, accounts.find( ( { name } ) => name === plan.to ) )
+                .then( () => true, error => {
+                    log.warn( `In-place Claude account switch failed (${ error.message }); falling back to a restart` )
+                    return false
+                } )
+            if( hot_swap && !swapped && ( !latest.agent_session_id || latest.modifiers?.includes( `sandbox` ) ) ) {
+                return skip( `the in-place switch failed and this session cannot restart` )
+            }
+            if( swapped ) {
                 const entry = { at: new Date( now() ).toISOString(), from: plan.from, to: plan.to, resets_at: plan.resets_at, hot_swap: true }
                 update( session.babysit_id, current => ( { claude_account: plan.to, account_switches: [ ...current.account_switches || [], entry ] } ) )
                 // Re-read after the awaits: a freeze or recovery may have taken the pane since
