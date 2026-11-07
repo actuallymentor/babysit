@@ -188,7 +188,7 @@ Idle rules do not start while waiting; manual input remains available.
 | `babysit archive [<number, id or name>...] [--yes]` | Dim sessions and sink them to the bottom of their workspace (several at once: numbers resolve before the first archive); a workspace whose sessions are all archived sinks to the bottom of the list. No selectors: list the grey-dot sessions and ask `Archive N sessions? [Y/n]` (`--yes` skips; required without a terminal). Archived sessions keep running and `prune` keeps their clones. `babysit open` un-archives |
 | `babysit prune --list` | Reclaimable space estimates and managed clone usage, no prompts |
 | `babysit prune` | Show what is reclaimable and where, interactively prune unused Docker data (incl. build cache unused for 7 days) and managed clones, report space actually freed |
-| `babysit doctor --auth [agent] [--refresh]` | Real auth check for every installed agent; bypass 12h cache with `--refresh` |
+| `babysit doctor --auth [agent] [--refresh]` | Real auth check (one prompt in the image) for every agent, Claude on its setup-token account; bypass 12h cache with `--refresh` |
 | `babysit auth [status]` | Cached authentication ages and whether the scheduled checker is installed |
 | `babysit auth check [agent] [--force]` | What the checker runs: offline checks, host CLI probe after 1h, container re-verify after 6h; `--force` probes one agent now |
 | `babysit auth accounts [remove NAME]` | Claude subscriptions; see [Claude accounts](#claude-accounts) |
@@ -206,12 +206,13 @@ monitor refreshes every 30s from `docker stats` (CPU: 100% = one core; MEM: used
 is younger than 5 minutes. The totals row is green under 50% of the Docker host's cores/memory, yellow under 70%, red above.
 Colors follow `NO_COLOR`, `TERM=dumb`, and non-TTY output.
 Attachment is separate. Pruning needs free space for locks/journals.
-Launch verifies only the launched agent's authentication (12h hash-bound cache); other
-installed agents still receive credentials but are checked by `doctor --auth`.
-Run `babysit auth init` once so a 10-minute host-level checker keeps verified logins warm (a launch that had to probe reminds you, and `babysit config` shows the checker state);
-launches then skip the "Checking authentication" probe. The checker only refreshes agents a
-launch or `doctor --auth` verified before, and leaves OpenCode (whose identity depends on the
-project's provider route) to launch-time verification. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`
+Launch makes no model call: it checks the launched agent's staged login locally (Codex: an expired access token with a
+refresh token still starts, since Codex refreshes it; OpenCode: no credentials is fine for free models; Claude: a
+setup-token or route) and asks before starting only when there is nothing to log in with. Every installed agent still
+receives credentials. Real prompts are `doctor --auth` and the checker:
+run `babysit auth init` once so a 10-minute host-level checker keeps logins verified (`babysit config` shows its state).
+The checker covers every agent whose credentials are on the host (Claude: a setup-token or route) and leaves
+OpenCode (whose identity depends on the project's provider route) to `doctor --auth`. With `PUSHOVER_TOKEN` + `PUSHOVER_USER` in `~/.babysitrc`
 (or exported when you run `babysit auth init`), the checker also pushes an alert when a verified agent logs out (deleted or expired credentials offline, an hourly ~3s host CLI probe, or a running session's pane showing the agent's logged-out message), and once per
 limit window when any usage limit (session/daily/weekly/credit) reaches 90% (one push per check, however many limits crossed); without them it's a no-op. Running sessions re-stamp the cache
 when they rotate a token, and a launch shows which startup step it is on (`Starting claude: …`);

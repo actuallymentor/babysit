@@ -13,7 +13,8 @@ import { get_agent, SUPPORTED_AGENTS } from '../src/agents/index.js'
 import { cmd_doctor, select_doctor_auth_agents } from '../src/cli/doctor.js'
 
 const IMAGE_IDENTITY = `sha256:doctor-test-image`
-const WITHOUT_HOST_CONTEXT = { resolve_context_files: () => ( {} ) }
+// No real Claude account registry or host settings: the probe stages only the test mounts
+const WITHOUT_HOST_CONTEXT = { resolve_context_files: () => ( {} ), claude_login: async () => ( { mounts: [] } ) }
 
 const command = ( {
     agent = `codex`,

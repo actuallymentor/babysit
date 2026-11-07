@@ -20,8 +20,8 @@ import { alert_high_usage, alert_logouts, pushover_configured } from '../utils/n
 import { collect_usage } from '../docker/assets/usage/command.mjs'
 import { format_auth_result_line, run_auth_diagnostics } from './doctor.js'
 import { unit_quote } from './recover_init.js'
-import { CLAUDE_TOKEN_ENV, setup_claude_token } from './claude_token.js'
-import { DEFAULT_ACCOUNT, cmd_auth_accounts, validate_account_name } from './claude_accounts.js'
+import { CLAUDE_TOKEN_ENV, claude_api_route, setup_claude_token } from './claude_token.js'
+import { DEFAULT_ACCOUNT, cmd_auth_accounts, list_claude_accounts, validate_account_name } from './claude_accounts.js'
 
 // The checker ticks every ten minutes. Offline checks run every tick, host
 // CLI probes once the last proof is an hour old, and the container re-probe
@@ -40,19 +40,46 @@ const hours = milliseconds => `${ ( milliseconds / 3_600_000 ).toFixed( 1 ) }h`
 const timestamp = iso => iso.replace( `T`, ` ` ).replace( /\.\d{3}Z$/, ` UTC` )
 
 /**
- * Agents worth keeping warm: those with a past success on record whose cache
- * identity does not depend on the launching workspace. The checker refreshes
- * verified logins; launches and `doctor --auth` discover new ones. A CLI that
- * never authenticated would otherwise fail a full probe every hour, and an
- * agent with per-project routes (OpenCode) would have its project entry
- * replaced by the scheduler's default route.
+ * Whether the host holds a login an agent's sessions would stage: a
+ * setup-token account or route for Claude, else its credential file or key.
+ * @param {Object} agent - Agent adapter
+ * @param {Object} [options] - Environment and reader seams
+ * @returns {boolean}
+ */
+export const has_host_credentials = ( agent, {
+    env = process.env,
+    read_credential = read_host_credential,
+    claude_accounts = list_claude_accounts,
+    claude_route = claude_api_route,
+} = {} ) => {
+
+    // Claude sessions never stage the host /login, only a setup-token
+    if( agent.credentials?.stage_host_login === false ) return claude_accounts( { env } ).length > 0 || Boolean( claude_route( { env } ) )
+
+    const config = agent.credentials?.[ detect_platform() ]
+    if( [ config?.env_key, config?.fallback_env ].some( key => key && env[ key ] ) ) return true
+    return read_credential( agent ).state === `present`
+
+}
+
+/**
+ * Agents worth keeping warm: those with credentials on the host (or a past
+ * success on record) whose cache identity does not depend on the launching
+ * workspace. Launches no longer probe, so enrollment cannot wait for one; a
+ * CLI with nothing to log in with stays out, so it never fails a probe every
+ * run. An agent with per-project routes (OpenCode) would have its project
+ * entry replaced by the scheduler's default route.
  *
- * @param {Object} [options] - Cache seam
+ * @param {Object} [options] - Cache and credential seams
  * @returns {Object[]} Agent adapters
  */
-export const select_auth_check_agents = ( { cache = read_host_auth_cache() } = {} ) => SUPPORTED_AGENTS
+export const select_auth_check_agents = ( {
+    cache = read_host_auth_cache(),
+    has_credentials = agent => has_host_credentials( agent ),
+} = {} ) => SUPPORTED_AGENTS
     .map( get_agent )
-    .filter( agent => agent && cache.agents?.[ agent.name ] && typeof agent.auth_check?.cache_context !== `function` )
+    .filter( agent => agent && typeof agent.auth_check?.cache_context !== `function` )
+    .filter( agent => cache.agents?.[ agent.name ] || has_credentials( agent ) )
 
 const workspace_route_agents = () => SUPPORTED_AGENTS
     .map( get_agent )
@@ -240,21 +267,6 @@ export const resolve_checker_scheduler = ( {
 
 }
 
-/**
- * One-line nudge for a launch that just paid a real probe while no scheduled
- * checker exists; null when the checker is installed or unsupported here.
- * @param {Object[]} results - Startup authentication results
- * @param {Object} [options] - Scheduler seam
- * @returns {string|null} Hint text
- */
-export const auth_checker_hint = ( results = [], { scheduler = resolve_checker_scheduler() } = {} ) => {
-
-    const probed = results.some( result => result.status === `authenticated` )
-    if( !probed || !scheduler || scheduler.installed ) return null
-    return `This launch verified authentication with a real probe. Run babysit auth init once to keep logins verified in the background.`
-
-}
-
 /* ---------- commands ---------- */
 
 /**
@@ -276,7 +288,7 @@ export const cmd_auth_status = async ( {
 
     output.write( format_auth_status_table( rows ) )
     output.write( `Cache TTL ${ hours( HOST_AUTH_CACHE_TTL_MS ) }; the checker re-verifies entries older than ${ hours( AUTH_CHECK_REFRESH_AFTER_MS ) } in Docker, and probes the host CLI when the last proof is ${ hours( HOST_CHECK_AFTER_MS ) } old.\n` )
-    output.write( `Workspace-route agents verified at launch only: ${ workspace_route_agents().join( `, ` ) || `none` }.\n` )
+    output.write( `Workspace-route agents verified by babysit doctor --auth only: ${ workspace_route_agents().join( `, ` ) || `none` }.\n` )
     if( !scheduler ) output.write( `Scheduled checker: unsupported on this platform (run babysit auth check from your own scheduler).\n` )
     else if( scheduler.installed ) output.write( `Scheduled checker: installed (${ scheduler.label }, every 10 minutes).\n` )
     else output.write( `Scheduled checker: not installed. Run babysit auth init.\n` )
@@ -308,7 +320,9 @@ export const find_offline_logouts = async ( agents, {
 
     const found = []
 
-    for( const agent of agents.filter( agent => sole_file_login( cache.agents?.[ agent.name ] ) ) ) {
+    // Claude sessions run on a setup-token, so a lost host /login is no logout
+    const judged = agents.filter( agent => agent.credentials?.stage_host_login !== false && sole_file_login( cache.agents?.[ agent.name ] ) )
+    for( const agent of judged ) {
 
         const credential = read_credential( agent )
         const expires_at = credential.state === `present` ? agent.auth_check?.refresh_expires_at?.( credential.text ) : NaN
@@ -390,7 +404,7 @@ export const cmd_auth_check = async ( {
         .filter( agent => !agent_name || agent.name === agent_name )
     const notifying = pushover_configured( env )
     if( !agents.length && !notifying ) {
-        output.write( `No previously verified agents to keep warm; launch one or run babysit doctor --auth first.\n` )
+        output.write( `No agents with credentials to keep warm; log in to one (Claude: babysit auth init --claude-token) or run babysit doctor --auth.\n` )
         return 0
     }
 
@@ -426,7 +440,7 @@ export const cmd_auth_check = async ( {
 
         if( !agents.length ) {
             if( notifying ) await logout_alerts( [] )
-            output.write( `No previously verified agents to keep warm; launch one or run babysit doctor --auth first.\n` )
+            output.write( `No agents with credentials to keep warm; log in to one (Claude: babysit auth init --claude-token) or run babysit doctor --auth.\n` )
             return 0
         }
 
@@ -460,6 +474,7 @@ export const cmd_auth_check = async ( {
         }
         const held_reason = `a running session may be refreshing its token`
         const host_candidates = online.filter( agent => agent.auth_check?.host_args
+            && agent.credentials?.stage_host_login !== false
             && sole_file_login( cache.agents?.[ agent.name ] )
             && ( force || host_probe_due( cache.agents?.[ agent.name ], now ) ) )
         const host_results = ( await Promise.all( host_candidates.map( async agent => {
@@ -494,7 +509,9 @@ export const cmd_auth_check = async ( {
             const config = agent.credentials?.[ detect_platform() ]
             return [ config?.env_key, config?.fallback_env ].some( key => key && env[ key ] )
         }
+        // A setup-token never rotates, so Claude's container probe never waits
         const may_rotate_held_token = agent => sessions_active
+            && agent.credentials?.stage_host_login !== false
             && typeof agent.auth_check?.refresh_free === `function`
             && !env_login( agent )
             && would_rotate( agent )

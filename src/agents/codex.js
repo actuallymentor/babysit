@@ -67,6 +67,20 @@ export const codex = {
     bin: `codex`,
 
     credentials: {
+        // Launch gate (no model call). Codex refreshes an expired access
+        // token itself, so a refresh token alone still logs in.
+        gate: ( { file, env, now = Date.now() } ) => {
+            if( env ) return `usable`
+            if( file === null ) return `missing`
+            try {
+                const { tokens, OPENAI_API_KEY: api_key } = JSON.parse( file ) || {}
+                if( api_key ) return `usable`
+                if( jwt_expiry( tokens?.access_token ) > now ) return `usable`
+                return tokens?.refresh_token ? `refreshable` : `missing`
+            } catch {
+                return `unknown`
+            }
+        },
         // Codex caches OAuth credentials at `${CODEX_HOME}/auth.json` (the
         // ChatGPT-login flow writes tokens here). API-key users can also set
         // CODEX_API_KEY / OPENAI_API_KEY — try the file first because it is

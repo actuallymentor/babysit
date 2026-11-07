@@ -699,28 +699,6 @@ export const check_host_agent_authentication = async ( {
 }
 
 /**
- * Extract explicitly unauthenticated agent names from auth-check results.
- * @param {Array<{ name: string, authenticated: boolean }>} results - Auth-check results
- * @returns {string[]} Unauthenticated agent names
- */
-export const unauthenticated_agent_names = ( results = [] ) =>
-    results
-        .filter( result => result.status
-            ? result.status === `unauthenticated`
-            : !result.authenticated
-        )
-        .map( result => result.name )
-
-/**
- * Extract agents whose model-backed check failed for a non-auth reason.
- * @param {Array<{ name: string, status?: string }>} results - Auth-check results
- * @returns {string[]} Failed agent names
- */
-export const failed_agent_names = ( results = [] ) =>
-    results.filter( result => result.status === `failed` ).map( result => result.name )
-
-
-/**
  * Interpret the answer to "Exit? [Y/n]".
  * @param {string} answer - Raw answer
  * @returns {boolean} True when Babysit should continue despite failed auth checks
