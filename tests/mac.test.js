@@ -37,14 +37,14 @@ describe( `babysit mac`, () => {
         rmSync( scratch, { recursive: true, force: true } )
     } )
 
-    const add = ( name = `office` ) => add_mac( { name, host: `192.168.2.236`, user: `mentor`, password: SECRET }, dir )
+    const add = ( name = `office` ) => add_mac( { name, host: `192.168.1.50`, user: `mentor`, password: SECRET }, dir )
 
     describe( `store`, () => {
 
         it( `keeps secrets out of the registry and private on disk`, () => {
             add()
             expect( readFileSync( join( dir, `macs.json` ), `utf8` ) ).not.toContain( SECRET )
-            expect( list_macs( dir ) ).toEqual( [ { name: `office`, host: `192.168.2.236`, user: `mentor` } ] )
+            expect( list_macs( dir ) ).toEqual( [ { name: `office`, host: `192.168.1.50`, user: `mentor` } ] )
             expect( statSync( join( dir, `office` ) ).mode & 0o777 ).toBe( 0o700 )
             for( const file of [ `password`, `id_ed25519` ] ) expect( statSync( join( dir, `office`, file ) ).mode & 0o777 ).toBe( 0o600 )
         } )
@@ -81,7 +81,7 @@ describe( `babysit mac`, () => {
             expect( mount ).toMatchObject( { type: `copy`, target: MAC_BOOTSTRAP_PATH } )
             expect( statSync( mount.cleanup ).mode & 0o777 ).toBe( 0o700 )
             expect( readFileSync( join( mount.cleanup, `office`, `password` ), `utf8` ) ).toBe( SECRET )
-            expect( JSON.parse( readFileSync( join( mount.cleanup, `macs.json` ), `utf8` ) ).macs ).toEqual( [ { name: `office`, host: `192.168.2.236`, user: `mentor` } ] )
+            expect( JSON.parse( readFileSync( join( mount.cleanup, `macs.json` ), `utf8` ) ).macs ).toEqual( [ { name: `office`, host: `192.168.1.50`, user: `mentor` } ] )
             rmSync( mount.cleanup, { recursive: true, force: true } )
         } )
 
@@ -157,7 +157,7 @@ describe( `babysit mac`, () => {
             expect( calls[0].command ).toBe( `ssh` )
             expect( calls[0].argv ).toContain( `${ dir }/office/id_ed25519` )
             expect( calls[0].argv ).toContain( `BatchMode=yes` )
-            expect( calls[0].argv.slice( -2 ) ).toEqual( [ `mentor@192.168.2.236`, `uname -a` ] )
+            expect( calls[0].argv.slice( -2 ) ).toEqual( [ `mentor@192.168.1.50`, `uname -a` ] )
         } )
 
         it( `sudo feeds the password on stdin, never argv`, async () => {
@@ -171,7 +171,7 @@ describe( `babysit mac`, () => {
         it( `scp rewrites mac: paths to user@host:`, async () => {
             add()
             const { calls } = await run( [ `scp`, `office`, `mac:/tmp/a.png`, `./a.png` ] )
-            expect( calls[0].argv.slice( -2 ) ).toEqual( [ `mentor@192.168.2.236:/tmp/a.png`, `./a.png` ] )
+            expect( calls[0].argv.slice( -2 ) ).toEqual( [ `mentor@192.168.1.50:/tmp/a.png`, `./a.png` ] )
         } )
 
         it( `GUI actions go to the vnc helper by Mac name`, async () => {
@@ -274,7 +274,7 @@ describe( `babysit mac`, () => {
         it( `add reads the password from the pipe seam and reports a missing Remote Login`, async () => {
             const lines = []
             const code = await cmd_mac(
-                { mac_verb: `add`, mac_name: `office`, mac_host: `192.168.2.236`, user: `mentor`, password_stdin: true },
+                { mac_verb: `add`, mac_name: `office`, mac_host: `192.168.1.50`, user: `mentor`, password_stdin: true },
                 { dir, print: line => lines.push( line ), ports: async () => false, read_password: () => SECRET }
             )
             expect( code ).toBe( 1 )

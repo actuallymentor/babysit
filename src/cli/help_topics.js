@@ -522,7 +522,7 @@ On the Mac, once: Remote Login and Screen Sharing on (System Settings > General 
 Sharing), a dedicated standard or admin account, sleep and lock off.
 
 Examples:
-  babysit mac add office 192.168.2.236 --user mentor --password-stdin
+  babysit mac add office 192.168.1.50 --user mentor --password-stdin
   babysit mac check office      # installs the ssh key, tests ssh and Screen Sharing
   babysit mac list
   babysit mac disable office    # stays registered; sessions stop receiving its secrets

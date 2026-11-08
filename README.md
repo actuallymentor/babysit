@@ -270,7 +270,7 @@ Control with `facebook-wda` at `http://HOST:8100`; post `waitForIdleTimeout=0` a
 SSH (key) for structured control, Screen Sharing (VNC) for the GUI. Dedicated LAN Mac, e.g. `--devices` or `--mac`.
 
 ```bash
-read -rs PW; PW=$PW babysit mac add office 192.168.2.236 --user mentor --password-env PW   # once; installs the ssh key
+read -rs PW; PW=$PW babysit mac add office 192.168.1.50 --user mentor --password-env PW   # once; installs the ssh key
 babysit mac check|list|enable|disable|forget
 ```
 
