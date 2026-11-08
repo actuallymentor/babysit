@@ -6,7 +6,7 @@
   vnc.py NAME move X Y
   vnc.py NAME drag X1 Y1 X2 Y2
   vnc.py NAME type TEXT...              type text literally
-  vnc.py NAME key Cmd+space [Return..]  key chords, one arg per chord
+  vnc.py NAME key Cmd+space [Return..]  key chords, one arg per chord (Shift chords are ignored by macOS; type capitals)
   vnc.py NAME scroll up|down [N]
   vnc.py NAME unlock                    wake the screen, type the stored password, Return
 
@@ -22,15 +22,10 @@ import asyncvnc
 
 ROOT = os.environ.get('BABYSIT_MAC_ROOT') or os.path.expanduser('~/.config/babysit-mac')
 SETTLE = 0.35  # let the Mac repaint before a follow-up shot
-KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.12)  # the server drops key events that arrive too fast
-
-
-# US-layout shifted symbols -> the base key. macOS ignores a bare shifted keysym
-# (capital letter, "!") from VNC, so those are sent as Shift + base key.
-SHIFTED = {
-    '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
-    '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\', ':': ';', '"': "'", '<': ',', '>': '.', '?': '/', '~': '`',
-}
+# macOS Screen Sharing ignores the first keyboard events of a new connection
+# (measured: all lost below ~1 s, still the first one lost at 1.5 s, none at 2 s)
+WARMUP = float(os.environ.get('BABYSIT_MAC_WARMUP') or 2.5)
+KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.05)
 
 
 def keysym(name):
@@ -43,7 +38,7 @@ def keysym(name):
 
 
 async def tap(vnc, *names):
-    """Press keys together, release in reverse, flushing each event: the server drops bursts."""
+    """Press keys together, release in reverse, flushing every event."""
     codes = [keysym(name) for name in names]
     for code in codes:
         vnc.keyboard.writer.write(b'\x04\x01\x00\x00' + code.to_bytes(4, 'big'))
@@ -56,9 +51,10 @@ async def tap(vnc, *names):
 
 
 async def write_text(vnc, text):
+    # Capitals and symbols go out as their own keysyms. A Shift_L key event is
+    # ignored by the server, but it adds Shift itself for a shifted keysym.
     for char in text:
-        base = char.lower() if char.isupper() else SHIFTED.get(char)
-        await (tap(vnc, 'Shift', base) if base else tap(vnc, char))
+        await tap(vnc, char)
 
 
 def load(name):
@@ -82,6 +78,9 @@ async def run(name, action, args):
             h, w = pixels.shape[:2]
             print(f'{out} {w}x{h}')
             return
+
+        if action in ('type', 'key', 'unlock'):
+            await asyncio.sleep(WARMUP)
 
         if action in ('click', 'move', 'drag'):
             x, y = int(args[0]), int(args[1])

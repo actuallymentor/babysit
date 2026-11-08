@@ -278,6 +278,8 @@ babysit mac check|list|forget
 - Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain
 - Secrets are uploaded into the stopped container (`docker cp`) only for `--mac`/`--devices` sessions, installed 0700 in `~/.config/babysit-mac`; never in `Config.Env`, mounts, argv, config files or logs
 - In session: `babysit mac ssh|sudo|scp NAME ...`, GUI `shot|click|move|drag|type|key|scroll|unlock`; the agent is told never to destroy other users' data
+- GUI typing is paced (≈3 s start-up, macOS drops early keys); agents are told to screenshot and read typed text before pressing Return
+- Enable sshd without Full Disk Access: `sudo launchctl enable system/com.openssh.sshd && sudo launchctl bootstrap system /System/Library/LaunchDaemons/ssh.plist`
 - Gates credentials, not the network: the LAN stays reachable from any container
 
 ## Account usage
