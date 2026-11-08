@@ -318,9 +318,9 @@ describe( `babysit mac`, () => {
         } )
 
         it( `only a --mac session is told about Macs`, () => {
-            expect( build_system_prompt( { mac: true } ) ).toContain( `babysit mac ssh NAME` )
-            expect( build_system_prompt( { mac: true } ) ).toContain( `never destroy or alter anyone else's data` )
-            expect( build_system_prompt( { mac: true } ) ).toContain( `ALWAYS screenshot and read the typed text before pressing Return` )
+            expect( build_system_prompt( { mac: true } ) ).toContain( `babysit mac --help` )
+            expect( build_system_prompt( { mac: true } ) ).toContain( `touch nothing outside your home or /tmp` )
+            expect( build_system_prompt( { mac: true } ) ).toContain( `screenshot and read typed text before pressing Return` )
             expect( build_system_prompt( {} ) ).not.toContain( `babysit mac` )
         } )
 

@@ -7,6 +7,7 @@
 - `babysit mac run NAME 'click 10 20; type hi; shot'` chains GUI actions on one connection (each call otherwise logs in again and typing waits ~2.5 s). Screenshots are shrunk to a 1568 px long edge and click coordinates map back; `shot --full` keeps the screen size.
 
 ### Changed
+- The `--mac` agent prompt is ~1/3 the length: capabilities and guardrails, with details left to `babysit mac --help`.
 - Device kinds (`adb`, `ios`, `mac`) come from one table (`src/devices/kinds.js`): flags, `--devices`, menu, yaml keys, audit questions, mode, prompt and container env derive from it.
 
 ## 2.1.0 — 2026-11-07
