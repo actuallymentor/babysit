@@ -22,6 +22,7 @@ import asyncvnc
 
 ROOT = os.environ.get('BABYSIT_MAC_ROOT') or os.path.expanduser('~/.config/babysit-mac')
 SETTLE = 0.35  # let the Mac repaint before a follow-up shot
+KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.12)  # the server drops key events that arrive too fast
 
 
 # US-layout shifted symbols -> the base key. macOS ignores a bare shifted keysym
@@ -32,15 +33,32 @@ SHIFTED = {
 }
 
 
-async def write_text(keyboard, text):
+def keysym(name):
+    """X11 keysym for a key. Single characters map straight from Unicode:
+    asyncvnc's own char table resolves many letters to obscure duplicate
+    keysyms that macOS silently drops."""
+    if len(name) == 1:
+        return ord(name) if ord(name) < 0x100 else 0x01000000 + ord(name)
+    return asyncvnc.key_codes[name]
+
+
+async def tap(vnc, *names):
+    """Press keys together, release in reverse, flushing each event: the server drops bursts."""
+    codes = [keysym(name) for name in names]
+    for code in codes:
+        vnc.keyboard.writer.write(b'\x04\x01\x00\x00' + code.to_bytes(4, 'big'))
+        await vnc.drain()
+        await asyncio.sleep(KEY_DELAY)
+    for code in reversed(codes):
+        vnc.keyboard.writer.write(b'\x04\x00\x00\x00' + code.to_bytes(4, 'big'))
+        await vnc.drain()
+        await asyncio.sleep(KEY_DELAY)
+
+
+async def write_text(vnc, text):
     for char in text:
         base = char.lower() if char.isupper() else SHIFTED.get(char)
-        if base:
-            with keyboard.hold('Shift'):
-                keyboard.press(base)
-        else:
-            keyboard.press(char)
-        await asyncio.sleep(0.04)
+        await (tap(vnc, 'Shift', base) if base else tap(vnc, char))
 
 
 def load(name):
@@ -80,16 +98,15 @@ async def run(name, action, args):
                     vnc.mouse.move(int(args[2]), int(args[3]))
                     await asyncio.sleep(0.1)
         elif action == 'type':
-            await write_text(vnc.keyboard, ' '.join(args))
+            await write_text(vnc, ' '.join(args))
         elif action == 'key':
             for chord in args:
-                vnc.keyboard.press(*chord.split('+'))
-                await asyncio.sleep(0.1)
+                await tap(vnc, *chord.split('+'))
         elif action == 'unlock':
-            vnc.keyboard.press('Shift')  # wake the login window and focus its field
+            await tap(vnc, 'Shift')  # wake the login window and focus its field
             await asyncio.sleep(1.5)
-            await write_text(vnc.keyboard, password)
-            vnc.keyboard.press('Return')
+            await write_text(vnc, password)
+            await tap(vnc, 'Return')
             await asyncio.sleep(2)
         elif action == 'scroll':
             (vnc.mouse.scroll_up if args[0] == 'up' else vnc.mouse.scroll_down)(int(args[1]) if len(args) > 1 else 3)
