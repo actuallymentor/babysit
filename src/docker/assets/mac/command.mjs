@@ -23,7 +23,7 @@ Remote Macs (--mac / --devices sessions). Register on the host: babysit mac add.
   babysit mac shot NAME [out.png] [--full]      screenshot, long edge <= 1568 px; coordinates below are pixels of the last shot
   babysit mac click NAME X Y [right|double]     babysit mac move NAME X Y      babysit mac drag NAME X1 Y1 X2 Y2
   babysit mac type NAME text...                 babysit mac key NAME Cmd+space Return   (one chord per arg)
-  babysit mac scroll NAME up|down [N]           babysit mac unlock NAME        type the password at the lock screen
+  babysit mac scroll NAME up|down [N]           babysit mac unlock NAME        type the password and click the lock screen's arrow
 
 Each GUI call logs in again and typing waits ~2.5 s, so chain steps with run. Prefer ssh
 (osascript, screencapture -x, open, defaults); use the GUI when ssh cannot.`

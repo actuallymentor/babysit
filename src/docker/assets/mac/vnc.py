@@ -8,7 +8,7 @@
   vnc.py NAME type TEXT...              type text literally
   vnc.py NAME key Cmd+space [Return..]  key chords, one arg per chord (Shift chords are ignored by macOS; type capitals)
   vnc.py NAME scroll up|down [N]
-  vnc.py NAME unlock                    wake the screen, type the stored password, Return
+  vnc.py NAME unlock                    wake the lock screen, type the stored password, click its submit arrow
   vnc.py NAME run [SCRIPT]              several actions on ONE connection: "click 10 20; type hi; key Return; shot"
                                         (statements split on ; or newlines; script from args, else stdin)
 
@@ -86,6 +86,13 @@ def keysym(name, key_codes=None):
         import asyncvnc
         key_codes = asyncvnc.key_codes
     return key_codes[name]
+
+
+def lock_arrow(width, height):
+    """Framebuffer pixel of the lock screen's submit arrow (the ring right of the password field).
+    The field sits at the horizontal centre, ~91% down; the arrow ~3.7% of the width to its right
+    (measured at 3360x2100 and 1920x1080)."""
+    return round(width * 0.5 + width * 0.0372), round(height * 0.908)
 
 
 def parse_chord(chord):
@@ -252,8 +259,13 @@ async def act(vnc, mac, password, action, args, started):
         await tap(vnc, 'Shift')  # wake the login window and focus its field
         await asyncio.sleep(1.5)
         await write_text(vnc, password)
-        await tap(vnc, 'Return')
-        await asyncio.sleep(2)
+        await asyncio.sleep(0.5)
+        # The lock screen ignores Return from VNC but accepts a click on its submit arrow
+        vnc.mouse.move(*lock_arrow(vnc.video.width, vnc.video.height))
+        await vnc.drain()
+        await asyncio.sleep(0.3)
+        vnc.mouse.click()
+        await asyncio.sleep(6)
     elif action == 'scroll':
         (vnc.mouse.scroll_up if args[0] == 'up' else vnc.mouse.scroll_down)(int(args[1]) if len(args) > 1 else 3)
     else:

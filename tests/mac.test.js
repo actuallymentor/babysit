@@ -219,6 +219,15 @@ describe( `babysit mac`, () => {
             expect( mapped ).toEqual( [ 214, 107 ] )
         } )
 
+        it( `finds the lock screen's submit arrow at both screen sizes`, () => {
+            const [ retina, hd ] = json( `[vnc.lock_arrow(3360, 2100), vnc.lock_arrow(1920, 1080)]` )
+            expect( retina[0] ).toBeGreaterThan( 1790 ) // measured: arrow centre ~ (1805, 1907)
+            expect( retina[0] ).toBeLessThan( 1820 )
+            expect( Math.abs( retina[1] - 1907 ) ).toBeLessThan( 5 )
+            expect( Math.abs( hd[0] - 1025 ) ).toBeLessThan( 10 ) // measured ~ (1025, 981)
+            expect( Math.abs( hd[1] - 981 ) ).toBeLessThan( 5 )
+        } )
+
         it( `maps single characters straight to Unicode keysyms and parses chords`, () => {
             const [ keys, named, chords ] = json( `[[vnc.keysym('c', {}), vnc.keysym('H', {}), vnc.keysym('$', {}), vnc.keysym('\\u20ac', {})], vnc.keysym('Return', {'Return': 65293}), [vnc.parse_chord('Cmd+space'), vnc.parse_chord('+'), vnc.parse_chord('Cmd++')]]` )
             expect( keys ).toEqual( [ 0x63, 0x48, 0x24, 0x010020ac ] )
