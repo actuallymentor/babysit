@@ -24,6 +24,25 @@ ROOT = os.environ.get('BABYSIT_MAC_ROOT') or os.path.expanduser('~/.config/babys
 SETTLE = 0.35  # let the Mac repaint before a follow-up shot
 
 
+# US-layout shifted symbols -> the base key. macOS ignores a bare shifted keysym
+# (capital letter, "!") from VNC, so those are sent as Shift + base key.
+SHIFTED = {
+    '!': '1', '@': '2', '#': '3', '$': '4', '%': '5', '^': '6', '&': '7', '*': '8', '(': '9', ')': '0',
+    '_': '-', '+': '=', '{': '[', '}': ']', '|': '\\', ':': ';', '"': "'", '<': ',', '>': '.', '?': '/', '~': '`',
+}
+
+
+async def write_text(keyboard, text):
+    for char in text:
+        base = char.lower() if char.isupper() else SHIFTED.get(char)
+        if base:
+            with keyboard.hold('Shift'):
+                keyboard.press(base)
+        else:
+            keyboard.press(char)
+        await asyncio.sleep(0.04)
+
+
 def load(name):
     registry = json.load(open(f'{ROOT}/macs.json')).get('macs', [])
     mac = next((m for m in registry if name in (m['name'], m['host'])), None)
@@ -61,7 +80,7 @@ async def run(name, action, args):
                     vnc.mouse.move(int(args[2]), int(args[3]))
                     await asyncio.sleep(0.1)
         elif action == 'type':
-            vnc.keyboard.write(' '.join(args))
+            await write_text(vnc.keyboard, ' '.join(args))
         elif action == 'key':
             for chord in args:
                 vnc.keyboard.press(*chord.split('+'))
@@ -69,7 +88,7 @@ async def run(name, action, args):
         elif action == 'unlock':
             vnc.keyboard.press('Shift')  # wake the login window and focus its field
             await asyncio.sleep(1.5)
-            vnc.keyboard.write(password)
+            await write_text(vnc.keyboard, password)
             vnc.keyboard.press('Return')
             await asyncio.sleep(2)
         elif action == 'scroll':
