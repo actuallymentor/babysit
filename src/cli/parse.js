@@ -11,12 +11,13 @@ export { FORK_NEGATABLE_FLAGS }
 
 const AUTH_VERBS = Object.keys( command_named( `auth` ).subcommands )
 const WEB_VERBS = Object.keys( command_named( `web` ).subcommands )
+const MAC_VERBS = Object.keys( command_named( `mac` ).subcommands )
 
 // Strict commands (recover, web, prune, restart) accept help; all but restart accept version
 const HELP_TOKENS = [ `--help`, `-h` ]
 const VERSION_TOKENS = [ `--version`, `-v` ]
 
-// Plain switches: `args.flag || false`, plus whatever implies them (--devices -> --adb, --ios)
+// Plain switches: `args.flag || false`, plus whatever implies them (--devices -> --adb, --ios, --mac)
 const SWITCHES = FLAGS.filter( flag => [ `global`, `launch` ].includes( flag.scope ) && flag.type === `boolean` )
 
 // Command switches that land in cmd.flags only for their own commands
@@ -196,6 +197,27 @@ export const parse_args = ( argv ) => {
         }
 
         return { verb: `web`, web_verb, key_action, key_name, agent: null, flags, passthrough: [] }
+    }
+
+    // babysit mac add NAME HOST --user U (password: pipe or --password-env) | list | check NAME | forget NAME
+    if( verb === `mac` ) {
+        const mac_verb = positionals[1]
+        const [ mac_name = null, mac_host = null ] = positionals.slice( 2 ).map( String )
+
+        if( !mac_verb && ( flags.help || flags.version ) ) return { verb: `mac`, mac_verb: null, agent: null, flags, passthrough: [] }
+        if( !MAC_VERBS.includes( mac_verb ) ) throw new Error( `Unknown mac command: ${ mac_verb || `(missing)` }` )
+        if( !flags.help ) {
+            if( mac_verb === `add` && !( mac_name && mac_host ) ) throw new Error( `Usage: babysit mac add NAME HOST [--user U] [--password-env VAR | --password-stdin]` )
+            if( [ `forget` ].includes( mac_verb ) && !mac_name ) throw new Error( `babysit mac ${ mac_verb } needs a NAME` )
+            if( positionals.length > ( mac_verb === `add` ? 4 : 3 ) ) throw new Error( `Unknown mac argument: ${ positionals[ mac_verb === `add` ? 4 : 3 ] }` )
+        }
+
+        return {
+            verb: `mac`, mac_verb, mac_name, mac_host, agent: null, flags, passthrough: [],
+            user: typeof args.user === `string` ? args.user : null,
+            password_env: typeof args[ `password-env` ] === `string` ? args[ `password-env` ] : null,
+            password_stdin: args[ `password-stdin` ] || false,
+        }
     }
 
     // babysit prune [--list]

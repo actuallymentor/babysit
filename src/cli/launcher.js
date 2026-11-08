@@ -377,9 +377,10 @@ export const fork_from_menu = async ( {
             mode,
             ...Object.fromEntries( TOGGLES.map( flag => [ flag, Boolean( inherited[ flag ] ) ] ) ),
             // Both device kinds are the Devices switch; a lone kind sits under Advanced
-            devices: Boolean( inherited.adb && inherited.ios ),
-            adb: Boolean( inherited.adb && !inherited.ios ),
-            ios: Boolean( inherited.ios && !inherited.adb ),
+            devices: Boolean( inherited.adb && inherited.ios && inherited.mac ),
+            adb: Boolean( inherited.adb && !( inherited.ios && inherited.mac ) ),
+            ios: Boolean( inherited.ios && !( inherited.adb && inherited.mac ) ),
+            mac: Boolean( inherited.mac && !( inherited.adb && inherited.ios ) ),
             ignore_host_agents_md: Boolean( inherited.ignore_host_agents_md ),
             clone: filesystem === `clone`,
             // Shown as the parent's subscription rather than auto, which a fork would not do
@@ -420,8 +421,8 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
     const declared = config ? read_declared_launch( config ) : {}
     const pick = keys => Object.fromEntries( keys.filter( key => Object.hasOwn( declared, key ) ).map( key => [ key, declared[ key ] ] ) )
 
-    // --devices expands to adb + ios when parsed; show it as the one switch the user typed
-    const typed_toggles = [ ...TOGGLES, ...ADVANCED_TOGGLES ].filter( flag => flags[ flag ] && !( flags.devices && [ `adb`, `ios` ].includes( flag ) ) )
+    // --devices expands to adb + ios + mac when parsed; show it as the one switch the user typed
+    const typed_toggles = [ ...TOGGLES, ...ADVANCED_TOGGLES ].filter( flag => flags[ flag ] && !( flags.devices && [ `adb`, `ios`, `mac` ].includes( flag ) ) )
     const typed = {
         ...Object.fromEntries( typed_toggles.map( flag => [ flag, true ] ) ),
         ...flags.sandbox ? { mode: `sandbox` } : flags.mudbox ? { mode: `mudbox` } : {},

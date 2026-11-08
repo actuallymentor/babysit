@@ -593,6 +593,7 @@ export const build_docker_command_args = ( options ) => {
     if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
     if( mode.adb ) add_adb_flags( flags )
     if( mode.ios ) add_ios_flags( flags )
+    if( mode.mac ) flags.push( `-e`, `BABYSIT_MAC=1` )
 
     for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )

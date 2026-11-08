@@ -233,8 +233,8 @@ describe( `interactive launch menu`, () => {
         expect( menu.rendered() ).toContain( `Advanced ▸` )
         expect( menu.rendered() ).not.toContain( `Ports` )
 
-        // Open Advanced (row 8), then ADB, skip iOS and AGENTS.md, type ports, log and args
-        menu.input.write( `${ down.repeat( 8 ) } ${ down } ${ down.repeat( 3 ) }5173, 3000:80${ down }on${ down }--model "opus 4"\r` )
+        // Open Advanced (row 8), then ADB, skip iOS, Mac and AGENTS.md, type ports, log and args
+        menu.input.write( `${ down.repeat( 8 ) } ${ down } ${ down.repeat( 4 ) }5173, 3000:80${ down }on${ down }--model "opus 4"\r` )
         const cmd = await menu.result
         expect( cmd.flags ).toMatchObject( { adb: true, ios: false, devices: false, log: `` } )
         expect( cmd.flags.ports ).toEqual( [ `5173:5173`, `3000:80` ] )
@@ -272,7 +272,7 @@ describe( `interactive launch menu`, () => {
         // Advanced, then the Account row after Args; probe once, cached value first
         const menu = await open_menu( accounts )
         expect( menu.rendered() ).not.toContain( `Account` )
-        menu.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 7 ) }` )
+        menu.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 8 ) }` )
         await new Promise( resolve => setTimeout( resolve, 20 ) )
         expect( menu.rendered() ).toContain( `most headroom → default, 10% used` )
         expect( menu.rendered() ).toContain( `most headroom → default, 30% used` )
@@ -291,7 +291,7 @@ describe( `interactive launch menu`, () => {
 
         // A typo stays selected so the launch can reject it; a failed probe reads as unknown
         const typo = await open_menu( { ...accounts, initial: { account: `wrok` }, probe_usage: async () => [ { name: `default`, status: `error`, headroom: null } ] } )
-        typo.input.write( `${ down.repeat( 15 ) }${ right }` )
+        typo.input.write( `${ down.repeat( 16 ) }${ right }` )
         await new Promise( resolve => setTimeout( resolve, 20 ) )
         expect( typo.rendered() ).toContain( `most headroom` )
         expect( typo.rendered() ).not.toContain( `→ default` )
@@ -300,7 +300,7 @@ describe( `interactive launch menu`, () => {
 
         // A fork's auto keeps the parent's account, and says so
         const fork = await open_menu( { ...accounts, submit: `fork` } )
-        fork.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 6 ) }` )
+        fork.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 7 ) }` )
         await new Promise( resolve => setTimeout( resolve, 20 ) )
         expect( fork.rendered() ).toContain( `‹ inherit ›  parent's account` )
         fork.input.write( `\x03` )
@@ -318,7 +318,7 @@ describe( `interactive launch menu`, () => {
     it( `reports a bad port under the menu instead of launching`, async () => {
 
         const menu = await open_menu()
-        menu.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 4 ) }nope\r` )
+        menu.input.write( `${ down.repeat( 8 ) } ${ down.repeat( 5 ) }nope\r` )
         await new Promise( resolve => setTimeout( resolve, 50 ) )
         expect( menu.rendered() ).toMatch( /Invalid --port/ )
         menu.input.write( `\x03` )

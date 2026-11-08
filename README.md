@@ -47,7 +47,8 @@ Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and swi
 | `--docker` | Mount the host Docker socket (controls the host daemon, even in sandbox) |
 | `--adb` | Android adb with a key shared by every session (network devices only) |
 | `--ios` | iOS 16 devices via WebDriverAgent, pairing shared by every session (network only) |
-| `--devices` | Every device kind: `--adb` and `--ios` |
+| `--mac` | Remote Macs (SSH + Screen Sharing); credentials from babysit mac add reach only these sessions |
+| `--devices` | Every device kind: --adb, --ios and --mac |
 | `--clone` | Work in a durable copy; the original is mounted read-only at `/original` |
 | `--loop` | When idle, type `./LOOP.md`, `~/.agents/LOOP.md`, or "Keep going" |
 | `--sandbox` | No workspace mount; the container and its files are thrown away |
@@ -64,7 +65,7 @@ Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and swi
 Flags combine. `--clone` excludes `--sandbox`/`--mudbox`. `--docker` weakens isolation (host daemon control, even in sandbox).
 
 - `--yolo` on Claude also accepts blocking prompts whose default is yes (e.g. rm checks); never model swaps or billing
-- `--adb` / `--ios`: see [Android devices](#android-devices---adb), [iOS devices](#ios-devices---ios)
+- `--adb` / `--ios` / `--mac`: see [Android devices](#android-devices---adb), [iOS devices](#ios-devices---ios), [Remote Macs](#remote-macs---mac)
 - `--config FILE`: opens the launch menu prefilled from its `launch:`; relative `do: ./X.md` paths resolve beside FILE
 
 ### Clone
@@ -263,6 +264,22 @@ babysit ios forget iphone
 
 Control with `facebook-wda` at `http://HOST:8100`; post `waitForIdleTimeout=0` and `animationCoolOffTimeout=0` to `session/ID/appium/settings` first or `source()` fails. WebDriverAgent is relaunched automatically; free Apple IDs re-sign every 7 days.
 
+
+## Remote Macs (`--mac`)
+
+SSH (key) for structured control, Screen Sharing (VNC) for the GUI. Dedicated LAN Mac, e.g. `--devices` or `--mac`.
+
+```bash
+babysit mac add office 192.168.2.236 --user mentor --password-stdin   # once; installs the ssh key
+babysit mac check|list|forget
+```
+
+- Mac, once: Remote Login + Screen Sharing on (Sharing settings), sleep and lock off, an account for agents
+- Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain
+- Secrets are uploaded into the stopped container (`docker cp`) only for `--mac`/`--devices` sessions, installed 0700 in `~/.config/babysit-mac`; never in `Config.Env`, mounts, argv, config files or logs
+- In session: `babysit mac ssh|sudo|scp NAME ...`, GUI `shot|click|move|drag|type|key|scroll|unlock`; the agent is told never to destroy other users' data
+- Gates credentials, not the network: the LAN stays reachable from any container
+
 ## Account usage
 
 ```bash
@@ -325,7 +342,8 @@ launch:
     docker: false
     adb: false
     ios: false
-    devices: false           # true = adb + ios
+    mac: false
+    devices: false           # true = adb + ios + mac
     clone: true
     loop: false
     ignore_host_agents_md: false

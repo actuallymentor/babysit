@@ -36,6 +36,7 @@ import { cmd_doctor } from './cli/doctor.js'
 import { cmd_auth } from './cli/auth.js'
 import { cmd_prune } from './cli/prune.js'
 import { cmd_web } from './cli/web.js'
+import { cmd_mac } from './cli/mac.js'
 import { check_dependencies } from './deps/check.js'
 import { time_phase_sync } from './utils/timing.js'
 import { detect_mode } from './utils/platform.js'
@@ -97,6 +98,7 @@ const HANDLERS = {
     mode: () => console.log( detect_mode() ),
     prune: cmd_prune,
     web: cmd_web,
+    mac: exit_code( cmd_mac ),
     doctor: cmd_doctor,
     auth: exit_code( cmd_auth ),
     __monitor: cmd_monitor,

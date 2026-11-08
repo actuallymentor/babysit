@@ -146,8 +146,8 @@ export const command_to_launch = ( { agent, flags = {}, passthrough = [] } ) => 
     mode: flags.sandbox ? `sandbox` : flags.mudbox ? `mudbox` : `regular`,
     ...Object.fromEntries( LAUNCH_TOGGLES.map( key => [ key, Boolean( flags[ key ] ) ] ) ),
 
-    // --devices expands to adb + ios when parsed; keep the one key the user wrote
-    ...flags.devices ? { adb: false, ios: false } : {},
+    // --devices expands to adb + ios + mac when parsed; keep the one key the user wrote
+    ...flags.devices ? { adb: false, ios: false, mac: false } : {},
     ports: flags.ports || [],
     log: typeof flags.log === `string` ? flags.log || true : false,
     args: passthrough,

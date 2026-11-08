@@ -243,3 +243,5 @@
 - **2026-11-07**: 2.0.0 released. Remove Antigravity; setup-token-only Claude in containers, any frontend; no launch model probe (local gate); one credential routine; durable sync state; launch phases; flag/command registry; adapters own per-agent knowledge; shared Python readers; per-launch events.jsonl drives turn state. Release verification found and fixed three issues: an old shim in babysit-npm-global re-adding the env token, a pre-2.0 image hot-swap fallback, and a reboot-recovery null logout hash. Plan + constraints: REFACTOR_PLAN.md (done).
 
 - **2026-11-07**: 2.1.0 OpenCode borrows the Codex ChatGPT login (access token only), prefers subscription over OpenRouter; verified live (real OpenCode request on the lent login, nested claude/codex, host auth.json untouched). Claude stays out of OpenCode's provider by Anthropic policy.
+
+- **2026-11-08**: 2.2.0 `--mac`: remote Macs via ssh key + VNC (asyncvnc, Apple auth type 33). Host store `~/.babysit/macs`; secrets reach containers only via a `copy` mount (`/tmp/.babysit-mac`, entrypoint installs to `~/.config/babysit-mac`) when `mode.mac`.

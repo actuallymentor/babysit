@@ -620,6 +620,7 @@ describe( `merge_resume_flags`, () => {
             mudbox: false,
             docker: false,
             adb: false,
+            mac: false,
             ios: false,
             clone: false,
             loop: false,

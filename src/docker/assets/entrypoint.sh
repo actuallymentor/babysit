@@ -161,6 +161,26 @@ if [ -f "$CLAUDE_ACCOUNT_BOOTSTRAP" ]; then
 fi
 unset CLAUDE_ACCOUNT_BOOTSTRAP
 
+# --mac: remote Mac registry and secrets (passwords, ssh keys) uploaded into
+# the stopped container, like the GitHub profile above. Only --mac / --devices
+# launches carry the bootstrap; it is moved into a private home directory the
+# `babysit mac` helper reads, then removed so nothing lingers in /tmp.
+MAC_BOOTSTRAP=/tmp/.babysit-mac
+if [ -d "$MAC_BOOTSTRAP" ]; then
+    MAC_HOME=/home/node/.config/babysit-mac
+
+    rm -rf "$MAC_HOME"
+    install -d -m 700 -o "$HOST_UID" -g "$HOST_GID" /home/node/.config "$MAC_HOME"
+    cp -R "$MAC_BOOTSTRAP/." "$MAC_HOME/"
+    chown -R "$HOST_UID:$HOST_GID" "$MAC_HOME"
+    find "$MAC_HOME" -type d -exec chmod 700 {} +
+    find "$MAC_HOME" -type f -exec chmod 600 {} +
+    rm -rf "$MAC_BOOTSTRAP"
+
+    unset MAC_HOME
+fi
+unset MAC_BOOTSTRAP
+
 # Bring claude into the cross-agent skills convention. Codex and OpenCode
 # already discover ~/.agents/skills/ natively; claude only looks at
 # ~/.claude/skills/, so symlink the cross-agent path into place when the

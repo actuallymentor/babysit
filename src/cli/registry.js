@@ -17,7 +17,7 @@ import { SUPPORTED_AGENTS } from '../agents/index.js'
  *              container  parsed by the in-session helpers, not by parse_args
  *   commands   verbs a command or local flag belongs to
  *   gated      appears in cmd.flags as `verb in commands && args.flag`
- *   implied_by flag that also switches this one on (--devices -> --adb, --ios)
+ *   implied_by flag that also switches this one on (--devices -> --adb, --ios, --mac)
  *   key        cmd.flags key when it is not the snake_case name
  *   arg        value placeholder in help (`--name NAME`)
  *   usage      help usage when it is not `--name [ARG]`
@@ -50,12 +50,14 @@ export const FLAGS = [
         yaml_note: `Mounts the host Docker socket (sibling containers); agents always run in a container.`,
         summary: `Mount the host Docker socket (controls the host daemon, even in sandbox)` },
     { name: `adb`, type: `boolean`, scope: `launch`, yaml: `adb`, modifier: `adb`, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label: `ADB` },
-        yaml_note: `Android device access (adb), iPhone access (ios, iOS 16 and older); devices turns on every kind.`,
+        yaml_note: `Android device access (adb), iPhone access (ios, iOS 16 and older), remote Macs (mac); devices turns on every kind.`,
         summary: `Android adb with a key shared by every session (network devices only)` },
     { name: `ios`, type: `boolean`, scope: `launch`, yaml: `ios`, modifier: `ios`, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label: `iOS` },
         summary: `iOS 16 devices via WebDriverAgent, pairing shared by every session (network only)` },
+    { name: `mac`, type: `boolean`, scope: `launch`, yaml: `mac`, modifier: `mac`, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label: `Mac` },
+        summary: `Remote Macs (SSH + Screen Sharing); credentials from babysit mac add reach only these sessions` },
     { name: `devices`, type: `boolean`, scope: `launch`, yaml: `devices`, menu: { group: `top`, rank: 2, label: `Devices` },
-        summary: `Every device kind: --adb and --ios` },
+        summary: `Every device kind: --adb, --ios and --mac` },
     { name: `clone`, type: `boolean`, scope: `launch`, yaml: `clone`, modifier: `clone`, menu: { group: `top`, rank: 4 },
         summary: `Work in a durable copy; the original is mounted read-only at /original` },
     { name: `loop`, type: `boolean`, scope: `launch`, yaml: `loop`, modifier: `loop`, negatable: true, menu: { group: `top`, rank: 5 },
@@ -104,6 +106,12 @@ export const FLAGS = [
         summary: `With "list", show full details; with "resume [number]", use every workspace and show every row` },
     { name: `n`, type: `value`, scope: `command`, commands: [ `resume` ], key: `limit`, arg: `N`,
         summary: `With "resume", show N history rows (default 10)` },
+    { name: `user`, type: `value`, scope: `command`, commands: [ `mac` ], arg: `USER`,
+        summary: `With "mac add", the macOS account to log in as (default: your username)` },
+    { name: `password-env`, type: `value`, scope: `command`, commands: [ `mac` ], arg: `VAR`,
+        summary: `With "mac add", read the account password from environment variable VAR` },
+    { name: `password-stdin`, type: `boolean`, scope: `command`, commands: [ `mac` ],
+        summary: `With "mac add", read the account password from a pipe` },
     { name: `dry-run`, type: `boolean`, scope: `command`, commands: [ `recover`, `clean` ],
         summary: `With "recover", inspect without restarting` },
     { name: `json`, type: `boolean`, scope: `command`, commands: [ `recover` ],
@@ -211,6 +219,10 @@ export const COMMANDS = [
         [ `babysit web init`, `Initialize or rotate babysit-web access` ],
         [ `babysit web key add|list|remove`, `Read-only API keys for the babysit-web JSON API` ],
     ], subcommands: { init: {}, key: {} } },
+    { name: `mac`, usage: [
+        [ `babysit mac add NAME HOST --user U`, `Register a remote Mac for --mac / --devices sessions (password from a pipe or --password-env)` ],
+        [ `babysit mac list|check|forget`, `List, verify (installs the ssh key), or remove Macs` ],
+    ], subcommands: { add: {}, list: {}, check: {}, forget: {} } },
     { name: `doctor`, deps: true, usage: [ [ `babysit doctor --auth [agent|all]`, `Verify real agent authentication` ] ], options: [
         [ `--auth`, `Run the authentication diagnostic (required)` ],
         [ `--refresh`, `Ignore the 12h cache and probe again` ],

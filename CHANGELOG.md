@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.0 — 2026-11-08
+
+### Added
+- `--mac` (and `--devices`, now adb + ios + mac): remote Macs over SSH key + Screen Sharing (VNC). Register with `babysit mac add NAME HOST --user U`, then agents use `babysit mac ssh|sudo|scp|shot|click|type|key|scroll|unlock`. Passwords and keys stay in `~/.babysit/macs` (0700) and are uploaded into a session only when it asks for `--mac`/`--devices`; the agent is instructed never to destroy other users' data on the Mac.
+
 ## 2.1.0 — 2026-11-07
 
 ### Added

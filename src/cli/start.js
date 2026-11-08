@@ -22,6 +22,7 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
+import { setup_mac_credentials } from '../mac/store.js'
 import { resolve_claude_login } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
@@ -994,6 +995,7 @@ async function resolve_launch( cmd ) {
         docker: flags.docker,
         adb: flags.adb,
         ios: flags.ios,
+        mac: flags.mac,
         clone: Boolean( flags.clone || stored_is_clone ),
         ignore_host_agents_md: should_ignore_host_agent_context( flags, stored_resume_session ),
     }
@@ -1435,7 +1437,9 @@ const prepare_container = async launch => {
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
     // Fork handoff files ride the same pre-start upload as credentials
-    const all_creds_mounts = [ ...github_cli_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
+    // Remote Mac secrets exist only for --mac / --devices sessions
+    const mac_mounts = mode.mac ? setup_mac_credentials() : []
+    const all_creds_mounts = [ ...github_cli_mounts, ...mac_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
 
     launch.startup_status?.set( `preparing container` )
     const prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
