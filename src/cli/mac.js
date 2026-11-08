@@ -47,7 +47,7 @@ const install_key = ( dir, mac ) => {
 
         const pub = readFileSync( join( dir, mac.name, `id_ed25519.pub` ), `utf8` ).trim()
         const authorize = `umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; grep -qxF '${ pub }' ~/.ssh/authorized_keys || echo '${ pub }' >> ~/.ssh/authorized_keys`
-        const { status, stderr } = spawnSync( `ssh`, [
+        const { status, stderr, error, signal } = spawnSync( `ssh`, [
             ...ssh_args( dir, mac, [
                 `-o`, `PubkeyAuthentication=no`,
                 `-o`, `PreferredAuthentications=password,keyboard-interactive`,
@@ -61,7 +61,7 @@ const install_key = ( dir, mac ) => {
             timeout: 30_000,
         } )
 
-        return status === 0 ? null : ( stderr || `` ).trim().split( `\n` ).pop() || `ssh exited ${ status }`
+        return status === 0 ? null : ( stderr || `` ).trim().split( `\n` ).pop() || ( error ? `ssh ${ error.code || error.message }${ error.code === `ETIMEDOUT` ? ` after 30s, no answer` : `` }` : `ssh exited ${ status ?? `by ${ signal }` }` )
     } finally {
         rmSync( helper, { recursive: true, force: true } )
     }
