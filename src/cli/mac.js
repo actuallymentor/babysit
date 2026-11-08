@@ -4,7 +4,7 @@ import { connect } from 'net'
 import { tmpdir, userInfo } from 'os'
 import { join } from 'path'
 
-import { MACS_DIR, add_mac, forget_mac, list_macs } from '../mac/store.js'
+import { MACS_DIR, add_mac, forget_mac, list_macs, set_mac_enabled } from '../mac/store.js'
 
 const reachable = ( host, port ) => new Promise( resolve => {
 
@@ -21,41 +21,18 @@ const reachable = ( host, port ) => new Promise( resolve => {
 
 const read_stdin = () => readFileSync( 0, `utf8` ).replace( /\r?\n$/, `` )
 
-// Hidden prompt for an interactive add; pipes use --password-stdin instead
-const prompt_password = () => new Promise( resolve => {
-
-    let typed = ``
-    process.stdout.write( `Mac account password: ` )
-    process.stdin.setRawMode( true )
-    process.stdin.resume()
-    process.stdin.setEncoding( `utf8` )
-    process.stdin.on( `data`, function listen( chunk ) {
-        for( const char of chunk ) {
-            if( char === `\u0003` ) process.exit( 130 )
-            if( char === `\r` || char === `\n` ) {
-                process.stdin.setRawMode( false )
-                process.stdin.pause()
-                process.stdin.removeListener( `data`, listen )
-                process.stdout.write( `\n` )
-                return resolve( typed )
-            }
-            typed = char === `\u007f` ? typed.slice( 0, -1 ) : typed + char
-        }
-    } )
-
-} )
-
-const ssh = ( dir, mac, args, options = {} ) => spawnSync( `ssh`, [
+// Host key pinned per Mac on first contact (accept-new)
+const ssh_args = ( dir, mac, extra = [] ) => [
     `-o`, `UserKnownHostsFile=${ join( dir, mac.name, `known_hosts` ) }`,
     `-o`, `StrictHostKeyChecking=accept-new`,
     `-o`, `ConnectTimeout=10`,
-    ...args,
+    ...extra,
     `${ mac.user }@${ mac.host }`,
-], { encoding: `utf8`, ...options } )
+]
 
-const key_login_works = ( dir, mac ) => ssh( dir, mac, [
+const key_login_works = ( dir, mac ) => spawnSync( `ssh`, ssh_args( dir, mac, [
     `-i`, join( dir, mac.name, `id_ed25519` ), `-o`, `IdentitiesOnly=yes`, `-o`, `BatchMode=yes`,
-], { input: ``, timeout: 20_000 } ).status === 0
+] ), { encoding: `utf8`, input: ``, timeout: 20_000 } ).status === 0
 
 // Password login through SSH_ASKPASS (a 0700 script that cats the 0600 password
 // file), so the secret never touches argv or the environment.
@@ -69,15 +46,14 @@ const install_key = ( dir, mac ) => {
         chmodSync( askpass, 0o700 )
 
         const pub = readFileSync( join( dir, mac.name, `id_ed25519.pub` ), `utf8` ).trim()
-        const remote = `umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; grep -qxF '${ pub }' ~/.ssh/authorized_keys || echo '${ pub }' >> ~/.ssh/authorized_keys`
+        const authorize = `umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; grep -qxF '${ pub }' ~/.ssh/authorized_keys || echo '${ pub }' >> ~/.ssh/authorized_keys`
         const { status, stderr } = spawnSync( `ssh`, [
-            `-o`, `UserKnownHostsFile=${ join( dir, mac.name, `known_hosts` ) }`,
-            `-o`, `StrictHostKeyChecking=accept-new`,
-            `-o`, `ConnectTimeout=10`,
-            `-o`, `PubkeyAuthentication=no`,
-            `-o`, `PreferredAuthentications=password,keyboard-interactive`,
-            `-o`, `NumberOfPasswordPrompts=1`,
-            `${ mac.user }@${ mac.host }`, remote,
+            ...ssh_args( dir, mac, [
+                `-o`, `PubkeyAuthentication=no`,
+                `-o`, `PreferredAuthentications=password,keyboard-interactive`,
+                `-o`, `NumberOfPasswordPrompts=1`,
+            ] ),
+            authorize,
         ], {
             encoding: `utf8`,
             env: { ...process.env, SSH_ASKPASS: askpass, SSH_ASKPASS_REQUIRE: `force`, DISPLAY: process.env.DISPLAY || `:0` },
@@ -133,14 +109,21 @@ export const cmd_mac = async ( cmd, {
     if( cmd.mac_verb === `add` ) {
         const password = cmd.password_env ? process.env[ cmd.password_env ]
             : cmd.password_stdin ? ( read_password || read_stdin )()
-                : process.stdin.isTTY ? await ( read_password || prompt_password )()
-                    : null
-        if( !password ) throw new Error( `No password: use --password-stdin or --password-env VAR${ cmd.password_env ? ` (${ cmd.password_env } is empty)` : `` }` )
+                : null
+        if( !password ) throw new Error( cmd.password_env
+            ? `${ cmd.password_env } is empty`
+            : `No password: pipe it with --password-stdin, or name an environment variable with --password-env VAR (e.g. read -rs PW; PW=$PW babysit mac add ... --password-env PW)` )
 
         const mac = add_mac( { name: cmd.mac_name, host: cmd.mac_host, user: cmd.user || userInfo().username, password }, dir )
         print( `Added ${ mac.name } (${ mac.user }@${ mac.host }). Secrets: ${ dir }/${ mac.name } (0700); sessions get them only with --mac or --devices.` )
 
         return await check_mac( dir, mac, print, ports ) ? 0 : 1
+    }
+
+    if( [ `enable`, `disable` ].includes( cmd.mac_verb ) ) {
+        const found = set_mac_enabled( cmd.mac_name, cmd.mac_verb === `enable`, dir )
+        print( found ? `${ cmd.mac_name } ${ cmd.mac_verb }d: sessions ${ cmd.mac_verb === `enable` ? `now receive` : `no longer receive` } its secrets.` : `No Mac named ${ cmd.mac_name }.` )
+        return found ? 0 : 1
     }
 
     if( cmd.mac_verb === `forget` ) {
@@ -162,7 +145,7 @@ export const cmd_mac = async ( cmd, {
 
     for( const mac of macs ) {
         const [ ssh_up, vnc_up ] = await Promise.all( [ ports( mac.host, 22 ), ports( mac.host, 5900 ) ] )
-        print( `${ mac.name }  ${ mac.user }@${ mac.host }  ssh:${ ssh_up ? `up` : `down` }  vnc:${ vnc_up ? `up` : `down` }` )
+        print( `${ mac.name }  ${ mac.user }@${ mac.host }  ssh:${ ssh_up ? `up` : `down` }  vnc:${ vnc_up ? `up` : `down` }${ mac.enabled === false ? `  disabled (sessions do not get its secrets)` : `` }` )
     }
     return 0
 

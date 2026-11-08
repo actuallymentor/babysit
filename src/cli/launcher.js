@@ -9,6 +9,7 @@ import { list_stored_sessions } from '../sessions/store.js'
 import { parse_args } from './parse.js'
 // Top-level switches are the only ones the menu remembers per project. Advanced
 // ones are never remembered, prefilled only from flags, --config or a fork's parent.
+import { all_devices, DEVICE_NAMES } from '../devices/kinds.js'
 import { FORK_NEGATABLE_FLAGS, MENU_ADVANCED_TOGGLES as ADVANCED_TOGGLES, MENU_LABELS as LABELS, MENU_TOGGLES as TOGGLES } from './registry.js'
 import { cached_account_usage, list_claude_accounts, probe_accounts } from './claude_accounts.js'
 import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './list.js'
@@ -377,10 +378,8 @@ export const fork_from_menu = async ( {
             mode,
             ...Object.fromEntries( TOGGLES.map( flag => [ flag, Boolean( inherited[ flag ] ) ] ) ),
             // Both device kinds are the Devices switch; a lone kind sits under Advanced
-            devices: Boolean( inherited.adb && inherited.ios && inherited.mac ),
-            adb: Boolean( inherited.adb && !( inherited.ios && inherited.mac ) ),
-            ios: Boolean( inherited.ios && !( inherited.adb && inherited.mac ) ),
-            mac: Boolean( inherited.mac && !( inherited.adb && inherited.ios ) ),
+            devices: all_devices( inherited ),
+            ...Object.fromEntries( DEVICE_NAMES.map( name => [ name, Boolean( inherited[ name ] && !all_devices( inherited ) ) ] ) ),
             ignore_host_agents_md: Boolean( inherited.ignore_host_agents_md ),
             clone: filesystem === `clone`,
             // Shown as the parent's subscription rather than auto, which a fork would not do
@@ -421,8 +420,8 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
     const declared = config ? read_declared_launch( config ) : {}
     const pick = keys => Object.fromEntries( keys.filter( key => Object.hasOwn( declared, key ) ).map( key => [ key, declared[ key ] ] ) )
 
-    // --devices expands to adb + ios + mac when parsed; show it as the one switch the user typed
-    const typed_toggles = [ ...TOGGLES, ...ADVANCED_TOGGLES ].filter( flag => flags[ flag ] && !( flags.devices && [ `adb`, `ios`, `mac` ].includes( flag ) ) )
+    // --devices expands to every device kind when parsed; show it as the one switch the user typed
+    const typed_toggles = [ ...TOGGLES, ...ADVANCED_TOGGLES ].filter( flag => flags[ flag ] && !( flags.devices && DEVICE_NAMES.includes( flag ) ) )
     const typed = {
         ...Object.fromEntries( typed_toggles.map( flag => [ flag, true ] ) ),
         ...flags.sandbox ? { mode: `sandbox` } : flags.mudbox ? { mode: `mudbox` } : {},

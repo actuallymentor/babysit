@@ -1,22 +1,41 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
+import { spawnSync } from 'child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { add_mac, forget_mac, list_macs, setup_mac_credentials, MAC_BOOTSTRAP_PATH } from '../src/mac/store.js'
+import { add_mac, forget_mac, list_macs, set_mac_enabled, setup_mac_credentials, MAC_BOOTSTRAP_PATH, MAC_CONTAINER_DIR } from '../src/mac/store.js'
 import { run_mac } from '../src/docker/assets/mac/command.mjs'
 import { cmd_mac } from '../src/cli/mac.js'
+import { get_agent } from '../src/agents/index.js'
 import { parse_args } from '../src/cli/parse.js'
 import { build_system_prompt } from '../src/modes/prompt.js'
 import { build_docker_launch_plan } from '../src/docker/launch.js'
+import { build_docker_command_args } from '../src/docker/run.js'
+import { cleanup_stale_ephemeral_credential_mounts } from '../src/credentials/index.js'
+import { DEVICE_KINDS, all_devices, every_device } from '../src/devices/kinds.js'
 
 const SECRET = `hunter2-do-not-leak`
 
 describe( `babysit mac`, () => {
 
+    // Every test gets its own store and its own TMPDIR, so staged credential
+    // directories can never leak into the shared /tmp, even when an assertion fails early
     let dir
-    beforeEach( () => { dir = mkdtempSync( join( tmpdir(), `babysit-mac-test-` ) ) } )
-    afterEach( () => rmSync( dir, { recursive: true, force: true } ) )
+    let scratch
+    let original_tmpdir
+    beforeEach( () => {
+        dir = mkdtempSync( join( tmpdir(), `babysit-mac-test-` ) )
+        scratch = mkdtempSync( join( tmpdir(), `babysit-mac-scratch-` ) )
+        original_tmpdir = process.env.TMPDIR
+        process.env.TMPDIR = scratch
+    } )
+    afterEach( () => {
+        if( original_tmpdir === undefined ) delete process.env.TMPDIR
+        else process.env.TMPDIR = original_tmpdir
+        rmSync( dir, { recursive: true, force: true } )
+        rmSync( scratch, { recursive: true, force: true } )
+    } )
 
     const add = ( name = `office` ) => add_mac( { name, host: `192.168.2.236`, user: `mentor`, password: SECRET }, dir )
 
@@ -61,8 +80,52 @@ describe( `babysit mac`, () => {
             const [ mount ] = setup_mac_credentials( { dir } )
             expect( mount ).toMatchObject( { type: `copy`, target: MAC_BOOTSTRAP_PATH } )
             expect( statSync( mount.cleanup ).mode & 0o777 ).toBe( 0o700 )
-            expect( readFileSync( join( mount.cleanup, `mac`, `office`, `password` ), `utf8` ) ).toBe( SECRET )
+            expect( readFileSync( join( mount.cleanup, `office`, `password` ), `utf8` ) ).toBe( SECRET )
+            expect( JSON.parse( readFileSync( join( mount.cleanup, `macs.json` ), `utf8` ) ).macs ).toEqual( [ { name: `office`, host: `192.168.2.236`, user: `mentor` } ] )
             rmSync( mount.cleanup, { recursive: true, force: true } )
+        } )
+
+        it( `disabled Macs stay registered but never leave the host`, () => {
+            add( `office` )
+            add( `lab` )
+            expect( set_mac_enabled( `lab`, false, dir ) ).toBe( true )
+            expect( list_macs( dir ).find( mac => mac.name === `lab` ).enabled ).toBe( false )
+
+            const [ mount ] = setup_mac_credentials( { dir } )
+            expect( existsSync( join( mount.cleanup, `office`, `password` ) ) ).toBe( true )
+            expect( existsSync( join( mount.cleanup, `lab` ) ) ).toBe( false )
+            expect( readFileSync( join( mount.cleanup, `macs.json` ), `utf8` ) ).not.toContain( `lab` )
+            rmSync( mount.cleanup, { recursive: true, force: true } )
+
+            // A password change keeps it disabled; enabling restores it
+            add( `lab` )
+            expect( list_macs( dir ).find( mac => mac.name === `lab` ).enabled ).toBe( false )
+            set_mac_enabled( `lab`, true, dir )
+            expect( list_macs( dir ).find( mac => mac.name === `lab` ).enabled ).toBeUndefined()
+            expect( set_mac_enabled( `ghost`, false, dir ) ).toBe( false )
+
+            set_mac_enabled( `office`, false, dir )
+            set_mac_enabled( `lab`, false, dir )
+            expect( setup_mac_credentials( { dir } ) ).toEqual( [] )
+        } )
+
+        it( `the staging directory is a swept ephemeral transport, so a crash cannot strand secrets`, () => {
+            add()
+            // Isolated TMPDIR: never sweep the real, shared /tmp from a test
+            const scratch = mkdtempSync( join( tmpdir(), `mac-sweep-` ) )
+            const original = process.env.TMPDIR
+            process.env.TMPDIR = scratch
+            try {
+                const [ mount ] = setup_mac_credentials( { dir } )
+                expect( mount.cleanup.startsWith( scratch ) ).toBe( true )
+                expect( mount.cleanup ).toContain( `babysit-mac-creds-` )
+                expect( cleanup_stale_ephemeral_credential_mounts( { directory: scratch, max_age_ms: -1 } ) ).toBe( 1 )
+                expect( existsSync( mount.cleanup ) ).toBe( false )
+            } finally {
+                if( original === undefined ) delete process.env.TMPDIR
+                else process.env.TMPDIR = original
+                rmSync( scratch, { recursive: true, force: true } )
+            }
         } )
 
         it( `the staged upload never reaches Docker flags or env`, () => {
@@ -118,10 +181,49 @@ describe( `babysit mac`, () => {
             expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `click`, `10`, `20`, `right` ] )
         } )
 
+        it( `run chains GUI actions through one vnc invocation`, async () => {
+            add()
+            const { calls } = await run( [ `run`, `office`, `click 10 20; type hi; shot` ] )
+            expect( calls ).toHaveLength( 1 )
+            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `run`, `click 10 20; type hi; shot` ] )
+        } )
+
         it( `explains when the session has no Macs or an unknown name`, async () => {
             await expect( run( [ `ssh`, `office`, `true` ] ) ).rejects.toThrow( `--mac` )
+            process.env.BABYSIT_MAC = `1`
+            await expect( run( [ `ssh`, `office`, `true` ] ) ).rejects.toThrow( `Relaunch the session` )
+            delete process.env.BABYSIT_MAC
             add()
             await expect( run( [ `ssh`, `nope`, `true` ] ) ).rejects.toThrow( `registered: office` )
+        } )
+
+    } )
+
+    describe( `vnc helper logic`, () => {
+
+        // Pure functions in vnc.py, run through python3 (no VNC, no PIL needed)
+        const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/mac'); import vnc\n${ code }` ], { encoding: `utf8` } )
+        const json = code => JSON.parse( py( `print(json.dumps(${ code }))` ).stdout )
+
+        it( `splits scripts on ; and newlines outside quotes and skips comments`, () => {
+            const [ script, empty ] = json( `[vnc.parse_script('click 10 20; type "a; b"\\n# note\\nkey Return'), vnc.parse_script('  ;; ')]` )
+            expect( script ).toEqual( [ [ `click`, `10`, `20` ], [ `type`, `a; b` ], [ `key`, `Return` ] ] )
+            expect( empty ).toEqual( [] )
+        } )
+
+        it( `shrinks shots to the edge limit and maps clicks back to framebuffer pixels`, () => {
+            const [ retina, hd, small, mapped ] = json( `[vnc.shot_scale(3360, 2100, 1568), vnc.shot_scale(1920, 1080, 1568), vnc.shot_scale(800, 600, 1568), vnc.to_framebuffer(100, 50, 2.1429)]` )
+            expect( retina ).toBeCloseTo( 2.1429, 3 )
+            expect( hd ).toBeCloseTo( 1.2245, 3 )
+            expect( small ).toBe( 1 )
+            expect( mapped ).toEqual( [ 214, 107 ] )
+        } )
+
+        it( `maps single characters straight to Unicode keysyms and parses chords`, () => {
+            const [ keys, named, chords ] = json( `[[vnc.keysym('c', {}), vnc.keysym('H', {}), vnc.keysym('$', {}), vnc.keysym('\\u20ac', {})], vnc.keysym('Return', {'Return': 65293}), [vnc.parse_chord('Cmd+space'), vnc.parse_chord('+'), vnc.parse_chord('Cmd++')]]` )
+            expect( keys ).toEqual( [ 0x63, 0x48, 0x24, 0x010020ac ] )
+            expect( named ).toBe( 65293 )
+            expect( chords ).toEqual( [ [ `Cmd`, `space` ], [ `+` ], [ `Cmd`, `+` ] ] )
         } )
 
     } )
@@ -135,6 +237,29 @@ describe( `babysit mac`, () => {
             expect( () => parse_args( [ `mac`, `add`, `office` ] ) ).toThrow( `Usage` )
             expect( () => parse_args( [ `mac`, `forget` ] ) ).toThrow( `NAME` )
             expect( () => parse_args( [ `mac`, `bogus` ] ) ).toThrow( `Unknown mac command` )
+        } )
+
+        it( `parses enable and disable, which need a name`, () => {
+            expect( parse_args( [ `mac`, `disable`, `office` ] ) ).toMatchObject( { mac_verb: `disable`, mac_name: `office` } )
+            expect( () => parse_args( [ `mac`, `enable` ] ) ).toThrow( `NAME` )
+        } )
+
+        it( `enable and disable flip what sessions receive`, async () => {
+            add()
+            const lines = []
+            const deps = { dir, print: line => lines.push( line ), ports: async () => true }
+            expect( await cmd_mac( { mac_verb: `disable`, mac_name: `office` }, deps ) ).toBe( 0 )
+            expect( setup_mac_credentials( { dir } ) ).toEqual( [] )
+            await cmd_mac( { mac_verb: `list` }, deps )
+            expect( lines.join( `\n` ) ).toContain( `disabled` )
+            expect( await cmd_mac( { mac_verb: `enable`, mac_name: `office` }, deps ) ).toBe( 0 )
+            expect( setup_mac_credentials( { dir } ) ).toHaveLength( 1 )
+            expect( await cmd_mac( { mac_verb: `enable`, mac_name: `ghost` }, deps ) ).toBe( 1 )
+        } )
+
+        it( `add refuses to prompt: the password needs a pipe or an environment variable`, async () => {
+            await expect( cmd_mac( { mac_verb: `add`, mac_name: `office`, mac_host: `10.0.0.5` }, { dir } ) ).rejects.toThrow( `--password-stdin` )
+            expect( list_macs( dir ) ).toEqual( [] )
         } )
 
         it( `add reads the password from the pipe seam and reports a missing Remote Login`, async () => {
@@ -157,6 +282,30 @@ describe( `babysit mac`, () => {
             expect( parse_args( [ `claude`, `--mac` ] ).flags ).toMatchObject( { mac: true, adb: false, ios: false } )
             expect( parse_args( [ `claude`, `--devices` ].concat( [] ) ).flags ).toMatchObject( { mac: true, adb: true, ios: true } )
             expect( parse_args( [ `claude` ] ).flags.mac ).toBe( false )
+        } )
+
+        it( `the mode descriptor and prompt derive from the device table`, () => {
+            expect( DEVICE_KINDS.map( kind => kind.name ) ).toEqual( [ `adb`, `ios`, `mac` ] )
+            expect( all_devices( { adb: true, ios: true, mac: true } ) ).toBe( true )
+            expect( all_devices( { adb: true, ios: true } ) ).toBe( false )
+            expect( every_device( false ) ).toEqual( { adb: false, ios: false, mac: false } )
+            for( const { name, prompt } of DEVICE_KINDS ) expect( build_system_prompt( { [ name ]: true } ) ).toContain( prompt )
+        } )
+
+        it( `a --mac container gets the marker and a memory-only credential directory`, () => {
+            const args = build_docker_command_args( {
+                agent: get_agent( `claude` ), workspace: `/tmp/ws`, mode: { sandbox: true, mac: true },
+                mount_workspace: false, include_agent_state: false, include_agents_dir: false, include_babysit_rc: false, include_loop_deadline: false,
+                extra_mounts: [], chrome_seccomp_profile_path: `/tmp/seccomp.json`,
+            } )
+            expect( args ).toContain( `BABYSIT_MAC=1` )
+            expect( args[ args.indexOf( `--tmpfs` ) + 1 ] ).toStartWith( `${ MAC_CONTAINER_DIR }:` )
+            expect( args.join( ` ` ) ).not.toContain( SECRET )
+            expect( build_docker_command_args( {
+                agent: get_agent( `claude` ), workspace: `/tmp/ws`, mode: { sandbox: true },
+                mount_workspace: false, include_agent_state: false, include_agents_dir: false, include_babysit_rc: false, include_loop_deadline: false,
+                extra_mounts: [], chrome_seccomp_profile_path: `/tmp/seccomp.json`,
+            } ) ).not.toContain( `--tmpfs` )
         } )
 
         it( `only a --mac session is told about Macs`, () => {

@@ -22,6 +22,7 @@ import {
     register_credential_recovery,
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
+import { pick_devices } from '../devices/kinds.js'
 import { setup_mac_credentials } from '../mac/store.js'
 import { resolve_claude_login } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
@@ -993,9 +994,7 @@ async function resolve_launch( cmd ) {
         sandbox: flags.sandbox,
         mudbox: flags.mudbox,
         docker: flags.docker,
-        adb: flags.adb,
-        ios: flags.ios,
-        mac: flags.mac,
+        ...pick_devices( flags ),
         clone: Boolean( flags.clone || stored_is_clone ),
         ignore_host_agents_md: should_ignore_host_agent_context( flags, stored_resume_session ),
     }

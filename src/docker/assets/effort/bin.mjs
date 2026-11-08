@@ -6,7 +6,9 @@ import { run_ios, ios_help } from '../ios/command.mjs'
 import { run_mac, mac_help } from '../mac/command.mjs'
 
 const mode_help = `Usage: babysit mode\nPrints "container" here; the host CLI prints "host".`
-const HELP = { effort: effort_help, model: model_help, exit: exit_help, stuck: stuck_help, loop: loop_help, reset: reset_help, usage: usage_help, adb: adb_help, ios: ios_help, mac: mac_help, mode: mode_help }
+// Device commands share one shape: { run(args), help }, in the order of DEVICE_KINDS
+const DEVICES = { adb: { run: run_adb, help: adb_help }, ios: { run: run_ios, help: ios_help }, mac: { run: run_mac, help: mac_help } }
+const HELP = { effort: effort_help, model: model_help, exit: exit_help, stuck: stuck_help, loop: loop_help, reset: reset_help, usage: usage_help, ...Object.fromEntries( Object.entries( DEVICES ).map( ( [ name, { help } ] ) => [ name, help ] ) ), mode: mode_help }
 const ALL_HELP = `In-session Babysit commands (host-only commands such as list or resume run outside the container).\n\n${ Object.values( HELP ).join( `\n\n` ) }`
 
 try {
@@ -20,9 +22,7 @@ try {
         console.error( `babysit ${ command } runs on the host; this is a babysit container (see babysit mode)` )
         process.exitCode = 1
     } else if( command === `usage` ) process.exitCode = await run_usage( args )
-    else if( command === `adb` ) process.exitCode = await run_adb( args )
-    else if( command === `ios` ) process.exitCode = await run_ios( args )
-    else if( command === `mac` ) process.exitCode = await run_mac( args )
+    else if( Object.hasOwn( DEVICES, command ) ) process.exitCode = await DEVICES[ command ].run( args )
     else if( command === `effort` ) console.log( await run_effort( args ) )
     else if( command === `model` ) console.log( await run_model( args ) )
     else if( command === `exit` ) console.log( await run_exit( args ) )

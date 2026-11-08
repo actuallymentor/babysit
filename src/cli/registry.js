@@ -1,4 +1,5 @@
 import { SUPPORTED_AGENTS } from '../agents/index.js'
+import { DEVICE_KINDS, DEVICE_NAMES } from '../devices/kinds.js'
 
 /*
  * The one registry of Babysit's own flags and commands. The parser's flag
@@ -49,15 +50,12 @@ export const FLAGS = [
     { name: `docker`, type: `boolean`, scope: `launch`, yaml: `docker`, modifier: `docker`, negatable: true, menu: { group: `top`, rank: 1 },
         yaml_note: `Mounts the host Docker socket (sibling containers); agents always run in a container.`,
         summary: `Mount the host Docker socket (controls the host daemon, even in sandbox)` },
-    { name: `adb`, type: `boolean`, scope: `launch`, yaml: `adb`, modifier: `adb`, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label: `ADB` },
-        yaml_note: `Android device access (adb), iPhone access (ios, iOS 16 and older), remote Macs (mac); devices turns on every kind.`,
-        summary: `Android adb with a key shared by every session (network devices only)` },
-    { name: `ios`, type: `boolean`, scope: `launch`, yaml: `ios`, modifier: `ios`, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label: `iOS` },
-        summary: `iOS 16 devices via WebDriverAgent, pairing shared by every session (network only)` },
-    { name: `mac`, type: `boolean`, scope: `launch`, yaml: `mac`, modifier: `mac`, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label: `Mac` },
-        summary: `Remote Macs (SSH + Screen Sharing); credentials from babysit mac add reach only these sessions` },
+    ...DEVICE_KINDS.map( ( { name, label, summary }, index ) => ( {
+        name, type: `boolean`, scope: `launch`, yaml: name, modifier: name, negatable: true, implied_by: `devices`, menu: { group: `advanced`, label }, summary,
+        ...index === 0 && { yaml_note: `${ DEVICE_KINDS.map( kind => kind.note ).join( `, ` ) }; devices turns on every kind.` },
+    } ) ),
     { name: `devices`, type: `boolean`, scope: `launch`, yaml: `devices`, menu: { group: `top`, rank: 2, label: `Devices` },
-        summary: `Every device kind: --adb, --ios and --mac` },
+        summary: `Every device kind: ${ DEVICE_NAMES.map( name => `--${ name }` ).join( `, ` ).replace( /, ([^,]+)$/, ` and $1` ) }` },
     { name: `clone`, type: `boolean`, scope: `launch`, yaml: `clone`, modifier: `clone`, menu: { group: `top`, rank: 4 },
         summary: `Work in a durable copy; the original is mounted read-only at /original` },
     { name: `loop`, type: `boolean`, scope: `launch`, yaml: `loop`, modifier: `loop`, negatable: true, menu: { group: `top`, rank: 5 },
@@ -221,8 +219,8 @@ export const COMMANDS = [
     ], subcommands: { init: {}, key: {} } },
     { name: `mac`, usage: [
         [ `babysit mac add NAME HOST --user U`, `Register a remote Mac for --mac / --devices sessions (password from a pipe or --password-env)` ],
-        [ `babysit mac list|check|forget`, `List, verify (installs the ssh key), or remove Macs` ],
-    ], subcommands: { add: {}, list: {}, check: {}, forget: {} } },
+        [ `babysit mac list|check|enable|disable|forget`, `List, verify (installs the ssh key), choose which Macs sessions get secrets for, or remove Macs` ],
+    ], subcommands: { add: {}, list: {}, check: {}, enable: {}, disable: {}, forget: {} } },
     { name: `doctor`, deps: true, usage: [ [ `babysit doctor --auth [agent|all]`, `Verify real agent authentication` ] ], options: [
         [ `--auth`, `Run the authentication diagnostic (required)` ],
         [ `--refresh`, `Ignore the 12h cache and probe again` ],

@@ -510,11 +510,13 @@ Examples:
   echo "$TOKEN" | babysit auth init --claude-token --token-stdin`,
 
     mac: () => `Usage: babysit mac add NAME HOST [--user U] [--password-env VAR | --password-stdin]
-       babysit mac list | check [NAME] | forget NAME
+       babysit mac list | check [NAME] | enable NAME | disable NAME | forget NAME
 
 Remote Macs for --mac (or --devices) sessions, driven over SSH and Screen Sharing.
 Passwords and ssh keys stay in ~/.babysit/macs (0700) and are uploaded only into
-sessions that ask for --mac; they never enter Docker metadata, config or logs.
+sessions that ask for --mac (enabled Macs only; into a memory-only tmpfs); they
+never enter Docker metadata, config or logs. The password comes from a pipe or an
+environment variable, never an argument.
 
 On the Mac, once: Remote Login and Screen Sharing on (System Settings > General >
 Sharing), a dedicated standard or admin account, sleep and lock off.
@@ -523,6 +525,7 @@ Examples:
   babysit mac add office 192.168.2.236 --user mentor --password-stdin
   babysit mac check office      # installs the ssh key, tests ssh and Screen Sharing
   babysit mac list
+  babysit mac disable office    # stays registered; sessions stop receiving its secrets
   babysit mac forget office`,
 
     web: () => `Usage: babysit web init | babysit web key add|list|remove [NAME]

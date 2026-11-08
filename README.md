@@ -270,16 +270,16 @@ Control with `facebook-wda` at `http://HOST:8100`; post `waitForIdleTimeout=0` a
 SSH (key) for structured control, Screen Sharing (VNC) for the GUI. Dedicated LAN Mac, e.g. `--devices` or `--mac`.
 
 ```bash
-babysit mac add office 192.168.2.236 --user mentor --password-stdin   # once; installs the ssh key
-babysit mac check|list|forget
+read -rs PW; PW=$PW babysit mac add office 192.168.2.236 --user mentor --password-env PW   # once; installs the ssh key
+babysit mac check|list|enable|disable|forget
 ```
 
-- Mac, once: Remote Login + Screen Sharing on (Sharing settings), sleep and lock off, an account for agents
-- Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain
-- Secrets are uploaded into the stopped container (`docker cp`) only for `--mac`/`--devices` sessions, installed 0700 in `~/.config/babysit-mac`; never in `Config.Env`, mounts, argv, config files or logs
-- In session: `babysit mac ssh|sudo|scp NAME ...`, GUI `shot|click|move|drag|type|key|scroll|unlock`; the agent is told never to destroy other users' data
-- GUI typing is paced (≈3 s start-up, macOS drops early keys); agents are told to screenshot and read typed text before pressing Return
-- Enable sshd without Full Disk Access: `sudo launchctl enable system/com.openssh.sshd && sudo launchctl bootstrap system /System/Library/LaunchDaemons/ssh.plist`
+- Mac, once: Remote Login + Screen Sharing on (Sharing settings), sleep and lock off, an account for agents. Without Full Disk Access for Terminal, enable sshd with `sudo launchctl enable system/com.openssh.sshd && sudo launchctl bootstrap system /System/Library/LaunchDaemons/ssh.plist`
+- Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain. The password comes from a pipe or `--password-env`, never an argument or prompt
+- Secrets are uploaded (`docker cp`) only for `--mac`/`--devices` sessions, into a tmpfs at `~/.config/babysit-mac`: memory only, gone when the container stops; never in `Config.Env`, mounts, argv, config files or logs. A restarted container needs a relaunch
+- `babysit mac disable NAME` keeps a Mac registered but never uploads its secrets; the choice is host-side so resume and fork cannot widen it
+- In session: `babysit mac ssh|sudo|scp NAME ...` and GUI `run|shot|click|move|drag|type|key|scroll|unlock`; the agent is told never to destroy other users' data
+- GUI: every call logs in again and keyboard input waits ~2.5 s (macOS drops early keys), so chain steps: `babysit mac run NAME 'click 10 20; type hi; key Return; shot'`. Shots are shrunk to a 1568 px long edge (`--full` keeps the screen size); click/move/drag take pixels of the last shot. Agents are told to read typed text in a screenshot before pressing Return
 - Gates credentials, not the network: the LAN stays reachable from any container
 
 ## Account usage

@@ -11,6 +11,8 @@ import { LOOP_DEADLINE_CONTAINER_PATH, LOOP_DEADLINE_PATH } from '../statusline/
 import { get_extra_mounts } from '../agents/setup.js'
 import { COMPLETION_HELPER_PATH } from '../agents/completion_capture.js'
 import { normalise_port_mappings } from './ports.js'
+import { DEVICE_KINDS } from '../devices/kinds.js'
+import { MAC_CONTAINER_DIR } from '../mac/store.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
@@ -291,6 +293,22 @@ const add_ios_flags = flags => {
     flags.push( `-e`, `BABYSIT_IOS=1` )
 
 }
+
+/**
+ * Add the remote Mac marker. Its secrets are never flags: they are uploaded
+ * into a tmpfs-backed directory (see src/mac/store.js), so they live only in
+ * memory and vanish with the container.
+ * @param {string[]} flags - Docker command argument list to mutate
+ */
+const add_mac_flags = flags => {
+
+    flags.push( `-e`, `BABYSIT_MAC=1` )
+    flags.push( `--tmpfs`, `${ MAC_CONTAINER_DIR }:rw,mode=0700,size=1m` )
+
+}
+
+// Docker flags per device kind (names match DEVICE_KINDS)
+const DEVICE_DOCKER_FLAGS = { adb: add_adb_flags, ios: add_ios_flags, mac: add_mac_flags }
 
 const get_docker_run_prefix = () => [ ...docker_command_prefix(), `run` ]
 
@@ -591,9 +609,7 @@ export const build_docker_command_args = ( options ) => {
     else if( mode.mudbox ) flags.push( `-e`, `AGENT_AUTONOMY_MODE=mudbox` )
 
     if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
-    if( mode.adb ) add_adb_flags( flags )
-    if( mode.ios ) add_ios_flags( flags )
-    if( mode.mac ) flags.push( `-e`, `BABYSIT_MAC=1` )
+    DEVICE_KINDS.filter( kind => mode[ kind.name ] ).forEach( kind => DEVICE_DOCKER_FLAGS[ kind.name ]( flags ) )
 
     for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )

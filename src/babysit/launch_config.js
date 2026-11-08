@@ -4,6 +4,7 @@ import { parse } from 'yaml'
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { parse_args } from '../cli/parse.js'
 import { FLAGS, LAUNCH_TOGGLES, launch_flags } from '../cli/registry.js'
+import { every_device } from '../devices/kinds.js'
 
 // Toggles and the flags a section stands for come from the flag registry
 export { LAUNCH_TOGGLES, launch_flags }
@@ -146,8 +147,8 @@ export const command_to_launch = ( { agent, flags = {}, passthrough = [] } ) => 
     mode: flags.sandbox ? `sandbox` : flags.mudbox ? `mudbox` : `regular`,
     ...Object.fromEntries( LAUNCH_TOGGLES.map( key => [ key, Boolean( flags[ key ] ) ] ) ),
 
-    // --devices expands to adb + ios + mac when parsed; keep the one key the user wrote
-    ...flags.devices ? { adb: false, ios: false, mac: false } : {},
+    // --devices expands to every device kind when parsed; keep the one key the user wrote
+    ...flags.devices ? every_device( false ) : {},
     ports: flags.ports || [],
     log: typeof flags.log === `string` ? flags.log || true : false,
     args: passthrough,

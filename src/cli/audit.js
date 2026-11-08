@@ -4,6 +4,7 @@ import { dirname, relative } from 'path'
 import { isAlias, isMap, isScalar, parseDocument } from 'yaml'
 
 import { SUPPORTED_AGENTS } from '../agents/index.js'
+import { DEVICE_KINDS } from '../devices/kinds.js'
 import { LAUNCH_KEYS, LAUNCH_MODES, default_launch, launch_key_problem, validate_launch } from '../babysit/launch_config.js'
 import { paint } from '../utils/color.js'
 import { launch_dir_files } from './compose.js'
@@ -13,9 +14,7 @@ import { launch_dir_files } from './compose.js'
 const TOGGLE_QUESTIONS = {
     yolo: `Run with --yolo (the agent acts without asking permission)?`,
     docker: `Give the session the host's Docker daemon (--docker)?`,
-    adb: `Give the session Android device access (--adb)?`,
-    ios: `Give the session iPhone access (--ios)?`,
-    mac: `Give the session remote Mac access (--mac)?`,
+    ...Object.fromEntries( DEVICE_KINDS.map( kind => [ kind.name, kind.question ] ) ),
     devices: `Give the session every kind of device access (--devices)?`,
     clone: `Work in a clone of the workspace (--clone)?`,
     loop: `Keep nudging the agent when it goes idle (--loop)?`,

@@ -3,7 +3,11 @@
 ## 2.2.0 — 2026-11-08
 
 ### Added
-- `--mac` (and `--devices`, now adb + ios + mac): remote Macs over SSH key + Screen Sharing (VNC). Register with `babysit mac add NAME HOST --user U`, then agents use `babysit mac ssh|sudo|scp|shot|click|type|key|scroll|unlock`. Passwords and keys stay in `~/.babysit/macs` (0700) and are uploaded into a session only when it asks for `--mac`/`--devices`; the agent is instructed never to destroy other users' data on the Mac.
+- `--mac` (and `--devices`, now adb + ios + mac): remote Macs over SSH key + Screen Sharing (VNC). Register with `babysit mac add NAME HOST --user U` (password from a pipe or `--password-env`), then agents use `babysit mac ssh|sudo|scp|run|shot|click|type|key|scroll|unlock`. Passwords and keys stay in `~/.babysit/macs` (0700) and are uploaded into a session only when it asks for `--mac`/`--devices`, into a memory-only tmpfs; `babysit mac disable NAME` keeps a Mac from ever being uploaded. The agent is instructed never to destroy other users' data on the Mac.
+- `babysit mac run NAME 'click 10 20; type hi; shot'` chains GUI actions on one connection (each call otherwise logs in again and typing waits ~2.5 s). Screenshots are shrunk to a 1568 px long edge and click coordinates map back; `shot --full` keeps the screen size.
+
+### Changed
+- Device kinds (`adb`, `ios`, `mac`) come from one table (`src/devices/kinds.js`): flags, `--devices`, menu, yaml keys, audit questions, mode, prompt and container env derive from it.
 
 ## 2.1.0 — 2026-11-07
 

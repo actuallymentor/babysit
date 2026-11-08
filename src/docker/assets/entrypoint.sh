@@ -162,19 +162,20 @@ fi
 unset CLAUDE_ACCOUNT_BOOTSTRAP
 
 # --mac: remote Mac registry and secrets (passwords, ssh keys) uploaded into
-# the stopped container, like the GitHub profile above. Only --mac / --devices
-# launches carry the bootstrap; it is moved into a private home directory the
-# `babysit mac` helper reads, then removed so nothing lingers in /tmp.
+# the container, like the GitHub profile above. Only --mac / --devices launches
+# carry the bootstrap. ~/.config/babysit-mac is a tmpfs mount (docker/run.js),
+# so the secrets exist in memory only and vanish with the container; the
+# bootstrap copy is removed so nothing lingers in /tmp.
 MAC_BOOTSTRAP=/tmp/.babysit-mac
 if [ -d "$MAC_BOOTSTRAP" ]; then
     MAC_HOME=/home/node/.config/babysit-mac
 
-    rm -rf "$MAC_HOME"
+    # A mount point cannot be removed, only emptied; install -d also hands the
+    # root-owned tmpfs (and the .config Docker created above it) to the user
     install -d -m 700 -o "$HOST_UID" -g "$HOST_GID" /home/node/.config "$MAC_HOME"
     cp -R "$MAC_BOOTSTRAP/." "$MAC_HOME/"
     chown -R "$HOST_UID:$HOST_GID" "$MAC_HOME"
-    find "$MAC_HOME" -type d -exec chmod 700 {} +
-    find "$MAC_HOME" -type f -exec chmod 600 {} +
+    chmod -R u=rwX,go= "$MAC_HOME"
     rm -rf "$MAC_BOOTSTRAP"
 
     unset MAC_HOME

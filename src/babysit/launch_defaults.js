@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'path'
 import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { MENU_TOGGLES } from '../cli/registry.js'
+import { all_devices } from '../devices/kinds.js'
 
 const DEFAULTS_PATH = join( BABYSIT_DIR, `launch-defaults.json` )
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -31,8 +32,8 @@ const normalise = ( value = {} ) => {
     return {
         agent: SUPPORTED_AGENTS.includes( value?.agent ) ? value.agent : SUPPORTED_AGENTS[0],
         ...Object.fromEntries( MENU_TOGGLES.map( key => [ key, value?.[ key ] === true ] ) ),
-        // Only the Devices switch is remembered; adb, ios and mac alone are Advanced
-        devices: value?.devices === true || value?.adb === true && value?.ios === true && value?.mac === true,
+        // Only the Devices switch is remembered; a single device kind alone is Advanced
+        devices: value?.devices === true || all_devices( value ),
         clone: mode === `regular` && value?.clone === true,
         mode,
     }

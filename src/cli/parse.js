@@ -208,7 +208,7 @@ export const parse_args = ( argv ) => {
         if( !MAC_VERBS.includes( mac_verb ) ) throw new Error( `Unknown mac command: ${ mac_verb || `(missing)` }` )
         if( !flags.help ) {
             if( mac_verb === `add` && !( mac_name && mac_host ) ) throw new Error( `Usage: babysit mac add NAME HOST [--user U] [--password-env VAR | --password-stdin]` )
-            if( [ `forget` ].includes( mac_verb ) && !mac_name ) throw new Error( `babysit mac ${ mac_verb } needs a NAME` )
+            if( [ `forget`, `enable`, `disable` ].includes( mac_verb ) && !mac_name ) throw new Error( `babysit mac ${ mac_verb } needs a NAME` )
             if( positionals.length > ( mac_verb === `add` ? 4 : 3 ) ) throw new Error( `Unknown mac argument: ${ positionals[ mac_verb === `add` ? 4 : 3 ] }` )
         }
 
