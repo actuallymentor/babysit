@@ -247,3 +247,4 @@
 - **2026-11-08**: 2.2.0 `--mac`: remote Macs via ssh key + VNC (asyncvnc, Apple auth type 33). Host store `~/.babysit/macs`; secrets reach containers only via a `copy` mount (`/tmp/.babysit-mac`, entrypoint installs to `~/.config/babysit-mac`) when `mode.mac`.
 
 - **2026-11-08**: --mac prefactor follow-ups: device table (src/devices/kinds.js) drives flags/menu/yaml/audit/mode/prompt/env; `babysit mac run` batch + shrunk shots + background message pump (vnc.py); per-Mac enable/disable; credentials in a container tmpfs staged via build_private_tmpfile (swept prefix); hidden password prompt removed. Verified in a real container (tmpfs mount, restart empties it, batched run/shot, no secret in inspect/env/argv/logs). The test Mac auto-locks after idle (lock screen ignores the stored password typed over VNC); screenshots still work when locked, keyboard use needs an unlocked desktop.
+- 2026-11-10: dropped coding/agentic benchmark sorts (AA retired indexes); 2.2.1

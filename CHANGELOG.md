@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.2.1 — 2026-11-10
+
+### Removed
+- `babysit model --benchmarks`: `Coding`/`Agentic` columns and `--sort coding|agentic`. Artificial Analysis retired both indexes (always null). Needs an updated image.
+
 ## 2.2.0 — 2026-11-08
 
 ### Added

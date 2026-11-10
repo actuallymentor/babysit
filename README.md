@@ -237,7 +237,7 @@ babysit model --benchmarks --sort cost --limit 20
 babysit model --benchmarks --json
 ```
 
-Sorts: `intelligence` (default), `coding`, `agentic`, `cost`, `cost-per-point`, `name`. Needs `ARTIFICIAL_ANALYSIS_API_KEY` (free API) in `~/.babysitrc`; optional `ARTIFICIAL_ANALYSIS_TTL_MINUTES=15` (`0` = no cache). Cached in the shared Docker cache volume; failed refreshes use stale data. Only providers with installed CLIs/credentials are listed.
+Sorts: `intelligence` (default), `cost`, `cost-per-point`, `name`. Needs `ARTIFICIAL_ANALYSIS_API_KEY` (free API) in `~/.babysitrc`; optional `ARTIFICIAL_ANALYSIS_TTL_MINUTES=15` (`0` = no cache). Cached in the shared Docker cache volume; failed refreshes use stale data. Only providers with installed CLIs/credentials are listed.
 
 ## Android devices (`--adb`)
 

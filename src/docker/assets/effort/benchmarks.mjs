@@ -2,13 +2,14 @@ import { load_benchmarks } from './benchmark-cache.mjs'
 import { benchmark_providers } from './benchmark-providers.mjs'
 
 export const benchmarks_help = `Usage: babysit model --benchmarks [--sort <field>] [--limit <N>] [--all] [--json]
-Sort: intelligence (default), coding, agentic, cost, cost-per-point, name.
+Sort: intelligence (default), cost, cost-per-point, name.
 Cost = intelligence benchmark USD/task; cost-per-point = cost / intelligence.
 Rows from locally authenticated CLI providers are shown; missing metrics print as — and sort last.
 --all is accepted for compatibility and changes nothing. --limit is a positive integer; omitted means all rows.
 ARTIFICIAL_ANALYSIS_API_KEY is required. ARTIFICIAL_ANALYSIS_TTL_MINUTES defaults to 15; 0 disables caching.`
 
-const sort_fields = { coding: `coding`, intelligence: `intelligence`, agentic: `agentic`, cost: `cost`, 'cost-per-point': `cost_per_point`, name: `name` }
+// Coding/agentic indexes were retired upstream (always null), so they are not offered.
+const sort_fields = { intelligence: `intelligence`, cost: `cost`, 'cost-per-point': `cost_per_point`, name: `name` }
 
 /** Parse only benchmark flags; never reinterpret a model-switch request. */
 export const parse_benchmarks = args => {
@@ -51,9 +52,9 @@ const number = ( value, digits ) => value === null ? `—` : value.toFixed( digi
 /** Plain terminal table; preserve the provider's full variant/effort label. */
 export const format_benchmarks = report => {
     if( !report.models.length ) return `No matching benchmarks; check CLI authentication.`
-    const rows = [ [ `Model`, `Provider`, `Intelligence`, `Coding`, `Agentic`, `$/task`, `$/point` ],
+    const rows = [ [ `Model`, `Provider`, `Intelligence`, `$/task`, `$/point` ],
         ...report.models.map( model => [ safe_text( model.name ), safe_text( model.provider ),
-            number( model.intelligence, 1 ), number( model.coding, 1 ), number( model.agentic, 1 ), number( model.cost, 4 ), number( model.cost_per_point, 6 ),
+            number( model.intelligence, 1 ), number( model.cost, 4 ), number( model.cost_per_point, 6 ),
         ] ),
     ]
     const widths = rows[0].map( ( _, index ) => Math.max( ...rows.map( row => row[index].length ) ) )

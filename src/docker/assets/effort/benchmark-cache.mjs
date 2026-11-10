@@ -17,8 +17,6 @@ export const normalise_benchmark = model => {
         name: safe_text( model.name ),
         provider: safe_text( model.model_creator?.name ),
         intelligence,
-        coding: metric( model.evaluations?.artificial_analysis_coding_index ),
-        agentic: metric( model.evaluations?.artificial_analysis_agentic_index ),
         cost,
         cost_per_point: intelligence > 0 && cost !== null ? metric( cost / intelligence ) : null,
     }
@@ -54,11 +52,11 @@ const read_cache = async path => {
         const data = JSON.parse( await readFile( path, `utf8` ) )
         if( data.schema !== 1 || !Number.isFinite( data.fetched_at ) || !Number.isFinite( new Date( data.fetched_at ).getTime() ) || !Array.isArray( data.models ) ) return null
         if( !data.models.every( model => model && typeof model.name === `string` && typeof model.provider === `string`
-            && [ `intelligence`, `coding`, `agentic`, `cost`, `cost_per_point` ].every( key => model[key] === null || metric( model[key] ) !== null ) ) ) return null
+            && [ `intelligence`, `cost`, `cost_per_point` ].every( key => model[key] === null || metric( model[key] ) !== null ) ) ) return null
         // Rebuild the allowlist even on disk reads: shared cache input is untrusted.
         return { schema: 1, fetched_at: data.fetched_at, index_version: metric( data.index_version ), models: data.models.map( model => ( {
             id: safe_text( model.id ), name: safe_text( model.name ), provider: safe_text( model.provider ),
-            intelligence: model.intelligence, coding: model.coding, agentic: model.agentic, cost: model.cost,
+            intelligence: model.intelligence, cost: model.cost,
             cost_per_point: model.intelligence > 0 && model.cost !== null ? metric( model.cost / model.intelligence ) : null,
         } ) ) }
     } catch {
