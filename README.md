@@ -278,7 +278,7 @@ babysit mac check|list|enable|disable|forget
 - Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain. The password comes from a pipe or `--password-env`, never an argument or prompt
 - Secrets are uploaded (`docker cp`) only for `--mac`/`--devices` sessions, into a tmpfs at `~/.config/babysit-mac`: memory only, gone when the container stops; never in `Config.Env`, mounts, argv, config files or logs. A restarted container needs a relaunch
 - `babysit mac disable NAME` keeps a Mac registered but never uploads its secrets; the choice is host-side so resume and fork cannot widen it
-- In session: `babysit mac ssh|sudo|scp NAME ...` and GUI `run|shot|click|move|drag|type|key|scroll|unlock`; the agent is told never to destroy other users' data
+- In session: `babysit mac ssh|sudo|scp NAME ...` and GUI `run|shot|click|move|drag|type|key|scroll|unlock|password` (`password` types the stored password into OS auth dialogs; the agent never sees it); the agent is told never to destroy other users' data
 - GUI: every call logs in again and keyboard input waits ~2.5 s (macOS drops early keys), so chain steps: `babysit mac run NAME 'click 10 20; type hi; key Return; shot'`. Shots are shrunk to a 1568 px long edge (`--full` keeps the screen size); click/move/drag take pixels of the last shot. Agents are told to read typed text in a screenshot before pressing Return
 - Gates credentials, not the network: the LAN stays reachable from any container
 

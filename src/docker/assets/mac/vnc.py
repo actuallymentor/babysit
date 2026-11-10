@@ -9,6 +9,7 @@
   vnc.py NAME key Cmd+space [Return..]  key chords, one arg per chord (Shift chords are ignored by macOS; type capitals)
   vnc.py NAME scroll up|down [N]
   vnc.py NAME unlock                    wake the lock screen, type the stored password, click its submit arrow
+  vnc.py NAME password                  type the stored password into the focused field (OS auth dialogs); no Return
   vnc.py NAME run [SCRIPT]              several actions on ONE connection: "click 10 20; type hi; key Return; shot"
                                         (statements split on ; or newlines; script from args, else stdin)
 
@@ -35,7 +36,7 @@ KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.05)
 # Screenshots are shrunk so the long edge fits what a vision model reads well
 MAX_EDGE = int(os.environ.get('BABYSIT_MAC_SHOT_EDGE') or 1568)
 
-KEYBOARD = ('type', 'key', 'unlock')
+KEYBOARD = ('type', 'key', 'unlock', 'password')
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +256,9 @@ async def act(vnc, mac, password, action, args, started):
     elif action == 'key':
         for chord in args:
             await tap(vnc, *parse_chord(chord))
+    elif action == 'password':
+        # Typed from the staged file so the agent never sees or handles it
+        await write_text(vnc, password)
     elif action == 'unlock':
         await tap(vnc, 'Shift')  # wake the login window and focus its field
         await asyncio.sleep(1.5)

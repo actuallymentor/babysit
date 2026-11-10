@@ -181,6 +181,12 @@ describe( `babysit mac`, () => {
             expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `click`, `10`, `20`, `right` ] )
         } )
 
+        it( `password goes to the vnc helper without the secret in argv`, async () => {
+            add()
+            const { calls } = await run( [ `password`, `office` ] )
+            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `password` ] )
+        } )
+
         it( `run chains GUI actions through one vnc invocation`, async () => {
             add()
             const { calls } = await run( [ `run`, `office`, `click 10 20; type hi; shot` ] )
@@ -204,6 +210,22 @@ describe( `babysit mac`, () => {
         // Pure functions in vnc.py, run through python3 (no VNC, no PIL needed)
         const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/mac'); import vnc\n${ code }` ], { encoding: `utf8` } )
         const json = code => JSON.parse( py( `print(json.dumps(${ code }))` ).stdout )
+
+        it( `password types the stored secret as keystrokes and prints nothing`, () => {
+            // Fake asyncvnc + connection: record key-down keysyms
+            const result = py( `
+import asyncio, types
+sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={})
+vnc.WARMUP = vnc.SETTLE = vnc.KEY_DELAY = 0
+sent = []
+async def drain(): pass
+writer = types.SimpleNamespace(write=lambda b: b[1] == 1 and sent.append(int.from_bytes(b[4:], 'big')))
+fake = types.SimpleNamespace(keyboard=types.SimpleNamespace(writer=writer), drain=drain)
+asyncio.run(vnc.act(fake, {'name': 'office'}, 'S3cr;t!', 'password', [], 0))
+sys.stderr.write(''.join(map(chr, sent)))` )
+            expect( result.stderr ).toBe( `S3cr;t!` )
+            expect( result.stdout ).toBe( `` )
+        } )
 
         it( `splits scripts on ; and newlines outside quotes and skips comments`, () => {
             const [ script, empty ] = json( `[vnc.parse_script('click 10 20; type "a; b"\\n# note\\nkey Return'), vnc.parse_script('  ;; ')]` )

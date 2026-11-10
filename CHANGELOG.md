@@ -2,6 +2,9 @@
 
 ## 2.2.1 — 2026-11-10
 
+### Added
+- `babysit mac password NAME` (also a `run` step) types the stored password into the focused field, so agents can answer macOS admin/auth dialogs without seeing it. The `--mac` prompt now says such dialogs are fine to answer. Needs an updated image.
+
 ### Removed
 - `babysit model --benchmarks`: `Coding`/`Agentic` columns and `--sort coding|agentic`. Artificial Analysis retired both indexes (always null). Needs an updated image.
 

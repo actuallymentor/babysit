@@ -12,7 +12,7 @@ import { homedir } from 'node:os'
 export const ROOT = process.env.BABYSIT_MAC_ROOT || `${ homedir() }/.config/babysit-mac`
 const VNC = process.env.BABYSIT_MAC_VNC || `/opt/mac/vnc.py`
 
-export const mac_help = `Usage: babysit mac list | ssh | sudo | scp | run | shot | click | move | drag | type | key | scroll | unlock
+export const mac_help = `Usage: babysit mac list | ssh | sudo | scp | run | shot | click | move | drag | type | key | scroll | unlock | password
 Remote Macs (--mac / --devices sessions). Register on the host: babysit mac add.
 
   babysit mac list                              Macs and whether SSH (22) / Screen Sharing (5900) answer
@@ -24,11 +24,12 @@ Remote Macs (--mac / --devices sessions). Register on the host: babysit mac add.
   babysit mac click NAME X Y [right|double]     babysit mac move NAME X Y      babysit mac drag NAME X1 Y1 X2 Y2
   babysit mac type NAME text...                 babysit mac key NAME Cmd+space Return   (one chord per arg)
   babysit mac scroll NAME up|down [N]           babysit mac unlock NAME        type the password and click the lock screen's arrow
+  babysit mac password NAME                     type the stored password into the focused field (admin/auth dialogs; also a run step)
 
 Each GUI call logs in again and typing waits ~2.5 s, so chain steps with run. Prefer ssh
 (osascript, screencapture -x, open, defaults); use the GUI when ssh cannot.`
 
-const GUI = [ `run`, `shot`, `click`, `move`, `drag`, `type`, `key`, `scroll`, `unlock` ]
+const GUI = [ `run`, `shot`, `click`, `move`, `drag`, `type`, `key`, `scroll`, `unlock`, `password` ]
 
 // ---------------------------------------------------------------------------
 // Registry
