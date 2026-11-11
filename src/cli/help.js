@@ -44,6 +44,7 @@ Any unrecognised flags are passed through to the coding agent CLI.
 
 Every command explains itself, with examples: babysit <command> [subcommand] --help
 (or babysit help <command>), e.g. babysit auth --help, babysit auth init --help, babysit claude --help.
+sit is a short name for babysit (installed beside it; shell-init also defines it and tab completion).
 
 Examples:
   babysit claude --yolo

@@ -163,11 +163,11 @@ export const COMMANDS = [
     ] },
     { name: `watch`, deps: true, usage: [
         [ `babysit watch [--usage|--all]`, `Live sessions with usage headroom (--usage: usage only, --all: both)` ],
-        [ `babysit watch --interactive`, `Same, and typing a session number opens it; detaching comes back here` ],
+        [ `babysit watch --interactive`, `Same, and arrows + enter or a number opens a session; detaching comes back here` ],
     ], options: [
         [ `--usage`, `Only the usage panel` ],
         [ `--all`, `Session tree plus the usage panel` ],
-        [ `--interactive`, `Open a session by typing its number` ],
+        [ `--interactive`, `Select with arrows and enter, or open by typing a number (? lists the keys)` ],
     ] },
     { name: `open`, deps: true, usage: [ [ `babysit open [id|name|number]`, `Attach to an active session; with shell-init, detaching lands in its workspace` ] ] },
     { name: `shell-init`, quiet: true, usage: [ [ `babysit shell-init [bash|zsh|fish]`, `Shell function so open can cd: eval "$(babysit shell-init)" in your rc` ] ] },

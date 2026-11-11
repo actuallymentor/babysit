@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.2 — 2026-11-11
+
+### Changed
+- Help pages: `babysit watch --help` documents the ordering, the idle list and every key; `shell-init` and the overview mention `sit` and tab completion. (`babysit --help` is the full overview and `babysit <command> [subcommand] --help` the command's own page, as before.)
+
 ## 2.3.1 — 2026-11-11
 
 ### Fixed

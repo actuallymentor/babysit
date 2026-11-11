@@ -173,17 +173,27 @@ Examples:
 
     watch: () => `Usage: babysit watch [--usage | --all] [--interactive]
 
-Live dashboard: the babysit list tree without archived sessions (numbers
-unchanged) with a USAGE column. Panes are sampled every second and the list
-redraws the moment a session starts, closes or is archived; only changed
-frames are drawn. Usage refreshes every 5 min. Idle sessions with an idle
+Live dashboard: the babysit list tree without archived sessions with a USAGE
+column. Sessions are ordered by when you last opened them (never by activity;
+never-opened ones sink), so numbers move when that changes. Sessions idle over
+24h move to a condensed "Idle resumable sessions" list below the tree
+(folder/repo - name - Nd Nh since last opened); unread ones keep their dot.
+Panes are sampled every second and the list redraws the moment a session
+starts, closes or is archived; only changed frames are drawn. Usage refreshes every 5 min. Idle sessions with an idle
 rule (on: idle, --loop) show hh:mm to their next turn as status; config: and
 on: flags show only with --all.
 
---interactive: type a session number to open it (Enter or a short pause
-settles multi-digit numbers), ctrl+c to close. Detaching (ctrl+b d) or the
+--interactive: pick a session, ctrl+c to close. Detaching (ctrl+b d) or the
 session closing comes back to this list; after babysit open, start or fork in
-a terminal that happens on its own.
+a terminal that happens on its own. Keys (? shows them in the dashboard):
+  up/down    select a session (the cursor follows it when the order changes)
+  enter      open the selected session
+  0-9        type a session number to open it (a short pause settles multi-digit numbers)
+  space      mark an unread session read
+  e          move to the idle list until its next finished turn
+  f          freeze / unfreeze (Docker sessions)
+  r          restart; rr when the session is not idle (then forced)
+  i          show / hide each session's task title (the agent's terminal title)
 
 USAGE column: the usage bar for the worst rate window of the session agent's
 account, filled by the share used (extra usage, spend caps and balances do not
@@ -218,8 +228,9 @@ Examples:
     'shell-init': () => `Usage: babysit shell-init [bash|zsh|fish]
 
 Prints a babysit shell function so babysit open can move your shell into the
-session's workspace (a program cannot change its parent shell's directory).
-Defaults to $SHELL.
+session's workspace (a program cannot change its parent shell's directory),
+the short name sit for babysit, and tab completion for commands, agents, flags
+and subcommands. Defaults to $SHELL.
 
 Examples:
   babysit shell-init fish
