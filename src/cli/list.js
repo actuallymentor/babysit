@@ -7,6 +7,7 @@ import { cached_usage, format_cpu, format_memory, host_cpu_percent } from '../do
 import { paint } from '../utils/color.js'
 import { newer_version_available } from './version_check.js'
 import { setTimeout as delay } from 'node:timers/promises'
+import { hostname } from 'node:os'
 
 const AGENT_STATUSES = new Set( [ `idle`, `running`, `waiting`, `unknown` ] )
 const STATUS_COLORS = { idle: `grey`, running: `green`, waiting: `orange`, stuck: `red`, exited: `grey`, frozen: `grey` }
@@ -54,9 +55,10 @@ const PLACEHOLDER_TITLE = /^(?:[0-9a-f]{12}|workspace|claude code|codex|opencode
  * @param {Object} [context]
  * @param {string} [context.pwd] - Session working directory
  * @param {string} [context.tmux_name] - tmux session name
+ * @param {string} [context.host] - Host name: tmux's default title until the agent sets one
  * @returns {string|null}
  */
-export const clean_pane_title = ( raw, { pwd = ``, tmux_name = `` } = {} ) => {
+export const clean_pane_title = ( raw, { pwd = ``, tmux_name = ``, host = hostname() } = {} ) => {
 
     const title = String( raw ?? `` )
         .replace( /[\x00-\x1f\x7f-\x9f]/g, `` )
@@ -66,7 +68,7 @@ export const clean_pane_title = ( raw, { pwd = ``, tmux_name = `` } = {} ) => {
         .slice( 0, 120 )
 
     const folder = String( pwd ).split( /[\\/]+/ ).filter( Boolean ).at( -1 )
-    return !title || PLACEHOLDER_TITLE.test( title ) || title === folder || title === tmux_name ? null : title
+    return !title || PLACEHOLDER_TITLE.test( title ) || title === folder || title === tmux_name || [ host, host.split( `.` )[0] ].includes( title ) ? null : title
 
 }
 

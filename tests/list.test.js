@@ -653,6 +653,8 @@ describe( `clean_pane_title`, () => {
     it( `reads placeholders and bare directory names as no title yet`, () => {
         const context = { pwd: `/home/me/dev/tmp`, tmux_name: `babysit_x` }
         expect( clean_pane_title( `5bbed5939b55`, context ) ).toBeNull()
+        expect( clean_pane_title( `runnervmwuk1x`, { ...context, host: `runnervmwuk1x` } ) ).toBeNull()
+        expect( clean_pane_title( `build-box`, { ...context, host: `build-box.local` } ) ).toBeNull()
         expect( clean_pane_title( `⠧ tmp`, context ) ).toBeNull()
         expect( clean_pane_title( `Claude Code`, context ) ).toBeNull()
         expect( clean_pane_title( ``, context ) ).toBeNull()

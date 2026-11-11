@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1 — 2026-11-11
+
+### Fixed
+- `babysit watch` saved tmux's default pane title (the host name) as a session's task title before the agent had set one; the host name now counts as no title. Shell-init completion is now checked in real zsh and fish. A session saved with the host name as title replaces it with the agent's next title.
+
 ## 2.3.0 — 2026-11-11
 
 ### Added
