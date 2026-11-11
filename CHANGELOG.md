@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- `babysit watch` (and the list after detaching): ↑/↓ select a session, enter opens it, space marks an unread one read; typing a number still works. Sessions sort by last opened, so numbers move when that changes (the cursor follows its session). Read sessions idle over 24h move to a condensed `folder/repo - name - Nd Nh` list below the tree. `list`/`open`/`close` numbering is unchanged.
+
 ## 2.2.1 — 2026-11-10
 
 ### Added

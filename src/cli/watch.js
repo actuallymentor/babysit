@@ -7,7 +7,7 @@ import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
 import { render_active_sessions, track_session_activity } from './list.js'
 import { cmd_open } from './open.js'
-import { foreground_attach_count } from '../tmux/session.js'
+import { foreground_attach_count, mark_read } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
 import { disk_warnings, read_disk_health, refresh_disk_health } from '../disk_health.js'
 
@@ -18,7 +18,9 @@ const SETTLE_MS = 100
 const CHORD_MS = 700
 const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
 // CSI (ESC [ … final), SS3 (ESC O x) and Alt+key (ESC x) sequences
-const ESCAPE_SEQUENCE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S]|[ -~])/g
+const ESCAPE_SEQUENCE = /(\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S]|[ -~]))/
+// Arrow keys, in normal and application cursor mode; every other sequence is dropped
+const ARROWS = { '\x1b[A': `up`, '\x1bOA': `up`, '\x1b[B': `down`, '\x1bOB': `down` }
 export const USAGE_REFRESH_MS = 5 * 60_000
 
 // The storage check itself runs at most hourly; this is only how often to ask
@@ -289,8 +291,11 @@ const watch_registry = on_change => {
  * Frames sample every pane once per second (track_session_activity) and also
  * redraw the moment the session registry changes. A frame is written only when
  * it differs from the one on screen, in place on the alternate screen.
- * `--interactive`: typing a session number opens it; detaching (or the session
- * closing) comes back here. Under the shell-init wrapper babysit exits instead
+ * Sessions sort by last opened, so numbers move when that changes. Ones idle over
+ * 24h (nothing unread) drop into a condensed list below the tree.
+ * `--interactive`: ↑/↓ select a session (the selection follows it across
+ * re-sorts), enter opens it, space marks an unread one read; typing its number
+ * opens it too. Detaching (or the session closing) comes back here. Under the shell-init wrapper babysit exits instead
  * and the wrapper attaches, then runs `babysit watch --interactive` again.
  * Usage refreshes every 5 min in the background so frames never wait on providers.
  * The Docker build cache is measured hourly, also in the background, and an
@@ -313,6 +318,7 @@ const watch_registry = on_change => {
  * @param {Object} [deps.input] - Keyboard stream
  * @param {Object} [deps.output] - Terminal stream, for TTY and resize detection
  * @param {Function} [deps.open_fn] - Session opener
+ * @param {Function} [deps.mark_read_fn] - Clears a session's unread stamp, by tmux name
  * @param {Function} [deps.attach_count_fn] - In-process attach counter
  * @param {number} [deps.rounds] - Frame count; endless by default
  */
@@ -331,6 +337,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     input = process.stdin,
     output = process.stdout,
     open_fn = cmd_open,
+    mark_read_fn = mark_read,
     attach_count_fn = foreground_attach_count,
     rounds = Infinity,
 } = {} ) => {
@@ -400,14 +407,22 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         let tick = null
         let wake = () => {}
         let targets = new Map()
+        // Display-order rows and the one under the cursor, tracked by id so a re-sort cannot move it
+        let rows = []
+        let selected = null
 
         const footer = () => interactive
-            ? `Press any number to open the session, or ctrl+c to close${ typed ? `: ${ typed }…` : `` }`
+            ? `↑↓ select · enter open · space mark read · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
             : `Live; Ctrl+C to stop.`
 
-        // Writes only what changed on screen; key presses repaint just the footer
+        // The cursor replaces the two-space gutter every table and list line starts with
+        const highlight = ( line, index ) => interactive && rows.some( row => row.target === selected && row.line === index ) && line.startsWith( `  ` )
+            ? `${ paint( `›`, `blue` ) } ${ line.slice( 2 ) }`
+            : line
+
+        // Writes only what changed on screen; key presses repaint just the footer and cursor
         const show = () => {
-            const frame = paint_frame( [ ...body, paint( footer(), `dim` ) ] )
+            const frame = paint_frame( [ ...body.map( highlight ), paint( footer(), `dim` ) ] )
             if( frame !== shown ) write_fn( frame )
             shown = frame
         }
@@ -424,6 +439,21 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             wake()
         }
 
+        const move = step => {
+            const at = rows.findIndex( row => row.target === selected )
+            selected = rows[ Math.min( rows.length - 1, Math.max( 0, at + step ) ) ]?.target ?? selected
+            typed = ``
+            show()
+        }
+
+        // Marks the selected unread session read; the next frame drops its dot
+        const read_selected = () => {
+            const row = rows.find( row => row.target === selected )
+            if( !row?.unread ) return
+            row.unread = false
+            Promise.resolve( mark_read_fn( row.tmux_name ) ).then( () => wake() )
+        }
+
         const choose = number => targets.has( number ) ? stop( targets.get( number ) ) : ( typed = ``, show() )
 
         // Digits pick a session as soon as no longer number could still follow;
@@ -434,7 +464,9 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             if( stopped || !interactive ) return
 
             clearTimeout( chord )
-            if( key === `\r` ) return choose( Number( typed ) )
+            if( key === `up` || key === `down` ) return move( key === `up` ? -1 : 1 )
+            if( key === ` ` ) return read_selected()
+            if( key === `\r` ) return typed ? choose( Number( typed ) ) : selected === null ? undefined : stop( selected )
             if( key === `\x7f` || key === `\x1b` ) {
                 typed = ``
                 return show()
@@ -456,7 +488,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         // Pastes and buffered SSH input arrive as one chunk: one key at a time.
         // Escape sequences (Delete is ESC[3~, Page Up ESC[5~) go first, so
         // their digits never pick a session; a lone ESC still clears the input.
-        const on_data = data => [ ...data.toString().replace( ESCAPE_SEQUENCE, `` ) ].forEach( on_key )
+        // Even splits are typed text, odd ones the sequences between it.
+        const on_data = data => data.toString().split( ESCAPE_SEQUENCE )
+            .flatMap( ( part, index ) => index % 2 ? [ ARROWS[ part ] ].filter( Boolean ) : [ ...part ] )
+            .forEach( on_key )
 
         let settle = null
         const nudge = () => {
@@ -503,6 +538,8 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                         // Launch-yaml rules are noise on a dashboard; the countdown says what they do
                         rule_flags: Boolean( flags.all ),
                         countdowns: true,
+                        recent_first: true,
+                        idle_section: true,
                         observe_activity_fn,
                         // Read at print time, so a refresh that lands mid-sample still shows
                         extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],
@@ -521,6 +558,14 @@ export const cmd_watch = async ( { flags = {} } = {}, {
                     typed = ``
                 }
                 targets = next_targets
+
+                // The cursor stays on its session; if that is gone, on the same position
+                const next_rows = frame.result?.rows || []
+                if( !next_rows.some( row => row.target === selected ) ) {
+                    const at = Math.max( 0, rows.findIndex( row => row.target === selected ) )
+                    selected = next_rows[ Math.min( at, next_rows.length - 1 ) ]?.target ?? null
+                }
+                rows = next_rows
                 body = frame.lines
                 if( !stopped ) show()
 

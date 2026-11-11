@@ -8,6 +8,8 @@ import {
     print_active_sessions_table,
     session_dot,
     format_countdown,
+    format_last_opened,
+    render_active_sessions,
 } from '../src/cli/list.js'
 
 const capture_console = async ( fn ) => {
@@ -552,6 +554,70 @@ describe( `list --watch`, () => {
         expect( errors ).toEqual( [ `babysit list --watch is gone; run babysit watch` ] )
         expect( process.exitCode ).toBe( 1 )
         process.exitCode = 0
+    } )
+
+} )
+
+describe( `format_last_opened`, () => {
+
+    it( `reads days and hours ago`, () => {
+        const now = 1_000_000_000_000
+        expect( format_last_opened( now / 1_000 - ( 2 * 24 + 5 ) * 3_600 - 60, now ) ).toBe( `2d 5h` )
+        expect( format_last_opened( now / 1_000 - 3_600, now ) ).toBe( `0d 1h` )
+        expect( format_last_opened( null, now ) ).toBe( `-` )
+    } )
+
+} )
+
+describe( `render_active_sessions recent_first + idle_section`, () => {
+
+    const now = Date.now()
+    const hours_ago = hours => Math.floor( now / 1_000 ) - hours * 3_600
+    const stored = [
+        { tmux_session: `babysit_old`, name: `old`, agent: `codex`, babysit_id: `old`, pwd: `/dev/stale-repo` },
+        { tmux_session: `babysit_new`, name: `new`, agent: `codex`, babysit_id: `new`, pwd: `/dev/fresh` },
+        { tmux_session: `babysit_mid`, name: `mid`, agent: `codex`, babysit_id: `mid`, pwd: `/dev/other` },
+        { tmux_session: `babysit_unread`, name: `unread`, agent: `codex`, babysit_id: `unread`, pwd: `/dev/other` },
+    ]
+    const sessions = [
+        { name: `babysit_old`, agent_status: `idle`, idle_since: hours_ago( 53 ), last_opened: hours_ago( 53 ) },
+        { name: `babysit_mid`, agent_status: `running`, last_opened: hours_ago( 5 ) },
+        { name: `babysit_new`, agent_status: `running`, last_opened: hours_ago( 1 ) },
+        { name: `babysit_unread`, agent_status: `idle`, idle_since: hours_ago( 60 ), last_opened: hours_ago( 70 ), unread: true },
+    ]
+    const render = () => {
+        let result
+        return capture_console( async () => {
+            result = await render_active_sessions( {
+                recent_first: true,
+                idle_section: true,
+                open_hint: false,
+                version_check_fn: () => ( { latest: null } ),
+                list_sessions_fn: async () => sessions,
+                list_stored_sessions_fn: () => stored,
+                observe_activity_fn: async list => list,
+            } )
+        } ).then( output => ( { output, result } ) )
+    }
+
+    it( `numbers by recency, workspaces led by their newest session`, async () => {
+        const { result } = await render()
+        expect( result.rows.map( row => row.target ) ).toEqual( [ `new`, `mid`, `unread`, `old` ] )
+        expect( result.rows.map( row => row.number ) ).toEqual( [ 1, 2, 3, 4 ] )
+    } )
+
+    it( `moves read sessions idle over 24h into a condensed list, unread ones stay`, async () => {
+        const { output } = await render()
+        const [ tree, idle ] = output.split( `Idle over 24h:` )
+        expect( tree ).toContain( `unread` )
+        expect( tree ).not.toContain( `stale-repo` )
+        expect( idle ).toMatch( /4\s+dev\/stale-repo - old - 2d 5h/ )
+    } )
+
+    it( `reports the printed line of every row`, async () => {
+        const { output, result } = await render()
+        const lines = output.split( `\n` )
+        result.rows.forEach( row => expect( lines[ row.line ] ).toContain( ` ${ row.target }` ) )
     } )
 
 } )

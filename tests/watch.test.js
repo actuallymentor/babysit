@@ -510,6 +510,66 @@ describe( `cmd_watch`, () => {
             expect( opened ).toEqual( [] )
         } )
 
+        // Rows as render_active_sessions reports them: display order, one line each after `tree`
+        const row_run = async ( keys, rows, { marked = [] } = {} ) => {
+            const input = keyboard( keys )
+            const opened = []
+            const frames = []
+            let drawn = 0
+            await run_watch( { interactive: true }, {
+                rounds: 3,
+                input,
+                collect_fn: async () => report,
+                render_sessions_fn: async () => {
+                    console.log( `tree` )
+                    rows.forEach( row => console.log( `  ${ row.target }` ) )
+                    return {
+                        targets: new Map( rows.map( row => [ row.number, row.target ] ) ),
+                        rows: rows.map( ( row, index ) => ( { tmux_name: `tmux_${ row.target }`, unread: false, ...row, line: index + 1 } ) ),
+                    }
+                },
+                write_fn: text => {
+                    frames.push( text )
+                    if( drawn++ === 0 ) setTimeout( input.press, 0 )
+                },
+                wait_fn: () => new Promise( resolve => setTimeout( resolve, 5 ) ),
+                open_fn: async ( { session_id } ) => opened.push( session_id ),
+                mark_read_fn: async name => marked.push( name ),
+                attach_count_fn: () => 0,
+            } )
+            return { opened, frames }
+        }
+
+        const rows = [ { number: 1, target: `a` }, { number: 2, target: `b` }, { number: 3, target: `c`, unread: true } ]
+
+        it( `opens the first session on enter, the one arrowed to otherwise`, async () => {
+            expect( ( await row_run( [ `\r` ], rows ) ).opened ).toEqual( [ `a` ] )
+            expect( ( await row_run( [ `\x1b[B`, `\r` ], rows ) ).opened ).toEqual( [ `b` ] )
+            expect( ( await row_run( [ `\x1bOB\x1b[B\x1b[B\x1b[A\r` ], rows ) ).opened ).toEqual( [ `b` ] )
+        } )
+
+        it( `stops the cursor at both ends of the list`, async () => {
+            expect( ( await row_run( [ `\x1b[A`, `\r` ], rows ) ).opened ).toEqual( [ `a` ] )
+            expect( ( await row_run( [ `\x1b[B\x1b[B\x1b[B\x1b[B`, `\r` ], rows ) ).opened ).toEqual( [ `c` ] )
+        } )
+
+        it( `draws the cursor in the gutter of the selected row`, async () => {
+            const { frames } = await row_run( [ `\x1b[B` ], rows )
+            const lines = plain( frames.at( -1 ) ).split( `\r\n` )
+            expect( lines[1] ).toStartWith( `  a` )
+            expect( lines[2] ).toStartWith( `› b` )
+        } )
+
+        it( `marks only an unread selection read with space`, async () => {
+            const marked = []
+            await row_run( [ ` `, `\x1b[B\x1b[B`, ` ` ], rows, { marked } )
+            expect( marked ).toEqual( [ `tmux_c` ] )
+        } )
+
+        it( `still opens by typed number`, async () => {
+            expect( ( await row_run( [ `\x1b[B`, `3` ], rows ) ).opened ).toEqual( [ `c` ] )
+        } )
+
         it( `asks for a number in the footer`, async () => {
             const frames = []
             await run_watch( { interactive: true }, {
@@ -518,7 +578,7 @@ describe( `cmd_watch`, () => {
                 render_sessions_fn: async () => ( { targets: new Map( [ [ 1, `id1` ] ] ) } ),
                 write_fn: text => frames.push( text ),
             } )
-            expect( plain( frames.at( -1 ) ) ).toContain( `Press any number to open the session, or ctrl+c to close` )
+            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · space mark read · or type a number · ctrl+c close` )
         } )
 
     } )

@@ -445,7 +445,7 @@ const is_unread = ( { unread_since, activity, last_attached } ) => {
  * @param {Object} [options]
  * @param {boolean} [options.strict=false] - Surface inspection failures except an absent tmux server
  * @param {Function} [options.run_command=run] - Injectable command runner
- * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null }>>}
+ * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null, last_opened: number|null }>>}
  */
 export const list_sessions = async ( { strict = false, run_command = run } = {} ) => {
 
@@ -468,7 +468,9 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
                 const idle_since = Number( idle_stamp ) > 0 ? Number( idle_stamp ) : null
                 // Only a number is a countdown; `running`/`waiting` mean none is ticking
                 const next_turn = Number( next_stamp ) > 0 ? Number( next_stamp ) : null
-                return { name, attached, created, agent_status, unread, idle_since, next_turn }
+                // Last attach, else birth: a session nobody opened yet counts as opened when made
+                const last_opened = Number( last_attached ) > 0 ? Number( last_attached ) : Number( created ) > 0 ? Number( created ) : null
+                return { name, attached, created, agent_status, unread, idle_since, next_turn, last_opened }
             } )
 
     } catch ( error ) {

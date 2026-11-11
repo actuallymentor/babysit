@@ -31,6 +31,34 @@ export const session_dot = ( tmux, status, now = Date.now() ) => {
 const DOT_COLORS = { unread: `blue`, stale: `grey` }
 
 /**
+ * How long ago a session was last opened, as `Nd Nh`.
+ * @param {number|null} opened_at - Epoch seconds
+ * @param {number} [now=Date.now()] - Epoch ms
+ * @returns {string} `2d 5h`; `-` when never opened
+ */
+export const format_last_opened = ( opened_at, now = Date.now() ) => {
+    if( !opened_at ) return `-`
+    const hours = Math.max( 0, Math.floor( ( now - opened_at * 1_000 ) / 3_600_000 ) )
+    return `${ Math.floor( hours / 24 ) }d ${ hours % 24 }h`
+}
+
+/**
+ * Displayed status of one session. An exited fork parent has no activity; a
+ * frozen container (`babysit freeze`) has none either; a `babysit stuck` flag
+ * outranks observed activity until the user types.
+ * @param {Object} tmux - Active tmux session
+ * @param {Object|undefined} stored - Its stored record
+ * @returns {string}
+ */
+const session_status = ( tmux, stored ) => tmux.exited
+    ? `exited`
+    : stored?.frozen_at
+        ? `frozen`
+        : stored?.stuck_at
+            ? `stuck`
+            : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
+
+/**
  * Time left until an idle rule's next turn as hh:mm, floored; 00:00 once due.
  * @param {number} next_turn - Epoch seconds of the next turn
  * @param {number} now - Epoch ms
@@ -447,7 +475,7 @@ export const format_table = ( headers, rows ) => {
  * @param {Object} [options.env] - Environment for glyph selection
  * @param {Array|null} [options.footer] - Summary row aligned under the columns
  * @param {boolean[]} [options.dim] - Per-row archived flag; a trunk dims when all its rows are
- * @returns {{ header: string, divider: string, lines: string[], footer: string|null }} Rendered tree
+ * @returns {{ header: string, divider: string, lines: string[], footer: string|null, positions: number[] }} Rendered tree; `positions` is each row's index in `lines`
  */
 export const format_session_tree = ( headers, rows, trunks, { env = process.env, footer = null, dim = [] } = {} ) => {
 
@@ -459,23 +487,26 @@ export const format_session_tree = ( headers, rows, trunks, { env = process.env,
     // Trunks in order of first appearance; leaves keep their original row order.
     // A blank line separates trunks so each workspace reads as its own block.
     const trunk_order = [ ...new Set( trunks ) ]
-    const lines = trunk_order.flatMap( ( trunk, position ) => {
+    const lines = []
+    const positions = []
+    trunk_order.forEach( ( trunk, position ) => {
         const indices = trunks.map( ( value, index ) => value === trunk ? index : -1 ).filter( index => index >= 0 )
         const trunk_dim = indices.every( index => dim[index] )
-        return [
-            ...position ? [ `` ] : [],
-            paint( trunk, trunk_dim ? `dim` : null ),
-            ...indices.map( ( row, leaf_position ) => paint(
+        if( position ) lines.push( `` )
+        lines.push( paint( trunk, trunk_dim ? `dim` : null ) )
+        indices.forEach( ( row, leaf_position ) => {
+            positions[row] = lines.length
+            lines.push( paint(
                 `${ leaf_position === indices.length - 1 ? glyphs.last : glyphs.branch }${ table.rows[row] }`,
                 dim[row] ? `dim` : null
-            ) ),
-        ]
+            ) )
+        } )
     } )
 
     const header = `${ indent }${ table.header }`
     const width = Math.max( header.length, ...lines.map( visible_length ) )
 
-    return { header, divider: `-`.repeat( width ), lines, footer: footer_line }
+    return { header, divider: `-`.repeat( width ), lines, footer: footer_line, positions }
 
 }
 
@@ -580,16 +611,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         const agent = stored?.agent || `unknown`
         const session_id = stored?.agent_session_id || stored?.babysit_id || tmux.name
         const name = stored?.name || session_id
-        // An exited fork parent has no activity; a frozen container (`babysit
-        // freeze`) has none either; a `babysit stuck` flag outranks observed
-        // activity until the user types.
-        const status = tmux.exited
-            ? `exited`
-            : stored?.frozen_at
-                ? `frozen`
-                : stored?.stuck_at
-                    ? `stuck`
-                    : AGENT_STATUSES.has( tmux.agent_status ) ? tmux.agent_status : `unknown`
+        const status = session_status( tmux, stored )
         const tmux_status = tmux.exited ? `exited` : tmux.attached ? `attached` : `detached`
         const flags = format_session_flags( stored?.modifiers, rule_flags ? stored?.config_flags : stored?.config_flags?.filter( flag => !is_rule_flag( flag ) ) )
         const usage = show_usage && !tmux.exited ? cached_usage( stored, now ) : null
@@ -635,17 +657,56 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
         }
     )
 
-    console.log( `\n${ title }\n` )
-    console.log( `  ${ tree.header }` )
-    console.log( `  ${ tree.divider }` )
-    tree.lines.forEach( line => console.log( line ? `  ${ line }` : `` ) )
-    if( tree.footer ) {
-        console.log( `` )
-        console.log( `  ${ tree.footer }` )
-    }
+    const out = [ ``, title, ``, `  ${ tree.header }`, `  ${ tree.divider }` ]
+    const first_line = out.length
+    tree.lines.forEach( line => out.push( line ? `  ${ line }` : `` ) )
+    if( tree.footer ) out.push( ``, `  ${ tree.footer }` )
 
-    console.log( `` )
-    if( open_hint ) console.log( `Open one with: babysit open <number>\n` )
+    out.push( `` )
+    if( open_hint ) out.push( `Open one with: babysit open <number>`, `` )
+    out.forEach( line => console.log( line ) )
+
+    return { length: out.length, row_lines: tree.positions.map( position => first_line + position ) }
+
+}
+
+/**
+ * Print sessions idle over 24 hours as a condensed list, one line each:
+ * `# folder/repo - session name - last opened`. No trunks, no tree.
+ * @param {Array<{ name: string, last_opened: number|null }>} tmux_sessions - Idle sessions, display order
+ * @param {Object[]} stored_sessions - Stored Babysit metadata
+ * @param {Object} [options]
+ * @param {string} [options.title] - List title
+ * @param {number[]} [options.numbers] - Selector per session
+ * @param {number} [options.now] - Epoch ms
+ * @returns {{ length: number, row_lines: number[] }} Lines printed, and each session's line index
+ */
+export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
+    title = `Idle over 24h:`,
+    numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
+    now = Date.now(),
+} = {} ) => {
+
+    const by_tmux = stored_by_tmux( stored_sessions )
+    const rows = tmux_sessions.map( ( tmux, index ) => {
+        const stored = by_tmux.get( tmux.name )
+        return [
+            String( numbers[index] ),
+            format_session_directory( stored?.pwd ),
+            stored?.name || stored?.agent_session_id || stored?.babysit_id || tmux.name,
+            format_last_opened( tmux.last_opened, now ),
+        ]
+    } )
+
+    const widths = [ 0, 1, 2 ].map( column => Math.max( ...rows.map( row => row[column].length ) ) )
+    const lines = rows.map( ( [ number, repo, name, opened ] ) =>
+        `  ${ number.padStart( widths[0] ) }  ${ repo.padEnd( widths[1] ) } - ${ name.padEnd( widths[2] ) } - ${ paint( opened, `grey` ) }`
+    )
+
+    const out = [ ``, title, ``, ...lines, `` ]
+    out.forEach( line => console.log( line ) )
+
+    return { length: out.length, row_lines: rows.map( ( _, index ) => 3 + index ) }
 
 }
 
@@ -663,8 +724,12 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
  * @param {Function} [options.version_check_fn] - Newer-release lookup
- * @returns {Promise<{ targets: Map<number, string> }>} Shown selectors that can be opened (exited fork parents
- * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session
+ * @param {boolean} [options.recent_first=false] - Order by last opened (workspaces by their newest session); numbers follow the display
+ * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h (nothing unread) into a condensed list below the tree
+ * @returns {Promise<{ targets: Map<number, string>, rows: Object[] }>} `targets`: shown selectors that can be opened (exited fork parents
+ * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session.
+ * `rows`: the same in display order as { number, target, tmux_name, unread, line }, `line` being its index among the
+ * lines printed (the table starts at line 0 of the output).
  */
 export const render_active_sessions = async ( {
     all = false,
@@ -673,6 +738,8 @@ export const render_active_sessions = async ( {
     extra_columns = [],
     rule_flags = true,
     countdowns = false,
+    recent_first = false,
+    idle_section = false,
     before_print = () => {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
@@ -681,13 +748,16 @@ export const render_active_sessions = async ( {
 } = {} ) => {
 
     const stored_sessions = list_stored_sessions_fn()
-    const ordered_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions )
+    const listed = await list_sessions_fn()
+    // The ordering below keeps input order inside a workspace and ranks workspaces
+    // by first appearance, so sorting the input is all "recent first" takes
+    const by_recency = [ ...listed ].sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
+    const ordered_sessions = order_active_sessions( recent_first ? by_recency : listed, stored_sessions )
 
     // Numbers stay global so `babysit open <n>` means the same thing everywhere.
     const by_tmux = stored_by_tmux( stored_sessions )
     const is_archived = tmux => Boolean( by_tmux.get( tmux.name )?.archived_at )
     const tmux_sessions = hide_archived ? ordered_sessions.filter( tmux => !is_archived( tmux ) ) : ordered_sessions
-    const numbers = tmux_sessions.map( tmux => ordered_sessions.indexOf( tmux ) + 1 )
 
     if( tmux_sessions.length === 0 ) {
         before_print()
@@ -695,16 +765,35 @@ export const render_active_sessions = async ( {
         console.log( ordered_sessions.length
             ? `No unarchived babysit sessions. Run babysit list to see archived ones.`
             : `No active babysit sessions.` )
-        return { targets: new Map() }
+        return { targets: new Map(), rows: [] }
     }
 
     const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
     before_print()
 
+    const now = Date.now()
+    const is_idle = tmux => idle_section
+        && session_dot( tmux, session_status( tmux, by_tmux.get( tmux.name ) ), now ) === `stale`
+    const active = observed_sessions.filter( tmux => !is_idle( tmux ) )
+    const idle = observed_sessions.filter( is_idle )
+
+    // With an idle section the selectors follow the display: active first, then idle
+    const shown = [ ...active, ...idle ]
+    const numbers = new Map( shown.map( ( tmux, index ) => [ tmux.name, idle_section ? index + 1 : ordered_sessions.findIndex( other => other.name === tmux.name ) + 1 ] ) )
+    const numbers_of = group => group.map( tmux => numbers.get( tmux.name ) )
+
+    // Where each shown session landed among the printed lines, for callers that highlight one
+    const printed = []
+    let lines_so_far = 0
+    const track = ( group, { length, row_lines } ) => {
+        group.forEach( ( tmux, index ) => printed.push( { tmux, line: lines_so_far + row_lines[index] } ) )
+        lines_so_far += length
+    }
+
     // CPU/MEM come from the cache each session's monitor keeps; no Docker call here.
-    print_active_sessions_table( observed_sessions, stored_sessions, {
+    if( active.length ) track( active, print_active_sessions_table( active, stored_sessions, {
         numbered: true,
-        numbers,
+        numbers: numbers_of( active ),
         show_flags: true,
         show_usage: true,
         extra_columns,
@@ -712,17 +801,25 @@ export const render_active_sessions = async ( {
         all,
         rule_flags,
         countdowns,
-    } )
+    } ) )
+
+    if( idle.length ) track( idle, print_idle_sessions_list( idle, stored_sessions, { numbers: numbers_of( idle ), now } ) )
 
     // Cached lookup: never a network wait in front of the table.
     const { latest } = version_check_fn()
     if( latest ) console.log( paint( `New babysit version available: ${ latest } (run babysit update)`, `orange` ) + `\n` )
 
-    const targets = tmux_sessions
-        .map( ( tmux, index ) => [ numbers[index], by_tmux.get( tmux.name )?.babysit_id || tmux.name, tmux.exited ] )
-        .filter( ( [ , , exited ] ) => !exited )
-        .map( ( [ number, target ] ) => [ number, target ] )
-    return { targets: new Map( targets ) }
+    const rows = printed
+        .filter( ( { tmux } ) => !tmux.exited )
+        .map( ( { tmux, line } ) => ( {
+            number: numbers.get( tmux.name ),
+            target: by_tmux.get( tmux.name )?.babysit_id || tmux.name,
+            tmux_name: tmux.name,
+            unread: Boolean( tmux.unread ),
+            line,
+        } ) )
+
+    return { targets: new Map( rows.map( row => [ row.number, row.target ] ) ), rows }
 
 }
 
