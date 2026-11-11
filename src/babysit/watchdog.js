@@ -2,27 +2,30 @@ import { last_client_activity } from '../control/stuck.js'
 import { log } from '../utils/log.js'
 
 // Audit prefix and suffix
-const AUDIT_PREFIX = `Evaluate your state and check the following:\n\n`
-const AUDIT_SUFFIX = `\nDo work that needs doing, if all is justifyably idle, reply "idle" and nothing else.`
+const AUDIT_PREFIX = `Evaluate your state and course correct if needed:\n\n`
+const AUDIT_SUFFIX = `\nDo work that needs doing without asking for my confirmation, if all is justifiably idle, reply "idle" and nothing else.`
 
 // Make sure that a stalled agent did not exit without cause
-const FOCUS_AUDIT = ``
+const FOCUS_AUDIT = `\n- Have you done all the work requested of you?`
+    + `\n- If you finished work since our last check-in, check if you follow all the checklists/workflows specified in AGENTS.md`
+    + `\n- Are you working as efficiently and parallelised as you safely could?`
 
 // Asks for action, not a summary: a stalled agent collects finished work and
 // resumes, one that is fine answers with a single word.
 export const WATCHDOG_NUDGE = AUDIT_PREFIX
-    + `You look stalled. Check for background agents/shells that already finished: collect their results and clean up. `
-    + `If you stopped for no good reason, resume without asking me.`
+    + `- You look stalled. Check for background agents/shells that already finished: collect their results and clean up. `
+    + FOCUS_AUDIT
     + AUDIT_SUFFIX
 
 // Waiting agents get no verdict, only a periodic look at their background work:
 // the screen cannot tell a healthy wait from a hung poll, the agent can.
 // Enumerate, don't recall: agents grep for the job they remember and miss the rest.
 export const CHECK_IN_NUDGE = AUDIT_PREFIX
-    + `Audit your background work without filtering by name: list the full process tree under your own process `
+    + `- Audit your background work without filtering by name: list the full process tree under your own process `
     + `(e.g. ps -eo pid,ppid,etime,args), any subagents you started, and the output or log files they write to. `
     + `For each one still alive, say what it's waiting for and whether that can still happen; kill it if not. `
     + `Collect the results of anything that finished and carry on.`
+    + FOCUS_AUDIT
     + AUDIT_SUFFIX
 
 /**
