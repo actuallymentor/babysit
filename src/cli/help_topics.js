@@ -183,7 +183,9 @@ starts, closes or is archived; only changed frames are drawn. Usage refreshes ev
 rule (on: idle, --loop) show hh:mm to their next turn as status; config: and
 on: flags show only with --all.
 
---interactive: pick a session, ctrl+c to close. Detaching (ctrl+b d) or the
+In a terminal the dashboard is always navigable, like the list you land on after
+detaching (--interactive forces the keys when stdin is not a terminal); ctrl+c
+closes. Detaching (ctrl+b d) or the
 session closing comes back to this list; after babysit open, start or fork in
 a terminal that happens on its own. Keys (? shows them in the dashboard):
   up/down    select a session (the cursor follows it when the order changes)

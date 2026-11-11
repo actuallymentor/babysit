@@ -340,7 +340,7 @@ const watch_registry = on_change => {
  * it differs from the one on screen, in place on the alternate screen.
  * Sessions sort by last opened, so numbers move when that changes. Ones idle over
  * 24h (nothing unread) drop into a condensed list below the tree.
- * `--interactive`: ↑/↓ select a session (the selection follows it across
+ * On a terminal (or with `--interactive`): ↑/↓ select a session (the selection follows it across
  * re-sorts), enter opens it, space marks an unread one read, e moves it to the idle list,
  * i toggles task titles (the agent's own terminal title, saved on the session),
  * f freezes/unfreezes it, r restarts it (rr unless idle), ? lists the shortcuts; typing its number
@@ -442,11 +442,12 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
 
     const show_sessions = !flags.usage || flags.all
     const show_panel = flags.usage || flags.all
-    const interactive = Boolean( flags.interactive ) && show_sessions
     // Kept across attaches: it is a view preference
     let show_titles = false
     const saving = new Set()
     const keyboard = Boolean( input?.isTTY )
+    // On a terminal every watch is navigable, as the list after a detach is; --interactive forces it for scripts
+    const interactive = ( Boolean( flags.interactive ) || keyboard ) && show_sessions
     const screen = Boolean( output?.isTTY )
 
     /**

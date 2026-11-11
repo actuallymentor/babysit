@@ -95,7 +95,7 @@ Status: `running` (foreground work), `waiting` (background shells/subagents), `i
 | `babysit audit --config FILE\|DIR/` | Fix yaml for `--config DIR/`; see [Audit](#audit) |
 | `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip comment lines and blanks; see [Clean](#clean) |
 | `babysit list [--all]` | Sessions as a tree: status, CPU/MEM, flags. Blue ● = turn finished, grey ● = idle >24h. `--all` adds IDs, tmux names |
-| `babysit watch [--usage\|--all] [--interactive]` | Live `list` + usage, newest-opened first; idle >24h in a condensed list. `--interactive`: ↑/↓ + enter or a number opens, space marks read, `e` idle, `f` freeze, `r`/`rr` restart, `i` titles, `?` help |
+| `babysit watch [--usage\|--all] [--interactive]` | Live `list` + usage, newest-opened first; idle >24h in a condensed list. In a terminal (or with `--interactive`): ↑/↓ + enter or a number opens, space marks read, `e` idle, `f` freeze, `r`/`rr` restart, `i` titles, `?` help |
 | `babysit fork <n\|id> [agent] [flags]` | Continue a session in a new one; see [Fork](#fork) |
 | `babysit open [id\|name\|number]` | Attach; shell `cd`s to the session's base dir (needs `eval "$(babysit shell-init)"` in your rc) |
 | `babysit shell-init [bash\|zsh\|fish]` | Print the shell function behind `open`, the `sit` short name and tab completion. Fish: `babysit shell-init fish \| source` |

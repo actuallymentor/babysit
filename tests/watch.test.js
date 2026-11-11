@@ -467,6 +467,31 @@ describe( `cmd_watch`, () => {
             return { frames, opened, input }
         }
 
+        it( `is navigable on a terminal without --interactive`, async () => {
+            const input = keyboard( [ `\x1b[B`, `\r` ] )
+            const opened = []
+            let drawn = 0
+            await run_watch( {}, {
+                rounds: 2,
+                input,
+                collect_fn: async () => report,
+                render_sessions_fn: async () => {
+                    console.log( `tree`, `  a`, `  b` )
+                    return { targets: new Map( [ [ 1, `a` ], [ 2, `b` ] ] ), rows: [ { number: 1, target: `a`, line: 1 }, { number: 2, target: `b`, line: 2 } ] }
+                },
+                write_fn: () => drawn++ === 0 && setTimeout( input.press, 0 ),
+                wait_fn: () => new Promise( resolve => setTimeout( resolve, 5 ) ),
+                open_fn: async ( { session_id } ) => opened.push( session_id ),
+                attach_count_fn: () => 0,
+            } )
+            expect( opened ).toEqual( [ `b` ] )
+        } )
+
+        it( `stays a plain live view when stdin is not a terminal`, async () => {
+            const frames = await run_watch( {}, { rounds: 1, collect_fn: async () => report, render_sessions_fn: async () => ( { targets: new Map() } ) } )
+            expect( frames.join( `` ) ).toContain( `Live; Ctrl+C to stop.` )
+        } )
+
         it( `opens a session by number, then comes back after the detach`, async () => {
             const { opened, input } = await interactive_run( [ `2` ] )
             // The 4-frame budget ran out back on the list, not inside the session
