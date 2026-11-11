@@ -602,16 +602,27 @@ describe( `render_active_sessions recent_first + idle_section`, () => {
 
     it( `numbers by recency, workspaces led by their newest session`, async () => {
         const { result } = await render()
-        expect( result.rows.map( row => row.target ) ).toEqual( [ `new`, `mid`, `unread`, `old` ] )
+        expect( result.rows.map( row => row.target ) ).toEqual( [ `new`, `mid`, `old`, `unread` ] )
         expect( result.rows.map( row => row.number ) ).toEqual( [ 1, 2, 3, 4 ] )
     } )
 
-    it( `moves read sessions idle over 24h into a condensed list, unread ones stay`, async () => {
+    it( `moves sessions idle over 24h into a condensed list, unread ones keep their dot`, async () => {
         const { output } = await render()
         const [ tree, idle ] = output.split( `Idle resumable sessions:` )
-        expect( tree ).toContain( `unread` )
         expect( tree ).not.toContain( `stale-repo` )
-        expect( idle ).toMatch( /4\s+dev\/stale-repo - old - 2d 5h/ )
+        expect( tree ).not.toContain( `unread` )
+        expect( idle ).toMatch( /3\s+dev\/stale-repo - old\s+- 2d 5h/ )
+        expect( idle ).toMatch( /4\s+● dev\/other\s+- unread\s+- 2d 22h/ )
+    } )
+
+    it( `ranks by last opened only: a never-opened session sinks`, async () => {
+        sessions.push( { name: `babysit_loop`, agent_status: `running` } )
+        stored.push( { tmux_session: `babysit_loop`, name: `loop`, agent: `codex`, babysit_id: `loop`, pwd: `/dev/loop` } )
+        const { result } = await render()
+        sessions.pop()
+        stored.pop()
+        expect( result.rows.map( row => row.target ).slice( 0, 2 ) ).toEqual( [ `new`, `mid` ] )
+        expect( result.rows.findIndex( row => row.target === `loop` ) ).toBe( 2 )
     } )
 
     it( `moves a session shelved since its last turn into the idle list, until the next turn ends`, async () => {

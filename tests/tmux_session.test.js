@@ -208,9 +208,9 @@ describe( `list_sessions format compatibility`, () => {
         expect( result ).toEqual( [
             // No input since the stamp: unread. Input after it: read. Attach alone
             // bumps activity to the attach second, which does not count.
-            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: 1800, last_opened: 123, shelved_since: null },
-            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200, next_turn: null, last_opened: 124, shelved_since: null },
-            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null, next_turn: null, last_opened: 125, shelved_since: 400 },
+            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: 1800, last_opened: null, shelved_since: null },
+            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200, next_turn: null, last_opened: null, shelved_since: null },
+            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null, next_turn: null, last_opened: null, shelved_since: 400 },
             { name: `babysit_looked`, attached: false, created: `126`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: null, last_opened: 300, shelved_since: null },
             { name: `babysit_typed`, attached: false, created: `127`, agent_status: `idle`, unread: false, idle_since: 200, next_turn: null, last_opened: 300, shelved_since: null },
         ] )

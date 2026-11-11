@@ -496,8 +496,8 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
                 const idle_since = Number( idle_stamp ) > 0 ? Number( idle_stamp ) : null
                 // Only a number is a countdown; `running`/`waiting` mean none is ticking
                 const next_turn = Number( next_stamp ) > 0 ? Number( next_stamp ) : null
-                // Last attach, else birth: a session nobody opened yet counts as opened when made
-                const last_opened = Number( last_attached ) > 0 ? Number( last_attached ) : Number( created ) > 0 ? Number( created ) : null
+                // Only a human attach counts: a session nobody opened (loops, restarts) has no rank
+                const last_opened = Number( last_attached ) > 0 ? Number( last_attached ) : null
                 return { name, attached, created, agent_status, unread, idle_since, next_turn, last_opened, shelved_since: Number( shelved_stamp ) > 0 ? Number( shelved_stamp ) : null }
             } )
 

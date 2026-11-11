@@ -692,15 +692,17 @@ export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
         const stored = by_tmux.get( tmux.name )
         return [
             String( numbers[index] ),
+            // Unread keeps its blue dot here too
+            { text: tmux.unread ? `●` : ` `, rendered: tmux.unread ? paint( `●`, DOT_COLORS.unread ) : ` ` },
             format_session_directory( stored?.pwd ),
             stored?.name || stored?.agent_session_id || stored?.babysit_id || tmux.name,
             format_last_opened( tmux.last_opened, now ),
         ]
     } )
 
-    const widths = [ 0, 1, 2 ].map( column => Math.max( ...rows.map( row => row[column].length ) ) )
-    const lines = rows.map( ( [ number, repo, name, opened ] ) =>
-        `  ${ number.padStart( widths[0] ) }  ${ repo.padEnd( widths[1] ) } - ${ name.padEnd( widths[2] ) } - ${ paint( opened, `grey` ) }`
+    const widths = [ 0, 2, 3 ].map( column => Math.max( ...rows.map( row => row[column].length ) ) )
+    const lines = rows.map( ( [ number, dot, repo, name, opened ] ) =>
+        `  ${ number.padStart( widths[0] ) }  ${ dot.rendered } ${ repo.padEnd( widths[1] ) } - ${ name.padEnd( widths[2] ) } - ${ paint( opened, `grey` ) }`
     )
 
     const out = [ ``, title, ``, ...lines, `` ]
@@ -725,7 +727,7 @@ export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
  * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
  * @param {Function} [options.version_check_fn] - Newer-release lookup
  * @param {boolean} [options.recent_first=false] - Order by last opened (workspaces by their newest session); numbers follow the display
- * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h (nothing unread), or shelved by hand, into a condensed list below the tree
+ * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h, or shelved by hand, into a condensed list below the tree
  * @returns {Promise<{ targets: Map<number, string>, rows: Object[] }>} `targets`: shown selectors that can be opened (exited fork parents
  * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session.
  * `rows`: the same in display order as { number, target, tmux_name, unread, line }, `line` being its index among the
@@ -772,15 +774,16 @@ export const render_active_sessions = async ( {
     before_print()
 
     const now = Date.now()
-    // Idle over 24h, or shelved by hand since the last finished turn
+    // Idle over 24h (unread or not), or shelved by hand since the last finished turn
     const is_idle = tmux => {
-        if( !idle_section ) return false
-        const status = session_status( tmux, by_tmux.get( tmux.name ) )
-        return session_dot( tmux, status, now ) === `stale`
-            || ( status === `idle` && tmux.shelved_since >= ( tmux.idle_since || 0 ) )
+        if( !idle_section || session_status( tmux, by_tmux.get( tmux.name ) ) !== `idle` ) return false
+        const idle_over_a_day = tmux.idle_since && now - tmux.idle_since * 1_000 > STALE_AFTER_MS
+        return Boolean( idle_over_a_day ) || tmux.shelved_since >= ( tmux.idle_since || 0 )
     }
     const active = observed_sessions.filter( tmux => !is_idle( tmux ) )
+    // The flat list has no workspaces to group by: pure recency
     const idle = observed_sessions.filter( is_idle )
+    if( recent_first ) idle.sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
 
     // With an idle section the selectors follow the display: active first, then idle
     const shown = [ ...active, ...idle ]
