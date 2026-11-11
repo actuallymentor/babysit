@@ -730,7 +730,7 @@ export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
  * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h, or shelved by hand, into a condensed list below the tree
  * @returns {Promise<{ targets: Map<number, string>, rows: Object[] }>} `targets`: shown selectors that can be opened (exited fork parents
  * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session.
- * `rows`: the same in display order as { number, target, tmux_name, unread, line }, `line` being its index among the
+ * `rows`: the same in display order as { number, target, tmux_name, name, status, unread, line }, `line` being its index among the
  * lines printed (the table starts at line 0 of the output).
  */
 export const render_active_sessions = async ( {
@@ -823,6 +823,8 @@ export const render_active_sessions = async ( {
             number: numbers.get( tmux.name ),
             target: by_tmux.get( tmux.name )?.babysit_id || tmux.name,
             tmux_name: tmux.name,
+            name: by_tmux.get( tmux.name )?.name || tmux.name,
+            status: session_status( tmux, by_tmux.get( tmux.name ) ),
             unread: Boolean( tmux.unread ),
             line,
         } ) )

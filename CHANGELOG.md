@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Changed
-- `babysit watch` (and the list after detaching): ↑/↓ select a session, enter opens it, space marks an unread one read, `e` moves it to the idle list (until its next finished turn); typing a number still works. Sessions sort by when you last opened them (never by activity; never-opened ones sink), so numbers move when that changes (the cursor follows its session). Sessions idle over 24h (unread ones keep their dot) move to a condensed `folder/repo - name - Nd Nh` list ("Idle resumable sessions:") below the tree. `list`/`open`/`close` numbering is unchanged.
+- `babysit watch` (and the list after detaching): ↑/↓ select a session, enter opens it, space marks an unread one read, `e` moves it to the idle list (until its next finished turn); `f` freezes/unfreezes, `r` restarts (`rr` unless the session is idle, then forced), `?` lists the shortcuts; typing a number still works. Sessions sort by when you last opened them (never by activity; never-opened ones sink), so numbers move when that changes (the cursor follows its session). Sessions idle over 24h (unread ones keep their dot) move to a condensed `folder/repo - name - Nd Nh` list ("Idle resumable sessions:") below the tree. `list`/`open`/`close` numbering is unchanged.
 
 ## 2.2.1 — 2026-11-10
 

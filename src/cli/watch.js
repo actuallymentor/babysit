@@ -1,4 +1,5 @@
 import { watch } from 'node:fs'
+import { spawn } from 'node:child_process'
 
 import { opencode_model_flag } from '../agents/opencode.js'
 import { DEFAULT_ACCOUNT, collect_account_usage, list_claude_accounts } from './claude_accounts.js'
@@ -20,12 +21,54 @@ const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
 // CSI (ESC [ … final), SS3 (ESC O x) and Alt+key (ESC x) sequences
 const ESCAPE_SEQUENCE = /(\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S]|[ -~]))/
 // Arrow keys, in normal and application cursor mode; every other sequence is dropped
+const ESCAPE_SEQUENCE_ALL = /\x1b\[[\d;]*[A-Za-z]/g
 const ARROWS = { '\x1b[A': `up`, '\x1bOA': `up`, '\x1b[B': `down`, '\x1bOB': `down` }
 export const USAGE_REFRESH_MS = 5 * 60_000
 
 // The storage check itself runs at most hourly; this is only how often to ask
 const DISK_HEALTH_POLL_MS = 60_000
 const BAR_CELLS = 10
+// How long a result or the "press r again" prompt stays up
+const NOTICE_MS = 4_000
+const ARM_MS = 3_000
+
+const HELP = [
+    `Keyboard shortcuts`,
+    ``,
+    `  ↑ ↓        select a session`,
+    `  enter      open the selected session`,
+    `  0-9        type a session number to open it`,
+    `  space      mark an unread session read`,
+    `  e          move to the idle list (until its next finished turn)`,
+    `  f          freeze / unfreeze (Docker sessions)`,
+    `  r          restart; rr when the session is not idle`,
+    `  ?          this help`,
+    `  q, ctrl+c  quit`,
+]
+
+/**
+ * Run a babysit command in the background, outliving Ctrl+C in this terminal
+ * (a restart takes minutes and must not be cut short). Output stays off the
+ * dashboard; its first line is the result (errors lead, stack frames follow).
+ * @param {string[]} args - babysit arguments
+ * @returns {Promise<{ ok: boolean, out: string }>}
+ */
+const run_babysit = args => new Promise( resolve => {
+
+    // Bun-compiled binaries put a synthetic /$bunfs path in argv[1]; node puts the script
+    const script = process.argv[1] || ``
+    const compiled = script.startsWith( `/$bunfs` ) || script === ``
+    const child = spawn( process.execPath, compiled ? args : [ script, ...args ], { detached: true, stdio: [ `ignore`, `pipe`, `pipe` ] } )
+
+    let output = ``
+    const collect = chunk => output += chunk
+    child.stdout.on( `data`, collect )
+    child.stderr.on( `data`, collect )
+    child.on( `error`, error => resolve( { ok: false, out: error.message } ) )
+    child.on( `close`, code => resolve( { ok: code === 0, out: output.replace( ESCAPE_SEQUENCE_ALL, `` ).trim().split( `\n` )[0] || `` } ) )
+    child.unref()
+
+} )
 
 const visible_length = text => text.replace( /\x1b\[[\d;]*m/g, `` ).length
 const pad = ( text, width ) => text + ` `.repeat( Math.max( 0, width - visible_length( text ) ) )
@@ -294,7 +337,8 @@ const watch_registry = on_change => {
  * Sessions sort by last opened, so numbers move when that changes. Ones idle over
  * 24h (nothing unread) drop into a condensed list below the tree.
  * `--interactive`: ↑/↓ select a session (the selection follows it across
- * re-sorts), enter opens it, space marks an unread one read, e moves it to the idle list; typing its number
+ * re-sorts), enter opens it, space marks an unread one read, e moves it to the idle list,
+ * f freezes/unfreezes it, r restarts it (rr unless idle), ? lists the shortcuts; typing its number
  * opens it too. Detaching (or the session closing) comes back here. Under the shell-init wrapper babysit exits instead
  * and the wrapper attaches, then runs `babysit watch --interactive` again.
  * Usage refreshes every 5 min in the background so frames never wait on providers.
@@ -320,6 +364,7 @@ const watch_registry = on_change => {
  * @param {Function} [deps.open_fn] - Session opener
  * @param {Function} [deps.mark_read_fn] - Clears a session's unread stamp, by tmux name
  * @param {Function} [deps.shelve_fn] - Moves a session to the idle list, by tmux name
+ * @param {Function} [deps.run_fn] - Runs a babysit command in the background (freeze, restart), resolves { ok, out }
  * @param {Function} [deps.attach_count_fn] - In-process attach counter
  * @param {number} [deps.rounds] - Frame count; endless by default
  */
@@ -340,6 +385,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     open_fn = cmd_open,
     mark_read_fn = mark_read,
     shelve_fn = shelve_session,
+    run_fn = run_babysit,
     attach_count_fn = foreground_attach_count,
     rounds = Infinity,
 } = {} ) => {
@@ -412,9 +458,16 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         // Display-order rows and the one under the cursor, tracked by id so a re-sort cannot move it
         let rows = []
         let selected = null
+        let help = false
+        // One-line result or prompt above the footer; `armed` is the session awaiting a second r
+        let notice = ``
+        let armed = null
+        let notice_timer = null
 
         const footer = () => interactive
-            ? `↑↓ select · enter open · space mark read · e idle · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
+            ? help
+                ? `any key to go back`
+                : `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
             : `Live; Ctrl+C to stop.`
 
         // The cursor replaces the two-space gutter every table and list line starts with
@@ -424,7 +477,8 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
         // Writes only what changed on screen; key presses repaint just the footer and cursor
         const show = () => {
-            const frame = paint_frame( [ ...body.map( highlight ), paint( footer(), `dim` ) ] )
+            const lines = help ? HELP : [ ...body.map( highlight ), ...notice ? [ notice ] : [] ]
+            const frame = paint_frame( [ ...lines, paint( footer(), `dim` ) ] )
             if( frame !== shown ) write_fn( frame )
             shown = frame
         }
@@ -456,6 +510,56 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             Promise.resolve( mark_read_fn( row.tmux_name ) ).then( () => wake() )
         }
 
+        // Late results never draw over an attach or the restored terminal
+        const tell = ( text, ms = NOTICE_MS ) => {
+            if( stopped ) return
+            clearTimeout( notice_timer )
+            notice = text
+            if( text && ms ) notice_timer = setTimeout( () => tell( `` ), ms )
+            show()
+        }
+
+        // Runs babysit in the background and reports back; the next frame shows the new state
+        const background = ( row, args, { doing, done } ) => {
+            tell( `${ doing } ${ row.name }…`, 0 )
+            run_fn( args ).then( ( { ok, out } ) => {
+                tell( ok ? done( out ) : paint( `${ row.name }: ${ out || `failed` }`, `red` ) )
+                wake()
+            } )
+        }
+
+        const freeze_selected = () => {
+            const row = rows.find( row => row.target === selected )
+            if( !row ) return
+            const frozen = row.status === `frozen`
+            background( row, [ frozen ? `unfreeze` : `freeze`, row.target ], {
+                doing: frozen ? `unfreezing` : `freezing`,
+                done: out => out || `${ frozen ? `unfroze` : `froze` } ${ row.name }`,
+            } )
+        }
+
+        // An idle session restarts at once; anything else (mid-turn work would be
+        // cut off) needs the key twice, and the restart is then forced
+        const restart_selected = was_armed => {
+            const row = rows.find( row => row.target === selected )
+            if( !row ) return
+            const idle = row.status === `idle`
+            if( !idle && was_armed !== row.target ) {
+                armed = row.target
+                clearTimeout( notice_timer )
+                notice_timer = setTimeout( () => {
+                    armed = null
+                    tell( `` )
+                }, ARM_MS )
+                notice = paint( `${ row.name } is ${ row.status }: press r again to restart`, `yellow` )
+                return show()
+            }
+            background( row, [ `restart`, row.target, `--detach`, ...idle ? [] : [ `--force` ] ], {
+                doing: `restarting`,
+                done: () => `restarted ${ row.name }`,
+            } )
+        }
+
         // Shelves the selected session; it lands in the idle list on the next frame
         const shelve_selected = () => {
             const row = rows.find( row => row.target === selected )
@@ -472,6 +576,22 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             if( stopped || !interactive ) return
 
             clearTimeout( chord )
+            if( help ) {
+                help = false
+                return show()
+            }
+
+            // Any key but a second r calls off the restart prompt
+            const was_armed = armed
+            armed = null
+            if( was_armed && key !== `r` ) tell( `` )
+
+            if( key === `?` ) {
+                help = true
+                return show()
+            }
+            if( key === `f` ) return freeze_selected()
+            if( key === `r` ) return restart_selected( was_armed )
             if( key === `up` || key === `down` ) return move( key === `up` ? -1 : 1 )
             if( key === ` ` ) return read_selected()
             if( key === `e` ) return shelve_selected()
@@ -587,6 +707,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             clearTimeout( chord )
             clearTimeout( settle )
             clearTimeout( tick )
+            clearTimeout( notice_timer )
             stop_watching()
             SIGNALS.forEach( signal => process.off( signal, on_signal ) )
             output?.off?.( `resize`, resize )

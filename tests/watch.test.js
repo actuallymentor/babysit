@@ -511,7 +511,7 @@ describe( `cmd_watch`, () => {
         } )
 
         // Rows as render_active_sessions reports them: display order, one line each after `tree`
-        const row_run = async ( keys, rows, { marked = [], shelved = [] } = {} ) => {
+        const row_run = async ( keys, rows, { marked = [], shelved = [], ran = [] } = {} ) => {
             const input = keyboard( keys )
             const opened = []
             const frames = []
@@ -536,12 +536,17 @@ describe( `cmd_watch`, () => {
                 open_fn: async ( { session_id } ) => opened.push( session_id ),
                 mark_read_fn: async name => marked.push( name ),
                 shelve_fn: async name => shelved.push( name ),
+                run_fn: async args => ran.push( args ) && { ok: true, out: `` },
                 attach_count_fn: () => 0,
             } )
             return { opened, frames }
         }
 
-        const rows = [ { number: 1, target: `a` }, { number: 2, target: `b` }, { number: 3, target: `c`, unread: true } ]
+        const rows = [
+            { number: 1, target: `a`, name: `A`, status: `idle` },
+            { number: 2, target: `b`, name: `B`, status: `running` },
+            { number: 3, target: `c`, name: `C`, status: `frozen`, unread: true },
+        ]
 
         it( `opens the first session on enter, the one arrowed to otherwise`, async () => {
             expect( ( await row_run( [ `\r` ], rows ) ).opened ).toEqual( [ `a` ] )
@@ -573,6 +578,39 @@ describe( `cmd_watch`, () => {
             expect( shelved ).toEqual( [ `tmux_b` ] )
         } )
 
+        it( `freezes a running session and unfreezes a frozen one with f`, async () => {
+            const ran = []
+            await row_run( [ `\x1b[B`, `f`, `\x1b[B`, `f` ], rows, { ran } )
+            expect( ran ).toEqual( [ [ `freeze`, `b` ], [ `unfreeze`, `c` ] ] )
+        } )
+
+        it( `restarts an idle session on one r`, async () => {
+            const ran = []
+            await row_run( [ `r` ], rows, { ran } )
+            expect( ran ).toEqual( [ [ `restart`, `a`, `--detach` ] ] )
+        } )
+
+        it( `needs rr, and forces, when the session is not idle`, async () => {
+            const ran = []
+            await row_run( [ `\x1b[B`, `r` ], rows, { ran } )
+            expect( ran ).toEqual( [] )
+            await row_run( [ `\x1b[B`, `rr` ], rows, { ran } )
+            expect( ran ).toEqual( [ [ `restart`, `b`, `--detach`, `--force` ] ] )
+        } )
+
+        it( `calls off the restart prompt on any other key`, async () => {
+            const ran = []
+            await row_run( [ `\x1b[B`, `r`, `\x1b[A`, `\x1b[B`, `r` ], rows, { ran } )
+            expect( ran ).toEqual( [] )
+        } )
+
+        it( `shows the shortcuts on ? and goes back on any key`, async () => {
+            const { frames, opened } = await row_run( [ `?`, `x`, `\r` ], rows )
+            expect( frames.some( frame => plain( frame ).includes( `Keyboard shortcuts` ) ) ).toBe( true )
+            expect( plain( frames.at( -1 ) ) ).not.toContain( `Keyboard shortcuts` )
+            expect( opened ).toEqual( [ `a` ] )
+        } )
+
         it( `still opens by typed number`, async () => {
             expect( ( await row_run( [ `\x1b[B`, `3` ], rows ) ).opened ).toEqual( [ `c` ] )
         } )
@@ -585,7 +623,7 @@ describe( `cmd_watch`, () => {
                 render_sessions_fn: async () => ( { targets: new Map( [ [ 1, `id1` ] ] ) } ),
                 write_fn: text => frames.push( text ),
             } )
-            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · space mark read · e idle · or type a number · ctrl+c close` )
+            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c close` )
         } )
 
     } )
