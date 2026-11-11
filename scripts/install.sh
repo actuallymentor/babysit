@@ -167,6 +167,11 @@ chmod +x "$TMPFILE"
 mkdir -p "$INSTALL_DIR"
 mv "$TMPFILE" "${INSTALL_DIR}/babysit"
 
+# `sit` is the short name for babysit. Never replace a different program called sit.
+if [ ! -e "${INSTALL_DIR}/sit" ] || [ -L "${INSTALL_DIR}/sit" ]; then
+    ln -sf babysit "${INSTALL_DIR}/sit"
+fi
+
 echo ""
 echo "✓ babysit installed to ${INSTALL_DIR}/babysit"
 

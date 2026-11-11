@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync } from 'fs'
 import { basename } from 'path'
 import { WRAPPER_ENV } from '../utils/wrapper_env.js'
+import { completion_script } from './completion.js'
 
 // A process cannot change its parent shell's directory. These wrappers hand
 // babysit a file to write the target into, then `cd` there once it exits.
@@ -27,7 +28,8 @@ const POSIX = `babysit() {
         [ -t 0 ] && [ -t 1 ] || return $babysit_status
         set -- watch --interactive
     done
-}`
+}
+sit() { babysit "$@"; }`
 
 const FISH = `function babysit
     while true
@@ -44,16 +46,18 @@ const FISH = `function babysit
         isatty stdin; and isatty stdout; or return $babysit_status
         set argv watch --interactive
     end
-end`
+end
+function sit; babysit $argv; end`
 
 export const SHELLS = [ `bash`, `zsh`, `fish` ]
 
 /**
- * The shell function that lets `babysit open` move this shell into the session's base directory.
+ * The shell function that lets `babysit open` move this shell into the session's base directory,
+ * plus tab completion for babysit's words and flags.
  * @param {string} [shell] - bash, zsh or fish; defaults to $SHELL
  * @returns {string} Function source for `eval`
  */
-export const shell_init_script = ( shell = basename( process.env.SHELL || `bash` ) ) => shell === `fish` ? FISH : POSIX
+export const shell_init_script = ( shell = basename( process.env.SHELL || `bash` ) ) => `${ shell === `fish` ? FISH : POSIX }\n${ completion_script( shell ) }`
 
 /** Print the wrapper: `eval "$(babysit shell-init)"` in ~/.bashrc or ~/.zshrc, `babysit shell-init fish | source` in fish. */
 export const cmd_shell_init = cmd => console.log( shell_init_script( cmd.shell || undefined ) )

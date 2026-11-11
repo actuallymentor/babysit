@@ -473,7 +473,7 @@ const is_unread = ( { unread_since, activity, last_attached } ) => {
  * @param {Object} [options]
  * @param {boolean} [options.strict=false] - Surface inspection failures except an absent tmux server
  * @param {Function} [options.run_command=run] - Injectable command runner
- * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null, last_opened: number|null, shelved_since: number|null }>>}
+ * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null, last_opened: number|null, shelved_since: number|null, pane_title: string|null }>>}
  */
 export const list_sessions = async ( { strict = false, run_command = run } = {} ) => {
 
@@ -482,14 +482,15 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
             `-L`, TMUX_SOCKET,
             `list-sessions`, `-F`,
             // Tmux 3.3a sanitizes literal tabs in formats into underscores.
-            // Colons survive formatting and cannot occur in session names.
-            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{session_activity}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}:#{${ SHELVED_OPTION }}`,
+            // Colons survive formatting and cannot occur in session names; the
+            // pane title goes last because agents put colons in theirs.
+            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{session_activity}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}:#{${ SHELVED_OPTION }}:#{pane_title}`,
         ] )
 
         return output.split( `\n` )
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
-                const [ name, tmux_status, created, stored_agent_status, last_attached, activity, unread_since, idle_stamp, next_stamp, shelved_stamp ] = line.split( `:` )
+                const [ name, tmux_status, created, stored_agent_status, last_attached, activity, unread_since, idle_stamp, next_stamp, shelved_stamp, ...title_parts ] = line.split( `:` )
                 const agent_status = [ `idle`, `waiting` ].includes( stored_agent_status ) ? stored_agent_status : `running`
                 const attached = tmux_status === `attached`
                 const unread = is_unread( { unread_since, activity, last_attached } )
@@ -498,7 +499,7 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
                 const next_turn = Number( next_stamp ) > 0 ? Number( next_stamp ) : null
                 // Only a human attach counts: a session nobody opened (loops, restarts) has no rank
                 const last_opened = Number( last_attached ) > 0 ? Number( last_attached ) : null
-                return { name, attached, created, agent_status, unread, idle_since, next_turn, last_opened, shelved_since: Number( shelved_stamp ) > 0 ? Number( shelved_stamp ) : null }
+                return { name, attached, created, agent_status, unread, idle_since, next_turn, last_opened, shelved_since: Number( shelved_stamp ) > 0 ? Number( shelved_stamp ) : null, pane_title: title_parts.join( `:` ) || null }
             } )
 
     } catch ( error ) {

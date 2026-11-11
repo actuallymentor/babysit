@@ -11,6 +11,7 @@ import { cmd_open } from './open.js'
 import { take_exit_notice, watch_follows } from './exit_notice.js'
 import { foreground_attach_count, mark_read, shelve_session } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
+import { update_session } from '../sessions/store.js'
 import { disk_warnings, read_disk_health, refresh_disk_health } from '../disk_health.js'
 
 const FRAME_MS = 1_000
@@ -41,6 +42,7 @@ const HELP = [
     `  0-9        type a session number to open it`,
     `  space      mark an unread session read`,
     `  e          move to the idle list (until its next finished turn)`,
+    `  i          show / hide each session's task title`,
     `  f          freeze / unfreeze (Docker sessions)`,
     `  r          restart; rr when the session is not idle`,
     `  ?          this help`,
@@ -339,6 +341,7 @@ const watch_registry = on_change => {
  * 24h (nothing unread) drop into a condensed list below the tree.
  * `--interactive`: ↑/↓ select a session (the selection follows it across
  * re-sorts), enter opens it, space marks an unread one read, e moves it to the idle list,
+ * i toggles task titles (the agent's own terminal title, saved on the session),
  * f freezes/unfreezes it, r restarts it (rr unless idle), ? lists the shortcuts; typing its number
  * opens it too. Detaching (or the session closing) comes back here. Under the shell-init wrapper babysit exits instead
  * and the wrapper attaches, then runs `babysit watch --interactive` again.
@@ -365,6 +368,7 @@ const watch_registry = on_change => {
  * @param {Function} [deps.open_fn] - Session opener
  * @param {Function} [deps.mark_read_fn] - Clears a session's unread stamp, by tmux name
  * @param {Function} [deps.shelve_fn] - Moves a session to the idle list, by tmux name
+ * @param {Function} [deps.save_title_fn] - Saves a session's task title on its record, by babysit id
  * @param {Function} [deps.run_fn] - Runs a babysit command in the background (freeze, restart), resolves { ok, out }
  * @param {Function} [deps.attach_count_fn] - In-process attach counter
  * @param {number} [deps.rounds] - Frame count; endless by default
@@ -387,6 +391,7 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
     mark_read_fn = mark_read,
     shelve_fn = shelve_session,
     run_fn = run_babysit,
+    save_title_fn = ( id, title ) => update_session( id, { title } ),
     attach_count_fn = foreground_attach_count,
     rounds = Infinity,
 } = {} ) => {
@@ -437,6 +442,9 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
     const show_sessions = !flags.usage || flags.all
     const show_panel = flags.usage || flags.all
     const interactive = Boolean( flags.interactive ) && show_sessions
+    // Kept across attaches: it is a view preference
+    let show_titles = false
+    const saving = new Set()
     const keyboard = Boolean( input?.isTTY )
     const screen = Boolean( output?.isTTY )
 
@@ -473,6 +481,17 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
                 : `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
             : `Live; Ctrl+C to stop.`
 
+        // With titles on, each titled row gets a dim line under it. `highlight` keys on
+        // the line's index in `body`, so the added lines carry no index of their own.
+        const titled = lines => {
+            if( !show_titles ) return lines.map( ( line, index ) => ( { line, index } ) )
+            const title_after = new Map( rows.filter( row => row.title ).map( row => [ row.line, row.title ] ) )
+            return lines.flatMap( ( line, index ) => [
+                { line, index },
+                ...title_after.has( index ) ? [ { line: paint( `        ↳ ${ title_after.get( index ) }`, `dim` ), index: -1 } ] : [],
+            ] )
+        }
+
         // The cursor replaces the two-space gutter every table and list line starts with
         const highlight = ( line, index ) => interactive && rows.some( row => row.target === selected && row.line === index ) && line.startsWith( `  ` )
             ? `${ paint( `›`, `blue` ) } ${ line.slice( 2 ) }`
@@ -480,7 +499,7 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
 
         // Writes only what changed on screen; key presses repaint just the footer and cursor
         const show = () => {
-            const lines = help ? HELP : [ ...body.map( highlight ), ...notice ? [ notice ] : [] ]
+            const lines = help ? HELP : [ ...titled( body ).map( ( { line, index } ) => highlight( line, index ) ), ...notice ? [ notice ] : [] ]
             const frame = paint_frame( [ ...lines, paint( footer(), `dim` ) ] )
             if( frame !== shown ) write_fn( frame )
             shown = frame
@@ -602,6 +621,10 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
             if( key === `up` || key === `down` ) return move( key === `up` ? -1 : 1 )
             if( key === ` ` ) return read_selected()
             if( key === `e` ) return shelve_selected()
+            if( key === `i` ) {
+                show_titles = !show_titles
+                return show()
+            }
             if( key === `\r` ) return typed ? choose( Number( typed ) ) : selected === null ? undefined : stop( selected )
             if( key === `\x7f` || key === `\x1b` ) {
                 typed = ``
@@ -702,6 +725,14 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
                     selected = next_rows[ Math.min( at, next_rows.length - 1 ) ]?.target ?? null
                 }
                 rows = next_rows
+
+                // Keep the agent's latest title on the record, so it outlives the pane
+                next_rows.filter( row => row.fresh_title && !saving.has( row.target ) ).forEach( row => {
+                    saving.add( row.target )
+                    Promise.resolve( save_title_fn( row.target, row.title ) )
+                        .catch( failure => log.debug( `watch title save failed: ${ failure.message }` ) )
+                        .finally( () => saving.delete( row.target ) )
+                } )
                 body = frame.lines
                 if( !stopped ) show()
 

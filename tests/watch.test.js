@@ -511,7 +511,7 @@ describe( `cmd_watch`, () => {
         } )
 
         // Rows as render_active_sessions reports them: display order, one line each after `tree`
-        const row_run = async ( keys, rows, { marked = [], shelved = [], ran = [] } = {} ) => {
+        const row_run = async ( keys, rows, { marked = [], shelved = [], ran = [], saved = [] } = {} ) => {
             const input = keyboard( keys )
             const opened = []
             const frames = []
@@ -537,13 +537,14 @@ describe( `cmd_watch`, () => {
                 mark_read_fn: async name => marked.push( name ),
                 shelve_fn: async name => shelved.push( name ),
                 run_fn: async args => ran.push( args ) && { ok: true, out: `` },
+                save_title_fn: async ( id, title ) => saved.push( [ id, title ] ),
                 attach_count_fn: () => 0,
             } )
             return { opened, frames }
         }
 
         const rows = [
-            { number: 1, target: `a`, name: `A`, status: `idle` },
+            { number: 1, target: `a`, name: `A`, status: `idle`, title: `Fix the login bug`, fresh_title: true },
             { number: 2, target: `b`, name: `B`, status: `running` },
             { number: 3, target: `c`, name: `C`, status: `frozen`, unread: true },
         ]
@@ -609,6 +610,23 @@ describe( `cmd_watch`, () => {
             expect( frames.some( frame => plain( frame ).includes( `Keyboard shortcuts` ) ) ).toBe( true )
             expect( plain( frames.at( -1 ) ) ).not.toContain( `Keyboard shortcuts` )
             expect( opened ).toEqual( [ `a` ] )
+        } )
+
+        it( `shows each session's title under its row on i, and hides it on a second i`, async () => {
+            const on = plain( ( await row_run( [ `i` ], rows ) ).frames.at( -1 ) ).split( `\r\n` )
+            expect( on[1] ).toStartWith( `› a` )
+            expect( on[2] ).toContain( `↳ Fix the login bug` )
+            expect( on[3] ).toStartWith( `  b` )
+            const off = plain( ( await row_run( [ `i`, `i` ], rows ) ).frames.at( -1 ) )
+            expect( off ).not.toContain( `Fix the login bug` )
+        } )
+
+        it( `saves a title that differs from the saved one`, async () => {
+            const saved = []
+            await row_run( [], rows, { saved } )
+            // The fixture keeps reporting it fresh; a real record stops that after the first save
+            expect( saved.length ).toBeGreaterThan( 0 )
+            saved.forEach( entry => expect( entry ).toEqual( [ `a`, `Fix the login bug` ] ) )
         } )
 
         it( `still opens by typed number`, async () => {

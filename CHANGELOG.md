@@ -1,9 +1,13 @@
 # Changelog
 
-## Unreleased
+## 2.3.0 — 2026-11-11
+
+### Added
+- `sit`: short name for `babysit` (`sit open`, `sit watch`). The installer and `babysit update` link it next to the binary (an existing different `sit` is left alone); `shell-init` defines it too, so `sit open` still moves your shell.
+- Tab completion: `eval "$(babysit shell-init)"` (bash, zsh, fish) now also completes commands, agents, flags and subcommands, generated from the same registry as the parser. `babysit op<TAB>` completes to `open`/`opencode`. Re-run `shell-init` (reload your shell) to pick it up. zsh and fish are untested.
 
 ### Changed
-- `babysit watch` (and the list after detaching): ↑/↓ select a session, enter opens it, space marks an unread one read, `e` moves it to the idle list (until its next finished turn); `f` freezes/unfreezes, `r` restarts (`rr` unless the session is idle, then forced), `?` lists the shortcuts; typing a number still works. Sessions sort by when you last opened them (never by activity; never-opened ones sink), so numbers move when that changes (the cursor follows its session). Sessions idle over 24h (unread ones keep their dot) move to a condensed `folder/repo - name - Nd Nh` list ("Idle resumable sessions:") below the tree. `list`/`open`/`close` numbering is unchanged. On a terminal, the `Detached. Re-attach with…` / `To resume…` lines no longer print before the watch opens; the watch shows them as a dim line until the first key. Scripts keep the plain print.
+- `babysit watch` (and the list after detaching): ↑/↓ select a session, enter opens it, space marks an unread one read, `e` moves it to the idle list (until its next finished turn); `f` freezes/unfreezes, `r` restarts (`rr` unless the session is idle, then forced), `?` lists the shortcuts; `i` shows/hides each session's task title (the agent's own terminal title, saved on the session record); typing a number still works. Sessions sort by when you last opened them (never by activity; never-opened ones sink), so numbers move when that changes (the cursor follows its session). Sessions idle over 24h (unread ones keep their dot) move to a condensed `folder/repo - name - Nd Nh` list ("Idle resumable sessions:") below the tree. `list`/`open`/`close` numbering is unchanged. On a terminal, the `Detached. Re-attach with…` / `To resume…` lines no longer print before the watch opens; the watch shows them as a dim line until the first key. Scripts keep the plain print.
 
 ## 2.2.1 — 2026-11-10
 

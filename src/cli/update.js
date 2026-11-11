@@ -1,5 +1,5 @@
-import { existsSync, chmodSync, mkdirSync, accessSync, openSync, readFileSync, writeFileSync, constants as fs_constants } from 'fs'
-import { dirname, join } from 'path'
+import { existsSync, chmodSync, mkdirSync, accessSync, openSync, readFileSync, writeFileSync, lstatSync, rmSync, symlinkSync, constants as fs_constants } from 'fs'
+import { basename, dirname, join } from 'path'
 import { tmpdir, platform, arch, homedir } from 'os'
 import { fileURLToPath } from 'url'
 import { spawn } from 'child_process'
@@ -191,6 +191,7 @@ const update_babysit_binary = async () => {
         // matches the install.sh `mkdir -p`.
         mkdirSync( dirname( target ), { recursive: true } )
         await run( `mv`, [ tmpfile, target ] )
+        link_short_name( target )
         console.log( `      ✓ installed v${ latest_version } to ${ target }\n` )
     } catch ( e ) {
         console.log( `      ✗ install failed: ${ e.message }` )
@@ -217,6 +218,24 @@ const print_migration_notice = ( old_path, new_path ) => {
     console.log( `` )
     console.log( `      Make sure ${ dirname( new_path ) } comes before ${ dirname( old_path ) } on PATH,` )
     console.log( `      otherwise the legacy binary will keep shadowing the new one.\n` )
+}
+
+/**
+ * `sit` is the short name for babysit: a symlink next to the binary. A different
+ * program already called sit stays untouched.
+ * @param {string} target - Installed babysit binary
+ */
+const link_short_name = target => {
+
+    const link = join( dirname( target ), `sit` )
+    try {
+        if( existsSync( link ) && !lstatSync( link ).isSymbolicLink() ) return
+        rmSync( link, { force: true } )
+        symlinkSync( basename( target ), link )
+    } catch ( e ) {
+        console.log( `      (could not link ${ link }: ${ e.message })` )
+    }
+
 }
 
 const print_path_warning = () => {

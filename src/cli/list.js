@@ -42,6 +42,46 @@ export const format_last_opened = ( opened_at, now = Date.now() ) => {
     return `${ Math.floor( hours / 24 ) }d ${ hours % 24 }h`
 }
 
+// Titles agents set before they have named the thread: tmux's default (a container
+// id), the product name, or just the working directory
+const PLACEHOLDER_TITLE = /^(?:[0-9a-f]{12}|workspace|claude code|codex|opencode)$/i
+
+/**
+ * The task title an agent puts in its terminal title, minus decoration.
+ * Claude sends `✳ Task title`, Codex `⠧ Task title | dir` (spinner only while
+ * working). Placeholders and bare directory names read as no title yet.
+ * @param {string|null} raw - tmux pane title
+ * @param {Object} [context]
+ * @param {string} [context.pwd] - Session working directory
+ * @param {string} [context.tmux_name] - tmux session name
+ * @returns {string|null}
+ */
+export const clean_pane_title = ( raw, { pwd = ``, tmux_name = `` } = {} ) => {
+
+    const title = String( raw ?? `` )
+        // eslint-disable-next-line no-control-regex
+        .replace( /[\x00-\x1f\x7f-\x9f]/g, `` )
+        .replace( /^[^\p{L}\p{N}]+/u, `` )
+        .replace( /\s+\|\s+[^|]*$/, `` )
+        .trim()
+        .slice( 0, 120 )
+
+    const folder = String( pwd ).split( /[\\/]+/ ).filter( Boolean ).at( -1 )
+    return !title || PLACEHOLDER_TITLE.test( title ) || title === folder || title === tmux_name ? null : title
+
+}
+
+/**
+ * A session's task title: the agent's live one, else the last one saved.
+ * @param {Object} tmux - Active tmux session ({ pane_title, name })
+ * @param {Object|undefined} stored - Its stored record
+ * @returns {{ title: string|null, fresh_title: boolean }} `fresh_title`: the live title differs from the saved one, so it is worth saving
+ */
+const session_title = ( tmux, stored ) => {
+    const live = clean_pane_title( tmux.pane_title, { pwd: stored?.pwd, tmux_name: tmux.name } )
+    return { title: live || stored?.title || null, fresh_title: Boolean( live && live !== stored?.title ) }
+}
+
 /**
  * Displayed status of one session. An exited fork parent has no activity; a
  * frozen container (`babysit freeze`) has none either; a `babysit stuck` flag
@@ -730,7 +770,7 @@ export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
  * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h, or shelved by hand, into a condensed list below the tree
  * @returns {Promise<{ targets: Map<number, string>, rows: Object[] }>} `targets`: shown selectors that can be opened (exited fork parents
  * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session.
- * `rows`: the same in display order as { number, target, tmux_name, name, status, unread, line }, `line` being its index among the
+ * `rows`: the same in display order as { number, target, tmux_name, name, status, title, fresh_title, unread, line }, `line` being its index among the
  * lines printed (the table starts at line 0 of the output).
  */
 export const render_active_sessions = async ( {
@@ -825,6 +865,7 @@ export const render_active_sessions = async ( {
             tmux_name: tmux.name,
             name: by_tmux.get( tmux.name )?.name || tmux.name,
             status: session_status( tmux, by_tmux.get( tmux.name ) ),
+            ...session_title( tmux, by_tmux.get( tmux.name ) ),
             unread: Boolean( tmux.unread ),
             line,
         } ) )

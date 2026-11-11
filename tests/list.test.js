@@ -10,6 +10,7 @@ import {
     format_countdown,
     format_last_opened,
     render_active_sessions,
+    clean_pane_title,
 } from '../src/cli/list.js'
 
 const capture_console = async ( fn ) => {
@@ -637,6 +638,51 @@ describe( `render_active_sessions recent_first + idle_section`, () => {
         const { output, result } = await render()
         const lines = output.split( `\n` )
         result.rows.forEach( row => expect( lines[ row.line ] ).toContain( ` ${ row.target }` ) )
+    } )
+
+} )
+
+describe( `clean_pane_title`, () => {
+
+    it( `strips the spinner glyph and Codex's directory suffix`, () => {
+        expect( clean_pane_title( `✳ Background shell sleep test` ) ).toBe( `Background shell sleep test` )
+        expect( clean_pane_title( `⠧ Start background sleep | tmp` ) ).toBe( `Start background sleep` )
+        expect( clean_pane_title( `Run: fix a | b | tmp` ) ).toBe( `Run: fix a | b` )
+    } )
+
+    it( `reads placeholders and bare directory names as no title yet`, () => {
+        const context = { pwd: `/home/me/dev/tmp`, tmux_name: `babysit_x` }
+        expect( clean_pane_title( `5bbed5939b55`, context ) ).toBeNull()
+        expect( clean_pane_title( `⠧ tmp`, context ) ).toBeNull()
+        expect( clean_pane_title( `Claude Code`, context ) ).toBeNull()
+        expect( clean_pane_title( ``, context ) ).toBeNull()
+        expect( clean_pane_title( null, context ) ).toBeNull()
+    } )
+
+} )
+
+describe( `render_active_sessions titles`, () => {
+
+    const render = async ( stored_title, pane_title ) => {
+        let result
+        await capture_console( async () => {
+            result = await render_active_sessions( {
+                version_check_fn: () => ( { latest: null } ),
+                list_sessions_fn: async () => [ { name: `babysit_a`, agent_status: `idle`, pane_title } ],
+                list_stored_sessions_fn: () => [ { tmux_session: `babysit_a`, name: `a`, agent: `codex`, babysit_id: `a`, pwd: `/w/repo`, title: stored_title } ],
+                observe_activity_fn: async sessions => sessions,
+            } )
+        } )
+        return result.rows[0]
+    }
+
+    it( `prefers the live title and flags it for saving when it changed`, async () => {
+        expect( await render( `old`, `✳ New task` ) ).toMatchObject( { title: `New task`, fresh_title: true } )
+        expect( await render( `New task`, `✳ New task` ) ).toMatchObject( { title: `New task`, fresh_title: false } )
+    } )
+
+    it( `falls back to the saved title while the live one is a placeholder`, async () => {
+        expect( await render( `Saved`, `repo` ) ).toMatchObject( { title: `Saved`, fresh_title: false } )
     } )
 
 } )
