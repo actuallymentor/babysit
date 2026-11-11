@@ -446,8 +446,16 @@ export const order_active_sessions = ( listed, stored_sessions, { now = Date.now
 
     // Sessions idle over 24h (or shelved by hand) close the list, newest-opened first,
     // so watch's two sections and `babysit open <n>` count the same way
-    const idle = everything.filter( node => is_idle_session( node, stored_for( node ), now ) )
-        .sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
+    // Same repository sits together: repositories by their newest-opened session, sessions within by recency
+    const idle_nodes = everything.filter( node => is_idle_session( node, stored_for( node ), now ) )
+    const repository = node => stored_for( node )?.pwd || ``
+    const newest = new Map()
+    idle_nodes.forEach( node => newest.set( repository( node ), Math.max( newest.get( repository( node ) ) || 0, node.last_opened || 0 ) ) )
+    const idle = idle_nodes.sort( ( left, right ) =>
+        newest.get( repository( right ) ) - newest.get( repository( left ) )
+        || repository( left ).localeCompare( repository( right ) )
+        || ( right.last_opened || 0 ) - ( left.last_opened || 0 )
+    )
     const parked = new Set( idle )
     return [ ...everything.filter( node => !parked.has( node ) ), ...idle ]
 

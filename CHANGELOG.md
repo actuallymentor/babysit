@@ -4,6 +4,7 @@
 
 ### Changed
 - `babysit watch` is navigable in any terminal, exactly like the list you land on after detaching: arrows + enter, numbers, space, `e`, `f`, `r`/`rr`, `i`, `?`. `--interactive` still forces the keys when stdin is not a terminal; piped output stays a plain live view.
+- The idle list keeps sessions of the same repository next to each other (repositories ordered by their newest-opened session, sessions within by recency); `babysit open` numbers follow.
 
 ## 2.4.0 — 2026-11-11
 

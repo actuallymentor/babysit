@@ -712,6 +712,19 @@ describe( `shared numbering`, () => {
             .toEqual( [ `babysit_c`, `babysit_b`, `babysit_d`, `babysit_a` ] )
     } )
 
+    it( `keeps idle sessions of one repository together, repositories by their newest session`, () => {
+        const pair = [ { id: `x`, hours: 50, pwd: `/w/one` }, { id: `y`, hours: 30, pwd: `/w/two` }, { id: `z`, hours: 70, pwd: `/w/one` } ]
+        const records = pair.map( ( { id, pwd } ) => ( { tmux_session: `babysit_${ id }`, babysit_id: id, agent: `codex`, pwd } ) )
+        const idle = pair.map( ( { id, hours } ) => ( { name: `babysit_${ id }`, agent_status: `idle`, idle_since: ago( hours ), last_opened: ago( hours ) } ) )
+        // y (30h) is the newest; one/two interleave by recency alone, but one's sessions must stay adjacent
+        expect( order_active_sessions( idle, records, { now } ).map( tmux => tmux.name ) ).toEqual( [ `babysit_y`, `babysit_x`, `babysit_z` ] )
+
+        const interleaved = [ ...idle, { name: `babysit_w`, agent_status: `idle`, idle_since: ago( 40 ), last_opened: ago( 40 ) } ]
+        const all = [ ...records, { tmux_session: `babysit_w`, babysit_id: `w`, agent: `codex`, pwd: `/w/two` } ]
+        const names = order_active_sessions( interleaved, all, { now } ).map( tmux => tmux.name )
+        expect( names ).toEqual( [ `babysit_y`, `babysit_w`, `babysit_x`, `babysit_z` ] )
+    } )
+
     it( `is the numbering watch and list print`, async () => {
         let result
         await capture_console( async () => {
