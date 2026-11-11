@@ -215,9 +215,9 @@ describe( `usage_cell`, () => {
 describe( `cmd_watch`, () => {
 
     // Frames go to write_fn; strip the paint escapes so assertions read plain text
-    const run_watch = async ( flags, deps ) => {
+    const run_watch = async ( flags, deps, cmd = {} ) => {
         const frames = []
-        await cmd_watch( { flags }, {
+        await cmd_watch( { flags, ...cmd }, {
             accounts_fn: () => ``,
             disk_health_fn: async () => ( {} ),
             disk_read_fn: () => ( {} ),
@@ -613,6 +613,25 @@ describe( `cmd_watch`, () => {
 
         it( `still opens by typed number`, async () => {
             expect( ( await row_run( [ `\x1b[B`, `3` ], rows ) ).opened ).toEqual( [ `c` ] )
+        } )
+
+        it( `shows the post-attach hint until the first key`, async () => {
+            const input = keyboard( [ `x` ] )
+            const frames = []
+            let drawn = 0
+            await run_watch( { interactive: true }, {
+                rounds: 3,
+                input,
+                collect_fn: async () => report,
+                render_sessions_fn: async () => ( { targets: new Map() } ),
+                write_fn: text => {
+                    frames.push( plain( text ) )
+                    if( drawn++ === 0 ) setTimeout( input.press, 0 )
+                },
+                wait_fn: () => new Promise( resolve => setTimeout( resolve, 5 ) ),
+            }, { notice: `Session ended. Resume with: babysit resume abc` } )
+            expect( frames[0] ).toContain( `babysit resume abc` )
+            expect( frames.at( -1 ) ).not.toContain( `babysit resume abc` )
         } )
 
         it( `asks for a number in the footer`, async () => {

@@ -8,6 +8,7 @@ import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
 import { render_active_sessions, track_session_activity } from './list.js'
 import { cmd_open } from './open.js'
+import { take_exit_notice, watch_follows } from './exit_notice.js'
 import { foreground_attach_count, mark_read, shelve_session } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
 import { disk_warnings, read_disk_health, refresh_disk_health } from '../disk_health.js'
@@ -346,7 +347,7 @@ const watch_registry = on_change => {
  * oversized one adds a warning line that points at `babysit prune`.
  * Codex's app-server fallback stays off: it can rotate tokens outside the auth lease.
  * Ctrl+C or q leaves a cleared terminal behind.
- * @param {Object} [cmd] - Parsed command
+ * @param {Object} [cmd] - Parsed command; `notice` is a line shown until the first key (the post-attach hint)
  * @param {Object} [deps]
  * @param {Function} [deps.collect_fn] - Usage collector seam
  * @param {Function} [deps.disk_health_fn] - Background storage check, resolves to its health record
@@ -368,7 +369,7 @@ const watch_registry = on_change => {
  * @param {Function} [deps.attach_count_fn] - In-process attach counter
  * @param {number} [deps.rounds] - Frame count; endless by default
  */
-export const cmd_watch = async ( { flags = {} } = {}, {
+export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {}, {
     collect_fn = collect_account_usage,
     disk_health_fn = refresh_disk_health,
     disk_read_fn = read_disk_health,
@@ -443,7 +444,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
      * One dashboard run, until Ctrl+C or a chosen session.
      * @returns {Promise<string|null>} The chosen session's babysit id (or tmux name), or null to quit
      */
-    const dashboard = async () => {
+    const dashboard = async ( opening_notice = null ) => {
 
         let body = []
         let shown = null
@@ -460,9 +461,11 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         let selected = null
         let help = false
         // One-line result or prompt above the footer; `armed` is the session awaiting a second r
-        let notice = ``
+        let notice = opening_notice ? paint( opening_notice, `dim` ) : ``
         let armed = null
         let notice_timer = null
+        // The opening notice stays until a key press; results time out instead
+        let sticky = Boolean( opening_notice )
 
         const footer = () => interactive
             ? help
@@ -576,6 +579,10 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             if( stopped || !interactive ) return
 
             clearTimeout( chord )
+            if( sticky ) {
+                sticky = false
+                tell( `` )
+            }
             if( help ) {
                 help = false
                 return show()
@@ -727,9 +734,11 @@ export const cmd_watch = async ( { flags = {} } = {}, {
 
     }
 
+    let opening_notice = first_notice
     while( true ) {
 
-        const session_id = await dashboard()
+        const session_id = await dashboard( opening_notice )
+        opening_notice = null
         if( session_id === null ) break
 
         // A blocking attach comes back here on detach or close. Under the
@@ -756,11 +765,16 @@ export const cmd_watch = async ( { flags = {} } = {}, {
  */
 export const watch_after_detach = async ( {
     watch_fn = cmd_watch,
-    terminal = Boolean( process.stdin.isTTY && process.stdout.isTTY ),
+    terminal = watch_follows(),
 } = {} ) => {
 
-    if( !terminal || !foreground_attach_count() ) return false
-    await watch_fn( { flags: { interactive: true } } )
+    if( !terminal || !foreground_attach_count() ) {
+        // A hint held for a watch that is not coming still reaches the user
+        const held = take_exit_notice()
+        if( held ) console.log( `\n${ held }\n` )
+        return false
+    }
+    await watch_fn( { flags: { interactive: true }, notice: take_exit_notice() } )
     return true
 
 }

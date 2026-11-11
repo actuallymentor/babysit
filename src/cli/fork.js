@@ -12,6 +12,7 @@ import { get_agent, has_accounts, retired_agent_message } from '../agents/index.
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { get_image_name } from '../docker/update.js'
 import { attach_session, list_sessions } from '../tmux/session.js'
+import { post_attach_hint } from './exit_notice.js'
 import { follow_workspace } from './shell_init.js'
 import { list_stored_sessions, session_original_workspace, session_workspace } from '../sessions/store.js'
 import { build_handoff_markdown, read_parent_transcript } from '../sessions/handoff.js'
@@ -633,6 +634,6 @@ export const cmd_fork = async ( cmd, {
     // Like `babysit open`: the shell lands in the base directory (never a clone) and stays there after detaching
     follow( session_original_workspace( session ) )
     await attach( session.tmux_session )
-    console.log( `\nRe-attach with:\n\nbabysit open ${ session.babysit_id }\n` )
+    post_attach_hint( `Detached. Re-attach with: babysit open ${ session.babysit_id }` )
 
 }

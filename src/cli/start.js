@@ -47,6 +47,7 @@ import { launch_auth_cache_contexts, local_auth_state } from '../agents/auth_gat
 import { acquire_host_auth_lease } from '../agents/auth_lease.js'
 import { start_startup_status } from './startup_status.js'
 import { apply_loop } from '../modes/loop.js'
+import { post_attach_hint } from './exit_notice.js'
 import { attach_session, create_session, make_session_name, has_session, list_sessions } from '../tmux/session.js'
 import { send_text } from '../tmux/send.js'
 import { capture_pane, stop_pipe_pane } from '../tmux/capture.js'
@@ -1630,15 +1631,16 @@ const attach_foreground = async ( launch, session_data ) => {
     log.info( `Attaching to tmux session: ${ session_name }` )
     time_phase_sync( `foreground tmux attach`, () => attach_session( session_name, { env: {} } ), { slow_ms: Infinity } )
 
-    // Print the command unquoted on its own line so a triple-click selects it.
+    // Printed unquoted on its own line so a triple-click selects it; on a
+    // terminal the watch that follows shows it instead.
     // The bare `babysit resume <id>` form looks the agent up from metadata.
     if( await has_session( session_name ) ) {
-        console.log( `\nDetached. Re-attach with:\n\nbabysit open ${ babysit_id }\n` )
+        post_attach_hint( `Detached. Re-attach with: babysit open ${ babysit_id }` )
     } else {
         // Prefer the agent's own session id: its native --resume accepts it,
         // and load_session resolves either form back to the record.
         const final = load_session( babysit_id ) || session_data
-        console.log( `\nTo resume this session, run:\nbabysit resume ${ final.agent_session_id || babysit_id }` )
+        post_attach_hint( `Session ended. Resume with: babysit resume ${ final.agent_session_id || babysit_id }` )
     }
 
 }
