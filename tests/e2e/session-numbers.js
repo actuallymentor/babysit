@@ -31,7 +31,7 @@ const record_path = id => join( root, `sessions`, `${ id }.json` )
 
 // Exercise a genuine foreground attach and keyboard detach. Inspecting the
 // attached client proves which session was selected, beyond a success message.
-// The detach lands on the interactive watch list, which ctrl+c to closes.
+// The detach lands on the interactive watch list, which ctrl+c closes.
 const terminal_driver = String.raw`
 import errno, os, pty, select, subprocess, sys, time
 
