@@ -2,7 +2,8 @@ import { wait } from 'mentie'
 import { log } from '../utils/log.js'
 import { capture_pane } from '../tmux/capture.js'
 import { send_keys } from '../tmux/send.js'
-import { has_session, kill_session, mark_idle, set_agent_status, set_next_turn } from '../tmux/session.js'
+import { has_session, kill_session, mark_idle, set_agent_status, set_next_turn, set_session_model } from '../tmux/session.js'
+import { model_from_screen } from '../agents/model_screen.js'
 import { IdleTracker, strip_ansi, evaluate_rule, idle_timeout_for } from './matcher.js'
 import { execute_action } from './actions.js'
 import { extract_session_id } from '../sessions/extract.js'
@@ -235,6 +236,7 @@ export const start_monitor = async ( {
     capture_pane_fn = capture_pane,
     kill_session_fn = kill_session,
     publish_agent_status_fn = publish_agent_status,
+    publish_model_fn = set_session_model,
     execute_action_fn = execute_action,
     send_keys_fn = send_keys,
     write_loop_deadline_fn = write_loop_deadline,
@@ -247,6 +249,7 @@ export const start_monitor = async ( {
     let last_written_deadline = null
     let last_next_turn = null
     let last_agent_status = null
+    let last_model = null
     let action_task = null
     let action_busy = false
     let reset_after_action = false
@@ -402,7 +405,7 @@ export const start_monitor = async ( {
             // is static. Restart the idle timer once their footer disappears.
             if( agent_status === `waiting` ) idle_tracker.reset()
             if( on_status ) await on_status( agent_status, clean_output )
-            watchdog?.observe( agent_status )
+            watchdog?.observe( agent_status, clean_output )
 
             // Store activity with the tmux session itself. Only transitions issue
             // a command, keeping the one-second monitor poll cheap. Failed writes
@@ -412,6 +415,10 @@ export const start_monitor = async ( {
                 agent_status,
                 last_agent_status,
             } )
+
+            // The status bar names the model; a changed screen reading publishes once
+            const model = model_from_screen( agent?.name, clean_output )
+            if( model && model !== last_model && await publish_model_fn( session_name, model ) ) last_model = model
 
             // Publish the idle countdown deadline for the statusline (only when it changes)
             if( idle_rule ) {

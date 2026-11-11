@@ -225,7 +225,7 @@ const print_migration_notice = ( old_path, new_path ) => {
  * program already called sit stays untouched.
  * @param {string} target - Installed babysit binary
  */
-const link_short_name = target => {
+export const link_short_name = target => {
 
     const link = join( dirname( target ), `sit` )
     try {

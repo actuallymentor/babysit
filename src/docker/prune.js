@@ -8,6 +8,14 @@ import { image_shared_sizes, measure_build_cache, parse_docker_size } from './di
 
 const lines = value => value.split( `\n` ).filter( Boolean )
 
+// Other projects share the daemon. Only these repositories are Babysit's to
+// remove: the published images, local `babysit:*` builds (e2e), and whatever
+// BABYSIT_DOCKER_IMAGE points at.
+const repository_of = reference => String( reference ).replace( /:[^:/]*$/, `` )
+export const babysit_repositories = () => new Set( [
+    `actuallymentor/babysit`, `actuallymentor/babysit-web`, `babysit`, repository_of( get_image_name() ),
+] )
+
 const docker_runner = ( run_command, command_prefix ) => {
     const [ command, ...prefix_args ] = command_prefix
     return ( args, timeout_ms = 30_000 ) => run_command( command, [ ...prefix_args, ...args ], {}, timeout_ms )
@@ -45,7 +53,8 @@ const saved_resources = sessions_dir => {
 
 /**
  * Decide what Docker cleanup would remove, and roughly how much it frees,
- * without deleting anything. Saved sessions keep their containers and images.
+ * without deleting anything. Only Babysit's images and containers are
+ * candidates; saved sessions keep theirs, and so does the current image.
  * @param {Object} [options]
  * @param {string} [options.sessions_dir] - Saved session registry
  * @param {Function} [options.run_command] - Docker command runner
@@ -70,28 +79,36 @@ export const plan_docker_prune = async ( {
     const stopped = lines( await docker( [
         `container`, `ls`, `--all`,
         `--filter`, `status=created`, `--filter`, `status=exited`, `--filter`, `status=dead`,
-        `--no-trunc`, `--format`, `{{.ID}}\t{{.Names}}`,
+        `--no-trunc`, `--format`, `{{.ID}}\t{{.Names}}\t{{.Image}}`,
     ] ) )
         .map( row => row.split( `\t` ) )
-    const image_rows = lines( await docker( [ `image`, `ls`, `--all`, `--no-trunc`, `--format`, `{{.ID}}\t{{.Size}}` ] ) )
+    const image_rows = lines( await docker( [ `image`, `ls`, `--all`, `--no-trunc`, `--format`, `{{.ID}}\t{{.Size}}\t{{.Repository}}\t{{.Tag}}` ] ) )
         .map( row => row.split( `\t` ) )
     if( stopped.some( ( [ id, name ] ) => !id || !name ) ) {
         throw new Error( `Docker container listing unreadable; cleanup skipped.` )
     }
 
-    // Other accounts can share this daemon. Their Babysit records are not
-    // readable here, so keep every Babysit-named container.
+    // Only containers made from a Babysit image are ours; anything else on a
+    // shared daemon is left alone. Other accounts' Babysit records are not
+    // readable here, so every Babysit-named container stays too.
+    const ours = babysit_repositories()
     const containers = stopped
-        .filter( ( [ id, name ] ) => !name.startsWith( `babysit-` ) && !saved_containers.has( id ) && !saved_containers.has( name ) )
+        .filter( ( [ id, name, image ] ) => ours.has( repository_of( image ) ) && !name.startsWith( `babysit-` ) && !saved_containers.has( id ) && !saved_containers.has( name ) )
         .map( ( [ id, name ] ) => ( { id, name } ) )
 
-    // One row per tag. `image rm <id>` refuses an image with several tags,
-    // so those are neither planned nor counted
+    // One row per tag. `image rm <id>` refuses an image with several tags
+    // (whoever owns the others), so those are neither planned nor counted
     const tags = new Map()
-    image_rows.forEach( ( [ id, size ] ) => tags.set( id, { bytes: parse_docker_size( size ) ?? 0, count: ( tags.get( id )?.count ?? 0 ) + 1 } ) )
+    image_rows.forEach( ( [ id, size, repository, tag ] ) => tags.set( id, {
+        bytes: parse_docker_size( size ) ?? 0,
+        count: ( tags.get( id )?.count ?? 0 ) + 1,
+        reference: `${ repository }:${ tag }`,
+        repository,
+    } ) )
     const in_use = await images_in_use( docker, new Set( containers.map( ( { id } ) => id ) ) )
+    const current = get_image_name()
     const images = [ ...tags ]
-        .filter( ( [ id, { count } ] ) => count === 1 && !saved_images.has( id ) && !in_use.has( id ) )
+        .filter( ( [ id, { count, repository, reference } ] ) => count === 1 && ours.has( repository ) && reference !== current && !saved_images.has( id ) && !in_use.has( id ) )
         .map( ( [ id, { bytes } ] ) => [ id, bytes ] )
         .map( ( [ id, bytes ] ) => ( { id, bytes } ) )
 
@@ -120,8 +137,10 @@ export const plan_docker_prune = async ( {
 }
 
 /**
- * Reclaim Docker resources without deleting containers or images saved sessions need.
- * Docker refuses to remove images still referenced by unrelated containers.
+ * Reclaim Babysit's own Docker resources without deleting containers or images
+ * saved sessions need: stopped containers and unused images from Babysit's
+ * repositories, plus old build cache (host-wide by nature). Other projects'
+ * containers, images, networks and volumes are never touched.
  * @param {Object} [options]
  * @param {Object} [options.plan] - From plan_docker_prune; planned here when absent
  * @param {string} [options.sessions_dir] - Saved session registry
@@ -165,13 +184,14 @@ export const prune_unused_docker = async ( {
         }
     }
 
-    await docker( [ `network`, `prune`, `--force` ] )
-    // Without --all only dangling cache goes, and old-but-referenced cache grew
+    // No network prune: Babysit creates no networks, so any unused one belongs
+    // to another project. The build cache is the one host-wide part (BuildKit
+    // keeps no per-project cache). Without --all only dangling cache goes, and old-but-referenced cache grew
     // to 425 GB on one host. Seven days keeps recent builds warm; deleting
     // hundreds of GB on ZFS took 30 min, so the deadline is generous.
     await docker( [ `builder`, `prune`, `--force`, `--all`, `--filter`, `until=168h` ], 60 * 60_000 )
 
-    return `Docker: removed ${ removed_containers } stopped containers and ${ removed_images } images; pruned unused networks and build cache older than 7 days. Volumes kept.`
+    return `Docker: removed ${ removed_containers } stopped Babysit containers and ${ removed_images } Babysit images; pruned build cache older than 7 days (shared by all projects). Other images, containers, networks and volumes untouched.`
 
 }
 

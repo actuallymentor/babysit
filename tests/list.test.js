@@ -11,6 +11,8 @@ import {
     format_last_opened,
     render_active_sessions,
     clean_pane_title,
+    order_active_sessions,
+    is_idle_session,
 } from '../src/cli/list.js'
 
 const capture_console = async ( fn ) => {
@@ -683,8 +685,51 @@ describe( `render_active_sessions titles`, () => {
         expect( await render( `New task`, `✳ New task` ) ).toMatchObject( { title: `New task`, fresh_title: false } )
     } )
 
+    it( `hides a saved title that is only a placeholder`, async () => {
+        expect( await render( `repo`, `repo` ) ).toMatchObject( { title: null } )
+    } )
+
     it( `falls back to the saved title while the live one is a placeholder`, async () => {
         expect( await render( `Saved`, `repo` ) ).toMatchObject( { title: `Saved`, fresh_title: false } )
+    } )
+
+} )
+
+describe( `shared numbering`, () => {
+
+    const now = Date.now()
+    const ago = hours => Math.floor( now / 1_000 ) - hours * 3_600
+    const stored = [ `a`, `b`, `c`, `d` ].map( id => ( { tmux_session: `babysit_${ id }`, babysit_id: id, name: id, agent: `codex`, pwd: `/w/${ id }` } ) )
+    const sessions = [
+        { name: `babysit_a`, agent_status: `idle`, idle_since: ago( 60 ), last_opened: ago( 70 ) },
+        { name: `babysit_b`, agent_status: `running`, last_opened: ago( 9 ) },
+        { name: `babysit_c`, agent_status: `idle`, idle_since: ago( 2 ), last_opened: ago( 1 ) },
+        { name: `babysit_d`, agent_status: `idle`, idle_since: ago( 30 ), last_opened: ago( 40 ) },
+    ]
+
+    it( `orders by last opened, with sessions idle over 24h at the end`, () => {
+        expect( order_active_sessions( sessions, stored, { now } ).map( tmux => tmux.name ) )
+            .toEqual( [ `babysit_c`, `babysit_b`, `babysit_d`, `babysit_a` ] )
+    } )
+
+    it( `is the numbering watch and list print`, async () => {
+        let result
+        await capture_console( async () => {
+            result = await render_active_sessions( {
+                version_check_fn: () => ( { latest: null } ),
+                list_sessions_fn: async () => sessions,
+                list_stored_sessions_fn: () => stored,
+                observe_activity_fn: async list => list,
+            } )
+        } )
+        expect( result.rows.map( row => [ row.number, row.target ] ) ).toEqual( [ [ 1, `c` ], [ 2, `b` ], [ 3, `d` ], [ 4, `a` ] ] )
+    } )
+
+    it( `counts a session as idle only when its agent is, and never for unstamped ones`, () => {
+        expect( is_idle_session( { agent_status: `running`, idle_since: ago( 60 ) }, undefined, now ) ).toBe( false )
+        expect( is_idle_session( { agent_status: `idle`, idle_since: null, shelved_since: null }, undefined, now ) ).toBe( false )
+        expect( is_idle_session( { agent_status: `idle`, idle_since: ago( 60 ) }, { frozen_at: `x` }, now ) ).toBe( false )
+        expect( is_idle_session( { agent_status: `idle`, idle_since: ago( 2 ), shelved_since: ago( 1 ) }, undefined, now ) ).toBe( true )
     } )
 
 } )

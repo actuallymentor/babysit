@@ -379,8 +379,8 @@ const docker_rows = plan => {
 
     return [
         [ `Docker build cache unused 7+ days`, cache ],
-        [ `Docker images, ${ plan.images.length } unused`, image_estimate( plan ) ],
-        [ `Docker stopped containers, ${ plan.containers.length }`, `size not measured` ],
+        [ `Babysit Docker images, ${ plan.images.length } unused`, image_estimate( plan ) ],
+        [ `Babysit stopped containers, ${ plan.containers.length }`, `size not measured` ],
     ]
 
 }
@@ -571,7 +571,7 @@ export const cmd_prune = async ( cmd, {
             const high = ( cache_known ? build_cache_bytes : 0 ) + image_bytes
             const estimate = `${ range_text( low, high ) }${ cache_known ? `` : ` plus build cache of unknown size` }`
             const clean_docker = /^(?:y|yes)$/i.test( ( await question(
-                `Prune unused Docker containers, networks, images, and build cache (${ estimate }; all projects; volumes kept)? [y/N] `
+                `Prune Babysit's unused Docker containers and images, and build cache older than 7 days (${ estimate }; the cache is shared by all projects; nothing else is touched)? [y/N] `
             ) ).trim() )
 
             if( clean_docker ) {

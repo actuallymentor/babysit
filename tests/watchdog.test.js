@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { create_watchdog, CHECK_IN_NUDGE, WATCHDOG_NUDGE } from '../src/babysit/watchdog.js'
+import { create_watchdog, replied_idle, CHECK_IN_NUDGE, WATCHDOG_NUDGE } from '../src/babysit/watchdog.js'
 import { build_judge_prompt, judge_session, parse_verdict } from '../src/babysit/judge.js'
 import { start_monitor } from '../src/babysit/monitor.js'
 
@@ -368,6 +368,81 @@ describe( `monitor watchdog wiring`, () => {
 
         expect( observed ).toHaveLength( 4 )
         expect( sent ).toEqual( [ [ 1, WATCHDOG_NUDGE ] ] )
+    } )
+
+} )
+
+describe( `nudge text`, () => {
+
+    it( `puts every audit bullet on its own line`, () => {
+        for( const nudge of [ WATCHDOG_NUDGE, CHECK_IN_NUDGE ] ) {
+            const bullets = nudge.split( `\n` ).filter( line => line.startsWith( `- ` ) )
+            expect( bullets.length ).toBeGreaterThanOrEqual( 4 )
+            bullets.forEach( line => expect( line.match( /(?<!^)- / ) ).toBeNull() )
+        }
+    } )
+
+} )
+
+describe( `replied_idle`, () => {
+
+    it( `is true only when the last message is a bare idle`, () => {
+        expect( replied_idle( `● Checked.\n\n● idle\n\n❯ ` ) ).toBe( true )
+        expect( replied_idle( `• idle.\n› Ask Codex` ) ).toBe( true )
+        expect( replied_idle( `● idle\n● Bash(sleep 1)\n  ⎿ done` ) ).toBe( false )
+        expect( replied_idle( `● Two jobs alive.\n❯ ` ) ).toBe( false )
+        expect( replied_idle( `` ) ).toBe( false )
+    } )
+
+} )
+
+describe( `check-in back-off`, () => {
+
+    // One waiting stretch: quiet for `wait_s`, nudged, the agent runs and answers
+    const check_in = async ( { watchdog, clock }, wait_s, answer ) => {
+        watchdog.observe( `waiting`, `` )
+        clock.now += wait_s * 1_000
+        watchdog.observe( `waiting`, `` )
+        await settle()
+        const text = await watchdog.take( `waiting` )
+        watchdog.observe( `running`, `` )
+        watchdog.observe( `waiting`, answer )
+        return text
+    }
+
+    it( `adds another waiting_s after each bare-idle answer, up to 4x`, async () => {
+        const harness = make_watchdog()
+        const idle = `● idle\n❯ `
+        expect( await check_in( harness, 900, idle ) ).toBe( CHECK_IN_NUDGE )
+
+        // 15 min was enough once; now 15 min is not
+        harness.watchdog.observe( `waiting`, idle )
+        harness.clock.now += 899_000
+        harness.watchdog.observe( `waiting`, idle )
+        await settle()
+        expect( await harness.watchdog.take( `waiting` ) ).toBeNull()
+        harness.clock.now += 1_000
+        harness.watchdog.observe( `waiting`, idle )
+        await settle()
+        expect( await harness.watchdog.take( `waiting` ) ).toBeNull()
+        harness.clock.now += 900_000
+        harness.watchdog.observe( `waiting`, idle )
+        await settle()
+        expect( await harness.watchdog.take( `waiting` ) ).toBe( CHECK_IN_NUDGE )
+    } )
+
+    it( `starts over when the agent did something other than answer idle`, async () => {
+        const harness = make_watchdog()
+        await check_in( harness, 900, `● idle\n❯ ` )
+        await check_in( harness, 1_800, `● Killed two stale shells.\n❯ ` )
+        expect( await check_in( harness, 900, `● idle\n❯ ` ) ).toBe( CHECK_IN_NUDGE )
+    } )
+
+    it( `never waits more than 4x`, async () => {
+        const harness = make_watchdog()
+        const idle = `● idle\n❯ `
+        for( const wait of [ 900, 1_800, 2_700, 3_600 ] ) expect( await check_in( harness, wait, idle ) ).toBe( CHECK_IN_NUDGE )
+        expect( await check_in( harness, 3_600, idle ) ).toBe( CHECK_IN_NUDGE )
     } )
 
 } )

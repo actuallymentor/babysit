@@ -318,9 +318,10 @@ Examples:
 Interactive cleanup. First shows what is reclaimable and where (Docker build
 cache, images, stopped containers, clones per age policy) with estimates and
 free disk space; after deleting, reports the space actually freed.
-Docker: stopped containers, images no saved session needs, unused networks,
-and build cache unused for 7 days (Babysit containers, in-use images, and
-volumes stay). Clones: managed clone workspaces by age. Each part asks for
+Docker: Babysit's own stopped containers and images no saved session needs
+(the current image, in-use images, and everything from other projects stay),
+and build cache unused for 7 days (BuildKit's cache is shared by all projects).
+Networks and volumes are never touched. Clones: managed clone workspaces by age. Each part asks for
 its own confirmation.
 
 ${ options_table( `prune` ) }

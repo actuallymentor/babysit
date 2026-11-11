@@ -11,6 +11,13 @@ GREEN='\033[32m'
 YELLOW='\033[33m'
 RESET='\033[0m'
 
+# Claude passes session JSON on stdin; the model's display name ends up in the
+# pane, where the host monitor reads it for the tmux status bar.
+_model=""
+if [ ! -t 0 ]; then
+    _model=$(cat 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("model",{}).get("display_name",""))' 2>/dev/null || true)
+fi
+
 # Modifiers from environment
 _modifiers="${BABYSIT_MODIFIERS:-babysit}"
 
@@ -67,6 +74,10 @@ fi
 
 if [ -n "$_branch" ]; then
     _output="${_output} ${YELLOW}⎇ ${_branch}${RESET}"
+fi
+
+if [ -n "$_model" ]; then
+    _output="${_output} ${CYAN}◆ ${_model}${RESET}"
 fi
 
 echo -e "$_output"

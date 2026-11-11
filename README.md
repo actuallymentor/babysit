@@ -105,7 +105,7 @@ Status: `running` (foreground work), `waiting` (background shells/subagents), `i
 | `babysit restart <n\|id\|all>... [--force] [--detach] [--continue] [--account NAME]` | Close gracefully, resume on the current image. Needs an idle/waiting agent and captured session id (`--force` overrides). Claude moves to the account with most headroom |
 | `babysit freeze <n\|id\|all>...` / `unfreeze` | `docker pause` in place; host only. Ends at reboot; `close` unpauses |
 | `babysit archive [<n\|id>...] [--yes]` | Sink sessions to the bottom of the list (they keep running). No selectors: offers every grey-dot session. `open` un-archives |
-| `babysit prune [--list]` | Show reclaimable space; interactively prune unused Docker data and managed clones |
+| `babysit prune [--list]` | Show reclaimable space; interactively prune Babysit's unused Docker images/containers, old build cache and managed clones |
 | `babysit doctor --auth [agent] [--refresh]` | Real auth check (one prompt per agent); `--refresh` bypasses the 12h cache |
 | `babysit auth [status]` | Cached auth ages, checker state |
 | `babysit auth check [agent] [--force]` | Run the checker now |

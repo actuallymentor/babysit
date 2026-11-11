@@ -167,7 +167,7 @@ const main = async () => {
     }
     const notices = lines.slice( options_end( lines ), -1 )
     if( notices.length ) console.log( `PASS live: looked past ${ notices.length } notice(s): ${ notices.map( line => line.trim() ).join( ` | ` ) }` )
-    if( !/will automatically deny this request in/.test( screen ) ) notes.push( `live: no auto-deny countdown; unattended fallback timing changed` )
+    if( !/will automatically (?:block|deny) this request in/.test( screen ) ) notes.push( `live: no unattended countdown; fallback timing changed` )
     const match = find_yolo_dialog( screen )
     if( match ) console.log( `PASS live: matcher would answer "${ match.answer }" to "${ match.question }" (${ match.title })` )
     else drift.push( `live: find_yolo_dialog() returned null for the real dialog` )

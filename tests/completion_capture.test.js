@@ -5,8 +5,10 @@ import { join } from 'path'
 import { spawnSync } from 'child_process'
 import { COMPLETION_HELPER_SOURCE, COMPLETION_PLUGIN_SOURCE, COMPLETION_HELPER_PATH, add_completion_hooks } from '../src/agents/completion_capture.js'
 
-// Every case spawns Python per hook payload: slow under a loaded full suite
-setDefaultTimeout( 20_000 )
+// Every case spawns python3 and node per hook payload (several starts per case).
+// A loaded host stretches each start to seconds, and a synchronous case cannot be
+// interrupted: only a generous limit separates slow from broken.
+setDefaultTimeout( 90_000 )
 
 // Run the same launch and hook programs staged into Docker. A tiny executable
 // stands in for each CLI, exercising real process ancestry and file handoff.

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.0 — 2026-11-11
+
+### Changed
+- Session numbers are one list everywhere: `list`, `watch`, `open`, `close`, `archive`, `restart`, `freeze` and `fork` all order sessions by when you last opened them, with sessions idle over 24h (or shelved with `e`) at the end, so `babysit open 3` opens the row `watch` calls 3. Numbers move when you open something. `babysit list` shows the same "Idle resumable sessions" section as watch. Sessions you never opened sink.
+- Claude sessions default to the `opus` model (explicit `--model` and yaml still win). Saved sessions keep their stored model.
+- Watchdog check-ins back off while the agent answers them with a bare `idle`: 15 → 30 → 45 → 60 min (multiples of `watchdog_waiting_s`), and start over after any other reply or when you type. Audit bullets in both nudges are now on their own lines. Running sessions need `babysit restart` to pick the nudges up.
+- `babysit prune` only touches Babysit's own Docker resources: images of the Babysit repositories (never the current or in-use ones), stopped containers made from them, and the build cache. The global image and network prune is gone.
+
+### Added
+- The tmux status bar shows the model the agent is using (right side), read from the agent's screen: Claude's header and statusline (`◆ Opus 5.5`), Codex's footer. Needs the new image for Claude's statusline; running sessions need `babysit restart`.
+
+### Fixed
+- Claude's "initial prompt ready" check no longer needs the `Claude Code vX` banner, which a resumed conversation scrolls off (sessions reported "Agent input did not become ready"). The dangerous-command dialog test accepts Claude 2.1.322's new "automatically block" wording.
+- A task title saved as a placeholder (host name, directory name) is hidden in `watch` instead of shown until the agent sets a real one.
+- The pre-commit hook stages the lint fixes it makes.
+
 ## 2.3.2 — 2026-11-11
 
 ### Changed

@@ -13,6 +13,8 @@ const substitution = fixture( `dangerous-rm-substitution.txt` )
 const shell_c = fixture( `dangerous-rm-shell-c-subagent.txt` )
 // Claude Code 2.1.309 slots a right-aligned edited-files notice above the footer
 const notice = fixture( `dangerous-rm-glob-edited-notice.txt` )
+// Claude Code 2.1.322 words the unattended countdown "automatically block" (was "deny")
+const blocking = fixture( `dangerous-rm-glob-2.1.322.txt` )
 const composer = `────\n❯ \n────\n  yolo·docker\n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
 
 // Builds a bottom-anchored Claude dialog: question, options, footer
@@ -32,6 +34,7 @@ describe( `Claude YOLO dialog`, () => {
         expect( find_yolo_dialog( glob ) ).toEqual( { title: `Bash command`, question: `Do you want to proceed?`, answer: `Yes` } )
         expect( find_yolo_dialog( substitution ) ).toMatchObject( { answer: `Yes` } )
         expect( find_yolo_dialog( shell_c ) ).toMatchObject( { title: `Bash command · from the general-purpose agent`, answer: `Yes` } )
+        expect( find_yolo_dialog( blocking ) ).toEqual( { title: `Bash command`, question: `Do you want to proceed?`, answer: `Yes` } )
         expect( claude.yolo_dialog ).toBe( find_yolo_dialog )
     } )
 
@@ -50,7 +53,7 @@ describe( `Claude YOLO dialog`, () => {
         // The wording that blocked Auto Optimiser on 2026-10-16, ordinary prompts, folder trust
         const empty_var = glob.replace( /Dangerous rm operation on .*/, `Dangerous rm operation on possibly-empty variable path: $SHOTS/*` )
         expect( find_yolo_dialog( empty_var ) ).not.toBeNull()
-        expect( find_yolo_dialog( glob.split( `\n` ).filter( line => !/Dangerous rm|automatically deny/.test( line ) ).join( `\n` ) ) ).not.toBeNull()
+        expect( find_yolo_dialog( glob.split( `\n` ).filter( line => !/Dangerous rm|automatically (?:deny|block)/.test( line ) ).join( `\n` ) ) ).not.toBeNull()
         expect( find_yolo_dialog( dialog( `Do you trust the files in this folder?`, [ `Yes, proceed`, `No, exit` ], { footer: `Enter to confirm · Esc to exit` } ) ) ).toMatchObject( { answer: `Yes, proceed` } )
         expect( find_yolo_dialog( dialog( `Continue?`, [ `Continue`, `Stop` ] ) ) ).toMatchObject( { answer: `Continue` } )
         expect( find_yolo_dialog( dialog( `Do you want to proceed?`, [ `Yes`, `Yes, and don't ask again`, `No` ] ) ) ).not.toBeNull()

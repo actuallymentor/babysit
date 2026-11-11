@@ -10,7 +10,7 @@ export const CLAUDE_DIALOG_BINARY_CONTRACT = [
     { label: `question "Do you want to proceed?"`, pattern: /Do you want to proceed\?/, required: false },
     { label: `footer "Esc to cancel · Tab to amend"`, pattern: /Esc to cancel/, required: true },
     { label: `dangerousRemoval is bypass-immune (why YOLO sees the prompt)`, pattern: /dangerousRemoval:\{bypassImmune:(?:!0|true)/, required: false },
-    { label: `auto-deny countdown "will automatically deny this request in"`, pattern: /will automatically deny this request in/, required: false },
+    { label: `unattended countdown "will automatically block (2.1.322; deny before) this request in"`, pattern: /will automatically (?:block|deny) this request in/, required: false },
 ]
 
 // Shell shims (Babysit's /opt/babysit-bin/claude) only forward to the real

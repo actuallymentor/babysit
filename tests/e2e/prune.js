@@ -112,17 +112,17 @@ try {
     assert.doesNotMatch( readFileSync( docker_calls, `utf8` ), /\brm\b|prune/ )
     console.log( `PASS prune --list identifies real tmux and clone locks plus recovery intent` )
 
-    const cancelled = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `` ] ] )
+    const cancelled = await interactive( [ [ `nothing else is touched)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `` ] ] )
     assert.match( cancelled, /Prune cancelled/ )
     assert.ok( existsSync( join( clones_dir, `unused-one` ) ) )
     assert.ok( existsSync( join( clones_dir, `unused-two` ) ) )
     console.log( `PASS interactive prune defaults to cancellation` )
 
-    const recent = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `` ] ] )
+    const recent = await interactive( [ [ `nothing else is touched)? [y/N] `, `` ], [ `Choose [1]: `, `` ] ] )
     assert.match( recent, /No clone workspaces match that policy/ )
     console.log( `PASS default 30-day policy preserves recent clones` )
 
-    const pruned = await interactive( [ [ `volumes kept)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `y` ] ] )
+    const pruned = await interactive( [ [ `nothing else is touched)? [y/N] `, `` ], [ `Choose [1]: `, `2` ], [ `? [y/N] `, `y` ] ] )
     assert.match( pruned, /Pruned 2 of 2 clone workspaces/ )
     assert.doesNotMatch( pruned, /Could not prune|Skipped/ )
     for( const clone_id of [ `unused-one`, `unused-two` ] ) {
@@ -139,20 +139,19 @@ try {
 
     writeFileSync( docker_calls, `` )
     const cleaned = await interactive( [
-        [ `volumes kept)? [y/N] `, `yes` ],
+        [ `nothing else is touched)? [y/N] `, `yes` ],
         [ `Choose [1]: `, `` ],
     ] )
-    assert.match( cleaned, /Docker: removed 0 stopped containers and 0 images/ )
+    assert.match( cleaned, /Docker: removed 0 stopped Babysit containers and 0 Babysit images/ )
     assert.deepEqual( readFileSync( docker_calls, `utf8` ).trim().split( `\n` ), [
         `info --format {{.DockerRootDir}}`,
-        `container ls --all --filter status=created --filter status=exited --filter status=dead --no-trunc --format {{.ID}}\t{{.Names}}`,
-        `image ls --all --no-trunc --format {{.ID}}\t{{.Size}}`,
+        `container ls --all --filter status=created --filter status=exited --filter status=dead --no-trunc --format {{.ID}}\t{{.Names}}\t{{.Image}}`,
+        `image ls --all --no-trunc --format {{.ID}}\t{{.Size}}\t{{.Repository}}\t{{.Tag}}`,
         `container ls --all --no-trunc --quiet`,
         `buildx du --builder default`,
-        `network prune --force`,
         `builder prune --force --all --filter until=168h`,
     ] )
-    console.log( `PASS confirmed Docker cleanup inspects resources and prunes networks/cache without volumes` )
+    console.log( `PASS confirmed Docker cleanup inspects resources and prunes only Babysit's images/containers and old build cache (no networks, no volumes)` )
 } finally {
     release_lock?.()
     await tmux( [ `kill-server` ] ).catch( () => {} )

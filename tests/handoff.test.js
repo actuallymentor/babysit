@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { spawnSync } from 'child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -6,6 +7,9 @@ import { join, relative } from 'path'
 
 import { get_agent } from '../src/agents/index.js'
 import { HANDOFF_MAX_CHARS, READ_TRANSCRIPT, build_handoff_markdown, read_parent_transcript } from '../src/sessions/handoff.js'
+
+// Each case starts python3 for the reader: seconds on a loaded host, past bun's 5 s default
+setDefaultTimeout( 30_000 )
 
 const jsonl = records => records.map( record => JSON.stringify( record ) ).join( `\n` ) + `\n`
 
@@ -77,22 +81,21 @@ describe( `parent transcript reader`, () => {
 
         const data = join( home, `.local/share/opencode` )
         mkdirSync( data, { recursive: true } )
-        const seed = `
-import json, sqlite3, sys
-db = sqlite3.connect(sys.argv[1])
-db.executescript('''CREATE TABLE session (id text, parent_id text, time_updated integer);
+        // Seeded in-process: one python start less per run than a seeding script
+        const db = new Database( join( data, `opencode.db` ) )
+        db.exec( `CREATE TABLE session (id text, parent_id text, time_updated integer);
 CREATE TABLE message (id text, session_id text, time_created integer, data text);
-CREATE TABLE part (id text, message_id text, session_id text, time_created integer, data text);''')
-db.execute("INSERT INTO session VALUES ('ses_1', NULL, 2)")
-db.execute("INSERT INTO message VALUES ('m1', 'ses_1', 1, ?)", (json.dumps({'role': 'user'}),))
-db.execute("INSERT INTO message VALUES ('m2', 'ses_1', 2, ?)", (json.dumps({'role': 'assistant'}),))
-db.execute("INSERT INTO part VALUES ('p1', 'm1', 'ses_1', 1, ?)", (json.dumps({'type': 'text', 'text': 'Ship the docs'}),))
-db.execute("INSERT INTO part VALUES ('p0', 'm1', 'ses_1', 1, ?)", (json.dumps({'type': 'text', 'text': 'synthetic', 'synthetic': True}),))
-db.execute("INSERT INTO part VALUES ('p2', 'm2', 'ses_1', 2, ?)", (json.dumps({'type': 'text', 'text': 'Docs drafted'}),))
-db.execute("INSERT INTO part VALUES ('p3', 'm2', 'ses_1', 3, ?)", (json.dumps({'type': 'tool', 'tool': 'edit', 'state': {'input': {'filePath': '/workspace/README.md'}}}),))
-db.commit()
-`
-        spawnSync( `python3`, [ `-c`, seed, join( data, `opencode.db` ) ] )
+CREATE TABLE part (id text, message_id text, session_id text, time_created integer, data text);` )
+        db.run( `INSERT INTO session VALUES ('ses_1', NULL, 2)` )
+        const message = db.prepare( `INSERT INTO message VALUES (?, 'ses_1', ?, ?)` )
+        message.run( `m1`, 1, JSON.stringify( { role: `user` } ) )
+        message.run( `m2`, 2, JSON.stringify( { role: `assistant` } ) )
+        const part = db.prepare( `INSERT INTO part VALUES (?, ?, 'ses_1', ?, ?)` )
+        part.run( `p1`, `m1`, 1, JSON.stringify( { type: `text`, text: `Ship the docs` } ) )
+        part.run( `p0`, `m1`, 1, JSON.stringify( { type: `text`, text: `synthetic`, synthetic: true } ) )
+        part.run( `p2`, `m2`, 2, JSON.stringify( { type: `text`, text: `Docs drafted` } ) )
+        part.run( `p3`, `m2`, 3, JSON.stringify( { type: `tool`, tool: `edit`, state: { input: { filePath: `/workspace/README.md` } } } ) )
+        db.close()
 
         const transcript = read( home, `opencode` )
         expect( transcript.user ).toEqual( [ `Ship the docs` ] )

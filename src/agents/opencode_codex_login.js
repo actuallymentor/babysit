@@ -102,7 +102,8 @@ export const strip_lent_logins = content => {
     }
     if( !auth?.openai?.[ LENT_MARKER ] ) return content
 
-    const { openai, ...rest } = auth
+    const rest = { ...auth }
+    delete rest.openai
     return `${ JSON.stringify( rest, null, 2 ) }\n`
 
 }

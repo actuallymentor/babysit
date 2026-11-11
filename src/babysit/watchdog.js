@@ -24,9 +24,24 @@ export const CHECK_IN_NUDGE = AUDIT_PREFIX
     + `- Audit your background work without filtering by name: list the full process tree under your own process `
     + `(e.g. ps -eo pid,ppid,etime,args), any subagents you started, and the output or log files they write to. `
     + `For each one still alive, say what it's waiting for and whether that can still happen; kill it if not. `
-    + `Collect the results of anything that finished and carry on.`
+    + `Collect the results of anything that finished and carry on.\n`
     + FOCUS_AUDIT
     + AUDIT_SUFFIX
+
+// A check-in answered with a bare "idle" back-off: each one adds another waiting_s
+// to the next, up to this many extra (15 → 30 → 45 → 60 min at the default 15)
+const MAX_BACKOFF_STEPS = 3
+
+/**
+ * Whether the agent's last message is a bare "idle": the last bullet line (an
+ * assistant message or a tool call) above the composer says only that.
+ * @param {string} screen - Visible pane text, ANSI stripped
+ * @returns {boolean}
+ */
+export const replied_idle = screen => {
+    const bullet = String( screen ).split( `\n` ).slice( -25 ).map( line => line.trim() ).filter( line => /^[●•⏺]/.test( line ) ).at( -1 )
+    return /^[●•⏺]\s*idle\.?$/i.test( bullet || `` )
+}
 
 /**
  * Watch for agents that went quiet without reason. A quiet stretch starts at
@@ -34,7 +49,9 @@ export const CHECK_IN_NUDGE = AUDIT_PREFIX
  * status, an LLM judges the screen, at most once per stretch, and a stalled
  * verdict queues one nudge. Typing into the session restarts the stretch.
  * An agent waiting on background work skips the judge and is asked to check in
- * every `waiting_s` until it runs again.
+ * every `waiting_s` until it runs again; check-ins the agent answers with a bare
+ * "idle" back off by another `waiting_s` each (up to 4x), and any other reply,
+ * or typing, starts over.
  *
  * @param {Object} options
  * @param {string} options.session_name - Tmux session, for the typing check
@@ -65,7 +82,12 @@ export const create_watchdog = ( {
     let nudge = null
     let judged_at = null
 
-    const limit_s = status => status === `waiting` ? waiting_s : idle_s
+    // Consecutive check-ins answered "idle"; a delivered check-in awaits its reply
+    let idle_streak = 0
+    let awaiting_reply = false
+    let reply_started = false
+
+    const limit_s = status => status === `waiting` ? waiting_s * ( 1 + Math.min( idle_streak, MAX_BACKOFF_STEPS ) ) : idle_s
     const excluded = status => is_stuck() || status === `idle` && skips_idle()
 
     const restart = () => {
@@ -86,6 +108,7 @@ export const create_watchdog = ( {
             const typed = await typed_at()
             if( stale() || !typed || typed <= quiet_since ) return stale()
             quiet_since = typed
+            idle_streak = 0
             return true
         }
 
@@ -127,9 +150,18 @@ export const create_watchdog = ( {
          * Feed each tick's activity; starts a judgment once a stretch is due.
          * @param {'idle'|'running'|'waiting'} status - Current activity
          */
-        observe( status ) {
+        observe( status, screen = `` ) {
 
-            if( status === `running` ) return restart()
+            if( status === `running` ) {
+                reply_started = awaiting_reply
+                return restart()
+            }
+
+            // The check-in's turn is over: was the answer a bare "idle"?
+            if( awaiting_reply && reply_started ) {
+                idle_streak = replied_idle( screen ) ? idle_streak + 1 : 0
+                awaiting_reply = reply_started = false
+            }
 
             quiet_since ??= now()
 
@@ -144,7 +176,11 @@ export const create_watchdog = ( {
         /**
          * Input from outside tmux (the web companion) starts a fresh stretch.
          */
-        restart,
+        restart: () => {
+            idle_streak = 0
+            awaiting_reply = reply_started = false
+            restart()
+        },
 
         /**
          * Claim a queued nudge, once. Exclusions that arose while the judge
@@ -169,8 +205,14 @@ export const create_watchdog = ( {
             // Delivery can wait behind other input owners; a draft started since stays untouched
             const typed = await typed_at()
             if( typed && typed > judged_at ) {
+                idle_streak = 0
                 restart()
                 return null
+            }
+
+            if( text === CHECK_IN_NUDGE ) {
+                awaiting_reply = true
+                reply_started = false
             }
 
             return text

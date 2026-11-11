@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import { WATCH_CLOSE_HINT } from '../../src/cli/watch_hint.js'
 
 const exec_file = promisify( execFile )
 const repository = fileURLToPath( new URL( `../../`, import.meta.url ) )
@@ -19,6 +20,7 @@ const env = { ...process.env, BABYSIT_HOME: root, BABYSIT_TMUX_SOCKET: socket, T
 // This test owns its tmux server even when invoked from a real Babysit session.
 delete env.TMUX
 delete env.TMUX_PANE
+env.WATCH_CLOSE_HINT = WATCH_CLOSE_HINT
 
 const run = async ( command, args ) => {
     const { stdout } = await exec_file( command, args, { env, cwd: workspace, timeout: 35_000 } )
@@ -35,7 +37,7 @@ const record_path = id => join( root, `sessions`, `${ id }.json` )
 const terminal_driver = String.raw`
 import errno, os, pty, select, subprocess, sys, time
 
-socket, expected = sys.argv[1:3]
+socket, expected, close_hint = sys.argv[1], sys.argv[2], os.environ['WATCH_CLOSE_HINT'].encode()
 master, slave = pty.openpty()
 child = subprocess.Popen(sys.argv[3:], stdin=slave, stdout=slave, stderr=slave)
 os.close(slave)
@@ -66,7 +68,7 @@ try:
                 break
             output += chunk
             # Detaching lands on babysit watch --interactive; ctrl+c leaves it
-            if attached and not quit and b'ctrl+c to close' in output:
+            if attached and not quit and close_hint in output:
                 quit = True
                 os.write(master, b'\x03')
         elif child.poll() is not None:

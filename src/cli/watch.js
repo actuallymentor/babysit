@@ -9,6 +9,7 @@ import { log } from '../utils/log.js'
 import { render_active_sessions, track_session_activity } from './list.js'
 import { cmd_open } from './open.js'
 import { take_exit_notice, watch_follows } from './exit_notice.js'
+import { WATCH_CLOSE_HINT } from './watch_hint.js'
 import { foreground_attach_count, mark_read, shelve_session } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
 import { update_session } from '../sessions/store.js'
@@ -478,7 +479,7 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
         const footer = () => interactive
             ? help
                 ? `any key to go back`
-                : `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c to close${ typed ? `: ${ typed }…` : `` }`
+                : `↑↓ select · enter open · ? shortcuts · or type a number · ${ WATCH_CLOSE_HINT }${ typed ? `: ${ typed }…` : `` }`
             : `Live; Ctrl+C to stop.`
 
         // With titles on, each titled row gets a dim line under it. `highlight` keys on
@@ -697,8 +698,6 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
                         // Launch-yaml rules are noise on a dashboard; the countdown says what they do
                         rule_flags: Boolean( flags.all ),
                         countdowns: true,
-                        recent_first: true,
-                        idle_section: true,
                         observe_activity_fn,
                         // Read at print time, so a refresh that lands mid-sample still shows
                         extra_columns: [ { header: `USAGE`, cell: session => usage_cell( report, session ) } ],

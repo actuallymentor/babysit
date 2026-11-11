@@ -79,8 +79,11 @@ export const clean_pane_title = ( raw, { pwd = ``, tmux_name = ``, host = hostna
  * @returns {{ title: string|null, fresh_title: boolean }} `fresh_title`: the live title differs from the saved one, so it is worth saving
  */
 const session_title = ( tmux, stored ) => {
-    const live = clean_pane_title( tmux.pane_title, { pwd: stored?.pwd, tmux_name: tmux.name } )
-    return { title: live || stored?.title || null, fresh_title: Boolean( live && live !== stored?.title ) }
+    const context = { pwd: stored?.pwd, tmux_name: tmux.name }
+    const live = clean_pane_title( tmux.pane_title, context )
+    // A saved title is cleaned again: records written before a placeholder rule existed keep their junk
+    const saved = clean_pane_title( stored?.title, context )
+    return { title: live || saved, fresh_title: Boolean( live && live !== stored?.title ) }
 }
 
 /**
@@ -329,7 +332,22 @@ export const fork_parent_of = ( session, by_id ) => {
 }
 
 /**
- * Display order shared by `list`, `open`, and `close` so numbers agree:
+ * Whether a session belongs in the idle list: its agent has been idle over 24h,
+ * or the user shelved it since its last finished turn. Archived, frozen, stuck
+ * and exited rows never count.
+ * @param {Object} tmux - Active tmux session ({ agent_status, idle_since, shelved_since })
+ * @param {Object|undefined} stored - Its stored record
+ * @param {number} [now=Date.now()] - Epoch ms
+ * @returns {boolean}
+ */
+export const is_idle_session = ( tmux, stored, now = Date.now() ) => {
+    if( tmux.exited || stored?.archived_at || stored?.frozen_at || stored?.stuck_at || tmux.agent_status !== `idle` ) return false
+    const idle_over_a_day = Boolean( tmux.idle_since ) && now - tmux.idle_since * 1_000 > STALE_AFTER_MS
+    return idle_over_a_day || Boolean( tmux.shelved_since ) && tmux.shelved_since >= ( tmux.idle_since || 0 )
+}
+
+/**
+ * Display order shared by `list`, `watch`, `open`, and `close` so numbers agree:
  * archived sessions sink to the bottom of their workspace, and workspaces
  * whose sessions are all archived sink to the bottom of the list. Everything
  * else keeps tmux's order. Forks follow their parent, depth first; an exited
@@ -339,7 +357,11 @@ export const fork_parent_of = ( session, by_id ) => {
  * @param {Object[]} stored_sessions - Stored Babysit metadata
  * @returns {Array<{ name: string, exited?: boolean }>} Reordered copy, exited parents included
  */
-export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
+export const order_active_sessions = ( listed, stored_sessions, { now = Date.now() } = {} ) => {
+
+    // Recency first: workspaces rank by their newest-opened session, and sessions
+    // you never opened (no attach time) sink. Everything below keeps this input order.
+    const tmux_sessions = [ ...listed ].sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
 
     const by_tmux = stored_by_tmux( stored_sessions )
     const by_id = new Map( stored_sessions.map( session => [ session.babysit_id, session ] ) )
@@ -420,7 +442,14 @@ export const order_active_sessions = ( tmux_sessions, stored_sessions ) => {
 
     // Corrupt lineage (a cycle) has no root; never drop a live session's number
     const emitted = new Set( ordered )
-    return [ ...ordered, ...tmux_sessions.filter( tmux => !emitted.has( tmux ) ) ]
+    const everything = [ ...ordered, ...tmux_sessions.filter( tmux => !emitted.has( tmux ) ) ]
+
+    // Sessions idle over 24h (or shelved by hand) close the list, newest-opened first,
+    // so watch's two sections and `babysit open <n>` count the same way
+    const idle = everything.filter( node => is_idle_session( node, stored_for( node ), now ) )
+        .sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
+    const parked = new Set( idle )
+    return [ ...everything.filter( node => !parked.has( node ) ), ...idle ]
 
 }
 
@@ -767,8 +796,7 @@ export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
  * @param {Function} [options.list_stored_sessions_fn] - Stored metadata loader
  * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
  * @param {Function} [options.version_check_fn] - Newer-release lookup
- * @param {boolean} [options.recent_first=false] - Order by last opened (workspaces by their newest session); numbers follow the display
- * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h, or shelved by hand, into a condensed list below the tree
+ * @param {boolean} [options.idle_section=true] - Move sessions idle over 24h, or shelved by hand, into a condensed list below the tree
  * @returns {Promise<{ targets: Map<number, string>, rows: Object[] }>} `targets`: shown selectors that can be opened (exited fork parents
  * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session.
  * `rows`: the same in display order as { number, target, tmux_name, name, status, title, fresh_title, unread, line }, `line` being its index among the
@@ -781,8 +809,7 @@ export const render_active_sessions = async ( {
     extra_columns = [],
     rule_flags = true,
     countdowns = false,
-    recent_first = false,
-    idle_section = false,
+    idle_section = true,
     before_print = () => {},
     list_sessions_fn = list_sessions,
     list_stored_sessions_fn = list_stored_sessions,
@@ -791,13 +818,10 @@ export const render_active_sessions = async ( {
 } = {} ) => {
 
     const stored_sessions = list_stored_sessions_fn()
-    const listed = await list_sessions_fn()
-    // The ordering below keeps input order inside a workspace and ranks workspaces
-    // by first appearance, so sorting the input is all "recent first" takes
-    const by_recency = [ ...listed ].sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
-    const ordered_sessions = order_active_sessions( recent_first ? by_recency : listed, stored_sessions )
+    const now = Date.now()
 
     // Numbers stay global so `babysit open <n>` means the same thing everywhere.
+    const ordered_sessions = order_active_sessions( await list_sessions_fn(), stored_sessions, { now } )
     const by_tmux = stored_by_tmux( stored_sessions )
     const is_archived = tmux => Boolean( by_tmux.get( tmux.name )?.archived_at )
     const tmux_sessions = hide_archived ? ordered_sessions.filter( tmux => !is_archived( tmux ) ) : ordered_sessions
@@ -814,21 +838,13 @@ export const render_active_sessions = async ( {
     const observed_sessions = await observe_activity_fn( tmux_sessions, stored_sessions )
     before_print()
 
-    const now = Date.now()
-    // Idle over 24h (unread or not), or shelved by hand since the last finished turn
-    const is_idle = tmux => {
-        if( !idle_section || session_status( tmux, by_tmux.get( tmux.name ) ) !== `idle` ) return false
-        const idle_over_a_day = tmux.idle_since && now - tmux.idle_since * 1_000 > STALE_AFTER_MS
-        return Boolean( idle_over_a_day ) || tmux.shelved_since >= ( tmux.idle_since || 0 )
-    }
-    const active = observed_sessions.filter( tmux => !is_idle( tmux ) )
-    // The flat list has no workspaces to group by: pure recency
-    const idle = observed_sessions.filter( is_idle )
-    if( recent_first ) idle.sort( ( left, right ) => ( right.last_opened || 0 ) - ( left.last_opened || 0 ) )
+    // Decided on the listing, not the sampled panes, exactly as the ordering decided it
+    const idle_names = new Set( idle_section ? tmux_sessions.filter( tmux => is_idle_session( tmux, by_tmux.get( tmux.name ), now ) ).map( tmux => tmux.name ) : [] )
+    const active = observed_sessions.filter( tmux => !idle_names.has( tmux.name ) )
+    const idle = observed_sessions.filter( tmux => idle_names.has( tmux.name ) )
 
-    // With an idle section the selectors follow the display: active first, then idle
     const shown = [ ...active, ...idle ]
-    const numbers = new Map( shown.map( ( tmux, index ) => [ tmux.name, idle_section ? index + 1 : ordered_sessions.findIndex( other => other.name === tmux.name ) + 1 ] ) )
+    const numbers = new Map( shown.map( tmux => [ tmux.name, ordered_sessions.findIndex( other => other.name === tmux.name ) + 1 ] ) )
     const numbers_of = group => group.map( tmux => numbers.get( tmux.name ) )
 
     // Where each shown session landed among the printed lines, for callers that highlight one

@@ -77,10 +77,27 @@ describe( `Docker cleanup`, () => {
                 command_prefix: [ `sudo`, `docker` ],
                 run_command: async ( command, args ) => {
                     calls.push( [ command, ...args ] )
-                    if( args[1] === `container` && args[2] === `ls` && args.includes( `--quiet` ) ) return `held-id\nexternal-id\nother-id\nrunning-id`
-                    if( args[1] === `container` && args[2] === `ls` ) return `held-id\theld-name\nexternal-id\tbabysit-external\nother-id\tother-name`
-                    if( args[1] === `container` && args[2] === `inspect` ) return `sha256:held\nsha256:held\nsha256:busy`
-                    if( args[1] === `image` && args[2] === `ls` ) return `sha256:held\t1GB\nsha256:other\t2GB\nsha256:old\t512MB\nsha256:busy\t4GB\nsha256:other\t2GB`
+                    if( args[1] === `container` && args[2] === `ls` && args.includes( `--quiet` ) ) return `held-id\nexternal-id\nother-id\nforeign-id\nanon-id\nrunning-id`
+                    if( args[1] === `container` && args[2] === `ls` ) return [
+                        `held-id\theld-name\tactuallymentor/babysit:2.0.0`,
+                        `external-id\tbabysit-external\tactuallymentor/babysit:2.0.0`,
+                        `other-id\tother-name\tactuallymentor/babysit:2.0.0`,
+                        // Other projects' leftovers on the shared daemon, and a container whose image has no name
+                        `foreign-id\tforeign-name\tpostgres:16`,
+                        `anon-id\tanon-name\tsha256:abc`,
+                    ].join( `\n` )
+                    if( args[1] === `container` && args[2] === `inspect` ) return `sha256:held\nsha256:held\nsha256:pg\nsha256:anon\nsha256:busy`
+                    if( args[1] === `image` && args[2] === `ls` ) return [
+                        `sha256:held\t1GB\tactuallymentor/babysit\t2.0.0`,
+                        `sha256:other\t2GB\tactuallymentor/babysit\t1.9.0`,
+                        `sha256:old\t512MB\tactuallymentor/babysit\t1.0.0`,
+                        `sha256:busy\t4GB\tactuallymentor/babysit-web\t1.0.0`,
+                        `sha256:other\t2GB\tactuallymentor/babysit\tlatest`,
+                        // Not Babysit's: another project's image, a dangling layer, the current image
+                        `sha256:pg\t400MB\tpostgres\t16`,
+                        `sha256:dangling\t90MB\t<none>\t<none>`,
+                        `sha256:current\t3GB\tactuallymentor/babysit\tlatest`,
+                    ].join( `\n` )
                     return ``
                 },
             } )
@@ -88,22 +105,27 @@ describe( `Docker cleanup`, () => {
             expect( calls.every( call => call[0] === `sudo` && call[1] === `docker` ) ).toBe( true )
             expect( calls.map( call => call.slice( 2, 4 ) ) ).toEqual( [
                 [ `container`, `ls` ], [ `image`, `ls` ], [ `container`, `ls` ], [ `container`, `inspect` ], [ `buildx`, `du` ],
-                [ `container`, `rm` ], [ `image`, `rm` ], [ `network`, `prune` ], [ `builder`, `prune` ],
+                [ `container`, `rm` ], [ `image`, `rm` ], [ `builder`, `prune` ],
             ] )
+            // Babysit creates no networks, so an unused one is someone else's
+            expect( calls.some( call => call[2] === `network` ) ).toBe( false )
             // The container being removed no longer pins its image; running ones do
-            expect( calls.find( call => call[3] === `inspect` ).slice( 6 ) ).toEqual( [ `held-id`, `external-id`, `running-id` ] )
+            expect( calls.find( call => call[3] === `inspect` ).slice( 6 ) ).toEqual( [ `held-id`, `external-id`, `foreign-id`, `anon-id`, `running-id` ] )
             expect( calls.find( call => call[2] === `container` && call[3] === `rm` )[4] ).toBe( `other-id` )
             // `other` has two tags, which `image rm <id>` refuses: never planned
             expect( calls.filter( call => call[2] === `image` && call[3] === `rm` ).map( call => call[4] ) ).toEqual( [ `sha256:old` ] )
             expect( calls.find( call => call[4] === `external-id` ) ).toBeUndefined()
-            expect( summary ).toContain( `removed 1 stopped containers and 1 images` )
+            // Other projects' stopped containers and images are never removed
+            expect( calls.filter( call => call[3] === `rm` ).map( call => call[4] ).sort() ).toEqual( [ `other-id`, `sha256:old` ] )
+            expect( summary ).toContain( `removed 1 stopped Babysit containers and 1 Babysit images` )
+            expect( summary ).toContain( `networks and volumes untouched` )
         } finally {
             rmSync( directory, { recursive: true, force: true } )
         }
 
     } )
 
-    it( `plans without deleting, counting each image once and only images nothing still uses`, async () => {
+    it( `plans without deleting: only Babysit's images nothing still uses, counted once`, async () => {
 
         const directory = mkdtempSync( join( tmpdir(), `babysit-docker-plan-` ) )
         const calls = []
@@ -115,9 +137,15 @@ describe( `Docker cleanup`, () => {
                 run_command: async ( command, args ) => {
                     calls.push( args.slice( 0, 2 ) )
                     if( args[0] === `container` && args.includes( `--quiet` ) ) return `stopped-id\nrunning-id`
-                    if( args[0] === `container` && args[1] === `ls` ) return `stopped-id\tstopped`
+                    if( args[0] === `container` && args[1] === `ls` ) return `stopped-id\tstopped\tactuallymentor/babysit:2.0.0\nother-id\tpg\tpostgres:16`
                     if( args[0] === `container` ) return `sha256:busy`
-                    if( args[0] === `image` ) return `sha256:free\t2GB\nsha256:tagged\t8GB\nsha256:tagged\t8GB\nsha256:busy\t4GB`
+                    if( args[0] === `image` ) return [
+                        `sha256:free\t2GB\tactuallymentor/babysit\t1.0.0`,
+                        `sha256:tagged\t8GB\tactuallymentor/babysit\t1.1.0`,
+                        `sha256:tagged\t8GB\tactuallymentor/babysit\tlatest`,
+                        `sha256:busy\t4GB\tactuallymentor/babysit-web\t1.0.0`,
+                        `sha256:foreign\t6GB\tpostgres\t16`,
+                    ].join( `\n` )
                     return `x  true  3GB  9 days ago\ny  true  1GB*  9 days ago\nTotal: 5GB`
                 },
                 shared_sizes: async () => new Map( [ [ `sha256:free`, 1.5e9 ], [ `sha256:busy`, 1.5e9 ] ] ),
@@ -134,6 +162,37 @@ describe( `Docker cleanup`, () => {
             } )
             expect( calls.some( ( [ , verb ] ) => verb === `rm` || verb === `prune` ) ).toBe( false )
         } finally {
+            rmSync( directory, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `keeps the current image and treats the BABYSIT_DOCKER_IMAGE repository and local babysit builds as its own`, async () => {
+
+        const directory = mkdtempSync( join( tmpdir(), `babysit-docker-current-` ) )
+        const before = process.env.BABYSIT_DOCKER_IMAGE
+        process.env.BABYSIT_DOCKER_IMAGE = `registry.local/babysit:dev`
+
+        try {
+            const plan = await plan_docker_prune( {
+                sessions_dir: directory,
+                command_prefix: [ `docker` ],
+                measure_cache: async () => null,
+                shared_sizes: async () => null,
+                run_command: async ( command, args ) => {
+                    if( args[0] === `container` ) return ``
+                    return [
+                        `sha256:current\t1GB\tregistry.local/babysit\tdev`,
+                        `sha256:older\t1GB\tregistry.local/babysit\t0.9`,
+                        `sha256:e2e\t1GB\tbabysit\te2e-base`,
+                        `sha256:lookalike\t1GB\tsomeone/babysit-fork\tlatest`,
+                    ].join( `\n` )
+                },
+            } )
+            expect( plan.images.map( image => image.id ).sort() ).toEqual( [ `sha256:e2e`, `sha256:older` ] )
+        } finally {
+            if( before === undefined ) delete process.env.BABYSIT_DOCKER_IMAGE
+            else process.env.BABYSIT_DOCKER_IMAGE = before
             rmSync( directory, { recursive: true, force: true } )
         }
 
@@ -796,7 +855,7 @@ describe( `prune command interaction`, () => {
 
         const text = rendered()
         expect( text ).toMatch( /Docker build cache unused 7\+ days\s+100 GB to 180 GB of 240 GB/ )
-        expect( text ).toMatch( /Docker images, 1 unused\s+3.0 GB to 9.0 GB/ )
+        expect( text ).toMatch( /Babysit Docker images, 1 unused\s+3.0 GB to 9.0 GB/ )
         expect( text ).toMatch( /Clones unused 30\+ days\s+1 clone, 2.0 kB/ )
         expect( text ).toMatch( /Interrupted prune leftovers\s+6.0 GB/ )
         expect( text ).toContain( `1. Unused for 30 days (default): 1 clone, 2.0 kB` )

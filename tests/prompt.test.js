@@ -315,6 +315,20 @@ Welcome back Mentor!
         expect( is_initial_prompt_ready( claude, `Claude Code v3\n? for shortcuts` ) ).toBe( true )
     } )
 
+    it( `recognises a resumed long conversation whose banner scrolled off`, () => {
+        // Live capture from Claude Code 2.1.322: claude --continue after a 70-line answer
+        const output = readFileSync( new URL( `./fixtures/claude/resumed-long-conversation-2.1.322.txt`, import.meta.url ), `utf8` )
+        expect( output ).not.toMatch( /Claude Code v\d/ )
+        expect( is_initial_prompt_ready( claude, output ) ).toBe( true )
+    } )
+
+    it( `does not take a footer in old history or a dialog option for a bottom composer`, () => {
+        const history = `Claude Code v2.1.322\n⏵⏵ bypass permissions on (shift+tab to cycle)\nsome output\nmore output`
+        expect( is_initial_prompt_ready( claude, history.replace( `Claude Code v2.1.322\n`, `` ) ) ).toBe( false )
+        const dialog = `────────────\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n────────────\n  ⏵⏵ bypass permissions on (shift+tab to cycle)`
+        expect( is_initial_prompt_ready( claude, dialog ) ).toBe( false )
+    } )
+
     it( `does not treat Claude's splash screen as a ready composer`, () => {
         expect( is_initial_prompt_ready( claude, `Welcome to Claude Code v2.1.237` ) ).toBe( false )
     } )

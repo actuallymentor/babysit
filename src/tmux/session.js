@@ -12,6 +12,7 @@ const AGENT_STATUS_OPTION = `@babysit_agent_status`
 const IDLE_OPTION = `@babysit_idle_since`
 const UNREAD_OPTION = `@babysit_unread_since`
 const SHELVED_OPTION = `@babysit_shelved_since`
+const MODEL_OPTION = `@babysit_model`
 // Idle rules: epoch seconds of the next automated turn while idle, else the activity word
 const NEXT_TURN_OPTION = `@babysit_next_turn`
 
@@ -164,6 +165,9 @@ export const create_session = async ( session_name, command, {
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status`, `on` ] ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-position`, `bottom` ] ),
                 run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-left`, `#[bold]#{@babysit_status_label}#[default] ` ] ),
+                // The agent's model replaces tmux's host name and clock once the monitor sees it
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-right`, STATUS_RIGHT ] ),
+                run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, session_name, `status-right-length`, `40` ] ),
             ] )
         } catch ( error ) {
             log.warn( `Could not configure the tmux status bar: ${ error.message }` )
@@ -422,6 +426,36 @@ export const mark_read = async ( session_name, { run_command = run } = {} ) => {
         return true
     } catch ( error ) {
         log.debug( `Could not mark ${ session_name } read: ${ error.message }` )
+        return false
+    }
+
+}
+
+// Shown at the right of the status bar: the model the agent reports
+const STATUS_RIGHT = `#[bold]#{@babysit_model}#[default] `
+
+/**
+ * Publish the model an agent is using, for the status bar. Sessions created
+ * before the bar showed it get the right-hand format on first publish.
+ * Cosmetic: failures are only logged.
+ * @param {string} session_name - Babysit tmux session name
+ * @param {string} model - Model as the agent prints it
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Command runner seam
+ * @returns {Promise<boolean>} Whether it was published
+ */
+export const set_session_model = async ( session_name, model, { run_command = run } = {} ) => {
+
+    const target = `=${ session_name }:`
+    const set = ( ...args ) => run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, `-t`, target, ...args ] )
+
+    try {
+        await set( MODEL_OPTION, model )
+        await set( `status-right`, STATUS_RIGHT )
+        await set( `status-right-length`, `40` )
+        return true
+    } catch ( error ) {
+        log.debug( `Could not publish ${ session_name } model: ${ error.message }` )
         return false
     }
 

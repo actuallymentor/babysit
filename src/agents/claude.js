@@ -34,10 +34,25 @@ const INITIAL_PROMPT_BLOCKERS = [
 // replaced it with the permission-mode footer "⏵⏵ auto mode on (shift+tab to cycle)".
 const COMPOSER_FOOTERS = [ /\?\s+for shortcuts/i, /shift\+tab to cycle/i ]
 
+// A resumed long conversation scrolls the `Claude Code v…` banner off the pane
+// (verified on 2.1.322: --continue leaves only the composer and its footer), so a
+// composer at the bottom counts on its own: the input line, a rule, the footer.
+// A dialog's `❯ 1. Yes` option is not an input line.
+const has_bottom_composer = output => {
+
+    const tail = output.split( `\n` ).filter( line => line.trim() ).slice( -8 )
+    const input = tail.findIndex( line => /^\s*❯(?!\s*\d+\.)/.test( line ) )
+
+    return input !== -1
+        && /^\s*[─╌-]{10,}/.test( tail[ input + 1 ] || `` )
+        && COMPOSER_FOOTERS.some( pattern => tail.slice( input + 1 ).some( line => pattern.test( line ) ) )
+
+}
+
 const is_initial_prompt_ready = output => {
 
-    const has_composer = /Claude Code v\d/i.test( output )
-        && COMPOSER_FOOTERS.some( pattern => pattern.test( output ) )
+    const has_composer = COMPOSER_FOOTERS.some( pattern => pattern.test( output ) )
+        && ( /Claude Code v\d/i.test( output ) || has_bottom_composer( output ) )
     const has_startup_blocker = INITIAL_PROMPT_BLOCKERS.some( pattern => pattern.test( output ) )
 
     return has_composer && !has_startup_blocker
@@ -246,11 +261,12 @@ export const claude = {
     },
 
     defaults: {
-        // `default` is Claude Code's recommended everyday model (Opus 5.5 today).
-        // `best` (Fable) has its own much smaller weekly cap and, at medium
-        // effort, benchmarks below Opus 5.5 at twice the cost; keep it opt-in.
+        // `opus` is the latest Opus whatever the login: setup-token sessions cannot
+        // read the subscription profile, so Claude's own `default` falls back to
+        // Sonnet there. `best` (Fable) has its own much smaller weekly cap and, at
+        // medium effort, benchmarks below Opus 5.5 at twice the cost; keep it opt-in.
         // Start with balanced reasoning; deeper effort remains an explicit opt-in.
-        model: `default`,
+        model: `opus`,
         effort: `medium`,
     },
 

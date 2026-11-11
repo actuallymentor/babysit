@@ -178,7 +178,7 @@ export const parse_args = ( argv ) => {
     // babysit web init — creates or rotates the host/sidecar capability.
     // babysit web key add|list|remove [NAME] — read-only API keys
     if( verb === `web` ) {
-        const web_verb = positionals[1]
+        const [ , web_verb ] = positionals
         const allowed = new Set( [ ...HELP_TOKENS, ...VERSION_TOKENS ] )
         const key_args = web_verb === `key` ? positionals.slice( 2, 4 ).map( String ) : []
         const unexpected = prepared.slice( 2 ).filter( argument => !allowed.has( argument ) && !key_args.includes( argument ) )
@@ -201,7 +201,7 @@ export const parse_args = ( argv ) => {
 
     // babysit mac add NAME HOST --user U (password: pipe or --password-env) | list | check NAME | forget NAME
     if( verb === `mac` ) {
-        const mac_verb = positionals[1]
+        const [ , mac_verb ] = positionals
         const [ mac_name = null, mac_host = null ] = positionals.slice( 2 ).map( String )
 
         if( !mac_verb && ( flags.help || flags.version ) ) return { verb: `mac`, mac_verb: null, agent: null, flags, passthrough: [] }
@@ -333,7 +333,7 @@ export const parse_args = ( argv ) => {
 
     // babysit resume <id> [--yolo] [extra flags…]
     if( verb === `resume` ) {
-        const session_id = positionals[1]
+        const [ , session_id ] = positionals
         return {
             verb: `resume`,
             agent: null,
