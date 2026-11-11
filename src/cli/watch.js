@@ -584,10 +584,15 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
             } )
         }
 
-        // Shelves the selected session; it lands in the idle list on the next frame
+        // Shelves the selected session; it lands in the idle list on the next frame.
+        // The cursor stays put: it passes to the row below (above, for the last row)
         const shelve_selected = () => {
-            const row = rows.find( row => row.target === selected )
-            if( row ) Promise.resolve( shelve_fn( row.tmux_name ) ).then( () => wake() )
+            const at = rows.findIndex( row => row.target === selected )
+            if( at < 0 ) return
+            const { tmux_name } = rows[ at ]
+            selected = ( rows[ at + 1 ] || rows[ at - 1 ] || rows[ at ] ).target
+            show()
+            Promise.resolve( shelve_fn( tmux_name ) ).then( () => wake() )
         }
 
         const choose = number => targets.has( number ) ? stop( targets.get( number ) ) : ( typed = ``, show() )

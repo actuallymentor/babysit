@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.2 — 2026-11-11
+
+### Changed
+- `e` in `babysit watch` (and the post-detach list) leaves the cursor in place: it moves to the next session (the previous one, for the last row) instead of following the shelved session down to the idle list.
+
 ## 2.4.1 — 2026-11-11
 
 ### Changed

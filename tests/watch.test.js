@@ -604,6 +604,11 @@ describe( `cmd_watch`, () => {
             expect( shelved ).toEqual( [ `tmux_b` ] )
         } )
 
+        it( `hands the cursor to the next row on e, the previous one for the last row`, async () => {
+            expect( ( await row_run( [ `\x1b[B`, `e`, `\r` ], rows ) ).opened ).toEqual( [ `c` ] )
+            expect( ( await row_run( [ `\x1b[B\x1b[B`, `e`, `\r` ], rows ) ).opened ).toEqual( [ `b` ] )
+        } )
+
         it( `freezes a running session and unfreezes a frozen one with f`, async () => {
             const ran = []
             await row_run( [ `\x1b[B`, `f`, `\x1b[B`, `f` ], rows, { ran } )

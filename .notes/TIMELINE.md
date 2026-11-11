@@ -250,3 +250,4 @@
 - 2026-11-10: dropped coding/agentic benchmark sorts (AA retired indexes); 2.2.1
 - 2026-11-10: decided against composite benchmarks (Epoch/llm-stats); AA free tier only. llm-stats coding/agentic entries are all vendor self-reported
 - 2026-11-10: agents refused GUI password dialogs (prompt said never handle creds, no tool typed it outside lock screen) → added `babysit mac password`
+- 2026-11-11: 2.4.2 — watch `e` hands the cursor to the neighbouring row instead of following the shelved session. Local full suite flaky under host load ~100 (baseline main fails the same timeouts).
