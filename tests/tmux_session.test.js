@@ -180,7 +180,7 @@ describe( `list_sessions format compatibility`, () => {
         const rows = [
             { session_name: `babysit_idle`, session_created: `123`, babysit_agent_status: `idle`, activity: `150`, unread_since: `200`, next_turn: `1800` },
             { session_name: `babysit_running`, session_created: `124`, babysit_agent_status: `running`, activity: `201`, unread_since: `200`, next_turn: `running` },
-            { session_name: `babysit_waiting`, session_created: `125`, babysit_agent_status: `waiting` },
+            { session_name: `babysit_waiting`, session_created: `125`, babysit_agent_status: `waiting`, shelved: `400` },
             { session_name: `babysit_looked`, session_created: `126`, babysit_agent_status: `idle`, last_attached: `300`, activity: `300`, unread_since: `200` },
             { session_name: `babysit_typed`, session_created: `127`, babysit_agent_status: `idle`, last_attached: `300`, activity: `301`, unread_since: `200` },
         ]
@@ -200,6 +200,7 @@ describe( `list_sessions format compatibility`, () => {
                     .replaceAll( `#{@babysit_unread_since}`, row.unread_since ?? `` )
                     .replaceAll( `#{@babysit_idle_since}`, row.unread_since ?? `` )
                     .replaceAll( `#{@babysit_next_turn}`, row.next_turn ?? `` )
+                    .replaceAll( `#{@babysit_shelved_since}`, row.shelved ?? `` )
                 ).join( `\n` )
             },
         } )
@@ -207,11 +208,11 @@ describe( `list_sessions format compatibility`, () => {
         expect( result ).toEqual( [
             // No input since the stamp: unread. Input after it: read. Attach alone
             // bumps activity to the attach second, which does not count.
-            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: 1800, last_opened: 123 },
-            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200, next_turn: null, last_opened: 124 },
-            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null, next_turn: null, last_opened: 125 },
-            { name: `babysit_looked`, attached: false, created: `126`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: null, last_opened: 300 },
-            { name: `babysit_typed`, attached: false, created: `127`, agent_status: `idle`, unread: false, idle_since: 200, next_turn: null, last_opened: 300 },
+            { name: `babysit_idle`, attached: false, created: `123`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: 1800, last_opened: 123, shelved_since: null },
+            { name: `babysit_running`, attached: false, created: `124`, agent_status: `running`, unread: false, idle_since: 200, next_turn: null, last_opened: 124, shelved_since: null },
+            { name: `babysit_waiting`, attached: false, created: `125`, agent_status: `waiting`, unread: false, idle_since: null, next_turn: null, last_opened: 125, shelved_since: 400 },
+            { name: `babysit_looked`, attached: false, created: `126`, agent_status: `idle`, unread: true, idle_since: 200, next_turn: null, last_opened: 300, shelved_since: null },
+            { name: `babysit_typed`, attached: false, created: `127`, agent_status: `idle`, unread: false, idle_since: 200, next_turn: null, last_opened: 300, shelved_since: null },
         ] )
     } )
 

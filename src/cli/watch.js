@@ -7,7 +7,7 @@ import { paint } from '../utils/color.js'
 import { log } from '../utils/log.js'
 import { render_active_sessions, track_session_activity } from './list.js'
 import { cmd_open } from './open.js'
-import { foreground_attach_count, mark_read } from '../tmux/session.js'
+import { foreground_attach_count, mark_read, shelve_session } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
 import { disk_warnings, read_disk_health, refresh_disk_health } from '../disk_health.js'
 
@@ -294,7 +294,7 @@ const watch_registry = on_change => {
  * Sessions sort by last opened, so numbers move when that changes. Ones idle over
  * 24h (nothing unread) drop into a condensed list below the tree.
  * `--interactive`: ↑/↓ select a session (the selection follows it across
- * re-sorts), enter opens it, space marks an unread one read; typing its number
+ * re-sorts), enter opens it, space marks an unread one read, e moves it to the idle list; typing its number
  * opens it too. Detaching (or the session closing) comes back here. Under the shell-init wrapper babysit exits instead
  * and the wrapper attaches, then runs `babysit watch --interactive` again.
  * Usage refreshes every 5 min in the background so frames never wait on providers.
@@ -319,6 +319,7 @@ const watch_registry = on_change => {
  * @param {Object} [deps.output] - Terminal stream, for TTY and resize detection
  * @param {Function} [deps.open_fn] - Session opener
  * @param {Function} [deps.mark_read_fn] - Clears a session's unread stamp, by tmux name
+ * @param {Function} [deps.shelve_fn] - Moves a session to the idle list, by tmux name
  * @param {Function} [deps.attach_count_fn] - In-process attach counter
  * @param {number} [deps.rounds] - Frame count; endless by default
  */
@@ -338,6 +339,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
     output = process.stdout,
     open_fn = cmd_open,
     mark_read_fn = mark_read,
+    shelve_fn = shelve_session,
     attach_count_fn = foreground_attach_count,
     rounds = Infinity,
 } = {} ) => {
@@ -412,7 +414,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
         let selected = null
 
         const footer = () => interactive
-            ? `↑↓ select · enter open · space mark read · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
+            ? `↑↓ select · enter open · space mark read · e idle · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
             : `Live; Ctrl+C to stop.`
 
         // The cursor replaces the two-space gutter every table and list line starts with
@@ -454,6 +456,12 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             Promise.resolve( mark_read_fn( row.tmux_name ) ).then( () => wake() )
         }
 
+        // Shelves the selected session; it lands in the idle list on the next frame
+        const shelve_selected = () => {
+            const row = rows.find( row => row.target === selected )
+            if( row ) Promise.resolve( shelve_fn( row.tmux_name ) ).then( () => wake() )
+        }
+
         const choose = number => targets.has( number ) ? stop( targets.get( number ) ) : ( typed = ``, show() )
 
         // Digits pick a session as soon as no longer number could still follow;
@@ -466,6 +474,7 @@ export const cmd_watch = async ( { flags = {} } = {}, {
             clearTimeout( chord )
             if( key === `up` || key === `down` ) return move( key === `up` ? -1 : 1 )
             if( key === ` ` ) return read_selected()
+            if( key === `e` ) return shelve_selected()
             if( key === `\r` ) return typed ? choose( Number( typed ) ) : selected === null ? undefined : stop( selected )
             if( key === `\x7f` || key === `\x1b` ) {
                 typed = ``

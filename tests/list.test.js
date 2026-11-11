@@ -608,10 +608,18 @@ describe( `render_active_sessions recent_first + idle_section`, () => {
 
     it( `moves read sessions idle over 24h into a condensed list, unread ones stay`, async () => {
         const { output } = await render()
-        const [ tree, idle ] = output.split( `Idle over 24h:` )
+        const [ tree, idle ] = output.split( `Idle resumable sessions:` )
         expect( tree ).toContain( `unread` )
         expect( tree ).not.toContain( `stale-repo` )
         expect( idle ).toMatch( /4\s+dev\/stale-repo - old - 2d 5h/ )
+    } )
+
+    it( `moves a session shelved since its last turn into the idle list, until the next turn ends`, async () => {
+        sessions[2] = { ...sessions[2], agent_status: `idle`, idle_since: hours_ago( 2 ), shelved_since: hours_ago( 1 ) }
+        expect( ( await render() ).output.split( `Idle resumable sessions:` )[1] ).toContain( ` new ` )
+        sessions[2] = { ...sessions[2], idle_since: hours_ago( 0 ) }
+        expect( ( await render() ).output.split( `Idle resumable sessions:` )[1] ).not.toContain( ` new ` )
+        sessions[2] = { name: `babysit_new`, agent_status: `running`, last_opened: hours_ago( 1 ) }
     } )
 
     it( `reports the printed line of every row`, async () => {

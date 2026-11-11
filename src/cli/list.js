@@ -682,7 +682,7 @@ export const print_active_sessions_table = ( tmux_sessions, stored_sessions, {
  * @returns {{ length: number, row_lines: number[] }} Lines printed, and each session's line index
  */
 export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
-    title = `Idle over 24h:`,
+    title = `Idle resumable sessions:`,
     numbers = tmux_sessions.map( ( _, index ) => index + 1 ),
     now = Date.now(),
 } = {} ) => {
@@ -725,7 +725,7 @@ export const print_idle_sessions_list = ( tmux_sessions, stored_sessions, {
  * @param {Function} [options.observe_activity_fn] - Fresh pane activity observer
  * @param {Function} [options.version_check_fn] - Newer-release lookup
  * @param {boolean} [options.recent_first=false] - Order by last opened (workspaces by their newest session); numbers follow the display
- * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h (nothing unread) into a condensed list below the tree
+ * @param {boolean} [options.idle_section=false] - Move sessions idle over 24h (nothing unread), or shelved by hand, into a condensed list below the tree
  * @returns {Promise<{ targets: Map<number, string>, rows: Object[] }>} `targets`: shown selectors that can be opened (exited fork parents
  * excluded), each pinned to its babysit id (tmux name when unrecorded) so a list that shifts cannot open another session.
  * `rows`: the same in display order as { number, target, tmux_name, unread, line }, `line` being its index among the
@@ -772,8 +772,13 @@ export const render_active_sessions = async ( {
     before_print()
 
     const now = Date.now()
-    const is_idle = tmux => idle_section
-        && session_dot( tmux, session_status( tmux, by_tmux.get( tmux.name ) ), now ) === `stale`
+    // Idle over 24h, or shelved by hand since the last finished turn
+    const is_idle = tmux => {
+        if( !idle_section ) return false
+        const status = session_status( tmux, by_tmux.get( tmux.name ) )
+        return session_dot( tmux, status, now ) === `stale`
+            || ( status === `idle` && tmux.shelved_since >= ( tmux.idle_since || 0 ) )
+    }
     const active = observed_sessions.filter( tmux => !is_idle( tmux ) )
     const idle = observed_sessions.filter( is_idle )
 

@@ -11,6 +11,7 @@ const AGENT_STATUS_OPTION = `@babysit_agent_status`
 // Epoch seconds: start of the current idle stretch, and of an unseen one
 const IDLE_OPTION = `@babysit_idle_since`
 const UNREAD_OPTION = `@babysit_unread_since`
+const SHELVED_OPTION = `@babysit_shelved_since`
 // Idle rules: epoch seconds of the next automated turn while idle, else the activity word
 const NEXT_TURN_OPTION = `@babysit_next_turn`
 
@@ -427,6 +428,33 @@ export const mark_read = async ( session_name, { run_command = run } = {} ) => {
 }
 
 /**
+ * Move a session to the idle list by hand: stamp `@babysit_shelved_since` and
+ * clear unread (it was dealt with). `list_sessions` reports the stamp; it only
+ * holds while the agent idles, since the next finished turn stamps a newer
+ * idle-since. Cosmetic: failures are only logged.
+ * @param {string} session_name - Babysit tmux session name
+ * @param {Object} [options]
+ * @param {Function} [options.run_command=run] - Command runner seam
+ * @param {Function} [options.now=Date.now] - Clock seam
+ * @returns {Promise<boolean>} Whether the session was shelved
+ */
+export const shelve_session = async ( session_name, { run_command = run, now = Date.now } = {} ) => {
+
+    const target = `=${ session_name }:`
+    const set = ( ...args ) => run_command( `tmux`, [ `-L`, TMUX_SOCKET, `set-option`, ...args ] )
+
+    try {
+        await set( `-t`, target, SHELVED_OPTION, String( Math.floor( now() / 1_000 ) ) )
+        await set( `-u`, `-t`, target, UNREAD_OPTION )
+        return true
+    } catch ( error ) {
+        log.debug( `Could not shelve ${ session_name }: ${ error.message }` )
+        return false
+    }
+
+}
+
+/**
  * Unread: a turn ended and no human input reached tmux since. Keys and mouse
  * (scroll) bump `session_activity`; agent output and send-keys do not. Attach
  * also bumps it, to the attach second, so activity must beat `session_last_attached`
@@ -445,7 +473,7 @@ const is_unread = ( { unread_since, activity, last_attached } ) => {
  * @param {Object} [options]
  * @param {boolean} [options.strict=false] - Surface inspection failures except an absent tmux server
  * @param {Function} [options.run_command=run] - Injectable command runner
- * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null, last_opened: number|null }>>}
+ * @returns {Promise<Array<{ name: string, attached: boolean, created: string, agent_status: string, unread: boolean, idle_since: number|null, next_turn: number|null, last_opened: number|null, shelved_since: number|null }>>}
  */
 export const list_sessions = async ( { strict = false, run_command = run } = {} ) => {
 
@@ -455,13 +483,13 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
             `list-sessions`, `-F`,
             // Tmux 3.3a sanitizes literal tabs in formats into underscores.
             // Colons survive formatting and cannot occur in session names.
-            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{session_activity}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}`,
+            `#{session_name}:#{?session_attached,attached,detached}:#{session_created}:#{${ AGENT_STATUS_OPTION }}:#{session_last_attached}:#{session_activity}:#{${ UNREAD_OPTION }}:#{${ IDLE_OPTION }}:#{${ NEXT_TURN_OPTION }}:#{${ SHELVED_OPTION }}`,
         ] )
 
         return output.split( `\n` )
             .filter( line => line.startsWith( `babysit_` ) )
             .map( line => {
-                const [ name, tmux_status, created, stored_agent_status, last_attached, activity, unread_since, idle_stamp, next_stamp ] = line.split( `:` )
+                const [ name, tmux_status, created, stored_agent_status, last_attached, activity, unread_since, idle_stamp, next_stamp, shelved_stamp ] = line.split( `:` )
                 const agent_status = [ `idle`, `waiting` ].includes( stored_agent_status ) ? stored_agent_status : `running`
                 const attached = tmux_status === `attached`
                 const unread = is_unread( { unread_since, activity, last_attached } )
@@ -470,7 +498,7 @@ export const list_sessions = async ( { strict = false, run_command = run } = {} 
                 const next_turn = Number( next_stamp ) > 0 ? Number( next_stamp ) : null
                 // Last attach, else birth: a session nobody opened yet counts as opened when made
                 const last_opened = Number( last_attached ) > 0 ? Number( last_attached ) : Number( created ) > 0 ? Number( created ) : null
-                return { name, attached, created, agent_status, unread, idle_since, next_turn, last_opened }
+                return { name, attached, created, agent_status, unread, idle_since, next_turn, last_opened, shelved_since: Number( shelved_stamp ) > 0 ? Number( shelved_stamp ) : null }
             } )
 
     } catch ( error ) {

@@ -511,7 +511,7 @@ describe( `cmd_watch`, () => {
         } )
 
         // Rows as render_active_sessions reports them: display order, one line each after `tree`
-        const row_run = async ( keys, rows, { marked = [] } = {} ) => {
+        const row_run = async ( keys, rows, { marked = [], shelved = [] } = {} ) => {
             const input = keyboard( keys )
             const opened = []
             const frames = []
@@ -535,6 +535,7 @@ describe( `cmd_watch`, () => {
                 wait_fn: () => new Promise( resolve => setTimeout( resolve, 5 ) ),
                 open_fn: async ( { session_id } ) => opened.push( session_id ),
                 mark_read_fn: async name => marked.push( name ),
+                shelve_fn: async name => shelved.push( name ),
                 attach_count_fn: () => 0,
             } )
             return { opened, frames }
@@ -566,6 +567,12 @@ describe( `cmd_watch`, () => {
             expect( marked ).toEqual( [ `tmux_c` ] )
         } )
 
+        it( `shelves the selected session with e`, async () => {
+            const shelved = []
+            await row_run( [ `\x1b[B`, `e` ], rows, { shelved } )
+            expect( shelved ).toEqual( [ `tmux_b` ] )
+        } )
+
         it( `still opens by typed number`, async () => {
             expect( ( await row_run( [ `\x1b[B`, `3` ], rows ) ).opened ).toEqual( [ `c` ] )
         } )
@@ -578,7 +585,7 @@ describe( `cmd_watch`, () => {
                 render_sessions_fn: async () => ( { targets: new Map( [ [ 1, `id1` ] ] ) } ),
                 write_fn: text => frames.push( text ),
             } )
-            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · space mark read · or type a number · ctrl+c close` )
+            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · space mark read · e idle · or type a number · ctrl+c close` )
         } )
 
     } )
