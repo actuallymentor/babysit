@@ -478,7 +478,7 @@ export const cmd_watch = async ( { flags = {}, notice: first_notice = null } = {
         const footer = () => interactive
             ? help
                 ? `any key to go back`
-                : `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c close${ typed ? `: ${ typed }…` : `` }`
+                : `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c to close${ typed ? `: ${ typed }…` : `` }`
             : `Live; Ctrl+C to stop.`
 
         // With titles on, each titled row gets a dim line under it. `highlight` keys on

@@ -660,7 +660,7 @@ describe( `cmd_watch`, () => {
                 render_sessions_fn: async () => ( { targets: new Map( [ [ 1, `id1` ] ] ) } ),
                 write_fn: text => frames.push( text ),
             } )
-            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c close` )
+            expect( plain( frames.at( -1 ) ) ).toContain( `↑↓ select · enter open · ? shortcuts · or type a number · ctrl+c to close` )
         } )
 
     } )
