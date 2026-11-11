@@ -59,7 +59,6 @@ const PLACEHOLDER_TITLE = /^(?:[0-9a-f]{12}|workspace|claude code|codex|opencode
 export const clean_pane_title = ( raw, { pwd = ``, tmux_name = `` } = {} ) => {
 
     const title = String( raw ?? `` )
-        // eslint-disable-next-line no-control-regex
         .replace( /[\x00-\x1f\x7f-\x9f]/g, `` )
         .replace( /^[^\p{L}\p{N}]+/u, `` )
         .replace( /\s+\|\s+[^|]*$/, `` )

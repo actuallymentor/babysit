@@ -65,9 +65,9 @@ const FISH = () => `
 complete -c sit -w babysit
 complete -c babysit -f -n '__fish_use_subcommand' -a '${ verbs().join( ` ` ) }'
 ${ completion_words().flatMap( ( { verb, flags, subs } ) => [
-    ...subs.map( sub => `complete -c babysit -f -n '__fish_seen_subcommand_from ${ verb }; and not __fish_seen_subcommand_from ${ subs.join( ` ` ) }' -a '${ sub }'` ),
-    ...flags.map( flag => `complete -c babysit -n '__fish_seen_subcommand_from ${ verb }' ${ flag.startsWith( `--` ) ? `-l ${ flag.slice( 2 ) }` : `-s ${ flag.slice( 1 ) }` }` ),
-] ).join( `\n` ) }`
+        ...subs.map( sub => `complete -c babysit -f -n '__fish_seen_subcommand_from ${ verb }; and not __fish_seen_subcommand_from ${ subs.join( ` ` ) }' -a '${ sub }'` ),
+        ...flags.map( flag => `complete -c babysit -n '__fish_seen_subcommand_from ${ verb }' ${ flag.startsWith( `--` ) ? `-l ${ flag.slice( 2 ) }` : `-s ${ flag.slice( 1 ) }` }` ),
+    ] ).join( `\n` ) }`
 
 /**
  * Tab completion for babysit's words, flags and subcommands, generated from the
