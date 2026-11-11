@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.4.1 — 2026-11-11
 
 ### Changed
 - `babysit watch` is navigable in any terminal, exactly like the list you land on after detaching: arrows + enter, numbers, space, `e`, `f`, `r`/`rr`, `i`, `?`. `--interactive` still forces the keys when stdin is not a terminal; piped output stays a plain live view.
