@@ -10,7 +10,7 @@ import { parse_args } from './parse.js'
 // Top-level switches are the only ones the menu remembers per project. Advanced
 // ones are never remembered, prefilled only from flags, --config or a fork's parent.
 import { all_devices, DEVICE_NAMES } from '../devices/kinds.js'
-import { FORK_NEGATABLE_FLAGS, MENU_ADVANCED_TOGGLES as ADVANCED_TOGGLES, MENU_LABELS as LABELS, MENU_TOGGLES as TOGGLES } from './registry.js'
+import { FORK_NEGATABLE_FLAGS, MENU_ADVANCED_TOGGLES as ADVANCED_TOGGLES, MENU_LABELS as LABELS, MENU_TOGGLES as TOGGLES, flags_from_modifiers } from './registry.js'
 import { cached_account_usage, list_claude_accounts, probe_accounts } from './claude_accounts.js'
 import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './list.js'
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
@@ -43,13 +43,14 @@ const as_text = {
  * @param {Object} [options.initial] - Menu values that override the remembered defaults
  * @param {string} [options.submit] - What Enter does, for the key hint
  * @param {boolean} [options.fork_key=false] - Offer `f` to fork a running session instead
+ * @param {Function} [options.validate] - Throws to refuse a choice; the message shows under the menu
  * @param {Function} [options.list_accounts] - Claude account seam (names only are kept)
  * @param {Function} [options.cached_usage] - Cached per-account readings, free
  * @param {Function} [options.probe_usage] - Quota probe, reused for 5 min by the launch itself
  * @returns {Promise<Object|null>} Parsed launch, `{ verb: 'fork_menu' }`, or null when cancelled
  */
 export const launch_menu = async ( {
-    name = ``, initial = {}, submit = `launch`, fork_key = false, input = process.stdin, output = process.stdout,
+    name = ``, initial = {}, submit = `launch`, fork_key = false, validate = () => {}, input = process.stdin, output = process.stdout,
     list_accounts = list_claude_accounts, cached_usage = cached_account_usage, probe_usage = probe_accounts,
     ...defaults_options
 } = {} ) => {
@@ -190,7 +191,9 @@ export const launch_menu = async ( {
                 if( fork_key && current.type !== `text` && chars === `f` ) return resolve( { verb: `fork_menu` } )
                 if( key.name === `return` ) {
                     try {
-                        return resolve( to_command() )
+                        const chosen = to_command()
+                        validate( chosen )
+                        return resolve( chosen )
                     } catch ( failure ) {
                         error = failure.message
                         render()
@@ -307,6 +310,20 @@ export const pick_from_list = async ( { title, choices, input = process.stdin, o
 }
 
 /**
+ * Menu switches for a set of launch flags: mode, top toggles, and devices.
+ * Every device kind is the Devices switch; a lone kind sits under Advanced.
+ * @param {Object} flags - Launch flags, e.g. from flags_from_modifiers
+ * @returns {Object} Menu `initial` values
+ */
+export const menu_switches = flags => ( {
+    mode: flags.sandbox ? `sandbox` : flags.mudbox ? `mudbox` : `regular`,
+    ...Object.fromEntries( TOGGLES.map( flag => [ flag, Boolean( flags[ flag ] ) ] ) ),
+    devices: all_devices( flags ),
+    ...Object.fromEntries( DEVICE_NAMES.map( name => [ name, Boolean( flags[ name ] && !all_devices( flags ) ) ] ) ),
+    ignore_host_agents_md: Boolean( flags.ignore_host_agents_md ),
+} )
+
+/**
  * Turn a launch-menu choice into the fork command for a parent. The menu
  * shows the complete state, so every switch it leaves off is unset too.
  * @param {Object} parent - Parent session record
@@ -368,19 +385,13 @@ export const fork_from_menu = async ( {
 
     const { row, parent } = rows[ index ]
     const inherited = merge_fork_flags( parent, {}, rows.map( ( { parent: { name } } ) => name ).filter( Boolean ) )
-    const mode = inherited.sandbox ? `sandbox` : inherited.mudbox ? `mudbox` : `regular`
     const filesystem = default_fork_filesystem( { parent_live: !row.exited, parent_stuck: Boolean( parent.stuck_at ), flags: inherited } )
 
     const chosen = await menu( {
         name: inherited.name || ``,
         initial: {
             agent: parent.agent,
-            mode,
-            ...Object.fromEntries( TOGGLES.map( flag => [ flag, Boolean( inherited[ flag ] ) ] ) ),
-            // Both device kinds are the Devices switch; a lone kind sits under Advanced
-            devices: all_devices( inherited ),
-            ...Object.fromEntries( DEVICE_NAMES.map( name => [ name, Boolean( inherited[ name ] && !all_devices( inherited ) ) ] ) ),
-            ignore_host_agents_md: Boolean( inherited.ignore_host_agents_md ),
+            ...menu_switches( inherited ),
             clone: filesystem === `clone`,
             // Shown as the parent's subscription rather than auto, which a fork would not do
             account: has_accounts( parent.agent ) && parent.claude_account || false,
@@ -390,6 +401,51 @@ export const fork_from_menu = async ( {
     if( !chosen ) return null
 
     return fork_command_from_menu( parent, chosen )
+
+}
+
+// Flags a restart takes from the menu: switches, name, ports, log. The rest
+// (account, continue prompt, detach) stay the restart's own.
+const RESTART_KEYS = [ ...Object.keys( flags_from_modifiers() ), `devices`, `name`, `ports`, `log` ]
+
+/**
+ * Launch menu for `babysit restart`, prefilled with the session as it runs.
+ * The agent and the clone workspace stay; everything else may change.
+ * @param {Object} session - Stored session
+ * @param {Object} [options]
+ * @param {string|false} [options.account] - --account typed on the command line
+ * @param {Function} [options.menu] - Menu seam
+ * @returns {Promise<{ modes: Object, passthrough: string[], account: string|false }|null>} null when cancelled
+ */
+export const restart_from_menu = async ( session, { account = false, menu = launch_menu } = {} ) => {
+
+    const flags = flags_from_modifiers( session.modifiers )
+    const clone = Boolean( session.clone_path || flags.clone )
+
+    const chosen = await menu( {
+        name: session.name || ``,
+        initial: {
+            agent: session.agent,
+            ...menu_switches( flags ),
+            clone,
+            ports: session.ports,
+            args: session.launch_spec?.args,
+            account,
+        },
+        submit: `restart`,
+        validate: ( { agent, flags: next } ) => {
+            if( agent !== session.agent ) throw new Error( `A restart keeps the ${ session.agent } agent; fork the session to switch` )
+            if( Boolean( next.clone ) !== clone ) throw new Error( `A restart keeps the ${ clone ? `clone` : `shared` } workspace; fork the session to change it` )
+        },
+    } )
+    if( !chosen ) return null
+
+    return {
+        // Clone cannot change, so the stored value stands (legacy clones lack the modifier)
+        modes: { ...Object.fromEntries( RESTART_KEYS.map( key => [ key, chosen.flags[ key ] ] ) ), clone: flags.clone },
+        passthrough: chosen.passthrough,
+        account: chosen.flags.account || false,
+    }
 
 }
 

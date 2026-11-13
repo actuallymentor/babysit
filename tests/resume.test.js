@@ -464,6 +464,28 @@ describe( `cmd_resume cwd handling`, () => {
 
     } )
 
+    it( `lets a restart's menu switches replace the stored ones`, async () => {
+
+        const session = { ...make_session( temp_workspace ), modifiers: [ `yolo`, `adb` ] }
+        let resumed_command = null
+
+        await cmd_resume( {
+            session_id: session.babysit_id,
+            flags: {},
+            modes: { yolo: false, adb: false, docker: true },
+            passthrough: [],
+        }, {
+            load_session_fn: () => session,
+            has_session_fn: async () => false,
+            start: async command => {
+                resumed_command = command
+            },
+        } )
+
+        expect( resumed_command.flags ).toMatchObject( { yolo: false, adb: false, docker: true } )
+
+    } )
+
     it( `fails rather than recreating a missing clone`, async () => {
 
         const missing_clone = join( tmpdir(), `babysit-missing-clone-${ Date.now() }` )

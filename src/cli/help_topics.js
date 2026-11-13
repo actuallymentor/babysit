@@ -261,6 +261,11 @@ detached, skipping (and reporting) any that refuse; numbers mean the list as
 it was before the first restart. Claude sessions move to the subscription with
 most headroom. Without --continue, a terminal asks once whether to send one.
 
+A single restart in a terminal first opens the launch menu, prefilled with the
+session's switches: add or drop Docker, devices, YOLO, loop, mode, name, ports
+or agent arguments, then Enter. The agent and clone workspace stay. Batches,
+babysit watch and scripts keep each session's switches.
+
 ${ options_table( `restart` ) }
 
 Examples:

@@ -102,7 +102,7 @@ Status: `running` (foreground work), `waiting` (background shells/subagents), `i
 | `babysit resume [--all] [-n N]` | Workspace history, newest 10 (`-n N` rows, `--all` workspaces) |
 | `babysit resume <id\|number> [flags]` | Restore a saved session (`babysit <agent> resume …` must match its agent) |
 | `babysit close <n\|id>...` | Close and retire from recovery; numbers resolve before the first close |
-| `babysit restart <n\|id\|all>... [--force] [--detach] [--continue] [--account NAME]` | Close gracefully, resume on the current image. Needs an idle/waiting agent and captured session id (`--force` overrides). Claude moves to the account with most headroom |
+| `babysit restart <n\|id\|all>... [--force] [--detach] [--continue] [--account NAME]` | Close gracefully, resume on the current image. Needs an idle/waiting agent and captured session id (`--force` overrides). Claude moves to the account with most headroom. A single restart in a terminal opens the launch menu prefilled with the session's switches, to add or drop e.g. `--docker`/`--devices` |
 | `babysit freeze <n\|id\|all>...` / `unfreeze` | `docker pause` in place; host only. Ends at reboot; `close` unpauses |
 | `babysit archive [<n\|id>...] [--yes]` | Sink sessions to the bottom of the list (they keep running). No selectors: offers every grey-dot session. `open` un-archives |
 | `babysit prune [--list]` | Show reclaimable space; interactively prune Babysit's unused Docker images/containers, old build cache and managed clones |

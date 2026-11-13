@@ -199,7 +199,7 @@ export const COMMANDS = [
         [ `--shutdown`, null ],
     ], subcommands: { init: {} } },
     { name: `close`, usage: [ [ `babysit close <number|id>...`, `Close intentionally; disable recovery for these launches` ] ] },
-    { name: `restart`, usage: [ [ `babysit restart <number|id|all>...`, `Rebuild idle session(s) on the current image, keeping the conversation; --force, --detach, --continue` ] ], options: [
+    { name: `restart`, usage: [ [ `babysit restart <number|id|all>...`, `Rebuild idle session(s) on the current image, keeping the conversation; a terminal can change switches first` ] ], options: [
         [ `--force`, `Restart even when busy or without a captured id` ],
         [ `--detach`, `Return instead of attaching` ],
         [ `--continue`, `Tell the agent to continue unfinished work once it is back` ],

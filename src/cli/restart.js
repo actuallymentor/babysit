@@ -3,6 +3,7 @@ import { close_session, select_each, snapshot_selector, use_launch_environment }
 import { most_headroom_account } from './claude_accounts.js'
 import { order_active_sessions, stored_by_tmux } from './list.js'
 import { cmd_resume } from './resume.js'
+import { restart_from_menu } from './launcher.js'
 import { assert_account_support, get_agent, has_accounts } from '../agents/index.js'
 import { agent_activity } from '../babysit/activity.js'
 import { strip_ansi } from '../babysit/matcher.js'
@@ -112,10 +113,10 @@ const assert_restartable = ( session, { force = false, account = false } = {} ) 
 /**
  * Close and resume one stored session on the current image.
  * @param {Object} session - Stored session
- * @param {Object} flags - { force, detach, account, continue_prompt }
+ * @param {Object} flags - { force, detach, account, continue_prompt, modes, passthrough }
  * @param {Object} [options] - Injectable seams
  */
-const restart_session = async ( session, { force = false, detach = false, account = false, continue_prompt = false }, {
+const restart_session = async ( session, { force = false, detach = false, account = false, continue_prompt = false, modes = null, passthrough = null }, {
     best_account = most_headroom_account,
     capture = capture_pane,
     activity = agent_activity,
@@ -152,7 +153,8 @@ const restart_session = async ( session, { force = false, detach = false, accoun
     log.info( `Restarting ${ session.agent } session ${ session.babysit_id } on ${ image_note }${ account_note }` )
 
     // Close and resume under the launch's own credential profile, with the
-    // agent arguments it was started with, so nothing changes but the image.
+    // agent arguments it was started with, so only the image and any
+    // switches picked in the menu change.
     const restore_environment = launch_environment( session )
     try {
         await close( session )
@@ -160,7 +162,9 @@ const restart_session = async ( session, { force = false, detach = false, accoun
             verb: `resume`, agent: null, session_id: session.babysit_id,
             // --account switches the Claude subscription; --continue nudges the agent once it is back
             flags: { ...account && { account }, ...continue_prompt && { continue_prompt } },
-            passthrough: session.launch_spec?.args || [], detached: detach,
+            // Menu switches replace the stored ones, unchecked included
+            ...modes && { modes },
+            passthrough: passthrough ?? session.launch_spec?.args ?? [], detached: detach,
         } ).catch( error => {
             // Past the close the session is down; say so, and how to get it back
             throw Object.assign( new Error( `${ session.babysit_id } closed but did not resume (${ error.message }); run babysit resume ${ session.babysit_id }` ), { closed: true } )
@@ -193,16 +197,28 @@ const ask_continue = async ( { input = process.stdin, output = process.stdout } 
 }
 
 /**
+ * The launch menu, prefilled with the session, for a terminal; anything else
+ * (watch, scripts) restarts with the session's switches unchanged.
+ * @param {Object} session - Stored session
+ * @param {Object} flags - Restart flags; --account prefills the menu
+ * @returns {Promise<Object|null|undefined>} Choice, null when cancelled, undefined without a menu
+ */
+const choose_launch = ( session, { account }, { input = process.stdin, output = process.stdout } = {} ) =>
+    input.isTTY && output.isTTY ? restart_from_menu( session, { account } ) : undefined
+
+/**
  * Restart running sessions on the current image without losing the
  * conversation: close each gracefully (monitor stops, credentials flush back to
  * the host, container removed), then resume it by its native agent id.
+ * A single restart in a terminal first opens the launch menu, prefilled with
+ * the session's switches, so Docker or device access can be added or dropped.
  * The agent must show an idle or waiting control; `--force` overrides.
  * Several selectors or `all` restart detached, skipping refusals; there
  * `--account` applies to the Claude sessions only.
  * @param {Object} cmd - Parsed command { session_id, session_ids, flags: { force, detach, continue_prompt, account } }
  * @param {Object} [options] - Injectable seams
  */
-export const cmd_restart = async ( cmd, { select = null, select_all = unarchived_sessions, load = load_session, ask = ask_continue, ...seams } = {} ) => {
+export const cmd_restart = async ( cmd, { select = null, select_all = unarchived_sessions, load = load_session, ask = ask_continue, choose = choose_launch, ...seams } = {} ) => {
 
     const selectors = cmd.session_ids || [ cmd.session_id ]
     const batch = selectors.length > 1 || selectors[0] === `all`
@@ -215,6 +231,13 @@ export const cmd_restart = async ( cmd, { select = null, select_all = unarchived
     // A single session that would refuse anyway fails before the question
     const flags = { ...cmd.flags }
     if( !batch ) assert_restartable( sessions[0], flags )
+
+    // One session: confirm or change its switches; a batch keeps each one's own
+    if( !batch ) {
+        const chosen = await choose( sessions[0], flags )
+        if( chosen === null ) return print( `Restart cancelled.` )
+        if( chosen ) Object.assign( flags, chosen )
+    }
 
     // Asked once, for the whole batch; the pane check stays right before each close
     if( !flags.continue_prompt ) flags.continue_prompt = await ask()

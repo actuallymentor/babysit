@@ -251,3 +251,4 @@
 - 2026-11-10: decided against composite benchmarks (Epoch/llm-stats); AA free tier only. llm-stats coding/agentic entries are all vendor self-reported
 - 2026-11-10: agents refused GUI password dialogs (prompt said never handle creds, no tool typed it outside lock screen) → added `babysit mac password`
 - 2026-11-11: 2.4.2 — watch `e` hands the cursor to the neighbouring row instead of following the shelved session. Local full suite flaky under host load ~100 (baseline main fails the same timeouts).
+- 2026-11-13: 2.5.0 — single interactive `babysit restart` opens the launch menu prefilled from the session; menu switches replace stored modifiers via internal `cmd.modes` on resume (not additive like CLI resume flags). Hot-adding mounts to a live container ruled out: Docker can't add binds/tmpfs/group-add post-create.

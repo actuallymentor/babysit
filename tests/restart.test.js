@@ -20,7 +20,7 @@ const harness = ( { pane = IDLE_PANE, image = `sha256:bbbbbbbbbbbbbbbb`, overrid
             events.push( `capture ${ target }` ); return pane 
         },
         close: async s => events.push( `close ${ s.babysit_id } env=${ process.env.CODEX_HOME }` ),
-        resume: async cmd => events.push( `resume ${ cmd.session_id } detached=${ cmd.detached } args=${ cmd.passthrough.join( ` ` ) } env=${ process.env.CODEX_HOME }` ),
+        resume: async cmd => events.push( `resume ${ cmd.session_id } detached=${ cmd.detached } args=${ cmd.passthrough.join( ` ` ) } env=${ process.env.CODEX_HOME }${ cmd.modes ? ` modes=${ JSON.stringify( cmd.modes ) }` : `` }` ),
         image_id: async () => {
             events.push( `image` ); return image 
         },
@@ -50,6 +50,19 @@ describe( `babysit restart`, () => {
             `Restarted s1 on image bbbbbbbbbbbb (updated from aaaaaaaaaaaa).`,
         ] )
         expect( process.env.CODEX_HOME ).toBe( previous )
+    } )
+
+    it( `restarts with the switches picked in the menu`, async () => {
+        const { events, seams } = harness()
+        const chosen = { modes: { docker: true, adb: false }, passthrough: [ `--model`, `gpt-7` ], account: false }
+        await cmd_restart( { session_id: `1`, flags: {} }, { ...seams, ask: async () => false, choose: async () => chosen } )
+        expect( events ).toContain( `resume s1 detached=false args=--model gpt-7 env=/saved modes={"docker":true,"adb":false}` )
+    } )
+
+    it( `a cancelled menu leaves the session running`, async () => {
+        const { events, seams } = harness()
+        await cmd_restart( { session_id: `1`, flags: {} }, { ...seams, ask: async () => false, choose: async () => null } )
+        expect( events ).toEqual( [ `select 1`, `Restart cancelled.` ] )
     } )
 
     it( `reports an unchanged image and honours --detach`, async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 
-import { launch_menu } from '../src/cli/launcher.js'
+import { launch_menu, restart_from_menu } from '../src/cli/launcher.js'
 import { parse_args } from '../src/cli/parse.js'
 import { read_launch_defaults, save_launch_defaults } from '../src/babysit/launch_defaults.js'
 
@@ -384,6 +384,63 @@ describe( `interactive launch menu`, () => {
         menu.input.write( `${ down }\x7f\x7f\x7frelease\r` )
         expect( await menu.result ).toMatchObject( { flags: { name: `release` } } )
 
+    } )
+
+} )
+
+describe( `restart menu`, () => {
+
+    const session = {
+        babysit_id: `s1`, agent: `codex`, name: `api`, modifiers: [ `yolo`, `adb` ], ports: [ `3000:3000` ],
+        launch_spec: { args: [ `--model`, `gpt-6` ] },
+    }
+
+    // Menu seam that records what it was opened with and answers like the real menu
+    const recording = answer => {
+        const opened = []
+        const menu = async options => {
+            opened.push( options )
+            return answer( options )
+        }
+        return { opened, menu }
+    }
+
+    it( `prefills the menu with the session as it runs`, async () => {
+        const { opened, menu } = recording( () => null )
+        expect( await restart_from_menu( session, { menu } ) ).toBeNull()
+        expect( opened[0] ).toMatchObject( {
+            name: `api`, submit: `restart`,
+            initial: { agent: `codex`, mode: `regular`, yolo: true, docker: false, devices: false, adb: true, clone: false, ports: [ `3000:3000` ], args: [ `--model`, `gpt-6` ] },
+        } )
+    } )
+
+    it( `returns every switch, unchecked ones included, plus the agent arguments`, async () => {
+        const { menu } = recording( () => ( { ...parse_args( [ `codex`, `--docker`, `--devices`, `--name=api` ] ), passthrough: [ `--model`, `gpt-7` ] } ) )
+        const chosen = await restart_from_menu( session, { menu } )
+        expect( chosen.modes ).toMatchObject( { docker: true, devices: true, adb: true, ios: true, mac: true, yolo: false, name: `api`, ports: [] } )
+        expect( chosen.modes.account ).toBeUndefined()
+        expect( chosen.passthrough ).toEqual( [ `--model`, `gpt-7` ] )
+    } )
+
+    it( `refuses a different agent or workspace kind under the menu`, async () => {
+        const { opened, menu } = recording( () => null )
+        await restart_from_menu( { ...session, clone_path: `/clones/s1` }, { menu } )
+        const [ { validate } ] = opened
+        expect( () => validate( parse_args( [ `claude`, `--clone` ] ) ) ).toThrow( `keeps the codex agent` )
+        expect( () => validate( parse_args( [ `codex` ] ) ) ).toThrow( `keeps the clone workspace` )
+        expect( () => validate( parse_args( [ `codex`, `--clone` ] ) ) ).not.toThrow()
+    } )
+
+    it( `shows a refusal under the real menu instead of submitting`, async () => {
+        const menu = await open_menu( { validate: () => {
+            throw new Error( `nope` )
+        } } )
+        menu.input.write( `\r` )
+        await new Promise( resolve => setImmediate( resolve ) )
+        expect( menu.rendered() ).toContain( `nope` )
+        menu.input.write( `\x1b` )
+        await new Promise( resolve => setTimeout( resolve, 80 ) )
+        expect( await menu.result ).toBeNull()
     } )
 
 } )

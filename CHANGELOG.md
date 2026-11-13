@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.0 — 2026-11-13
+
+### Added
+- `babysit restart <n>` in a terminal opens the launch menu prefilled with the session's switches, so Docker, devices, YOLO, loop, mode, name, ports or agent arguments can be added or dropped on restart. The agent and clone workspace stay; Esc cancels before anything closes. Batches, `watch` and scripts restart unchanged.
+
 ## 2.4.2 — 2026-11-11
 
 ### Changed

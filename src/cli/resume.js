@@ -296,7 +296,8 @@ export const cmd_resume = async ( cmd, options = {} ) => {
             throw new Error( `--clone cannot be added while resuming a non-clone session; start a new clone session instead.` )
         }
 
-        const merged_flags = merge_resume_flags( session.modifiers, flags, session )
+        // A restart's menu sends every switch, so it replaces the stored set outright
+        const merged_flags = { ...merge_resume_flags( session.modifiers, flags, session ), ...cmd.modes }
 
         // A live container cannot gain a stricter mount boundary after it has
         // started. Refuse the attach instead of silently ignoring an isolation
