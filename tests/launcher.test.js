@@ -422,13 +422,22 @@ describe( `restart menu`, () => {
         expect( chosen.passthrough ).toEqual( [ `--model`, `gpt-7` ] )
     } )
 
-    it( `refuses a different agent or workspace kind under the menu`, async () => {
+    it( `fixes the agent and workspace, and refuses modes that would lose the conversation`, async () => {
         const { opened, menu } = recording( () => null )
-        await restart_from_menu( { ...session, clone_path: `/clones/s1` }, { menu } )
-        const [ { validate } ] = opened
-        expect( () => validate( parse_args( [ `claude`, `--clone` ] ) ) ).toThrow( `keeps the codex agent` )
-        expect( () => validate( parse_args( [ `codex` ] ) ) ).toThrow( `keeps the clone workspace` )
-        expect( () => validate( parse_args( [ `codex`, `--clone` ] ) ) ).not.toThrow()
+        await restart_from_menu( { ...session, clone_path: `/clones/s1`, launch_spec: { args: [], log: `` } }, { menu } )
+        const [ { validate, fixed, initial } ] = opened
+        expect( fixed ).toEqual( [ `agent`, `clone` ] )
+        expect( initial.log ).toBe( true )
+        expect( () => validate( parse_args( [ `codex`, `--sandbox` ] ) ) ).toThrow( `Sandbox has no conversation storage` )
+        expect( () => validate( parse_args( [ `codex`, `--clone`, `--docker` ] ) ) ).not.toThrow()
+    } )
+
+    it( `ignores keys on fixed rows`, async () => {
+        const menu = await open_menu( { initial: { agent: `codex` }, fixed: [ `agent` ] } )
+        menu.input.write( right )
+        menu.input.write( `\r` )
+        expect( ( await menu.result ).agent ).toBe( `codex` )
+        expect( menu.rendered() ).toContain( `codex  (fixed)` )
     } )
 
     it( `shows a refusal under the real menu instead of submitting`, async () => {

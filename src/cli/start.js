@@ -969,7 +969,9 @@ async function resolve_launch( cmd ) {
     // A resumed session keeps its human-readable label unless the user gives
     // it a new one explicitly. Agent-less resumes carry the stored name in
     // flags; explicit-agent resumes reach it through stored metadata here.
-    const session_display_name = resolve_session_display_name( flags, stored_resume_session )
+    // A restart's menu is the whole launch: a cleared name or unchecked isolation must not stick
+    const sticky_session = cmd.modes ? null : stored_resume_session
+    const session_display_name = resolve_session_display_name( flags, sticky_session )
 
     ensure_dirs()
     const protected_session_credential_paths = list_stored_sessions()
@@ -997,7 +999,7 @@ async function resolve_launch( cmd ) {
         docker: flags.docker,
         ...pick_devices( flags ),
         clone: Boolean( flags.clone || stored_is_clone ),
-        ignore_host_agents_md: should_ignore_host_agent_context( flags, stored_resume_session ),
+        ignore_host_agents_md: should_ignore_host_agent_context( flags, sticky_session ),
     }
 
     if( mode.clone && cmd.verb === `resume` && !stored_resume_session ) {

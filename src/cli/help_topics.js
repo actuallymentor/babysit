@@ -263,7 +263,8 @@ most headroom. Without --continue, a terminal asks once whether to send one.
 
 A single restart in a terminal first opens the launch menu, prefilled with the
 session's switches: add or drop Docker, devices, YOLO, loop, mode, name, ports
-or agent arguments, then Enter. The agent and clone workspace stay. Batches,
+or agent arguments, then Enter. Agent and clone workspace are fixed, and
+Sandbox is refused since it would lose the conversation. Batches,
 babysit watch and scripts keep each session's switches.
 
 ${ options_table( `restart` ) }

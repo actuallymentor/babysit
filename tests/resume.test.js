@@ -483,6 +483,7 @@ describe( `cmd_resume cwd handling`, () => {
         } )
 
         expect( resumed_command.flags ).toMatchObject( { yolo: false, adb: false, docker: true } )
+        expect( resumed_command.modes ).toEqual( { yolo: false, adb: false, docker: true } )
 
     } )
 

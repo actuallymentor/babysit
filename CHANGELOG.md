@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.5.1 — 2026-11-13
+
+### Fixed
+- Restart menu: Sandbox is refused (it has no conversation storage, so the resumed agent started blank); Agent and Clone show as fixed rows instead of failing on Enter; the session's Log setting is prefilled; a cleared Name or unchecked "Ignore host AGENTS.md" now sticks instead of reverting to the stored value.
+
 ## 2.5.0 — 2026-11-13
 
 ### Added

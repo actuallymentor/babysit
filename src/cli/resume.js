@@ -349,6 +349,8 @@ export const cmd_resume = async ( cmd, options = {} ) => {
             stored_session: session,
             ...resume_target,
             flags: merged_flags,
+            // Tells start the menu chose every switch, so stored ones must not creep back
+            ...cmd.modes && { modes: cmd.modes },
             passthrough,
         } )
         return

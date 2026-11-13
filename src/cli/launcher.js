@@ -44,13 +44,14 @@ const as_text = {
  * @param {string} [options.submit] - What Enter does, for the key hint
  * @param {boolean} [options.fork_key=false] - Offer `f` to fork a running session instead
  * @param {Function} [options.validate] - Throws to refuse a choice; the message shows under the menu
+ * @param {string[]} [options.fixed] - Rows shown but not changeable, e.g. a restart's agent
  * @param {Function} [options.list_accounts] - Claude account seam (names only are kept)
  * @param {Function} [options.cached_usage] - Cached per-account readings, free
  * @param {Function} [options.probe_usage] - Quota probe, reused for 5 min by the launch itself
  * @returns {Promise<Object|null>} Parsed launch, `{ verb: 'fork_menu' }`, or null when cancelled
  */
 export const launch_menu = async ( {
-    name = ``, initial = {}, submit = `launch`, fork_key = false, validate = () => {}, input = process.stdin, output = process.stdout,
+    name = ``, initial = {}, submit = `launch`, fork_key = false, validate = () => {}, fixed = [], input = process.stdin, output = process.stdout,
     list_accounts = list_claude_accounts, cached_usage = cached_account_usage, probe_usage = probe_accounts,
     ...defaults_options
 } = {} ) => {
@@ -131,9 +132,11 @@ export const launch_menu = async ( {
                 if( readings === `cached` ) refresh_usage()
                 return `  Account ${ account_label() }`
             }
-            if( type === `cycle` ) return `${ key === `agent` ? `Model` : `Mode ` }   ‹ ${ state[ key ] } ›`
+            // Fixed rows drop their ‹ › and say why they do not move
+            const note = fixed.includes( key ) ? `  (fixed)` : ``
+            if( type === `cycle` ) return `${ key === `agent` ? `Model` : `Mode ` }   ${ note ? state[ key ] : `‹ ${ state[ key ] } ›` }${ note }`
             if( type === `expand` ) return `Advanced ${ open ? `▾` : `▸` }`
-            if( type === `toggle` ) return `${ open && ADVANCED_TOGGLES.includes( key ) ? `  ` : `` }[${ state[ key ] ? `x` : ` ` }] ${ LABELS[ key ] || key[0].toUpperCase() + key.slice( 1 ) }`
+            if( type === `toggle` ) return `${ open && ADVANCED_TOGGLES.includes( key ) ? `  ` : `` }[${ state[ key ] ? `x` : ` ` }] ${ LABELS[ key ] || key[0].toUpperCase() + key.slice( 1 ) }${ note }`
             const letters = Array.from( text[ key ] )
             const value = index === row
                 ? [ ...letters.slice( 0, cursors[ key ] ), `│`, ...letters.slice( cursors[ key ] ) ].join( `` )
@@ -204,7 +207,9 @@ export const launch_menu = async ( {
                 error = ``
                 if( key.name === `up` ) row = ( row + rows.length - 1 ) % rows.length
                 else if( key.name === `down` || key.name === `tab` ) row = ( row + 1 ) % rows.length
-                else if( current.type === `text` ) {
+                else if( fixed.includes( current.key ) ) {
+                    // Shown for context only
+                } else if( current.type === `text` ) {
                     const letters = Array.from( text[ current.key ] )
                     let cursor = cursors[ current.key ]
                     if( key.name === `left` ) cursor = Math.max( 0, cursor - 1 )
@@ -222,7 +227,7 @@ export const launch_menu = async ( {
                 } else if( current.type === `cycle` && [ `left`, `right` ].includes( key.name ) ) {
                     const choices = { agent: SUPPORTED_AGENTS, mode: MODES, account: accounts }[ current.key ]
                     state[ current.key ] = cycle( choices, state[ current.key ], key.name === `right` ? 1 : -1 )
-                    if( state.mode !== `regular` ) state.clone = false
+                    if( state.mode !== `regular` && !fixed.includes( `clone` ) ) state.clone = false
                 } else if( current.type === `expand` && [ `space`, `left`, `right` ].includes( key.name ) ) {
                     open = key.name === `left` ? false : key.name === `right` ? true : !open
                 } else if( current.type === `toggle` && key.name === `space` ) {
@@ -410,7 +415,8 @@ const RESTART_KEYS = [ ...Object.keys( flags_from_modifiers() ), `devices`, `nam
 
 /**
  * Launch menu for `babysit restart`, prefilled with the session as it runs.
- * The agent and the clone workspace stay; everything else may change.
+ * The agent and the clone workspace are fixed, and Sandbox is refused (no
+ * conversation storage); everything else may change.
  * @param {Object} session - Stored session
  * @param {Object} [options]
  * @param {string|false} [options.account] - --account typed on the command line
@@ -430,12 +436,15 @@ export const restart_from_menu = async ( session, { account = false, menu = laun
             clone,
             ports: session.ports,
             args: session.launch_spec?.args,
+            // An empty log path means the default path, which the menu writes as `on`
+            log: session.launch_spec?.log === `` ? true : session.launch_spec?.log,
             account,
         },
         submit: `restart`,
-        validate: ( { agent, flags: next } ) => {
-            if( agent !== session.agent ) throw new Error( `A restart keeps the ${ session.agent } agent; fork the session to switch` )
-            if( Boolean( next.clone ) !== clone ) throw new Error( `A restart keeps the ${ clone ? `clone` : `shared` } workspace; fork the session to change it` )
+        fixed: [ `agent`, `clone` ],
+        validate: ( { flags: next } ) => {
+            // Sandbox mounts no conversation storage, so the resumed agent would start blank
+            if( next.sandbox ) throw new Error( `Sandbox has no conversation storage; a restart would lose the conversation` )
         },
     } )
     if( !chosen ) return null
