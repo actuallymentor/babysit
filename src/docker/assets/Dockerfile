@@ -180,7 +180,7 @@ COPY effort/ /opt/babysit-effort/
 COPY usage/ /opt/usage/
 COPY adb/ /opt/adb/
 COPY ios/ /opt/ios/
-COPY mac/ /opt/mac/
+COPY remote/ /opt/remote/
 RUN chmod +x /opt/babysit-effort/bin.mjs \
     && ln -s /opt/babysit-effort /opt/effort \
     && ln -s /opt/babysit-effort/bin.mjs /usr/local/bin/babysit
@@ -215,8 +215,9 @@ RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignor
 RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore pymobiledevice3 facebook-wda \
     && python3 -c "import pymobiledevice3, wda"
 
-# Remote Mac control: asyncvnc speaks Apple's Screen Sharing login (username +
-# password) for screenshots, mouse and keyboard; Pillow writes the PNGs.
+# Remote Mac / Windows control: asyncvnc speaks Apple's Screen Sharing login
+# (username + password) and plain VNC auth for screenshots, mouse and
+# keyboard; Pillow writes the PNGs.
 RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore asyncvnc pillow \
     && python3 -c "import asyncvnc, PIL"
 

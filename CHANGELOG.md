@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.6.0 — 2026-11-14
+
+### Added
+- `--windows`: remote Windows PCs over OpenSSH (key) and VNC, like `--mac`. `babysit windows add|list|check|enable|disable|forget` on the host (installs the key, admin accounts included); in session `ps` (PowerShell), `ssh`, `scp` (`win:` paths) and the GUI commands. `--devices` includes it. Image update needed.
+
+### Fixed
+- `babysit mac list` and GUI commands no longer hang when a machine is off or unreachable (socket left open; VNC connect had no timeout).
+
 ## 2.5.1 — 2026-11-13
 
 ### Fixed

@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""Drive a Mac's Screen Sharing (VNC, Apple auth) from the command line.
+"""Drive a Mac's Screen Sharing (Apple auth) or a Windows PC's VNC server
+(VNC password auth) from the command line.
 
-  vnc.py NAME shot [OUT.png] [--full]   screenshot, long edge <= 1568 px unless --full
+  vnc.py [--kind mac|windows] NAME shot [OUT.png] [--full]   screenshot, long edge <= 1568 px unless --full
   vnc.py NAME click X Y [right|double]  coordinates are pixels of the LAST shot
   vnc.py NAME move X Y
   vnc.py NAME drag X1 Y1 X2 Y2
   vnc.py NAME type TEXT...              type text literally
   vnc.py NAME key Cmd+space [Return..]  key chords, one arg per chord (Shift chords are ignored by macOS; type capitals)
   vnc.py NAME scroll up|down [N]
-  vnc.py NAME unlock                    wake the lock screen, type the stored password, click its submit arrow
+  vnc.py NAME unlock                    wake the lock screen, type the stored password, submit
   vnc.py NAME password                  type the stored password into the focused field (OS auth dialogs); no Return
   vnc.py NAME run [SCRIPT]              several actions on ONE connection: "click 10 20; type hi; key Return; shot"
                                         (statements split on ; or newlines; script from args, else stdin)
 
-Credentials come from the staged registry (~/.config/babysit-mac), never argv.
-Every new connection costs a login and a ~2 s keyboard warm-up, so chain actions with `run`.
+Credentials come from the staged registry (~/.config/babysit-<kind>), never argv.
+Every new connection costs a login (and on a Mac a ~2 s keyboard warm-up), so chain actions with `run`.
 """
 
 import asyncio
@@ -24,13 +25,26 @@ import shlex
 import sys
 import time
 
-ROOT = os.environ.get('BABYSIT_MAC_ROOT') or os.path.expanduser('~/.config/babysit-mac')
 STATE = os.environ.get('BABYSIT_MAC_STATE') or '/tmp'
-SETTLE = 0.35  # let the Mac repaint before a follow-up shot
+SETTLE = 0.35  # let the screen repaint before a follow-up shot
 
-# macOS Screen Sharing ignores the first keyboard events of a new connection
-# (measured: all lost below ~1 s, still the first one lost at 1.5 s, none at 2 s)
-WARMUP = float(os.environ.get('BABYSIT_MAC_WARMUP') or 2.5)
+# Per kind (names match DEVICE_KINDS; mirrors command.mjs). `warmup`: macOS
+# Screen Sharing ignores the first keyboard events of a new connection
+# (measured: all lost below ~1 s, still the first one lost at 1.5 s, none at 2 s).
+KINDS = {
+    'mac': {
+        'root': os.environ.get('BABYSIT_MAC_ROOT') or os.path.expanduser('~/.config/babysit-mac'),
+        'registry': 'macs.json', 'key': 'macs',
+        'warmup': float(os.environ.get('BABYSIT_MAC_WARMUP') or 2.5),
+    },
+    'windows': {
+        'root': os.environ.get('BABYSIT_WINDOWS_ROOT') or os.path.expanduser('~/.config/babysit-windows'),
+        'registry': 'windows.json', 'key': 'machines',
+        'warmup': float(os.environ.get('BABYSIT_WINDOWS_WARMUP') or 0.5),
+    },
+}
+KIND = 'mac'  # set by main() from --kind
+
 KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.05)
 
 # Screenshots are shrunk so the long edge fits what a vision model reads well
@@ -86,6 +100,8 @@ def keysym(name, key_codes=None):
     if key_codes is None:
         import asyncvnc
         key_codes = asyncvnc.key_codes
+    if name == 'Win':  # the Windows key is X11 Super
+        name = 'Super_L'
     return key_codes[name]
 
 
@@ -105,20 +121,30 @@ def parse_chord(chord):
     return chord.split('+')
 
 
+def parse_kind(argv):
+    """`--kind windows NAME ...` -> ('windows', ['NAME', ...]); default mac."""
+    if argv[:1] == ['--kind'] and len(argv) > 1:
+        if argv[1] not in KINDS:
+            sys.exit(f'unknown kind {argv[1]!r}; one of: {", ".join(KINDS)}')
+        return argv[1], argv[2:]
+    return 'mac', argv
+
+
 # ---------------------------------------------------------------------------
-# Registry and per-Mac screenshot scale
+# Registry and per-machine screenshot scale
 
 def load(name):
-    registry = json.load(open(f'{ROOT}/macs.json')).get('macs', [])
+    kind = KINDS[KIND]
+    registry = json.load(open(f"{kind['root']}/{kind['registry']}")).get(kind['key'], [])
     mac = next((m for m in registry if name in (m['name'], m['host'])), None)
     if not mac:
-        sys.exit(f'unknown mac {name!r}; try: babysit mac list')
-    password = open(f"{ROOT}/{mac['name']}/password").read().rstrip('\n')
+        sys.exit(f'unknown {KIND} {name!r}; try: babysit {KIND} list')
+    password = open(f"{kind['root']}/{mac['name']}/password").read().rstrip('\n')
     return mac, password
 
 
 def scale_path(mac):
-    return f"{STATE}/babysit-mac-{mac['name']}.scale"
+    return f"{STATE}/babysit-{KIND}-{mac['name']}.scale"
 
 
 def read_scale(mac):
@@ -213,7 +239,7 @@ async def shot(vnc, mac, args):
     from PIL import Image
     full = '--full' in args
     paths = [a for a in args if a != '--full']
-    out = paths[0] if paths else f'/tmp/mac-{mac["name"]}.png'
+    out = paths[0] if paths else f'/tmp/{KIND}-{mac["name"]}.png'
     pixels = await vnc.pump.screenshot()
     height, width = pixels.shape[:2]
     scale = 1.0 if full else shot_scale(width, height)
@@ -232,7 +258,7 @@ async def act(vnc, mac, password, action, args, started):
         return
 
     if action in KEYBOARD:
-        await asyncio.sleep(max(0.0, WARMUP - (time.monotonic() - started)))
+        await asyncio.sleep(max(0.0, KINDS[KIND]['warmup'] - (time.monotonic() - started)))
 
     scale = read_scale(mac)
 
@@ -259,6 +285,12 @@ async def act(vnc, mac, password, action, args, started):
     elif action == 'password':
         # Typed from the staged file so the agent never sees or handles it
         await write_text(vnc, password)
+    elif action == 'unlock' and KIND == 'windows':
+        await tap(vnc, 'space')  # raise the lock curtain; the password field takes focus
+        await asyncio.sleep(1.5)
+        await write_text(vnc, password)
+        await tap(vnc, 'Return')
+        await asyncio.sleep(5)
     elif action == 'unlock':
         await tap(vnc, 'Shift')  # wake the login window and focus its field
         await asyncio.sleep(1.5)
@@ -279,9 +311,20 @@ async def act(vnc, mac, password, action, args, started):
     await vnc.drain()
 
 
+async def reach(host, port, timeout=10):
+    """Fail fast: asyncvnc has no connect timeout, so a powered-off machine would hang for minutes."""
+    try:
+        _, writer = await asyncio.wait_for(asyncio.open_connection(host, port), timeout)
+    except (OSError, asyncio.TimeoutError):
+        sys.exit(f'{host}:{port} does not answer (asleep, off, or no VNC server); try: babysit {KIND} list')
+    writer.close()
+
+
 async def run(name, statements):
     import asyncvnc
     mac, password = load(name)
+    await reach(mac['host'], mac.get('vnc_port', 5900))
+    # Apple auth takes user + password; plain VNC auth uses the password's first 8 characters
     async with asyncvnc.connect(mac['host'], port=mac.get('vnc_port', 5900), username=mac['user'], password=password) as vnc:
         started = time.monotonic()
         vnc.pump = Pump(vnc)
@@ -293,6 +336,8 @@ async def run(name, statements):
 
 
 def main(argv):
+    global KIND
+    KIND, argv = parse_kind(argv)
     if len(argv) < 2:
         sys.exit(__doc__)
     name, action, args = argv[0], argv[1], argv[2:]

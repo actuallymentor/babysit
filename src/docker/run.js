@@ -12,7 +12,7 @@ import { get_extra_mounts } from '../agents/setup.js'
 import { COMPLETION_HELPER_PATH } from '../agents/completion_capture.js'
 import { normalise_port_mappings } from './ports.js'
 import { DEVICE_KINDS } from '../devices/kinds.js'
-import { MAC_CONTAINER_DIR } from '../mac/store.js'
+import { REMOTE_KINDS } from '../remote/store.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
@@ -295,20 +295,27 @@ const add_ios_flags = flags => {
 }
 
 /**
- * Add the remote Mac marker. Its secrets are never flags: they are uploaded
- * into a tmpfs-backed directory (see src/mac/store.js), so they live only in
- * memory and vanish with the container.
- * @param {string[]} flags - Docker command argument list to mutate
+ * Add a remote machine kind's marker (BABYSIT_MAC, BABYSIT_WINDOWS). Its
+ * secrets are never flags: they are uploaded into a tmpfs-backed directory
+ * (see src/remote/store.js), so they live only in memory and vanish with the
+ * container.
+ * @param {Object} kind - A REMOTE_KINDS profile
+ * @returns {( flags: string[] ) => void} Adds to the Docker argument list
  */
-const add_mac_flags = flags => {
+const remote_flags = kind => flags => {
 
-    flags.push( `-e`, `BABYSIT_MAC=1` )
-    flags.push( `--tmpfs`, `${ MAC_CONTAINER_DIR }:rw,mode=0700,size=1m` )
+    flags.push( `-e`, `BABYSIT_${ kind.name.toUpperCase() }=1` )
+    flags.push( `--tmpfs`, `${ kind.container_dir }:rw,mode=0700,size=1m` )
 
 }
 
 // Docker flags per device kind (names match DEVICE_KINDS)
-const DEVICE_DOCKER_FLAGS = { adb: add_adb_flags, ios: add_ios_flags, mac: add_mac_flags }
+const DEVICE_DOCKER_FLAGS = {
+    adb: add_adb_flags,
+    ios: add_ios_flags,
+    mac: remote_flags( REMOTE_KINDS.mac ),
+    windows: remote_flags( REMOTE_KINDS.windows ),
+}
 
 const get_docker_run_prefix = () => [ ...docker_command_prefix(), `run` ]
 

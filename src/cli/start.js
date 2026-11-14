@@ -23,7 +23,7 @@ import {
 } from '../credentials/recovery.js'
 import { setup_github_cli_credentials } from '../credentials/github.js'
 import { pick_devices } from '../devices/kinds.js'
-import { setup_mac_credentials } from '../mac/store.js'
+import { REMOTE_KINDS, setup_remote_credentials } from '../remote/store.js'
 import { resolve_claude_login } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
@@ -1439,9 +1439,9 @@ const prepare_container = async launch => {
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
     // Fork handoff files ride the same pre-start upload as credentials
-    // Remote Mac secrets exist only for --mac / --devices sessions
-    const mac_mounts = mode.mac ? setup_mac_credentials() : []
-    const all_creds_mounts = [ ...github_cli_mounts, ...mac_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
+    // Remote machine secrets exist only for --mac / --windows / --devices sessions
+    const remote_mounts = Object.values( REMOTE_KINDS ).filter( kind => mode[ kind.name ] ).flatMap( kind => setup_remote_credentials( kind ) )
+    const all_creds_mounts = [ ...github_cli_mounts, ...remote_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
 
     launch.startup_status?.set( `preparing container` )
     const prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {

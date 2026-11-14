@@ -548,6 +548,33 @@ Examples:
   babysit mac disable office    # stays registered; sessions stop receiving its secrets
   babysit mac forget office`,
 
+    windows: () => `Usage: babysit windows add NAME HOST [--user U] [--password-env VAR | --password-stdin]
+       babysit windows list | check [NAME] | enable NAME | disable NAME | forget NAME
+
+Windows PCs for --windows (or --devices) sessions, driven over SSH and VNC.
+Secrets are handled like Macs': ~/.babysit/windows (0700), uploaded only into
+--windows sessions (enabled PCs only; memory-only tmpfs), password from a pipe
+or an environment variable. --user is the local account name (C:\\Users\\<name>);
+for a Microsoft account the password is the account password, not the PIN.
+
+On the PC, once (PowerShell as Administrator):
+  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+  Set-Service sshd -StartupType Automatic; Start-Service sshd
+  Set-NetConnectionProfile -NetworkCategory Private     # LAN = trusted network
+  New-NetFirewallRule -Name babysit-vnc -DisplayName 'VNC (babysit)' -Protocol TCP -LocalPort 5900 -Action Allow -Profile Private
+Then install TightVNC Server (service mode) and set its primary password to the
+first 8 characters of the account password (VNC only uses 8). Sleep off; keep
+it on mains power. For unlock: sign in with the password, not a PIN or Windows
+Hello (Settings > Accounts > Sign-in options; Microsoft accounts: turn off
+"only allow Windows Hello sign-in").
+
+Examples:
+  babysit windows add laptop 192.168.2.85 --user mentor --password-stdin
+  babysit windows check laptop  # installs the ssh key, tests ssh and VNC
+  babysit windows list
+  babysit windows disable laptop
+  babysit windows forget laptop`,
+
     web: () => `Usage: babysit web init | babysit web key add|list|remove [NAME]
 
 Babysit Web is a mobile companion for your sessions (see babysit web init --help).

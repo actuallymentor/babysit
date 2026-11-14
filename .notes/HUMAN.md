@@ -102,6 +102,9 @@
 ## 2026-11-10 — pending: real-Mac test of `babysit mac password` (shipped untested in 2.2.1 at user request)
 Blocked: session lacked `--mac` creds + Docker socket. In a `--mac` session, run workspace code (image still 2.2.0):
 1. `babysit mac ssh macbook "osascript -e 'text returned of (display dialog \"t\" default answer \"\" with hidden answer)'"` in background (may need `launchctl asuser $(id -u)`), shot, click field
-2. `python3 src/docker/assets/mac/vnc.py macbook run 'password; key Return'`
+2. `python3 src/docker/assets/remote/vnc.py macbook run 'password; key Return'`
 3. Compare returned text's sha256 to `~/.config/babysit-mac/macbook/password` sha256 — never print either.
 Then push (HTTPS + gh credential helper) → publish workflow; verify per DEPLOYMENTS.md.
+
+## 2026-11-14 — pending: real-PC test of `--windows`
+Built without a reachable Windows PC (192.168.2.85: 22/5900 closed). After the PC setup, from a host shell: `babysit windows add laptop 192.168.2.85 --user <name> --password-stdin`, then in a `--windows` session: `babysit windows ps laptop hostname`, `babysit windows shot laptop`, `babysit windows unlock laptop` (Windows Hello/PIN lock screens may need "Sign-in options > Password" chosen first). Unverified: key install ACL path on a real admin account, TightVNC security-type negotiation with asyncvnc, unlock flow.

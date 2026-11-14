@@ -19,6 +19,7 @@ const EPHEMERAL_CREDENTIAL_PREFIXES = [
     `babysit-claude-account-env-`,
     `babysit-creds-`,
     `babysit-mac-creds-`,
+    `babysit-windows-creds-`,
     `babysit-opencode-`,
 ]
 const STALE_EPHEMERAL_CREDENTIAL_AGE_MS = 60 * 60 * 1_000

@@ -1,4 +1,4 @@
-import { adb_mode, ios_mode, mac_mode } from '../system_prompt/index.js'
+import { adb_mode, ios_mode, mac_mode, windows_mode } from '../system_prompt/index.js'
 
 /**
  * Every kind of device a session can drive. The `--devices` switch, the launch
@@ -29,6 +29,12 @@ export const DEVICE_KINDS = [
         question: `Give the session remote Mac access (--mac)?`,
         prompt: mac_mode,
     },
+    {
+        name: `windows`, label: `Windows`, note: `remote Windows PCs (windows)`,
+        summary: `Remote Windows PCs (SSH + VNC); credentials from babysit windows add reach only these sessions`,
+        question: `Give the session remote Windows PC access (--windows)?`,
+        prompt: windows_mode,
+    },
 ]
 
 export const DEVICE_NAMES = DEVICE_KINDS.map( kind => kind.name )
@@ -39,5 +45,5 @@ export const all_devices = flags => DEVICE_NAMES.every( name => flags?.[ name ] 
 /** Every kind set to one value, e.g. all off when --devices stands for them. */
 export const every_device = value => Object.fromEntries( DEVICE_NAMES.map( name => [ name, value ] ) )
 
-/** The kinds named in a flag/mode object, as a plain `{ adb, ios, mac }` copy. */
+/** The kinds named in a flag/mode object, as a plain `{ adb, ios, mac, windows }` copy. */
 export const pick_devices = flags => Object.fromEntries( DEVICE_NAMES.map( name => [ name, flags?.[ name ] ] ) )

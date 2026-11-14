@@ -644,6 +644,7 @@ describe( `merge_resume_flags`, () => {
             docker: false,
             adb: false,
             mac: false,
+            windows: false,
             ios: false,
             clone: false,
             loop: false,

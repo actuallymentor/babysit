@@ -48,7 +48,8 @@ Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and swi
 | `--adb` | Android adb with a key shared by every session (network devices only) |
 | `--ios` | iOS 16 devices via WebDriverAgent, pairing shared by every session (network only) |
 | `--mac` | Remote Macs (SSH + Screen Sharing); credentials from babysit mac add reach only these sessions |
-| `--devices` | Every device kind: --adb, --ios and --mac |
+| `--windows` | Remote Windows PCs (SSH + VNC); credentials from babysit windows add reach only these sessions |
+| `--devices` | Every device kind: --adb, --ios, --mac and --windows |
 | `--clone` | Work in a durable copy; the original is mounted read-only at `/original` |
 | `--loop` | When idle, type `./LOOP.md`, `~/.agents/LOOP.md`, or "Keep going" |
 | `--sandbox` | No workspace mount; the container and its files are thrown away |
@@ -65,7 +66,7 @@ Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and swi
 Flags combine. `--clone` excludes `--sandbox`/`--mudbox`. `--docker` weakens isolation (host daemon control, even in sandbox).
 
 - `--yolo` on Claude also accepts blocking prompts whose default is yes (e.g. rm checks); never model swaps or billing
-- `--adb` / `--ios` / `--mac`: see [Android devices](#android-devices---adb), [iOS devices](#ios-devices---ios), [Remote Macs](#remote-macs---mac)
+- `--adb` / `--ios` / `--mac` / `--windows`: see [Android devices](#android-devices---adb), [iOS devices](#ios-devices---ios), [Remote Macs](#remote-macs---mac), [Remote Windows PCs](#remote-windows-pcs---windows)
 - `--config FILE`: opens the launch menu prefilled from its `launch:`; relative `do: ./X.md` paths resolve beside FILE
 
 ### Clone
@@ -282,6 +283,29 @@ babysit mac check|list|enable|disable|forget
 - GUI: every call logs in again and keyboard input waits ~2.5 s (macOS drops early keys), so chain steps: `babysit mac run NAME 'click 10 20; type hi; key Return; shot'`. Shots are shrunk to a 1568 px long edge (`--full` keeps the screen size); click/move/drag take pixels of the last shot. Agents are told to read typed text in a screenshot before pressing Return
 - Gates credentials, not the network: the LAN stays reachable from any container
 
+## Remote Windows PCs (`--windows`)
+
+Same model as `--mac`: OpenSSH (key) for structured control, a VNC server for the GUI. Own store `~/.babysit/windows/`, own tmpfs `~/.config/babysit-windows`.
+
+```bash
+read -rs PW; PW=$PW babysit windows add laptop 192.168.2.85 --user mentor --password-env PW   # once; installs the ssh key
+babysit windows check|list|enable|disable|forget
+```
+
+PC, once (PowerShell as Administrator):
+
+```powershell
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Set-Service sshd -StartupType Automatic; Start-Service sshd
+Set-NetConnectionProfile -NetworkCategory Private
+New-NetFirewallRule -Name babysit-vnc -DisplayName 'VNC (babysit)' -Protocol TCP -LocalPort 5900 -Action Allow -Profile Private
+```
+
+- GUI: [TightVNC](https://www.tightvnc.com/) Server as a service; primary password = first 8 characters of the account password (VNC auth uses 8). Sleep off, on mains. `unlock` types the password, so sign-in must accept it: no PIN-only / Windows Hello-only sign-in
+- `--user`: local account name (`C:\Users\<name>`); Microsoft accounts log in with the account password, not the PIN. Admin accounts get their key in `administrators_authorized_keys` (ACL fixed automatically) and elevated ssh sessions; no `sudo`
+- In session: `babysit windows ps NAME 'script'` (PowerShell, `-EncodedCommand`, no quoting issues), `ssh|scp NAME ...` (`win:C:/path`), GUI as on a Mac (`Win+r`, `Ctrl+Shift+Esc` chords; `unlock` types the password + Return)
+- SSH runs in a non-interactive service session: GUI apps started over SSH are invisible, use the GUI commands
+
 ## Account usage
 
 ```bash
@@ -345,7 +369,8 @@ launch:
     adb: false
     ios: false
     mac: false
-    devices: false           # true = adb + ios + mac
+    windows: false
+    devices: false           # true = adb + ios + mac + windows
     clone: true
     loop: false
     ignore_host_agents_md: false

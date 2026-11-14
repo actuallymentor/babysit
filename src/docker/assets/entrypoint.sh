@@ -161,26 +161,25 @@ if [ -f "$CLAUDE_ACCOUNT_BOOTSTRAP" ]; then
 fi
 unset CLAUDE_ACCOUNT_BOOTSTRAP
 
-# --mac: remote Mac registry and secrets (passwords, ssh keys) uploaded into
-# the container, like the GitHub profile above. Only --mac / --devices launches
-# carry the bootstrap. ~/.config/babysit-mac is a tmpfs mount (docker/run.js),
-# so the secrets exist in memory only and vanish with the container; the
-# bootstrap copy is removed so nothing lingers in /tmp.
-MAC_BOOTSTRAP=/tmp/.babysit-mac
-if [ -d "$MAC_BOOTSTRAP" ]; then
-    MAC_HOME=/home/node/.config/babysit-mac
+# --mac / --windows: remote machine registry and secrets (passwords, ssh keys)
+# uploaded into the container, like the GitHub profile above. Only launches
+# with the kind carry its bootstrap. ~/.config/babysit-<kind> is a tmpfs mount
+# (docker/run.js), so the secrets exist in memory only and vanish with the
+# container; the bootstrap copy is removed so nothing lingers in /tmp.
+for REMOTE_KIND in mac windows; do
+    REMOTE_BOOTSTRAP=/tmp/.babysit-$REMOTE_KIND
+    [ -d "$REMOTE_BOOTSTRAP" ] || continue
+    REMOTE_HOME=/home/node/.config/babysit-$REMOTE_KIND
 
     # A mount point cannot be removed, only emptied; install -d also hands the
     # root-owned tmpfs (and the .config Docker created above it) to the user
-    install -d -m 700 -o "$HOST_UID" -g "$HOST_GID" /home/node/.config "$MAC_HOME"
-    cp -R "$MAC_BOOTSTRAP/." "$MAC_HOME/"
-    chown -R "$HOST_UID:$HOST_GID" "$MAC_HOME"
-    chmod -R u=rwX,go= "$MAC_HOME"
-    rm -rf "$MAC_BOOTSTRAP"
-
-    unset MAC_HOME
-fi
-unset MAC_BOOTSTRAP
+    install -d -m 700 -o "$HOST_UID" -g "$HOST_GID" /home/node/.config "$REMOTE_HOME"
+    cp -R "$REMOTE_BOOTSTRAP/." "$REMOTE_HOME/"
+    chown -R "$HOST_UID:$HOST_GID" "$REMOTE_HOME"
+    chmod -R u=rwX,go= "$REMOTE_HOME"
+    rm -rf "$REMOTE_BOOTSTRAP"
+done
+unset REMOTE_KIND REMOTE_BOOTSTRAP REMOTE_HOME
 
 # Bring claude into the cross-agent skills convention. Codex and OpenCode
 # already discover ~/.agents/skills/ natively; claude only looks at

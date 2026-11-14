@@ -4,9 +4,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { add_mac, forget_mac, list_macs, set_mac_enabled, setup_mac_credentials, MAC_BOOTSTRAP_PATH, MAC_CONTAINER_DIR } from '../src/mac/store.js'
-import { run_mac } from '../src/docker/assets/mac/command.mjs'
-import { cmd_mac } from '../src/cli/mac.js'
+import { add_mac, forget_mac, list_macs, set_mac_enabled, setup_mac_credentials, MAC_BOOTSTRAP_PATH, MAC_CONTAINER_DIR, REMOTE_KINDS, add_remote, list_remotes, setup_remote_credentials } from '../src/remote/store.js'
+import { run_mac, run_windows } from '../src/docker/assets/remote/command.mjs'
+import { authorize_windows, cmd_mac, cmd_windows } from '../src/cli/remote.js'
 import { get_agent } from '../src/agents/index.js'
 import { parse_args } from '../src/cli/parse.js'
 import { build_system_prompt } from '../src/modes/prompt.js'
@@ -178,20 +178,20 @@ describe( `babysit mac`, () => {
             add()
             const { calls } = await run( [ `click`, `office`, `10`, `20`, `right` ] )
             expect( calls[0].command ).toBe( `python3` )
-            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `click`, `10`, `20`, `right` ] )
+            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `--kind`, `mac`, `office`, `click`, `10`, `20`, `right` ] )
         } )
 
         it( `password goes to the vnc helper without the secret in argv`, async () => {
             add()
             const { calls } = await run( [ `password`, `office` ] )
-            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `password` ] )
+            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `--kind`, `mac`, `office`, `password` ] )
         } )
 
         it( `run chains GUI actions through one vnc invocation`, async () => {
             add()
             const { calls } = await run( [ `run`, `office`, `click 10 20; type hi; shot` ] )
             expect( calls ).toHaveLength( 1 )
-            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `office`, `run`, `click 10 20; type hi; shot` ] )
+            expect( calls[0].argv.slice( 1 ) ).toEqual( [ `--kind`, `mac`, `office`, `run`, `click 10 20; type hi; shot` ] )
         } )
 
         it( `explains when the session has no Macs or an unknown name`, async () => {
@@ -208,7 +208,7 @@ describe( `babysit mac`, () => {
     describe( `vnc helper logic`, () => {
 
         // Pure functions in vnc.py, run through python3 (no VNC, no PIL needed)
-        const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/mac'); import vnc\n${ code }` ], { encoding: `utf8` } )
+        const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/remote'); import vnc\n${ code }` ], { encoding: `utf8` } )
         const json = code => JSON.parse( py( `print(json.dumps(${ code }))` ).stdout )
 
         it( `password types the stored secret as keystrokes and prints nothing`, () => {
@@ -216,7 +216,7 @@ describe( `babysit mac`, () => {
             const result = py( `
 import asyncio, types
 sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={})
-vnc.WARMUP = vnc.SETTLE = vnc.KEY_DELAY = 0
+vnc.KINDS['mac']['warmup'] = vnc.SETTLE = vnc.KEY_DELAY = 0
 sent = []
 async def drain(): pass
 writer = types.SimpleNamespace(write=lambda b: b[1] == 1 and sent.append(int.from_bytes(b[4:], 'big')))
@@ -263,15 +263,15 @@ sys.stderr.write(''.join(map(chr, sent)))` )
 
         it( `parses add, list, check and forget`, () => {
             expect( parse_args( [ `mac`, `add`, `office`, `10.0.0.5`, `--user`, `me`, `--password-env`, `PW` ] ) )
-                .toMatchObject( { verb: `mac`, mac_verb: `add`, mac_name: `office`, mac_host: `10.0.0.5`, user: `me`, password_env: `PW` } )
-            expect( parse_args( [ `mac`, `list` ] ).mac_verb ).toBe( `list` )
+                .toMatchObject( { verb: `mac`, remote_verb: `add`, remote_name: `office`, remote_host: `10.0.0.5`, user: `me`, password_env: `PW` } )
+            expect( parse_args( [ `mac`, `list` ] ).remote_verb ).toBe( `list` )
             expect( () => parse_args( [ `mac`, `add`, `office` ] ) ).toThrow( `Usage` )
             expect( () => parse_args( [ `mac`, `forget` ] ) ).toThrow( `NAME` )
             expect( () => parse_args( [ `mac`, `bogus` ] ) ).toThrow( `Unknown mac command` )
         } )
 
         it( `parses enable and disable, which need a name`, () => {
-            expect( parse_args( [ `mac`, `disable`, `office` ] ) ).toMatchObject( { mac_verb: `disable`, mac_name: `office` } )
+            expect( parse_args( [ `mac`, `disable`, `office` ] ) ).toMatchObject( { remote_verb: `disable`, remote_name: `office` } )
             expect( () => parse_args( [ `mac`, `enable` ] ) ).toThrow( `NAME` )
         } )
 
@@ -279,24 +279,24 @@ sys.stderr.write(''.join(map(chr, sent)))` )
             add()
             const lines = []
             const deps = { dir, print: line => lines.push( line ), ports: async () => true }
-            expect( await cmd_mac( { mac_verb: `disable`, mac_name: `office` }, deps ) ).toBe( 0 )
+            expect( await cmd_mac( { remote_verb: `disable`, remote_name: `office` }, deps ) ).toBe( 0 )
             expect( setup_mac_credentials( { dir } ) ).toEqual( [] )
-            await cmd_mac( { mac_verb: `list` }, deps )
+            await cmd_mac( { remote_verb: `list` }, deps )
             expect( lines.join( `\n` ) ).toContain( `disabled` )
-            expect( await cmd_mac( { mac_verb: `enable`, mac_name: `office` }, deps ) ).toBe( 0 )
+            expect( await cmd_mac( { remote_verb: `enable`, remote_name: `office` }, deps ) ).toBe( 0 )
             expect( setup_mac_credentials( { dir } ) ).toHaveLength( 1 )
-            expect( await cmd_mac( { mac_verb: `enable`, mac_name: `ghost` }, deps ) ).toBe( 1 )
+            expect( await cmd_mac( { remote_verb: `enable`, remote_name: `ghost` }, deps ) ).toBe( 1 )
         } )
 
         it( `add refuses to prompt: the password needs a pipe or an environment variable`, async () => {
-            await expect( cmd_mac( { mac_verb: `add`, mac_name: `office`, mac_host: `10.0.0.5` }, { dir } ) ).rejects.toThrow( `--password-stdin` )
+            await expect( cmd_mac( { remote_verb: `add`, remote_name: `office`, remote_host: `10.0.0.5` }, { dir } ) ).rejects.toThrow( `--password-stdin` )
             expect( list_macs( dir ) ).toEqual( [] )
         } )
 
         it( `add reads the password from the pipe seam and reports a missing Remote Login`, async () => {
             const lines = []
             const code = await cmd_mac(
-                { mac_verb: `add`, mac_name: `office`, mac_host: `192.168.1.50`, user: `mentor`, password_stdin: true },
+                { remote_verb: `add`, remote_name: `office`, remote_host: `192.168.1.50`, user: `mentor`, password_stdin: true },
                 { dir, print: line => lines.push( line ), ports: async () => false, read_password: () => SECRET }
             )
             expect( code ).toBe( 1 )
@@ -316,10 +316,10 @@ sys.stderr.write(''.join(map(chr, sent)))` )
         } )
 
         it( `the mode descriptor and prompt derive from the device table`, () => {
-            expect( DEVICE_KINDS.map( kind => kind.name ) ).toEqual( [ `adb`, `ios`, `mac` ] )
-            expect( all_devices( { adb: true, ios: true, mac: true } ) ).toBe( true )
-            expect( all_devices( { adb: true, ios: true } ) ).toBe( false )
-            expect( every_device( false ) ).toEqual( { adb: false, ios: false, mac: false } )
+            expect( DEVICE_KINDS.map( kind => kind.name ) ).toEqual( [ `adb`, `ios`, `mac`, `windows` ] )
+            expect( all_devices( { adb: true, ios: true, mac: true, windows: true } ) ).toBe( true )
+            expect( all_devices( { adb: true, ios: true, mac: true } ) ).toBe( false )
+            expect( every_device( false ) ).toEqual( { adb: false, ios: false, mac: false, windows: false } )
             for( const { name, prompt } of DEVICE_KINDS ) expect( build_system_prompt( { [ name ]: true } ) ).toContain( prompt )
         } )
 
@@ -346,6 +346,152 @@ sys.stderr.write(''.join(map(chr, sent)))` )
             expect( build_system_prompt( {} ) ).not.toContain( `babysit mac` )
         } )
 
+    } )
+
+} )
+
+describe( `babysit windows`, () => {
+
+    const WINDOWS = REMOTE_KINDS.windows
+    const decode = base64 => Buffer.from( base64, `base64` ).toString( `utf16le` )
+
+    let dir
+    let scratch
+    let original_tmpdir
+    beforeEach( () => {
+        dir = mkdtempSync( join( tmpdir(), `babysit-windows-test-` ) )
+        scratch = mkdtempSync( join( tmpdir(), `babysit-windows-scratch-` ) )
+        original_tmpdir = process.env.TMPDIR
+        process.env.TMPDIR = scratch
+    } )
+    afterEach( () => {
+        if( original_tmpdir === undefined ) delete process.env.TMPDIR
+        else process.env.TMPDIR = original_tmpdir
+        rmSync( dir, { recursive: true, force: true } )
+        rmSync( scratch, { recursive: true, force: true } )
+    } )
+
+    const add = ( name = `laptop` ) => add_remote( WINDOWS, { name, host: `192.168.2.85`, user: `mentor`, password: SECRET }, dir )
+
+    it( `keeps its own registry, separate from Macs`, () => {
+        add()
+        expect( JSON.parse( readFileSync( join( dir, `windows.json` ), `utf8` ) ) ).toEqual( { machines: [ { name: `laptop`, host: `192.168.2.85`, user: `mentor` } ] } )
+        expect( list_macs( dir ) ).toEqual( [] )
+        expect( list_remotes( WINDOWS, dir ).map( machine => machine.name ) ).toEqual( [ `laptop` ] )
+    } )
+
+    it( `stages secrets for the windows bootstrap path only`, () => {
+        add()
+        const [ mount ] = setup_remote_credentials( WINDOWS, { dir } )
+        expect( mount.target ).toBe( `/tmp/.babysit-windows` )
+        expect( mount.cleanup ).toContain( `babysit-windows-creds-` )
+        expect( existsSync( join( mount.cleanup, `windows.json` ) ) ).toBe( true )
+        expect( readFileSync( join( mount.cleanup, `laptop`, `password` ), `utf8` ) ).toBe( SECRET )
+    } )
+
+    it( `authorizes the key with an encoded PowerShell script for admins and standard users`, () => {
+        const command = authorize_windows( `ssh-ed25519 AAAA babysit-windows-laptop` )
+        const [ , encoded ] = command.match( /-EncodedCommand (\S+)$/ )
+        const script = decode( encoded )
+        expect( command ).toStartWith( `powershell -NoProfile -NonInteractive -EncodedCommand ` )
+        expect( script ).toContain( `$k = 'ssh-ed25519 AAAA babysit-windows-laptop'` )
+        expect( script ).toContain( `administrators_authorized_keys` )
+        expect( script ).toContain( `authorized_keys` )
+        expect( script ).toContain( `*S-1-5-32-544:F` )
+    } )
+
+    describe( `in-container command`, () => {
+
+        const run = async ( args, extra = {} ) => {
+            const calls = []
+            const code = await run_windows( args, {
+                root: dir,
+                say: () => {},
+                run: async ( command, argv, options ) => ( calls.push( { command, argv, options } ), 0 ),
+                reachable: async () => true,
+                ...extra,
+            } )
+            return { code, calls }
+        }
+
+        it( `ps runs PowerShell from an encoded command, never a quoted string`, async () => {
+            add()
+            const { calls } = await run( [ `ps`, `laptop`, `Get-Process | Select -First 1` ] )
+            const argv = calls[0].argv
+            expect( argv.slice( -6, -1 ) ).toEqual( [ `mentor@192.168.2.85`, `powershell`, `-NoProfile`, `-NonInteractive`, `-EncodedCommand` ] )
+            expect( decode( argv.at( -1 ) ) ).toEndWith( `Get-Process | Select -First 1` )
+        } )
+
+        it( `ps reads the script from stdin when no argument is given`, async () => {
+            add()
+            const { calls } = await run( [ `ps`, `laptop` ], { stdin: async () => `hostname` } )
+            expect( decode( calls[0].argv.at( -1 ) ) ).toEndWith( `hostname` )
+        } )
+
+        it( `has no sudo, rewrites win: scp paths, and sends GUI actions with --kind windows`, async () => {
+            add()
+            await expect( run( [ `sudo`, `laptop`, `whoami` ] ) ).rejects.toThrow( `Unknown windows command sudo` )
+            const { calls: scp } = await run( [ `scp`, `laptop`, `win:C:/Users/mentor/a.png`, `./a.png` ] )
+            expect( scp[0].argv.slice( -2 ) ).toEqual( [ `mentor@192.168.2.85:C:/Users/mentor/a.png`, `./a.png` ] )
+            const { calls: gui } = await run( [ `shot`, `laptop` ] )
+            expect( gui[0].argv.slice( 1 ) ).toEqual( [ `--kind`, `windows`, `laptop`, `shot` ] )
+        } )
+
+        it( `explains a session without Windows PCs`, async () => {
+            await expect( run( [ `ps`, `laptop`, `hostname` ] ) ).rejects.toThrow( `--windows` )
+        } )
+
+    } )
+
+    it( `vnc helper: --kind selects the registry, Win maps to Super, unlock submits with Return`, () => {
+        const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/remote'); import vnc\n${ code }` ], { encoding: `utf8` } )
+        const parsed = JSON.parse( py( `print(json.dumps([vnc.parse_kind(['--kind', 'windows', 'laptop', 'shot']), vnc.parse_kind(['office', 'shot']), vnc.keysym('Win', {'Super_L': 65515})]))` ).stdout )
+        expect( parsed ).toEqual( [ [ `windows`, [ `laptop`, `shot` ] ], [ `mac`, [ `office`, `shot` ] ], 65515 ] )
+
+        const result = py( `
+import asyncio, types
+sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={'space': 32, 'Return': 65293})
+vnc.KIND = 'windows'
+vnc.KINDS['windows']['warmup'] = vnc.SETTLE = vnc.KEY_DELAY = 0
+real_sleep = asyncio.sleep
+asyncio.sleep = lambda seconds: real_sleep(0)
+sent = []
+async def drain(): pass
+writer = types.SimpleNamespace(write=lambda b: b[1] == 1 and sent.append(int.from_bytes(b[4:], 'big')))
+fake = types.SimpleNamespace(keyboard=types.SimpleNamespace(writer=writer), drain=drain)
+asyncio.run(vnc.act(fake, {'name': 'laptop'}, 'pw', 'unlock', [], 0))
+print(json.dumps(sent))` )
+        expect( JSON.parse( result.stdout ) ).toEqual( [ 32, 0x70, 0x77, 65293 ] )
+    }, 20_000 )
+
+    it( `host command parses, and add reports a missing OpenSSH Server`, async () => {
+        expect( parse_args( [ `windows`, `add`, `laptop`, `192.168.2.85`, `--user`, `mentor`, `--password-stdin` ] ) )
+            .toMatchObject( { verb: `windows`, remote_verb: `add`, remote_name: `laptop`, remote_host: `192.168.2.85`, user: `mentor`, password_stdin: true } )
+        expect( () => parse_args( [ `windows`, `forget` ] ) ).toThrow( `needs a NAME` )
+
+        const lines = []
+        const code = await cmd_windows(
+            { remote_verb: `add`, remote_name: `laptop`, remote_host: `192.168.2.85`, user: `mentor`, password_stdin: true },
+            { dir, print: line => lines.push( line ), ports: async () => false, read_password: () => SECRET },
+        )
+        expect( code ).toBe( 1 )
+        expect( lines.join( `\n` ) ).toContain( `OpenSSH Server` )
+        expect( lines.join( `\n` ) ).toContain( `TightVNC` )
+        expect( lines.join( `\n` ) ).not.toContain( SECRET )
+    } )
+
+    it( `a --windows container gets its marker and tmpfs; --devices includes it`, () => {
+        const args = build_docker_command_args( {
+            agent: get_agent( `claude` ), workspace: `/tmp/ws`, mode: { sandbox: true, windows: true },
+            mount_workspace: false, include_agent_state: false, include_agents_dir: false, include_babysit_rc: false, include_loop_deadline: false,
+            extra_mounts: [], chrome_seccomp_profile_path: `/tmp/seccomp.json`,
+        } )
+        expect( args ).toContain( `BABYSIT_WINDOWS=1` )
+        expect( args ).not.toContain( `BABYSIT_MAC=1` )
+        expect( args[ args.indexOf( `--tmpfs` ) + 1 ] ).toStartWith( `${ WINDOWS.container_dir }:` )
+        expect( parse_args( [ `claude`, `--devices` ] ).flags.windows ).toBe( true )
+        expect( build_system_prompt( { windows: true } ) ).toContain( `babysit windows --help` )
+        expect( build_system_prompt( { mac: true } ) ).not.toContain( `babysit windows` )
     } )
 
 } )
