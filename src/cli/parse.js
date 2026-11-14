@@ -200,15 +200,15 @@ export const parse_args = ( argv ) => {
         return { verb: `web`, web_verb, key_action, key_name, agent: null, flags, passthrough: [] }
     }
 
-    // babysit mac|windows add NAME HOST --user U (password: pipe or --password-env) | list | check NAME | forget NAME
+    // babysit mac|windows [add [NAME [HOST]]] (a form fills in the rest) | list | check NAME | forget NAME
     if( Object.hasOwn( REMOTE_VERBS, verb ) ) {
-        const [ , remote_verb ] = positionals
+        // Bare `babysit windows` means add: the form asks for everything
+        const [ , remote_verb = flags.help || flags.version ? undefined : `add` ] = positionals
         const [ remote_name = null, remote_host = null ] = positionals.slice( 2 ).map( String )
 
         if( !remote_verb && ( flags.help || flags.version ) ) return { verb, remote_verb: null, agent: null, flags, passthrough: [] }
         if( !REMOTE_VERBS[ verb ].includes( remote_verb ) ) throw new Error( `Unknown ${ verb } command: ${ remote_verb || `(missing)` }` )
         if( !flags.help ) {
-            if( remote_verb === `add` && !( remote_name && remote_host ) ) throw new Error( `Usage: babysit ${ verb } add NAME HOST [--user U] [--password-env VAR | --password-stdin]` )
             if( [ `forget`, `enable`, `disable` ].includes( remote_verb ) && !remote_name ) throw new Error( `babysit ${ verb } ${ remote_verb } needs a NAME` )
             if( positionals.length > ( remote_verb === `add` ? 4 : 3 ) ) throw new Error( `Unknown ${ verb } argument: ${ positionals[ remote_verb === `add` ? 4 : 3 ] }` )
         }

@@ -4,6 +4,7 @@
 
 ### Added
 - `--windows`: remote Windows PCs over OpenSSH (key) and VNC, like `--mac`. `babysit windows add|list|check|enable|disable|forget` on the host (installs the key, admin accounts included); in session `ps` (PowerShell), `ssh`, `scp` (`win:` paths) and the GUI commands. `--devices` includes it. Image update needed.
+- `babysit mac` / `babysit windows` open a form for name, host, user and password (hidden), with the setup steps shown below it. Re-adding prefills; an empty password keeps the stored one. Flags and pipes remain for scripts.
 
 ### Fixed
 - `babysit mac list` and GUI commands no longer hang when a machine is off or unreachable (socket left open; VNC connect had no timeout).

@@ -271,12 +271,15 @@ Control with `facebook-wda` at `http://HOST:8100`; post `waitForIdleTimeout=0` a
 SSH (key) for structured control, Screen Sharing (VNC) for the GUI. Dedicated LAN Mac, e.g. `--devices` or `--mac`.
 
 ```bash
-read -rs PW; PW=$PW babysit mac add office 192.168.1.50 --user mentor --password-env PW   # once; installs the ssh key
+babysit mac                   # form: name, host, user, password (hidden); installs the ssh key
+babysit mac add office        # update office: prefilled, empty password keeps the stored one
 babysit mac check|list|enable|disable|forget
 ```
 
+Scripts: `babysit mac add NAME HOST --user U --password-stdin` (or `--password-env VAR`).
+
 - Mac, once: Remote Login + Screen Sharing on (Sharing settings), sleep and lock off, an account for agents. Without Full Disk Access for Terminal, enable sshd with `sudo launchctl enable system/com.openssh.sshd && sudo launchctl bootstrap system /System/Library/LaunchDaemons/ssh.plist`
-- Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain. The password comes from a pipe or `--password-env`, never an argument or prompt
+- Host: `~/.babysit/macs/` (0700; registry has no secrets, password + ed25519 key per Mac, 0600). Linux host, no Keychain. The password is typed hidden into the form, or piped / `--password-env` for scripts; never an argument
 - Secrets are uploaded (`docker cp`) only for `--mac`/`--devices` sessions, into a tmpfs at `~/.config/babysit-mac`: memory only, gone when the container stops; never in `Config.Env`, mounts, argv, config files or logs. A restarted container needs a relaunch
 - `babysit mac disable NAME` keeps a Mac registered but never uploads its secrets; the choice is host-side so resume and fork cannot widen it
 - In session: `babysit mac ssh|sudo|scp NAME ...` and GUI `run|shot|click|move|drag|type|key|scroll|unlock|password` (`password` types the stored password into OS auth dialogs; the agent never sees it); the agent is told never to destroy other users' data
@@ -288,7 +291,7 @@ babysit mac check|list|enable|disable|forget
 Same model as `--mac`: OpenSSH (key) for structured control, a VNC server for the GUI. Own store `~/.babysit/windows/`, own tmpfs `~/.config/babysit-windows`.
 
 ```bash
-read -rs PW; PW=$PW babysit windows add laptop 192.168.2.85 --user mentor --password-env PW   # once; installs the ssh key
+babysit windows               # form: name, host, user, password; shows the PC setup steps below
 babysit windows check|list|enable|disable|forget
 ```
 

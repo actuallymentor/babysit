@@ -89,6 +89,36 @@ const save_remotes = ( kind, dir, machines ) => {
 }
 
 /**
+ * Throw the first problem with a machine's fields, phrased for a person.
+ * Shared by add_remote and the interactive form, so both refuse the same input.
+ * @param {Object} kind - A REMOTE_KINDS profile
+ * @param {{ name?: string, host?: string, user?: string, password?: string }} fields
+ */
+export const check_remote_fields = ( kind, { name, host, user, password } ) => {
+
+    if( !NAME.test( name || `` ) ) throw new Error( `Name: 1-32 letters, digits, dots, dashes or underscores` )
+    if( !HOST.test( host || `` ) ) throw new Error( host ? `Host: not an IP address or hostname: ${ host }` : `Host: the ${ kind.label }'s IP address or hostname` )
+    if( !USER.test( user || `` ) ) throw new Error( user ? `User: not a valid account name: ${ user }` : `User: the ${ kind.os_user } to log in as` )
+    if( !password || /[\n\0]/.test( password ) ) throw new Error( `Password: empty or contains a newline` )
+
+}
+
+/**
+ * A registered machine's stored password, or null. Lets a re-add keep it.
+ * @returns {string|null}
+ */
+export const read_remote_password = ( kind, name, dir = kind.dir ) => {
+
+    if( !NAME.test( name || `` ) ) return null
+    try {
+        return readFileSync( join( dir, name, `password` ), `utf8` )
+    } catch {
+        return null
+    }
+
+}
+
+/**
  * Record a machine: registry entry, password, and a fresh ed25519 key pair.
  * Re-adding a name replaces its password and keeps its key.
  * @param {Object} kind - A REMOTE_KINDS profile
@@ -102,10 +132,7 @@ const save_remotes = ( kind, dir, machines ) => {
  */
 export const add_remote = ( kind, { name, host, user, password }, dir = kind.dir ) => {
 
-    if( !NAME.test( name || `` ) ) throw new Error( `${ kind.label } name must be 1-32 letters, digits, dots, dashes or underscores` )
-    if( !HOST.test( host || `` ) ) throw new Error( `Invalid ${ kind.label } host: ${ host }` )
-    if( !USER.test( user || `` ) ) throw new Error( `Invalid ${ kind.label } user: ${ user }` )
-    if( !password || /[\n\0]/.test( password ) ) throw new Error( `The password is empty or contains a newline` )
+    check_remote_fields( kind, { name, host, user, password } )
 
     private_dir( dir )
     private_dir( join( dir, name ) )

@@ -529,32 +529,36 @@ Examples:
   babysit auth init --claude-token --name work
   echo "$TOKEN" | babysit auth init --claude-token --token-stdin`,
 
-    mac: () => `Usage: babysit mac add NAME HOST [--user U] [--password-env VAR | --password-stdin]
+    mac: () => `Usage: babysit mac [add [NAME]]           asks for name, host, user and password
        babysit mac list | check [NAME] | enable NAME | disable NAME | forget NAME
+       babysit mac add NAME HOST --user U --password-stdin | --password-env VAR   (scripts)
 
 Remote Macs for --mac (or --devices) sessions, driven over SSH and Screen Sharing.
 Passwords and ssh keys stay in ~/.babysit/macs (0700) and are uploaded only into
 sessions that ask for --mac (enabled Macs only; into a memory-only tmpfs); they
-never enter Docker metadata, config or logs. The password comes from a pipe or an
-environment variable, never an argument.
+never enter Docker metadata, config or logs. The password is typed into the form
+(hidden), or for scripts piped or named by variable, never an argument. Re-adding
+a name prefills it; an empty password keeps the stored one.
 
 On the Mac, once: Remote Login and Screen Sharing on (System Settings > General >
 Sharing), a dedicated standard or admin account, sleep and lock off.
 
 Examples:
-  babysit mac add office 192.168.1.50 --user mentor --password-stdin
+  babysit mac                   # the form
+  babysit mac add office        # change office's IP, user or password
   babysit mac check office      # installs the ssh key, tests ssh and Screen Sharing
   babysit mac list
   babysit mac disable office    # stays registered; sessions stop receiving its secrets
   babysit mac forget office`,
 
-    windows: () => `Usage: babysit windows add NAME HOST [--user U] [--password-env VAR | --password-stdin]
+    windows: () => `Usage: babysit windows [add [NAME]]       asks for name, host, user and password
        babysit windows list | check [NAME] | enable NAME | disable NAME | forget NAME
+       babysit windows add NAME HOST --user U --password-stdin | --password-env VAR   (scripts)
 
 Windows PCs for --windows (or --devices) sessions, driven over SSH and VNC.
 Secrets are handled like Macs': ~/.babysit/windows (0700), uploaded only into
---windows sessions (enabled PCs only; memory-only tmpfs), password from a pipe
-or an environment variable. --user is the local account name (C:\\Users\\<name>);
+--windows sessions (enabled PCs only; memory-only tmpfs), password typed hidden
+into the form (or piped / --password-env for scripts). User is the local account name (C:\\Users\\<name>);
 for a Microsoft account the password is the account password, not the PIN.
 
 On the PC, once (PowerShell as Administrator):
@@ -569,7 +573,8 @@ Hello (Settings > Accounts > Sign-in options; Microsoft accounts: turn off
 "only allow Windows Hello sign-in").
 
 Examples:
-  babysit windows add laptop 192.168.2.85 --user mentor --password-stdin
+  babysit windows               # the form
+  babysit windows add laptop    # change laptop's IP, user or password
   babysit windows check laptop  # installs the ssh key, tests ssh and VNC
   babysit windows list
   babysit windows disable laptop

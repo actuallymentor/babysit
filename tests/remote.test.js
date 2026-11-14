@@ -265,7 +265,9 @@ sys.stderr.write(''.join(map(chr, sent)))` )
             expect( parse_args( [ `mac`, `add`, `office`, `10.0.0.5`, `--user`, `me`, `--password-env`, `PW` ] ) )
                 .toMatchObject( { verb: `mac`, remote_verb: `add`, remote_name: `office`, remote_host: `10.0.0.5`, user: `me`, password_env: `PW` } )
             expect( parse_args( [ `mac`, `list` ] ).remote_verb ).toBe( `list` )
-            expect( () => parse_args( [ `mac`, `add`, `office` ] ) ).toThrow( `Usage` )
+            expect( parse_args( [ `mac`, `add`, `office` ] ) ).toMatchObject( { remote_verb: `add`, remote_name: `office`, remote_host: null } )
+            expect( parse_args( [ `mac` ] ) ).toMatchObject( { verb: `mac`, remote_verb: `add`, remote_name: null } )
+            expect( parse_args( [ `mac`, `--help` ] ).remote_verb ).toBeNull()
             expect( () => parse_args( [ `mac`, `forget` ] ) ).toThrow( `NAME` )
             expect( () => parse_args( [ `mac`, `bogus` ] ) ).toThrow( `Unknown mac command` )
         } )
@@ -288,9 +290,51 @@ sys.stderr.write(''.join(map(chr, sent)))` )
             expect( await cmd_mac( { remote_verb: `enable`, remote_name: `ghost` }, deps ) ).toBe( 1 )
         } )
 
-        it( `add refuses to prompt: the password needs a pipe or an environment variable`, async () => {
-            await expect( cmd_mac( { remote_verb: `add`, remote_name: `office`, remote_host: `10.0.0.5` }, { dir } ) ).rejects.toThrow( `--password-stdin` )
+        it( `add without a terminal needs a pipe or an environment variable`, async () => {
+            await expect( cmd_mac( { remote_verb: `add`, remote_name: `office`, remote_host: `10.0.0.5` }, { dir, interactive: false } ) ).rejects.toThrow( `--password-stdin` )
             expect( list_macs( dir ) ).toEqual( [] )
+        } )
+
+        describe( `interactive add`, () => {
+
+            // A form seam that records what it was shown and answers like a person
+            const answering = ( answers, seen = {} ) => async options => {
+                Object.assign( seen, options )
+                if( !answers ) return null
+                const values = { ...Object.fromEntries( options.fields.map( ( { key, value = `` } ) => [ key, value ] ) ), ...answers }
+                options.validate( values )
+                return values
+            }
+            const deps = extra => ( { dir, print: () => {}, ports: async () => false, interactive: true, ...extra } )
+
+            it( `asks for every field, prefilled from the command line, and saves`, async () => {
+                const seen = {}
+                await cmd_mac( { remote_verb: `add`, remote_name: `office` }, deps( { form: answering( { host: `192.168.1.50`, user: `mentor`, password: SECRET }, seen ) } ) )
+                expect( seen.fields.map( ( { key } ) => key ) ).toEqual( [ `name`, `host`, `user`, `password` ] )
+                expect( seen.fields[0].value ).toBe( `office` )
+                expect( seen.fields.find( ( { key } ) => key === `password` ).secret ).toBe( true )
+                expect( seen.notes.join( ` ` ) ).toContain( `Remote Login` )
+                expect( list_macs( dir ) ).toEqual( [ { name: `office`, host: `192.168.1.50`, user: `mentor` } ] )
+                expect( readFileSync( join( dir, `office`, `password` ), `utf8` ) ).toBe( SECRET )
+            } )
+
+            it( `re-adding prefills the entry and an empty password keeps the stored one`, async () => {
+                add()
+                const seen = {}
+                await cmd_mac( { remote_verb: `add`, remote_name: `office` }, deps( { form: answering( { host: `192.168.1.77` }, seen ) } ) )
+                expect( seen.title ).toContain( `Update` )
+                expect( seen.fields.find( ( { key } ) => key === `user` ).value ).toBe( `mentor` )
+                expect( list_macs( dir )[0].host ).toBe( `192.168.1.77` )
+                expect( readFileSync( join( dir, `office`, `password` ), `utf8` ) ).toBe( SECRET )
+            } )
+
+            it( `refuses bad fields inside the form and saves nothing when cancelled`, async () => {
+                await expect( cmd_mac( { remote_verb: `add` }, deps( { form: answering( { name: `office`, host: `-oProxyCommand=x`, password: `p` } ) } ) ) ).rejects.toThrow( `Host:` )
+                await expect( cmd_mac( { remote_verb: `add` }, deps( { form: answering( { name: `office`, host: `10.0.0.5` } ) } ) ) ).rejects.toThrow( `Password:` )
+                expect( await cmd_mac( { remote_verb: `add` }, deps( { form: answering( null ) } ) ) ).toBe( 1 )
+                expect( list_macs( dir ) ).toEqual( [] )
+            } )
+
         } )
 
         it( `add reads the password from the pipe seam and reports a missing Remote Login`, async () => {

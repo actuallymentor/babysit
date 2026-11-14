@@ -4,7 +4,8 @@ import { connect } from 'net'
 import { tmpdir, userInfo } from 'os'
 import { join } from 'path'
 
-import { REMOTE_KINDS, add_remote, forget_remote, list_remotes, set_remote_enabled } from '../remote/store.js'
+import { REMOTE_KINDS, add_remote, check_remote_fields, forget_remote, list_remotes, read_remote_password, set_remote_enabled } from '../remote/store.js'
+import { form_menu } from './form.js'
 
 // Always destroy: a timed-out socket left open keeps the process alive past its answer
 const reachable = ( host, port ) => new Promise( resolve => {
@@ -54,12 +55,25 @@ export const authorize_windows = pub => {
 const SETUP = {
     mac: {
         authorize: authorize_posix,
+        steps: [
+            `On the Mac, once: System Settings > General > Sharing: Remote Login and Screen Sharing on.`,
+            `Sleep and lock off; a dedicated standard or admin account.`,
+        ],
         ssh_down: `Turn on Remote Login: System Settings > General > Sharing`,
         vnc_down: `Turn on Screen Sharing: System Settings > General > Sharing`,
         vnc_label: `Screen Sharing`,
     },
     windows: {
         authorize: authorize_windows,
+        steps: [
+            `On the PC, once, in PowerShell as Administrator:`,
+            `  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`,
+            `  Set-Service sshd -StartupType Automatic; Start-Service sshd`,
+            `  Set-NetConnectionProfile -NetworkCategory Private`,
+            `  New-NetFirewallRule -Name babysit-vnc -DisplayName 'VNC (babysit)' -Protocol TCP -LocalPort 5900 -Action Allow -Profile Private`,
+            `Then TightVNC Server (service mode), password = first 8 characters of the account password.`,
+            `User = folder name under C:\\Users; a Microsoft account uses its password, not the PIN.`,
+        ],
         ssh_down: `Install and start OpenSSH Server (see babysit windows --help)`,
         vnc_down: `Install a VNC server, e.g. TightVNC as a service, password = the account password's first 8 characters (see babysit windows --help)`,
         vnc_label: `VNC`,
@@ -143,10 +157,38 @@ const check_remote = async ( kind, dir, machine, print, ports ) => {
 }
 
 /**
+ * The add form: name, host, user, password, prefilled from the command line
+ * and from an existing entry. An empty password keeps the stored one, so
+ * changing a machine's IP never means retyping it.
+ * @returns {Promise<Object|null>} `{ name, host, user, password }`, or null when cancelled
+ */
+const ask_remote = async ( kind, cmd, dir, form ) => {
+
+    const existing = list_remotes( kind, dir ).find( machine => machine.name === cmd.remote_name )
+    const with_stored = values => ( { ...values, password: values.password || read_remote_password( kind, values.name, dir ) || `` } )
+
+    const answers = await form( {
+        title: existing ? `Update ${ kind.label } ${ existing.name }` : `Add a ${ kind.label }`,
+        fields: [
+            { key: `name`, label: `Name`, value: cmd.remote_name || ``, hint: `(what agents call it, e.g. ${ kind.name === `mac` ? `office` : `laptop` })` },
+            { key: `host`, label: `Host`, value: cmd.remote_host || existing?.host || ``, hint: `(IP address or hostname)` },
+            { key: `user`, label: `User`, value: cmd.user || existing?.user || userInfo().username, hint: `(${ kind.os_user })` },
+            { key: `password`, label: `Password`, secret: true, hint: existing ? `(stored; empty keeps it)` : `(${ kind.os_user } password)` },
+        ],
+        validate: values => check_remote_fields( kind, with_stored( values ) ),
+        submit: `save and check`,
+        notes: SETUP[ kind.name ].steps,
+    } )
+
+    return answers && with_stored( answers )
+
+}
+
+/**
  * babysit mac|windows add|list|check|enable|disable|forget
  * @param {Object} kind - A REMOTE_KINDS profile
  * @param {Object} cmd - Parsed command (remote_verb, remote_name, remote_host, ...)
- * @param {Object} [deps] - Seams: dir, print, ports, read_password
+ * @param {Object} [deps] - Seams: dir, print, ports, read_password, form, interactive
  * @returns {Promise<number>} Exit code
  */
 export const cmd_remote = async ( kind, cmd, {
@@ -154,19 +196,25 @@ export const cmd_remote = async ( kind, cmd, {
     print = console.log,
     ports = reachable,
     read_password = null,
+    form = form_menu,
+    interactive = Boolean( process.stdin.isTTY && process.stdout.isTTY ),
 } = {} ) => {
 
     const { remote_verb: verb, remote_name: name } = cmd
 
     if( verb === `add` ) {
-        const password = cmd.password_env ? process.env[ cmd.password_env ]
-            : cmd.password_stdin ? ( read_password || read_stdin )()
-                : null
-        if( !password ) throw new Error( cmd.password_env
-            ? `${ cmd.password_env } is empty`
-            : `No password: pipe it with --password-stdin, or name an environment variable with --password-env VAR (e.g. read -rs PW; PW=$PW babysit ${ kind.name } add ... --password-env PW)` )
 
-        const machine = add_remote( kind, { name, host: cmd.remote_host, user: cmd.user || userInfo().username, password }, dir )
+        // Scripts pass the password through a pipe or a variable; a person gets the form
+        const scripted = cmd.password_env || cmd.password_stdin
+        if( !scripted && !interactive ) throw new Error( `babysit ${ kind.name } add asks for the details in a terminal. Without one: babysit ${ kind.name } add NAME HOST --user U --password-stdin (or --password-env VAR)` )
+
+        const answers = scripted
+            ? { name, host: cmd.remote_host, user: cmd.user || userInfo().username, password: cmd.password_env ? process.env[ cmd.password_env ] : ( read_password || read_stdin )() }
+            : await ask_remote( kind, cmd, dir, form )
+        if( !answers ) return print( `Cancelled; nothing saved.` ), 1
+        if( cmd.password_env && !answers.password ) throw new Error( `${ cmd.password_env } is empty` )
+
+        const machine = add_remote( kind, answers, dir )
         print( `Added ${ machine.name } (${ machine.user }@${ machine.host }). Secrets: ${ dir }/${ machine.name } (0700); sessions get them only with --${ kind.name } or --devices.` )
 
         return await check_remote( kind, dir, machine, print, ports ) ? 0 : 1

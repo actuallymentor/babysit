@@ -218,11 +218,11 @@ export const COMMANDS = [
         [ `babysit web key add|list|remove`, `Read-only API keys for the babysit-web JSON API` ],
     ], subcommands: { init: {}, key: {} } },
     { name: `mac`, usage: [
-        [ `babysit mac add NAME HOST --user U`, `Register a remote Mac for --mac / --devices sessions (password from a pipe or --password-env)` ],
+        [ `babysit mac [add [NAME]]`, `Register or update a remote Mac for --mac / --devices sessions (asks for host, user, password)` ],
         [ `babysit mac list|check|enable|disable|forget`, `List, verify (installs the ssh key), choose which Macs sessions get secrets for, or remove Macs` ],
     ], subcommands: { add: {}, list: {}, check: {}, enable: {}, disable: {}, forget: {} } },
     { name: `windows`, usage: [
-        [ `babysit windows add NAME HOST --user U`, `Register a Windows PC for --windows / --devices sessions (password from a pipe or --password-env)` ],
+        [ `babysit windows [add [NAME]]`, `Register or update a Windows PC for --windows / --devices sessions (asks for host, user, password)` ],
         [ `babysit windows list|check|enable|disable|forget`, `List, verify (installs the ssh key), choose which PCs sessions get secrets for, or remove PCs` ],
     ], subcommands: { add: {}, list: {}, check: {}, enable: {}, disable: {}, forget: {} } },
     { name: `doctor`, deps: true, usage: [ [ `babysit doctor --auth [agent|all]`, `Verify real agent authentication` ] ], options: [
