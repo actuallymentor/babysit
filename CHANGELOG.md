@@ -1,9 +1,10 @@
 # Changelog
 
-## 2.7.1 — 2026-11-14
+## 2.7.1 — 2026-11-15
 
 ### Fixed
-- Mac passwords (`babysit mac password`, `unlock`) type much slower (0.5 s per character, `BABYSIT_MAC_SECRET_KEY_DELAY` to tune), so the lock screen and admin dialogs no longer drop characters. `unlock` also waits longer after waking the screen. Image update needed.
+- `babysit mac unlock` now keeps the Mac unlocked. macOS relocked the screen the moment the Screen Sharing connection that unlocked it closed, which looked like a failed password. Unlock first sets `RestoreMachineState` off over ssh, then submits with Return instead of clicking a lock-screen arrow whose position differs between macOS versions (it missed on Monterey).
+- Mac passwords (`password`, `unlock`) type slower: 0.5 s per character, `BABYSIT_MAC_SECRET_KEY_DELAY` to tune. Image update needed.
 
 ## 2.7.0 — 2026-11-14
 

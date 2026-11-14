@@ -9,7 +9,7 @@ Also the shared helpers (registry, scripts, shot scaling) rdp.py builds on.
   vnc.py NAME type TEXT...              type text literally
   vnc.py NAME key Cmd+space [Return..]  key chords, one arg per chord (Shift chords are ignored by macOS; type capitals)
   vnc.py NAME scroll up|down [N]
-  vnc.py NAME unlock                    wake the lock screen, type the stored password, submit
+  vnc.py NAME unlock                    wake the lock screen, type the stored password, press Return
   vnc.py NAME password                  type the stored password into the focused field (OS auth dialogs); no Return
   vnc.py NAME run [SCRIPT]              several actions on ONE connection: "click 10 20; type hi; key Return; shot"
                                         (statements split on ; or newlines; script from args, else stdin)
@@ -46,9 +46,9 @@ KINDS = {
 KIND = 'mac'  # set by main() from --kind
 
 # Seconds after every key event (down and up). Plain fields took 0 s cleanly
-# (TextEdit, 23 runs). Secrets go much slower: the lock screen and auth dialogs
-# (secure input) dropped characters at 0.05 s, and a lost character there is an
-# invisible, failed login. 0.25 s per event = 0.5 s per character.
+# (TextEdit, 23 runs); the lock screen and admin prompts took 0.05 s. Secrets go slow on
+# purpose: a lost character in a hidden field is an invisible, failed login.
+# 0.25 s per event = 0.5 s per character.
 KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.05)
 SECRET_KEY_DELAY = float(os.environ.get('BABYSIT_MAC_SECRET_KEY_DELAY') or 0.25)
 
@@ -108,13 +108,6 @@ def keysym(name, key_codes=None):
     if name == 'Win':  # the Windows key is X11 Super
         name = 'Super_L'
     return key_codes[name]
-
-
-def lock_arrow(width, height):
-    """Framebuffer pixel of the lock screen's submit arrow (the ring right of the password field).
-    The field sits at the horizontal centre, ~91% down; the arrow ~3.7% of the width to its right
-    (measured at 3360x2100 and 1920x1080)."""
-    return round(width * 0.5 + width * 0.0372), round(height * 0.908)
 
 
 def parse_chord(chord):
@@ -296,11 +289,9 @@ async def act(vnc, mac, password, action, args, started):
         await asyncio.sleep(3)  # the field takes a moment to accept keys after the wake
         await write_text(vnc, password, delay=SECRET_KEY_DELAY)
         await asyncio.sleep(0.5)
-        # The lock screen ignores Return from VNC but accepts a click on its submit arrow
-        vnc.mouse.move(*lock_arrow(vnc.video.width, vnc.video.height))
-        await vnc.drain()
-        await asyncio.sleep(0.3)
-        vnc.mouse.click()
+        # Return submits (loginwindow logs loginPressed). The submit arrow moves
+        # between macOS versions, so no click.
+        await tap(vnc, 'Return')
         await asyncio.sleep(6)
     elif action == 'scroll':
         (vnc.mouse.scroll_up if args[0] == 'up' else vnc.mouse.scroll_down)(int(args[1]) if len(args) > 1 else 3)

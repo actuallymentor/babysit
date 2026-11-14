@@ -29,7 +29,7 @@ Remote Macs (--mac / --devices sessions). Register on the host: babysit mac add.
   babysit mac shot NAME [out.png] [--full]      screenshot, long edge <= 1568 px; coordinates below are pixels of the last shot
   babysit mac click NAME X Y [right|double]     babysit mac move NAME X Y      babysit mac drag NAME X1 Y1 X2 Y2
   babysit mac type NAME text...                 babysit mac key NAME Cmd+space Return   (one chord per arg)
-  babysit mac scroll NAME up|down [N]           babysit mac unlock NAME        type the password and click the lock screen's arrow
+  babysit mac scroll NAME up|down [N]           babysit mac unlock NAME        type the password and submit; stays unlocked after
   babysit mac password NAME                     type the stored password into the focused field (admin/auth dialogs; also a run step)
 
 Each GUI call logs in again and typing waits ~2.5 s, so chain steps with run. Prefer ssh
@@ -215,6 +215,17 @@ export const run_remote = async ( kind, args, io = {} ) => {
         if( rest.length < 2 ) throw new Error( `Usage: babysit ${ kind.name } scp NAME SRC DST (remote paths start with ${ kind.remote })` )
         const remote = path => path.startsWith( kind.remote ) ? `${ target }:${ path.slice( kind.remote.length ) }` : path
         return io.run( `scp`, [ `-r`, ...ssh_options( io.root, machine ), ...rest.map( remote ) ] )
+    }
+
+    // macOS relocks the screen when a Screen Sharing session that began at the
+    // lock screen ends, so an unlock would undo itself the moment vnc.py exits.
+    // RestoreMachineState=NO turns that off (verified on Monterey). Idempotent.
+    const unlocks = action === `unlock` || action === `run` && /\bunlock\b/.test( rest.join( ` ` ) )
+    if( kind.name === `mac` && unlocks ) {
+        const password = ( await readFile( `${ io.root }/${ machine.name }/password`, `utf8` ) ).replace( /\n$/, `` )
+        const keep = [ `sudo`, `-S`, `-p`, `''`, `defaults`, `write`, `/Library/Preferences/com.apple.RemoteManagement`, `RestoreMachineState`, `-bool`, `NO` ]
+        const code = await io.run( `ssh`, [ ...ssh_options( io.root, machine ), target, ...keep ], { input: `${ password }\n` } )
+        if( code ) console.error( `babysit: could not keep ${ machine.name } unlocked after disconnect (ssh exit ${ code }); it may lock again when this command ends` )
     }
 
     // vnc.py serves both kinds' registries, so it needs --kind; rdp.py is Windows-only

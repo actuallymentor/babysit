@@ -189,6 +189,20 @@ describe( `babysit mac`, () => {
             expect( calls[0].argv.slice( 1 ) ).toEqual( [ `--kind`, `mac`, `office`, `password` ] )
         } )
 
+        it( `unlock first keeps the Mac unlocked after disconnect, password on stdin`, async () => {
+            add()
+            for( const args of [ [ `unlock`, `office` ], [ `run`, `office`, `unlock; shot` ] ] ) {
+                const { calls } = await run( args )
+                expect( calls ).toHaveLength( 2 )
+                expect( calls[0].argv.slice( -4 ) ).toEqual( [ `/Library/Preferences/com.apple.RemoteManagement`, `RestoreMachineState`, `-bool`, `NO` ] )
+                expect( calls[0].options.input ).toBe( `${ SECRET }\n` )
+                expect( JSON.stringify( calls[0].argv ) ).not.toContain( SECRET )
+                expect( calls[1].command ).toBe( `python3` )
+            }
+            // Other GUI actions never touch ssh
+            expect( ( await run( [ `run`, `office`, `click 10 20` ] ) ).calls ).toHaveLength( 1 )
+        } )
+
         it( `run chains GUI actions through one vnc invocation`, async () => {
             add()
             const { calls } = await run( [ `run`, `office`, `click 10 20; type hi; shot` ] )
@@ -247,14 +261,6 @@ sys.stderr.write(''.join(map(chr, sent)) + ' ' + repr(sorted(slept)))` )
             expect( mapped ).toEqual( [ 214, 107 ] )
         } )
 
-        it( `finds the lock screen's submit arrow at both screen sizes`, () => {
-            const [ retina, hd ] = json( `[vnc.lock_arrow(3360, 2100), vnc.lock_arrow(1920, 1080)]` )
-            expect( retina[0] ).toBeGreaterThan( 1790 ) // measured: arrow centre ~ (1805, 1907)
-            expect( retina[0] ).toBeLessThan( 1820 )
-            expect( Math.abs( retina[1] - 1907 ) ).toBeLessThan( 5 )
-            expect( Math.abs( hd[0] - 1025 ) ).toBeLessThan( 10 ) // measured ~ (1025, 981)
-            expect( Math.abs( hd[1] - 981 ) ).toBeLessThan( 5 )
-        } )
 
         it( `maps single characters straight to Unicode keysyms and parses chords`, () => {
             const [ keys, named, chords ] = json( `[[vnc.keysym('c', {}), vnc.keysym('H', {}), vnc.keysym('$', {}), vnc.keysym('\\u20ac', {})], vnc.keysym('Return', {'Return': 65293}), [vnc.parse_chord('Cmd+space'), vnc.parse_chord('+'), vnc.parse_chord('Cmd++')]]` )
