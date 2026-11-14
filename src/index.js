@@ -27,6 +27,7 @@ import { cmd_archive } from './cli/archive.js'
 import { cmd_open } from './cli/open.js'
 import { cmd_resume, is_resume_listing } from './cli/resume.js'
 import { cmd_recover, cmd_close, cmd_recovery_shutdown } from './cli/recover.js'
+import { cmd_reboot_notice } from './sessions/reboot_notice.js'
 import { cmd_restart } from './cli/restart.js'
 import { cmd_recover_init } from './cli/recover_init.js'
 import { cmd_monitor } from './cli/monitor.js'
@@ -76,7 +77,12 @@ const exit_code = run => async cmd => {
 const HANDLERS = {
     start: cmd_start,
     launch_dir: cmd_launch_dir,
-    recover: cmd => cmd.recover_verb === `init` ? cmd_recover_init( cmd ) : cmd.flags.shutdown ? cmd_recovery_shutdown() : cmd_recover( cmd ),
+    recover: cmd => {
+        if( cmd.recover_verb === `init` ) return cmd_recover_init( cmd )
+        if( cmd.flags.shutdown ) return cmd_recovery_shutdown()
+        if( cmd.flags.notify ) return cmd_reboot_notice()
+        return cmd_recover( cmd )
+    },
     freeze: exit_code( cmd_freeze ),
     unfreeze: exit_code( cmd_freeze ),
     archive: cmd_archive,

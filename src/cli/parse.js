@@ -154,11 +154,12 @@ export const parse_args = ( argv ) => {
         if( verb === `close` && !selector && !flags.help ) throw new Error( `Usage: babysit close <number|session_id>...` )
         if( args.shutdown && ( selector || args.boot || args.json || args[ `dry-run` ] || args.continue === false ) ) throw new Error( `--shutdown cannot be combined with recovery options` )
         if( args.boot && ( selector || args[ `dry-run` ] ) ) throw new Error( `--boot requires an unfiltered recovery sweep` )
+        if( args.notify && ( selector || args.boot || args.shutdown || args.json || args[ `dry-run` ] || args.continue === false ) ) throw new Error( `--notify cannot be combined with recovery options` )
         return {
             verb, agent: null, session_id: selector === `init` && verb === `recover` ? null : selector,
             ...verb === `close` && { session_ids: selectors },
             recover_verb: verb === `recover` && selector === `init` ? `init` : null,
-            flags: { ...flags, dry_run: Boolean( args[ `dry-run` ] ), json: Boolean( args.json ), no_continue: args.continue === false, boot: Boolean( args.boot ), shutdown: Boolean( args.shutdown ) },
+            flags: { ...flags, dry_run: Boolean( args[ `dry-run` ] ), json: Boolean( args.json ), no_continue: args.continue === false, boot: Boolean( args.boot ), shutdown: Boolean( args.shutdown ), notify: Boolean( args.notify ) },
             passthrough: [],
         }
     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.0 — 2026-11-14
+
+### Added
+- Reboot notice: `babysit recover init` now also installs `babysit-reboot-notice-<uid>.service`. Before a clean shutdown or reboot (automatic update reboots included) every live agent is told to stop and save a note, and the host waits until they are idle, two minutes at most. Crashes, power loss and forced reboots (`systemctl reboot --force`) give no notice. Raises logind's `InhibitDelayMaxSec` to 150s. Rerun `babysit recover init` to get it.
+
 ## 2.6.0 — 2026-11-14
 
 ### Added

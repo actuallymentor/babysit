@@ -4634,7 +4634,8 @@
       "json": false,
       "no_continue": false,
       "boot": false,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },
@@ -4894,7 +4895,8 @@
       "json": false,
       "no_continue": false,
       "boot": false,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },
@@ -4943,7 +4945,8 @@
       "json": false,
       "no_continue": false,
       "boot": false,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },
@@ -4992,7 +4995,8 @@
       "json": true,
       "no_continue": false,
       "boot": false,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },
@@ -5041,7 +5045,8 @@
       "json": false,
       "no_continue": true,
       "boot": false,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },
@@ -5090,7 +5095,8 @@
       "json": false,
       "no_continue": false,
       "boot": true,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },
@@ -5139,12 +5145,66 @@
       "json": false,
       "no_continue": false,
       "boot": false,
-      "shutdown": true
+      "shutdown": true,
+      "notify": false
     },
     "passthrough": []
   },
   "[\"recover\",\"--shutdown\",\"--json\"]": {
     "error": "--shutdown cannot be combined with recovery options"
+  },
+  "[\"recover\",\"--notify\"]": {
+    "verb": "recover",
+    "agent": null,
+    "session_id": null,
+    "recover_verb": null,
+    "flags": {
+      "yolo": false,
+      "docker": false,
+      "adb": false,
+      "ios": false,
+      "mac": false,
+      "windows": false,
+      "devices": false,
+      "clone": false,
+      "loop": false,
+      "sandbox": false,
+      "mudbox": false,
+      "ignore_host_agents_md": false,
+      "yes": false,
+      "help": false,
+      "version": false,
+      "auth": false,
+      "refresh": false,
+      "remove": false,
+      "list": false,
+      "watch": false,
+      "usage": false,
+      "interactive": false,
+      "auto": false,
+      "all": false,
+      "limit": null,
+      "name": false,
+      "log": false,
+      "config": false,
+      "auth_check_agents": false,
+      "transcripts": false,
+      "account": false,
+      "linger": false,
+      "claude_token": "<undefined>",
+      "token_stdin": false,
+      "ports": [],
+      "dry_run": false,
+      "json": false,
+      "no_continue": false,
+      "boot": false,
+      "shutdown": false,
+      "notify": true
+    },
+    "passthrough": []
+  },
+  "[\"recover\",\"--notify\",\"--boot\"]": {
+    "error": "--notify cannot be combined with recovery options"
   },
   "[\"recover\",\"1\",\"--boot\"]": {
     "error": "--boot requires an unfiltered recovery sweep"
@@ -5194,7 +5254,8 @@
       "json": false,
       "no_continue": false,
       "boot": false,
-      "shutdown": false
+      "shutdown": false,
+      "notify": false
     },
     "passthrough": []
   },

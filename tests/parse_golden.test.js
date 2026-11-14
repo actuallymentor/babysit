@@ -162,6 +162,8 @@ const CASES = [
     [ `recover`, `--boot` ],
     [ `recover`, `--shutdown` ],
     [ `recover`, `--shutdown`, `--json` ],
+    [ `recover`, `--notify` ],
+    [ `recover`, `--notify`, `--boot` ],
     [ `recover`, `1`, `--boot` ],
     [ `recover`, `init` ],
     [ `recover`, `init`, `--dry-run` ],

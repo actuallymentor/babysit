@@ -54,3 +54,11 @@ Reviewer preferred user units with linger and per-session transient scopes. Keep
 Ubuntu 24.04 under disposable QEMU validated `recover init` as UID 1000, automatic recovery after SIGKILL of the VM, ordinary reboot shutdown intent, exact native conversation restoration, and one continuation per boot. Repeated manual recovery did not duplicate input; a native clean exit stayed closed. A separate real Codex inference test remembered a pre-crash nonce after exact-session recovery. The VM uses fixture agent output to isolate systemd behavior; the Codex test uses the real provider.
 
 The same VM validated the latest compiled binary and a real clone crash/recovery roundtrip: unchanged clone directory, preserved marker file, exact native ID, one continuation, then deliberate close excluded recovery. Host Docker integration tests cover all four agent adapters; nested-Docker clone tests are intentionally replaced by this VM check.
+
+## Reboot notice — 2026-11-14
+
+- Host facts (Ubuntu, systemd 259, cgroup v2, Docker systemd driver): tmux server started from SSH sits in `session-N.scope` (no ordering against a system unit, killed in parallel at shutdown). Container scopes `docker-<id>.scope` have `DefaultDependencies=no`, empty `Conflicts=`: the shutdown transaction does not stop them, dockerd does. `InhibitDelayMaxSec` default here is 30s (upstream 5s). Unprivileged delay locks allowed by polkit (`inhibit-delay-shutdown` allow_any=yes). logind is `Type=notify-reload` (reload works; older releases may need a reboot for the drop-in).
+- `gdbus monitor --system --dest org.freedesktop.login1 --object-path /org/freedesktop/login1` works unprivileged; signal line: `...Manager.PrepareForShutdown (true,)`.
+- Rejected: service-owned tmux (`exit-empty off`) + monitors via `tmux run-shell` (no PID back, service env instead of the user's, unit stop kills every session, ownership lost when a CLI wins the boot race).
+- NOT validated: a real reboot. Unverified assumptions: unattended-upgrades reboots go through logind (`shutdown -r`) and honour delay locks; containers stay up until the lock is released. Validate in the QEMU VM: SIGTERM-timestamping container + `journalctl -b -1 -o short-monotonic`.
+- Known gap: a `--loop`/idle-rule session gets its next turn sent by the monitor after the notice turn ends, so it works until the grace period runs out.

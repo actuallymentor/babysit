@@ -151,9 +151,12 @@ Resumes the saved conversation and sends "You were interrupted. Check the curren
 
 ```bash
 babysit recover init
-journalctl -u "babysit-recover-$(id -u).service"
-sudo systemctl disable "babysit-recover-$(id -u).service"   # turn off
+journalctl -u "babysit-recover-$(id -u).service" -u "babysit-reboot-notice-$(id -u).service"
+sudo systemctl disable "babysit-recover-$(id -u).service"               # turn off recovery
+sudo systemctl disable --now "babysit-reboot-notice-$(id -u).service"   # turn off the notice
 ```
+
+**Reboot notice:** `recover init` also starts a watcher holding a logind delay lock. A clean shutdown or reboot (update reboots included) first tells every live agent to stop and save a note, then waits until they are idle, 2 minutes at most. Skipped: frozen sessions, open dialogs, unsettled continuations. No notice on crashes, power loss or `systemctl reboot --force`. Sets `InhibitDelayMaxSec=150` in `/etc/systemd/logind.conf.d/babysit-reboot-notice.conf`.
 
 Unattended init needs root or cached sudo (skip a `sudo` prefix: it strips PATH/storage exports). Rerun after moving the executable or storage.
 

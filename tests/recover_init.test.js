@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { check_recovery_environment, install_recovery_service, render_recovery_service } from '../src/cli/recover_init.js'
+import { check_recovery_environment, install_recovery_service, LOGIND_DROP_IN, render_logind_drop_in, render_notice_service, render_recovery_service } from '../src/cli/recover_init.js'
 
 const settings = { uid: 1000, gid: 1000, home: `/home/alice`, command: [ `/usr/bin/true` ], path: `/usr/bin:/bin`, babysit_home: `/home/alice/.babysit` }
 
@@ -74,6 +74,47 @@ describe( `boot recovery service`, () => {
         expect( existsSync( staged ) ).toBe( false )
     } )
 
+    it( `holds shutdown behind a delay lock in a unit that owns no sessions`, () => {
+        const unit = render_notice_service( { ...settings, command: [ `/opt/$user/babysit` ] } )
+        expect( unit ).toContain( `ExecStart=/usr/bin/systemd-inhibit --what=shutdown --mode=delay --who=babysit "--why=Agents are saving their state" "/opt/$$user/babysit" recover --notify` )
+        expect( unit ).toContain( `Restart=always` )
+        expect( unit ).toContain( `Environment="BABYSIT_HOME=/home/alice/.babysit"` )
+        expect( unit ).not.toContain( `ExecStop` )
+        expect( unit ).not.toContain( `RemainAfterExit` )
+        expect( render_logind_drop_in() ).toBe( `[Login]\nInhibitDelayMaxSec=150\n` )
+    } )
+
+    it( `installs the notice unit and logind cap, starting only the watcher`, async () => {
+        const calls = []
+        const installed = {}
+        const execute = async ( command, args ) => {
+            calls.push( [ command, ...args ] )
+            if( command === `/usr/bin/install` ) installed[ args.at( -1 ) ] = readFileSync( args.at( -2 ), `utf8` )
+        }
+        const result = await install_recovery_service( { unit: `recovery`, notice_unit: `notice`, uid: 1000, privileged: true }, { execute } )
+        expect( installed ).toEqual( {
+            '/etc/systemd/system/babysit-recover-1000.service': `recovery`,
+            '/etc/systemd/system/babysit-reboot-notice-1000.service': `notice`,
+            [ LOGIND_DROP_IN ]: render_logind_drop_in(),
+        } )
+        expect( calls.slice( 3 ) ).toEqual( [
+            [ `/usr/bin/systemctl`, `daemon-reload` ],
+            [ `/usr/bin/systemctl`, `enable`, `babysit-recover-1000.service` ],
+            [ `/usr/bin/systemctl`, `reload`, `systemd-logind.service` ],
+            [ `/usr/bin/systemctl`, `enable`, `babysit-reboot-notice-1000.service` ],
+            [ `/usr/bin/systemctl`, `restart`, `babysit-reboot-notice-1000.service` ],
+        ] )
+        expect( result ).toMatchObject( { notice_name: `babysit-reboot-notice-1000.service`, reloaded: true } )
+    } )
+
+    it( `still installs when logind cannot reload`, async () => {
+        const execute = async ( command, args ) => {
+            if( args.includes( `reload` ) ) throw new Error( `Job type reload is not applicable` )
+        }
+        const result = await install_recovery_service( { unit: `recovery`, notice_unit: `notice`, uid: 1000, privileged: true }, { execute } )
+        expect( result.reloaded ).toBe( false )
+    } )
+
     it( `fails before installing when sudo cannot run noninteractively`, async () => {
         const calls = []
         const error = await install_recovery_service( { unit: render_recovery_service( settings ), uid: 1000, privileged: false }, {
@@ -121,7 +162,7 @@ describe( `boot recovery prerequisites`, () => {
                 return args.includes( `command -v "$1"` ) ? `/usr/bin/${ args.at( -1 ) }` : `ok`
             },
         } )
-        expect( dependencies ).toEqual( [ `/usr/bin/sh`, `/usr/bin/tmux`, `/usr/bin/docker`, `/usr/bin/cat`, `/usr/bin/ps` ] )
+        expect( dependencies ).toEqual( [ `/usr/bin/sh`, `/usr/bin/tmux`, `/usr/bin/docker`, `/usr/bin/cat`, `/usr/bin/ps`, `/usr/bin/systemd-inhibit`, `/usr/bin/gdbus` ] )
         for( const call of calls ) {
             expect( call.binary ).toBe( `/usr/sbin/runuser` )
             expect( call.args.slice( 0, 5 ) ).toEqual( [ `--user`, `alice`, `--`, `/usr/bin/env`, `-i` ] )

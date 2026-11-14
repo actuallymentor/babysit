@@ -362,10 +362,15 @@ Docker, direct Docker access, and home/workspaces available before login.
 Run it as yourself; it asks for sudo itself (a sudo prefix can strip PATH).
 Rerun after moving the executable or BABYSIT_HOME.
 
+Also starts a reboot notice service: before a clean shutdown or reboot, live
+agents are told to stop and save a note, and the host waits until they are
+idle (2 minutes at most). Crashes and forced reboots give no notice.
+
 Examples:
   babysit recover init
   journalctl -u "babysit-recover-$(id -u).service"
-  sudo systemctl disable "babysit-recover-$(id -u).service"   Turn it off`,
+  sudo systemctl disable "babysit-recover-$(id -u).service"               Turn recovery off
+  sudo systemctl disable --now "babysit-reboot-notice-$(id -u).service"   Turn the notice off`,
 
     config: () => `Usage: babysit config
        babysit config --transcripts PATH|off|default

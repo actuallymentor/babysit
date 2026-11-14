@@ -120,6 +120,7 @@ export const FLAGS = [
         summary: `With "prune", list clone workspaces and directory sizes` },
     { name: `boot`, type: `boolean`, scope: `command`, commands: [ `recover` ] },
     { name: `shutdown`, type: `boolean`, scope: `command`, commands: [ `recover` ] },
+    { name: `notify`, type: `boolean`, scope: `command`, commands: [ `recover` ] },
     { name: `watch`, type: `boolean`, scope: `command`, commands: [ `list` ], gated: true },
     { name: `force`, type: `boolean`, scope: `command`, commands: [ `auth`, `restart` ] },
     { name: `detach`, type: `boolean`, scope: `command`, commands: [ `restart` ] },
@@ -194,9 +195,11 @@ export const COMMANDS = [
         [ `--dry-run`, `Show candidates and blockers; change nothing` ],
         [ `--json`, `Machine-readable results` ],
         [ `--no-continue`, `Reopen without sending the continuation message` ],
-        // Boot service only: the unfiltered sweep at boot, the stamp at shutdown
+        // Services only: the unfiltered sweep at boot, the stamp at shutdown,
+        // the reboot notice held behind a logind delay lock
         [ `--boot`, null ],
         [ `--shutdown`, null ],
+        [ `--notify`, null ],
     ], subcommands: { init: {} } },
     { name: `close`, usage: [ [ `babysit close <number|id>...`, `Close intentionally; disable recovery for these launches` ] ] },
     { name: `restart`, usage: [ [ `babysit restart <number|id|all>...`, `Rebuild idle session(s) on the current image, keeping the conversation; a terminal can change switches first` ] ], options: [

@@ -109,3 +109,9 @@ Then push (HTTPS + gh credential helper) → publish workflow; verify per DEPLOY
 ## 2026-11-14 — pending: real-PC test of `--windows`
 Windows PC 192.168.2.85: fully set up (RDP + OpenSSH running, verified live 2026-11-14). Remaining: register it on the HOST with babysit 2.6.0 (`babysit windows`, user = WIN_USER email), which needs the unpushed commits released.
 - Resolved: Windows screen moved to RDP (TLS), so the unencrypted-VNC concern now applies to Macs only (Apple Screen Sharing keystrokes).
+
+## 2026-11-14 — reboot notice (2.7.0), needs a real reboot test
+- Built and unit-tested; watcher verified against a scratch tmux with a faked logind signal. No real reboot was performed. See RECOVERY_RESEARCH.md "Reboot notice" for the unverified assumptions.
+- This host (cubini): `babysit-recover-1000.service` was never installed (journal back to Sep 10 has no trace), so no boot recovery happened on Oct 29 or Nov 14. Needs `babysit recover init` with a 2.7.0 binary, as mentor, no sudo prefix, in a TTY.
+- `Unattended-Upgrade::Automatic-Reboot` is "false" on cubini: update reboots do not currently happen here.
+- Pre-existing, untouched: recovery unit `TimeoutStopSec=120` with sequential `docker stop --time 10` is marginal beyond ~10 sessions.

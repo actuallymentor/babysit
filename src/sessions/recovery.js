@@ -9,6 +9,14 @@ import { load_session, list_stored_sessions, session_workspace } from './store.j
 
 export const RECOVERY_PROMPT = `You were interrupted. Check the current state, then continue unfinished work.`
 
+// Pasted into live sessions before a clean shutdown. It promises nothing about
+// resumption: sandboxes and blocked launches get it too and are not recovered.
+export const REBOOT_NOTICE = `This machine is about to shut down or reboot. Within two minutes: start nothing new, do not commit or push unfinished work, and save a short note of where you are and what comes next so the work can be picked up afterwards. Then stop.`
+
+// How long agents get to wrap up, and the logind delay that has to cover it
+export const REBOOT_GRACE_MS = 120_000
+export const INHIBIT_DELAY_SEC = 150
+
 /** Resolve one lifecycle lock for all launch aliases sharing an agent workspace. */
 export const session_lock_key = session => {
 
