@@ -45,7 +45,12 @@ KINDS = {
 }
 KIND = 'mac'  # set by main() from --kind
 
+# Seconds after every key event (down and up). Plain fields took 0 s cleanly
+# (TextEdit, 23 runs). Secrets go much slower: the lock screen and auth dialogs
+# (secure input) dropped characters at 0.05 s, and a lost character there is an
+# invisible, failed login. 0.25 s per event = 0.5 s per character.
 KEY_DELAY = float(os.environ.get('BABYSIT_MAC_KEY_DELAY') or 0.05)
+SECRET_KEY_DELAY = float(os.environ.get('BABYSIT_MAC_SECRET_KEY_DELAY') or 0.25)
 
 # Screenshots are shrunk so the long edge fits what a vision model reads well
 MAX_EDGE = int(os.environ.get('BABYSIT_MAC_SHOT_EDGE') or 1568)
@@ -214,25 +219,26 @@ class Pump:
         await asyncio.gather(self.task, return_exceptions=True)
 
 
-async def tap(vnc, *names):
+async def tap(vnc, *names, delay=None):
     """Press keys together, release in reverse, flushing every event."""
+    delay = KEY_DELAY if delay is None else delay
     import asyncvnc
     codes = [keysym(name, asyncvnc.key_codes) for name in names]
     for code in codes:
         vnc.keyboard.writer.write(b'\x04\x01\x00\x00' + code.to_bytes(4, 'big'))
         await vnc.drain()
-        await asyncio.sleep(KEY_DELAY)
+        await asyncio.sleep(delay)
     for code in reversed(codes):
         vnc.keyboard.writer.write(b'\x04\x00\x00\x00' + code.to_bytes(4, 'big'))
         await vnc.drain()
-        await asyncio.sleep(KEY_DELAY)
+        await asyncio.sleep(delay)
 
 
-async def write_text(vnc, text):
+async def write_text(vnc, text, delay=None):
     # Capitals and symbols go out as their own keysyms. A Shift_L key event is
     # ignored by the server, but it adds Shift itself for a shifted keysym.
     for char in text:
-        await tap(vnc, char)
+        await tap(vnc, char, delay=delay)
 
 
 async def shot(vnc, mac, args):
@@ -284,11 +290,11 @@ async def act(vnc, mac, password, action, args, started):
             await tap(vnc, *parse_chord(chord))
     elif action == 'password':
         # Typed from the staged file so the agent never sees or handles it
-        await write_text(vnc, password)
+        await write_text(vnc, password, delay=SECRET_KEY_DELAY)
     elif action == 'unlock':
         await tap(vnc, 'Shift')  # wake the login window and focus its field
-        await asyncio.sleep(1.5)
-        await write_text(vnc, password)
+        await asyncio.sleep(3)  # the field takes a moment to accept keys after the wake
+        await write_text(vnc, password, delay=SECRET_KEY_DELAY)
         await asyncio.sleep(0.5)
         # The lock screen ignores Return from VNC but accepts a click on its submit arrow
         vnc.mouse.move(*lock_arrow(vnc.video.width, vnc.video.height))

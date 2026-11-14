@@ -218,14 +218,18 @@ describe( `babysit mac`, () => {
             const result = py( `
 import asyncio, types
 sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={})
-vnc.KINDS['mac']['warmup'] = vnc.SETTLE = vnc.KEY_DELAY = 0
-sent = []
+vnc.KINDS['mac']['warmup'] = vnc.SETTLE = 0
+vnc.KEY_DELAY, vnc.SECRET_KEY_DELAY = 0.01, 0.25
+sent, slept = [], set()
+async def sleep(seconds): slept.add(seconds)
+vnc.asyncio.sleep = sleep
 async def drain(): pass
 writer = types.SimpleNamespace(write=lambda b: b[1] == 1 and sent.append(int.from_bytes(b[4:], 'big')))
 fake = types.SimpleNamespace(keyboard=types.SimpleNamespace(writer=writer), drain=drain)
 asyncio.run(vnc.act(fake, {'name': 'office'}, 'S3cr;t!', 'password', [], 0))
-sys.stderr.write(''.join(map(chr, sent)))` )
-            expect( result.stderr ).toBe( `S3cr;t!` )
+sys.stderr.write(''.join(map(chr, sent)) + ' ' + repr(sorted(slept)))` )
+            // Secrets type at the slow secure-field pace, never KEY_DELAY
+            expect( result.stderr ).toBe( `S3cr;t! [0.0, 0.25]` )
             expect( result.stdout ).toBe( `` )
         } )
 
