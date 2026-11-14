@@ -71,11 +71,12 @@ def state_dir(pc):
     return path
 
 
-def alive(pid_file):
+def alive(pid_file, program):
+    """The recorded pid, only while it still runs `program`: a recycled pid is someone else's."""
     try:
         pid = int(open(pid_file).read())
-        os.kill(pid, 0)
-        return pid
+        command = open(f'/proc/{pid}/cmdline', 'rb').read().split(b'\0')[0]
+        return pid if os.path.basename(command).decode() == program else None
     except (OSError, ValueError):
         return None
 
@@ -87,17 +88,29 @@ def read_display(pc):
         return None
 
 
-def free_display():
-    """First X display number with no lock file."""
-    for number in range(90, 200):
-        if not os.path.exists(f'/tmp/.X{number}-lock'):
-            return f':{number}'
-    sys.exit('no free X display for the RDP client')
+def start_display(directory):
+    """Xvfb on a display it picks itself: -displayfd reports the number once the
+    server accepts connections, so two PCs never race for one display."""
+    read_end, write_end = os.pipe()
+    xvfb = subprocess.Popen(['Xvfb', '-displayfd', str(write_end), '-screen', '0', f'{SIZE}x24', '-nolisten', 'tcp'],
+                            pass_fds=(write_end,), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    os.close(write_end)
+    open(f'{directory}/xvfb.pid', 'w').write(str(xvfb.pid))
+    with os.fdopen(read_end) as reader:
+        number = reader.readline().strip()
+    if not number:
+        sys.exit('could not start a virtual display for the RDP client')
+    open(f'{directory}/display', 'w').write(f':{number}')
+    return f':{number}'
 
 
-def xdo(display, *args, stdin=None):
-    return subprocess.run(['xdotool', *args], env={**os.environ, 'DISPLAY': display},
-                          input=stdin, text=True, capture_output=True)
+def xdo(display, *args, stdin=None, check=False):
+    result = subprocess.run(['xdotool', *args], env={**os.environ, 'DISPLAY': display},
+                            input=stdin, text=True, capture_output=True)
+    if check and result.returncode:
+        # stderr only: stdin may have been the password
+        sys.exit(f"input failed ({args[0]}): {result.stderr.strip() or f'xdotool exited {result.returncode}'}")
+    return result
 
 
 def window_up(display):
@@ -107,8 +120,8 @@ def window_up(display):
 def close(pc):
     """Stop this PC's client and display. The Windows session itself keeps running."""
     directory = state_dir(pc)
-    for name in ('freerdp', 'xvfb'):
-        pid = alive(f'{directory}/{name}.pid')
+    for name, program in (('freerdp', 'xfreerdp3'), ('xvfb', 'Xvfb')):
+        pid = alive(f'{directory}/{name}.pid', program)
         if pid:
             os.kill(pid, 15)
     for name in ('freerdp.pid', 'xvfb.pid', 'display'):
@@ -140,11 +153,7 @@ def connect(pc, password):
     directory = state_dir(pc)
     close(pc)
 
-    display = free_display()
-    xvfb = subprocess.Popen(['Xvfb', display, '-screen', '0', f'{SIZE}x24', '-nolisten', 'tcp'],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    open(f'{directory}/xvfb.pid', 'w').write(str(xvfb.pid))
-    open(f'{directory}/display', 'w').write(display)
+    display = start_display(directory)
 
     log = f'{directory}/freerdp.log'
     client = subprocess.Popen(freerdp_args(pc), stdin=subprocess.PIPE, stdout=open(log, 'w'), stderr=subprocess.STDOUT,
@@ -168,22 +177,30 @@ def connect(pc, password):
 
 
 def session(pc, password):
-    """The PC's live display, connecting first when needed. One caller at a time."""
-    with open(f'{state_dir(pc)}/lock', 'w') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        display = read_display(pc)
-        if display and alive(f'{state_dir(pc)}/freerdp.pid') and window_up(display):
-            return display
-        return connect(pc, password)
+    """The PC's live display, connecting first when needed. Callers hold locked(pc)."""
+    display = read_display(pc)
+    if display and alive(f'{state_dir(pc)}/freerdp.pid', 'xfreerdp3') and window_up(display):
+        return display
+    return connect(pc, password)
+
+
+def locked(pc):
+    """One command per PC at a time, from connect through its last action, so two
+    callers never interleave keystrokes or tear down each other's session."""
+    lock = open(f'{state_dir(pc)}/lock', 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    return lock
 
 
 # ---------------------------------------------------------------------------
 # Actions
 
-def settled(display, timeout=3.0, step=0.25):
+def settled(display, timeout=3.0, step=0.25, floor=0.5):
     """A screenshot once the screen stops changing: input travels to the PC and
-    its repaint comes back over the network, so a grab right after a key is stale."""
+    its repaint comes back over the network, so a grab right after a key is stale.
+    The floor gives a slow repaint time to start before stability counts."""
     from PIL import ImageGrab
+    time.sleep(floor)
     deadline = time.monotonic() + timeout
     previous = ImageGrab.grab(xdisplay=display)
     while time.monotonic() < deadline:
@@ -220,22 +237,22 @@ def act(display, pc, password, action, args):
     if action == 'click':
         kind = args[2] if len(args) > 2 else 'left'
         clicks = ['click', '--repeat', '2', '1'] if kind == 'double' else ['click', '3' if kind == 'right' else '1']
-        xdo(display, 'mousemove', *point(args[0], args[1]), *clicks)
+        xdo(display, 'mousemove', *point(args[0], args[1]), *clicks, check=True)
     elif action == 'move':
-        xdo(display, 'mousemove', *point(args[0], args[1]))
+        xdo(display, 'mousemove', *point(args[0], args[1]), check=True)
     elif action == 'drag':
         xdo(display, 'mousemove', *point(args[0], args[1]), 'mousedown', '1', 'sleep', '0.1',
-            'mousemove', *point(args[2], args[3]), 'sleep', '0.1', 'mouseup', '1')
+            'mousemove', *point(args[2], args[3]), 'sleep', '0.1', 'mouseup', '1', check=True)
     elif action == 'type':
-        xdo(display, 'type', '--delay', '15', '--file', '-', stdin=' '.join(args))
+        xdo(display, 'type', '--delay', '15', '--file', '-', stdin=' '.join(args), check=True)
     elif action == 'password':
         # From the staged file over stdin, so the agent never sees or handles it
-        xdo(display, 'type', '--delay', '15', '--file', '-', stdin=password)
+        xdo(display, 'type', '--delay', '15', '--file', '-', stdin=password, check=True)
     elif action == 'key':
         for chord in args:
-            xdo(display, 'key', xdotool_chord(chord))
+            xdo(display, 'key', xdotool_chord(chord), check=True)
     elif action == 'scroll':
-        xdo(display, 'click', '--repeat', str(int(args[1]) if len(args) > 1 else 3), '4' if args[0] == 'up' else '5')
+        xdo(display, 'click', '--repeat', str(int(args[1]) if len(args) > 1 else 3), '4' if args[0] == 'up' else '5', check=True)
     else:
         sys.exit(f'unknown action {action!r}\n{__doc__}')
 
@@ -248,20 +265,21 @@ def main(argv):
     name, action, args = argv[0], argv[1], argv[2:]
     pc, password = vnc.load(name)
 
-    if action == 'close':
-        return close(pc)
-    if action == 'unlock':
-        close(pc)
-        session(pc, password)
-        return print(f"{pc['name']}: signed in again")
-
     statements = vnc.parse_script(' '.join(args) if args else sys.stdin.read()) if action == 'run' else [[action, *args]]
     if not statements:
         sys.exit('run: empty script')
 
-    display = session(pc, password)
-    for step, *step_args in statements:
-        act(display, pc, password, step, step_args)
+    with locked(pc):
+        if action == 'close':
+            return close(pc)
+        if action == 'unlock':
+            close(pc)
+            session(pc, password)
+            return print(f"{pc['name']}: signed in again")
+
+        display = session(pc, password)
+        for step, *step_args in statements:
+            act(display, pc, password, step, step_args)
 
 
 if __name__ == '__main__':

@@ -304,7 +304,7 @@ Set-Service sshd -StartupType Automatic; Start-Service sshd
 
 - Remote Desktop on (Settings > System > Remote Desktop; Windows Pro+). Sleep off, on mains
 - Account: best a local admin account for agents. A Microsoft account needs its password (not the PIN), "only allow Windows Hello sign-in" off, and one password sign-in on the PC first; otherwise RDP refuses it. Admin accounts get their key in `administrators_authorized_keys` (ACL fixed automatically) and elevated ssh sessions; no `sudo`
-- In session: `babysit windows ps NAME 'script'` (PowerShell, `-EncodedCommand`, no quoting issues), `ssh|scp NAME ...` (`win:C:/path`), GUI as on a Mac (`Win+r`, `Ctrl+Shift+Esc` chords). One FreeRDP client per PC stays connected on a private Xvfb display, so only the first call pays the ~3 s connect; `unlock` reconnects (signs in again), `close` disconnects
+- In session: `babysit windows ps NAME 'script'` (PowerShell, `-EncodedCommand`, no quoting issues), `ssh|scp NAME ...` (`win:C:/path`), GUI as on a Mac (`Win+r`, `Ctrl+Shift+Esc` chords). One FreeRDP client per PC stays connected on a private Xvfb display, so only the first call pays the ~3 s connect; `unlock` reconnects (signs in again), `close` disconnects. Typing is reliable for ASCII; non-ASCII characters may be dropped (keep the agent account's password ASCII)
 - SSH runs in a non-interactive service session: GUI apps started over SSH are invisible, use the GUI commands
 
 ## Account usage
