@@ -108,3 +108,4 @@ Then push (HTTPS + gh credential helper) → publish workflow; verify per DEPLOY
 
 ## 2026-11-14 — pending: real-PC test of `--windows`
 Built without a reachable Windows PC (192.168.2.85: 22/5900 closed). After the PC setup, from a host shell: `babysit windows add laptop 192.168.2.85 --user <name> --password-stdin`, then in a `--windows` session: `babysit windows ps laptop hostname`, `babysit windows shot laptop`, `babysit windows unlock laptop` (Windows Hello/PIN lock screens may need "Sign-in options > Password" chosen first). Unverified: key install ACL path on a real admin account, TightVNC security-type negotiation with asyncvnc, unlock flow.
+- Deferred (review P1): Windows VNC traffic, including `unlock`/`password` keystrokes, is unencrypted on the LAN (same as the Mac path). Fix = tunnel VNC through the pinned ssh key and bind TightVNC to loopback, but TightVNC rejects loopback by default (extra setup step). Decide if the LAN isn't trusted.

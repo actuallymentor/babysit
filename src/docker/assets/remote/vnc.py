@@ -288,6 +288,9 @@ async def act(vnc, mac, password, action, args, started):
     elif action == 'unlock' and KIND == 'windows':
         await tap(vnc, 'space')  # raise the lock curtain; the password field takes focus
         await asyncio.sleep(1.5)
+        # The curtain may already be up, so that space landed in the field: clear it
+        await tap(vnc, 'Ctrl', 'a')
+        await tap(vnc, 'BackSpace')
         await write_text(vnc, password)
         await tap(vnc, 'Return')
         await asyncio.sleep(5)
@@ -324,8 +327,10 @@ async def run(name, statements):
     import asyncvnc
     mac, password = load(name)
     await reach(mac['host'], mac.get('vnc_port', 5900))
-    # Apple auth takes user + password; plain VNC auth uses the password's first 8 characters
-    async with asyncvnc.connect(mac['host'], port=mac.get('vnc_port', 5900), username=mac['user'], password=password) as vnc:
+    # Apple auth takes user + password. Plain VNC auth (Windows) only uses the first 8
+    # characters, and asyncvnc ASCII-encodes before truncating, so cut it here
+    vnc_password = password[:8] if KIND == 'windows' else password
+    async with asyncvnc.connect(mac['host'], port=mac.get('vnc_port', 5900), username=mac['user'], password=vnc_password) as vnc:
         started = time.monotonic()
         vnc.pump = Pump(vnc)
         try:

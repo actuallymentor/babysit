@@ -109,6 +109,15 @@ const ssh_options = ( root, machine ) => [
 // UTF-16LE base64: survives cmd.exe and PowerShell (either may be sshd's DefaultShell) unparsed
 export const encode_powershell = script => Buffer.from( script, `utf16le` ).toString( `base64` )
 
+// A fixed launcher that runs whatever script arrives on stdin, with UTF-8 both ways
+const POWERSHELL_STDIN = [ `powershell`, `-NoProfile`, `-NonInteractive`, `-EncodedCommand`, encode_powershell( [
+    // Setting console encodings can throw without a console (no pty), so only try
+    `try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false } catch {}`,
+    `$ProgressPreference = 'SilentlyContinue'`,
+    `$reader = New-Object IO.StreamReader ([Console]::OpenStandardInput()), ([Text.Encoding]::UTF8)`,
+    `Invoke-Expression $reader.ReadToEnd()`,
+].join( `; ` ) ) ]
+
 // ---------------------------------------------------------------------------
 // Default IO, injectable for tests
 
@@ -190,9 +199,8 @@ export const run_remote = async ( kind, args, io = {} ) => {
     if( action === `ps` ) {
         const script = rest.length ? rest.join( ` ` ) : await io.stdin()
         if( !script.trim() ) throw new Error( `Usage: babysit windows ps NAME 'script' (or the script on stdin)` )
-        // UTF-8 output so non-ASCII text survives the trip back
-        const prelude = `[Console]::OutputEncoding = [Text.Encoding]::UTF8; $ProgressPreference = 'SilentlyContinue'\n`
-        return ssh( [ `powershell`, `-NoProfile`, `-NonInteractive`, `-EncodedCommand`, encode_powershell( prelude + script ) ] )
+        // The script rides stdin, so cmd.exe's 8191-character line limit never applies
+        return io.run( `ssh`, [ ...ssh_options( io.root, machine ), target, ...POWERSHELL_STDIN ], { input: script } )
     }
 
     if( action === `scp` ) {

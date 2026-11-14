@@ -31,7 +31,8 @@ const authorize_posix = pub => `umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authori
  * must be owned by Administrators/SYSTEM only (sshd ignores it otherwise);
  * standard users use ~\.ssh\authorized_keys. Sent as -EncodedCommand (UTF-16LE
  * base64) so neither cmd.exe nor PowerShell (whichever is sshd's DefaultShell)
- * re-parses the quoting. SIDs keep icacls working on localized Windows.
+ * re-parses the quoting. SIDs (Administrators, SYSTEM) keep it working on
+ * localized Windows.
  */
 export const authorize_windows = pub => {
 
@@ -39,8 +40,11 @@ export const authorize_windows = pub => {
         `$k = '${ pub }'`,
         `$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)`,
         `if ($admin) { $f = Join-Path $env:ProgramData 'ssh\\administrators_authorized_keys' } else { $d = Join-Path $HOME '.ssh'; New-Item -ItemType Directory -Force $d | Out-Null; $f = Join-Path $d 'authorized_keys' }`,
-        `if (-not (Test-Path $f) -or -not (Select-String -Path $f -SimpleMatch -Quiet -Pattern $k)) { Add-Content -Path $f -Value $k -Encoding ascii }`,
-        `if ($admin) { icacls $f /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F' | Out-Null }`,
+        // A last line without a newline would swallow the appended key
+        `$raw = if (Test-Path $f) { [IO.File]::ReadAllText($f) } else { '' }`,
+        `if (-not $raw.Contains($k)) { if ($raw -and -not $raw.EndsWith([string][char]10)) { $k = [Environment]::NewLine + $k }; Add-Content -Path $f -Value $k -Encoding ascii }`,
+        // Replace the whole DACL: icacls /grant would keep foreign explicit grants, and sshd rejects the file then
+        `if ($admin) { $acl = New-Object Security.AccessControl.FileSecurity; $acl.SetAccessRuleProtection($true, $false); foreach ($sid in 'S-1-5-32-544', 'S-1-5-18') { $acl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule((New-Object Security.Principal.SecurityIdentifier $sid), 'FullControl', 'Allow'))) }; Set-Acl -Path $f -AclObject $acl }`,
     ].join( `\n` )
 
     return `powershell -NoProfile -NonInteractive -EncodedCommand ${ Buffer.from( script, `utf16le` ).toString( `base64` ) }`

@@ -397,7 +397,9 @@ describe( `babysit windows`, () => {
         expect( script ).toContain( `$k = 'ssh-ed25519 AAAA babysit-windows-laptop'` )
         expect( script ).toContain( `administrators_authorized_keys` )
         expect( script ).toContain( `authorized_keys` )
-        expect( script ).toContain( `*S-1-5-32-544:F` )
+        expect( script ).toContain( `SetAccessRuleProtection($true, $false)` )
+        expect( script ).toContain( `'S-1-5-32-544', 'S-1-5-18'` )
+        expect( script ).toContain( `EndsWith` )
     } )
 
     describe( `in-container command`, () => {
@@ -414,18 +416,21 @@ describe( `babysit windows`, () => {
             return { code, calls }
         }
 
-        it( `ps runs PowerShell from an encoded command, never a quoted string`, async () => {
+        it( `ps streams the script over stdin to a fixed encoded launcher`, async () => {
             add()
-            const { calls } = await run( [ `ps`, `laptop`, `Get-Process | Select -First 1` ] )
-            const argv = calls[0].argv
+            const long = `Write-Output '${ `x`.repeat( 9_000 ) }'`
+            const { calls } = await run( [ `ps`, `laptop`, long ] )
+            const { argv, options } = calls[0]
             expect( argv.slice( -6, -1 ) ).toEqual( [ `mentor@192.168.2.85`, `powershell`, `-NoProfile`, `-NonInteractive`, `-EncodedCommand` ] )
-            expect( decode( argv.at( -1 ) ) ).toEndWith( `Get-Process | Select -First 1` )
+            expect( decode( argv.at( -1 ) ) ).toContain( `Invoke-Expression $reader.ReadToEnd()` )
+            expect( argv.join( ` ` ).length ).toBeLessThan( 2_000 )
+            expect( options.input ).toBe( long )
         } )
 
         it( `ps reads the script from stdin when no argument is given`, async () => {
             add()
             const { calls } = await run( [ `ps`, `laptop` ], { stdin: async () => `hostname` } )
-            expect( decode( calls[0].argv.at( -1 ) ) ).toEndWith( `hostname` )
+            expect( calls[0].options.input ).toBe( `hostname` )
         } )
 
         it( `has no sudo, rewrites win: scp paths, and sends GUI actions with --kind windows`, async () => {
@@ -450,7 +455,7 @@ describe( `babysit windows`, () => {
 
         const result = py( `
 import asyncio, types
-sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={'space': 32, 'Return': 65293})
+sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={'space': 32, 'Return': 65293, 'Ctrl': 65507, 'BackSpace': 65288})
 vnc.KIND = 'windows'
 vnc.KINDS['windows']['warmup'] = vnc.SETTLE = vnc.KEY_DELAY = 0
 real_sleep = asyncio.sleep
@@ -461,7 +466,7 @@ writer = types.SimpleNamespace(write=lambda b: b[1] == 1 and sent.append(int.fro
 fake = types.SimpleNamespace(keyboard=types.SimpleNamespace(writer=writer), drain=drain)
 asyncio.run(vnc.act(fake, {'name': 'laptop'}, 'pw', 'unlock', [], 0))
 print(json.dumps(sent))` )
-        expect( JSON.parse( result.stdout ) ).toEqual( [ 32, 0x70, 0x77, 65293 ] )
+        expect( JSON.parse( result.stdout ) ).toEqual( [ 32, 65507, 0x61, 65288, 0x70, 0x77, 65293 ] )
     }, 20_000 )
 
     it( `host command parses, and add reports a missing OpenSSH Server`, async () => {
