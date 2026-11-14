@@ -60,8 +60,9 @@ const SETUP = {
             `Sleep and lock off; a dedicated standard or admin account.`,
         ],
         ssh_down: `Turn on Remote Login: System Settings > General > Sharing`,
-        vnc_down: `Turn on Screen Sharing: System Settings > General > Sharing`,
-        vnc_label: `Screen Sharing`,
+        gui_port: 5900,
+        gui_down: `Turn on Screen Sharing: System Settings > General > Sharing`,
+        gui_label: `Screen Sharing`,
     },
     windows: {
         authorize: authorize_windows,
@@ -69,14 +70,14 @@ const SETUP = {
             `On the PC, once, in PowerShell as Administrator:`,
             `  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`,
             `  Set-Service sshd -StartupType Automatic; Start-Service sshd`,
-            `  Set-NetConnectionProfile -NetworkCategory Private`,
-            `  New-NetFirewallRule -Name babysit-vnc -DisplayName 'VNC (babysit)' -Protocol TCP -LocalPort 5900 -Action Allow -Profile Private`,
-            `Then TightVNC Server (service mode), password = first 8 characters of the account password.`,
-            `User = folder name under C:\\Users; a Microsoft account uses its password, not the PIN.`,
+            `Remote Desktop on: Settings > System > Remote Desktop (Windows Pro). The screen is driven over RDP.`,
+            `Best: a local admin account for agents (Settings > Accounts > Other users > add without a Microsoft account).`,
+            `A Microsoft account needs its password, not the PIN, and "only allow Windows Hello sign-in" off.`,
         ],
         ssh_down: `Install and start OpenSSH Server (see babysit windows --help)`,
-        vnc_down: `Install a VNC server, e.g. TightVNC as a service, password = the account password's first 8 characters (see babysit windows --help)`,
-        vnc_label: `VNC`,
+        gui_port: 3389,
+        gui_down: `Turn on Remote Desktop: Settings > System > Remote Desktop (see babysit windows --help)`,
+        gui_label: `Remote Desktop`,
     },
 }
 
@@ -132,13 +133,13 @@ const install_key = ( setup, dir, machine ) => {
 
 /**
  * Verify one machine: SSH reachable, key installed (installing it with the
- * stored password when needed), VNC reachable.
- * @returns {Promise<boolean>} Whether SSH and VNC both work
+ * stored password when needed), the screen port (VNC or RDP) reachable.
+ * @returns {Promise<boolean>} Whether SSH and the screen port both work
  */
 const check_remote = async ( kind, dir, machine, print, ports ) => {
 
     const setup = SETUP[ kind.name ]
-    const [ ssh_up, vnc_up ] = await Promise.all( [ ports( machine.host, 22 ), ports( machine.host, 5900 ) ] )
+    const [ ssh_up, gui_up ] = await Promise.all( [ ports( machine.host, 22 ), ports( machine.host, setup.gui_port ) ] )
     let ssh_ok = false
 
     if( !ssh_up ) print( `${ machine.name }: ssh down (22). ${ setup.ssh_down }` )
@@ -149,10 +150,10 @@ const check_remote = async ( kind, dir, machine, print, ports ) => {
         print( ssh_ok ? `${ machine.name }: ssh key installed` : `${ machine.name }: could not install the ssh key (${ failure || `key login still refused` })` )
     }
 
-    if( !vnc_up ) print( `${ machine.name }: ${ setup.vnc_label } down (5900). ${ setup.vnc_down }` )
-    if( ssh_ok && vnc_up ) print( `${ machine.name }: ok (ssh key, ${ setup.vnc_label } port)` )
+    if( !gui_up ) print( `${ machine.name }: ${ setup.gui_label } down (${ setup.gui_port }). ${ setup.gui_down }` )
+    if( ssh_ok && gui_up ) print( `${ machine.name }: ok (ssh key, ${ setup.gui_label } port)` )
 
-    return ssh_ok && vnc_up
+    return ssh_ok && gui_up
 
 }
 
@@ -246,8 +247,9 @@ export const cmd_remote = async ( kind, cmd, {
     }
 
     for( const machine of machines ) {
-        const [ ssh_up, vnc_up ] = await Promise.all( [ ports( machine.host, 22 ), ports( machine.host, 5900 ) ] )
-        print( `${ machine.name }  ${ machine.user }@${ machine.host }  ssh:${ ssh_up ? `up` : `down` }  vnc:${ vnc_up ? `up` : `down` }${ machine.enabled === false ? `  disabled (sessions do not get its secrets)` : `` }` )
+        const { gui_port } = SETUP[ kind.name ]
+        const [ ssh_up, gui_up ] = await Promise.all( [ ports( machine.host, 22 ), ports( machine.host, gui_port ) ] )
+        print( `${ machine.name }  ${ machine.user }@${ machine.host }  ssh:${ ssh_up ? `up` : `down` }  ${ gui_port === 3389 ? `rdp` : `vnc` }:${ gui_up ? `up` : `down` }${ machine.enabled === false ? `  disabled (sessions do not get its secrets)` : `` }` )
     }
     return 0
 

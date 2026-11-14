@@ -48,7 +48,7 @@ Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and swi
 | `--adb` | Android adb with a key shared by every session (network devices only) |
 | `--ios` | iOS 16 devices via WebDriverAgent, pairing shared by every session (network only) |
 | `--mac` | Remote Macs (SSH + Screen Sharing); credentials from babysit mac add reach only these sessions |
-| `--windows` | Remote Windows PCs (SSH + VNC); credentials from babysit windows add reach only these sessions |
+| `--windows` | Remote Windows PCs (SSH + Remote Desktop); credentials from babysit windows add reach only these sessions |
 | `--devices` | Every device kind: --adb, --ios, --mac and --windows |
 | `--clone` | Work in a durable copy; the original is mounted read-only at `/original` |
 | `--loop` | When idle, type `./LOOP.md`, `~/.agents/LOOP.md`, or "Keep going" |
@@ -288,7 +288,7 @@ Scripts: `babysit mac add NAME HOST --user U --password-stdin` (or `--password-e
 
 ## Remote Windows PCs (`--windows`)
 
-Same model as `--mac`: OpenSSH (key) for structured control, a VNC server for the GUI. Own store `~/.babysit/windows/`, own tmpfs `~/.config/babysit-windows`.
+Same model as `--mac`: OpenSSH (key) for structured control, Remote Desktop (RDP, built in, encrypted) for the GUI. For a dedicated PC: an agent's RDP session takes over the screen. Own store `~/.babysit/windows/`, own tmpfs `~/.config/babysit-windows`.
 
 ```bash
 babysit windows               # form: name, host, user, password; shows the PC setup steps below
@@ -300,13 +300,11 @@ PC, once (PowerShell as Administrator):
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
 Set-Service sshd -StartupType Automatic; Start-Service sshd
-Set-NetConnectionProfile -NetworkCategory Private
-New-NetFirewallRule -Name babysit-vnc -DisplayName 'VNC (babysit)' -Protocol TCP -LocalPort 5900 -Action Allow -Profile Private
 ```
 
-- GUI: [TightVNC](https://www.tightvnc.com/) Server as a service; primary password = first 8 characters of the account password (VNC auth uses 8). Sleep off, on mains. `unlock` types the password, so sign-in must accept it: no PIN-only / Windows Hello-only sign-in
-- `--user`: local account name (`C:\Users\<name>`); Microsoft accounts log in with the account password, not the PIN. Admin accounts get their key in `administrators_authorized_keys` (ACL fixed automatically) and elevated ssh sessions; no `sudo`
-- In session: `babysit windows ps NAME 'script'` (PowerShell, `-EncodedCommand`, no quoting issues), `ssh|scp NAME ...` (`win:C:/path`), GUI as on a Mac (`Win+r`, `Ctrl+Shift+Esc` chords; `unlock` types the password + Return)
+- Remote Desktop on (Settings > System > Remote Desktop; Windows Pro+). Sleep off, on mains
+- Account: best a local admin account for agents. A Microsoft account needs its password (not the PIN), "only allow Windows Hello sign-in" off, and one password sign-in on the PC first; otherwise RDP refuses it. Admin accounts get their key in `administrators_authorized_keys` (ACL fixed automatically) and elevated ssh sessions; no `sudo`
+- In session: `babysit windows ps NAME 'script'` (PowerShell, `-EncodedCommand`, no quoting issues), `ssh|scp NAME ...` (`win:C:/path`), GUI as on a Mac (`Win+r`, `Ctrl+Shift+Esc` chords). One FreeRDP client per PC stays connected on a private Xvfb display, so only the first call pays the ~3 s connect; `unlock` reconnects (signs in again), `close` disconnects
 - SSH runs in a non-interactive service session: GUI apps started over SSH are invisible, use the GUI commands
 
 ## Account usage

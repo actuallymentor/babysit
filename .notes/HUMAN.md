@@ -107,5 +107,5 @@ Blocked: session lacked `--mac` creds + Docker socket. In a `--mac` session, run
 Then push (HTTPS + gh credential helper) → publish workflow; verify per DEPLOYMENTS.md.
 
 ## 2026-11-14 — pending: real-PC test of `--windows`
-Built without a reachable Windows PC (192.168.2.85: 22/5900 closed). After the PC setup, from a host shell: `babysit windows add laptop 192.168.2.85 --user <name> --password-stdin`, then in a `--windows` session: `babysit windows ps laptop hostname`, `babysit windows shot laptop`, `babysit windows unlock laptop` (Windows Hello/PIN lock screens may need "Sign-in options > Password" chosen first). Unverified: key install ACL path on a real admin account, TightVNC security-type negotiation with asyncvnc, unlock flow.
-- Deferred (review P1): Windows VNC traffic, including `unlock`/`password` keystrokes, is unencrypted on the LAN (same as the Mac path). Fix = tunnel VNC through the pinned ssh key and bind TightVNC to loopback, but TightVNC rejects loopback by default (extra setup step). Decide if the LAN isn't trusted.
+Windows PC 192.168.2.85: RDP (3389) open, SSH (22) closed. The .env.local Microsoft account (WIN_USER email + WIN_PASS) gets RDP LOGON_FAILURE in every username form; needs Hello-only sign-in off + one password sign-in, or a local admin account. Then: `babysit windows` (form), and in a --windows session `babysit windows ps laptop hostname`, `babysit windows shot laptop`.
+- Resolved: Windows screen moved to RDP (TLS), so the unencrypted-VNC concern now applies to Macs only (Apple Screen Sharing keystrokes).

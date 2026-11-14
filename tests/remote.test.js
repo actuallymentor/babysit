@@ -491,7 +491,10 @@ describe( `babysit windows`, () => {
             const { calls: scp } = await run( [ `scp`, `laptop`, `win:C:/Users/mentor/a.png`, `./a.png` ] )
             expect( scp[0].argv.slice( -2 ) ).toEqual( [ `mentor@192.168.2.85:C:/Users/mentor/a.png`, `./a.png` ] )
             const { calls: gui } = await run( [ `shot`, `laptop` ] )
-            expect( gui[0].argv.slice( 1 ) ).toEqual( [ `--kind`, `windows`, `laptop`, `shot` ] )
+            expect( gui[0].argv[0] ).toEndWith( `/rdp.py` )
+            expect( gui[0].argv.slice( 1 ) ).toEqual( [ `laptop`, `shot` ] )
+            const { calls: close } = await run( [ `close`, `laptop` ] )
+            expect( close[0].argv.slice( 1 ) ).toEqual( [ `laptop`, `close` ] )
         } )
 
         it( `explains a session without Windows PCs`, async () => {
@@ -500,25 +503,16 @@ describe( `babysit windows`, () => {
 
     } )
 
-    it( `vnc helper: --kind selects the registry, Win maps to Super, unlock submits with Return`, () => {
-        const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/remote'); import vnc\n${ code }` ], { encoding: `utf8` } )
-        const parsed = JSON.parse( py( `print(json.dumps([vnc.parse_kind(['--kind', 'windows', 'laptop', 'shot']), vnc.parse_kind(['office', 'shot']), vnc.keysym('Win', {'Super_L': 65515})]))` ).stdout )
-        expect( parsed ).toEqual( [ [ `windows`, [ `laptop`, `shot` ] ], [ `mac`, [ `office`, `shot` ] ], 65515 ] )
-
-        const result = py( `
-import asyncio, types
-sys.modules['asyncvnc'] = types.SimpleNamespace(key_codes={'space': 32, 'Return': 65293, 'Ctrl': 65507, 'BackSpace': 65288})
-vnc.KIND = 'windows'
-vnc.KINDS['windows']['warmup'] = vnc.SETTLE = vnc.KEY_DELAY = 0
-real_sleep = asyncio.sleep
-asyncio.sleep = lambda seconds: real_sleep(0)
-sent = []
-async def drain(): pass
-writer = types.SimpleNamespace(write=lambda b: b[1] == 1 and sent.append(int.from_bytes(b[4:], 'big')))
-fake = types.SimpleNamespace(keyboard=types.SimpleNamespace(writer=writer), drain=drain)
-asyncio.run(vnc.act(fake, {'name': 'laptop'}, 'pw', 'unlock', [], 0))
-print(json.dumps(sent))` )
-        expect( JSON.parse( result.stdout ) ).toEqual( [ 32, 65507, 0x61, 65288, 0x70, 0x77, 65293 ] )
+    it( `rdp helper: chords map to xdotool, the password never enters FreeRDP argv`, () => {
+        const py = code => spawnSync( `python3`, [ `-I`, `-c`, `import sys, json; sys.path.insert(0, 'src/docker/assets/remote'); import rdp, vnc\n${ code }` ], { encoding: `utf8` } )
+        const [ chords, argv, kinds ] = JSON.parse( py( `print(json.dumps([[rdp.xdotool_chord(c) for c in ['Win+r', 'Ctrl+Shift+Esc', 'Return', 'Cmd++', 'alt+F4']], rdp.freerdp_args({'host': '192.168.2.85', 'user': 'agent'}, '1920x1080'), vnc.parse_kind(['--kind', 'windows', 'laptop', 'shot'])]))` ).stdout )
+        expect( chords ).toEqual( [ `super+r`, `ctrl+shift+Escape`, `Return`, `super+plus`, `alt+F4` ] )
+        expect( argv ).toContain( `/from-stdin:force` )
+        expect( argv ).toContain( `/cert:tofu` )
+        expect( argv ).toContain( `-clipboard` )
+        expect( argv ).toContain( `/u:agent` )
+        expect( argv.join( ` ` ) ).not.toMatch( /\/p:/ )
+        expect( kinds ).toEqual( [ `windows`, [ `laptop`, `shot` ] ] )
     }, 20_000 )
 
     it( `host command parses, and add reports a missing OpenSSH Server`, async () => {
@@ -533,7 +527,7 @@ print(json.dumps(sent))` )
         )
         expect( code ).toBe( 1 )
         expect( lines.join( `\n` ) ).toContain( `OpenSSH Server` )
-        expect( lines.join( `\n` ) ).toContain( `TightVNC` )
+        expect( lines.join( `\n` ) ).toContain( `Remote Desktop down (3389)` )
         expect( lines.join( `\n` ) ).not.toContain( SECRET )
     } )
 

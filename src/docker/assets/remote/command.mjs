@@ -1,4 +1,5 @@
-// `babysit mac` / `babysit windows`: remote machines over SSH (key) and VNC.
+// `babysit mac` / `babysit windows`: remote machines over SSH (key), and the
+// screen over VNC (Mac Screen Sharing) or Remote Desktop (Windows).
 // The registry and secrets sit in ~/.config/babysit-<kind>, uploaded at launch
 // only for --mac / --windows / --devices sessions. Self-contained: this
 // directory ships into the image bare, so it cannot reach src/ (the profiles
@@ -10,9 +11,12 @@ import { readFile } from 'node:fs/promises'
 import { connect } from 'node:net'
 import { homedir } from 'node:os'
 
-const VNC = process.env.BABYSIT_REMOTE_VNC || `/opt/remote/vnc.py`
+const HELPERS = process.env.BABYSIT_REMOTE_HELPERS || `/opt/remote`
 
 const GUI = [ `run`, `shot`, `click`, `move`, `drag`, `type`, `key`, `scroll`, `unlock`, `password` ]
+
+// The screen helper per kind, and the port it talks to
+const SCREEN = { mac: { helper: `vnc.py`, port: 5900, label: `vnc` }, windows: { helper: `rdp.py`, port: 3389, label: `rdp` } }
 
 export const mac_help = `Usage: babysit mac list | ssh | sudo | scp | run | shot | click | move | drag | type | key | scroll | unlock | password
 Remote Macs (--mac / --devices sessions). Register on the host: babysit mac add.
@@ -34,7 +38,7 @@ Each GUI call logs in again and typing waits ~2.5 s, so chain steps with run. Pr
 export const windows_help = `Usage: babysit windows list | ps | ssh | scp | run | shot | click | move | drag | type | key | scroll | unlock | password
 Remote Windows PCs (--windows / --devices sessions). Register on the host: babysit windows add.
 
-  babysit windows list                          PCs and whether SSH (22) / VNC (5900) answer
+  babysit windows list                          PCs and whether SSH (22) / Remote Desktop (3389) answer
   babysit windows ps NAME 'script'              run PowerShell (script from the arg, else stdin); admin sessions are elevated
   babysit windows ssh NAME [cmd...]             run a cmd.exe command, or open a shell
   babysit windows scp NAME SRC DST              copy files; remote paths start with win: (win:C:/Users/me/a.png)
@@ -42,11 +46,14 @@ Remote Windows PCs (--windows / --devices sessions). Register on the host: babys
   babysit windows shot NAME [out.png] [--full]  screenshot, long edge <= 1568 px; coordinates below are pixels of the last shot
   babysit windows click NAME X Y [right|double] babysit windows move NAME X Y  babysit windows drag NAME X1 Y1 X2 Y2
   babysit windows type NAME text...             babysit windows key NAME Win+r Ctrl+Shift+Esc Return   (one chord per arg)
-  babysit windows scroll NAME up|down [N]       babysit windows unlock NAME    dismiss the lock screen and sign in
+  babysit windows scroll NAME up|down [N]       babysit windows unlock NAME    reconnect, which signs in again
   babysit windows password NAME                 type the stored password into the focused field (also a run step)
+  babysit windows close NAME                    disconnect Remote Desktop (apps keep running on the PC)
 
-SSH runs outside the desktop session: GUI apps started over ssh are invisible, use the
-GUI commands for anything on screen. Each GUI call logs in again, so chain steps with run.`
+The screen is a Remote Desktop session that stays connected between calls; the first call
+connects (a few seconds). One Remote Desktop session per account: another session or a
+person signing in takes it over. SSH runs outside the desktop: GUI apps started over ssh are
+invisible, use the GUI commands for anything on screen.`
 
 /**
  * One profile per kind (names match DEVICE_KINDS). `remote` is the scp
@@ -61,7 +68,7 @@ export const KINDS = {
     windows: {
         name: `windows`, label: `Windows PC`, plural: `Windows PCs`, registry: `windows.json`, key: `machines`,
         env: `BABYSIT_WINDOWS`, root_env: `BABYSIT_WINDOWS_ROOT`, remote: `win:`,
-        ssh_actions: [ `ssh`, `ps`, `scp` ], help: windows_help,
+        ssh_actions: [ `ssh`, `ps`, `scp` ], gui_actions: [ `close` ], help: windows_help,
     },
 }
 
@@ -159,8 +166,9 @@ const list = async ( kind, io ) => {
     }
 
     for( const machine of machines ) {
-        const [ ssh, vnc ] = await Promise.all( [ io.reachable( machine.host, 22 ), io.reachable( machine.host, 5900 ) ] )
-        io.say( `${ machine.name }  ${ machine.user }@${ machine.host }  ssh:${ ssh ? `up` : `down` }  vnc:${ vnc ? `up` : `down` }` )
+        const { port, label } = SCREEN[ kind.name ]
+        const [ ssh, gui ] = await Promise.all( [ io.reachable( machine.host, 22 ), io.reachable( machine.host, port ) ] )
+        io.say( `${ machine.name }  ${ machine.user }@${ machine.host }  ssh:${ ssh ? `up` : `down` }  ${ label }:${ gui ? `up` : `down` }` )
     }
     return 0
 
@@ -180,7 +188,7 @@ export const run_remote = async ( kind, args, io = {} ) => {
 
     if( !action || [ `help`, `--help`, `-h` ].includes( action ) ) return io.say( kind.help ), 0
     if( action === `list` ) return list( kind, io )
-    if( ![ ...kind.ssh_actions, ...GUI ].includes( action ) ) throw new Error( `Unknown ${ kind.name } command ${ action }\n${ kind.help }` )
+    if( ![ ...kind.ssh_actions, ...GUI, ...kind.gui_actions ?? [] ].includes( action ) ) throw new Error( `Unknown ${ kind.name } command ${ action }\n${ kind.help }` )
     if( !name ) throw new Error( `Usage: babysit ${ kind.name } ${ action } NAME ...` )
 
     const machine = await find_remote( kind, io.root, name )
@@ -209,7 +217,10 @@ export const run_remote = async ( kind, args, io = {} ) => {
         return io.run( `scp`, [ `-r`, ...ssh_options( io.root, machine ), ...rest.map( remote ) ] )
     }
 
-    return io.run( `python3`, [ VNC, `--kind`, kind.name, machine.name, action, ...rest ] )
+    // vnc.py serves both kinds' registries, so it needs --kind; rdp.py is Windows-only
+    const { helper } = SCREEN[ kind.name ]
+    const kind_args = helper === `vnc.py` ? [ `--kind`, kind.name ] : []
+    return io.run( `python3`, [ `${ HELPERS }/${ helper }`, ...kind_args, machine.name, action, ...rest ] )
 
 }
 

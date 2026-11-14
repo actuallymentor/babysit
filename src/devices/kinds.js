@@ -31,7 +31,7 @@ export const DEVICE_KINDS = [
     },
     {
         name: `windows`, label: `Windows`, note: `remote Windows PCs (windows)`,
-        summary: `Remote Windows PCs (SSH + VNC); credentials from babysit windows add reach only these sessions`,
+        summary: `Remote Windows PCs (SSH + Remote Desktop); credentials from babysit windows add reach only these sessions`,
         question: `Give the session remote Windows PC access (--windows)?`,
         prompt: windows_mode,
     },

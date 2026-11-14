@@ -555,27 +555,26 @@ Examples:
        babysit windows list | check [NAME] | enable NAME | disable NAME | forget NAME
        babysit windows add NAME HOST --user U --password-stdin | --password-env VAR   (scripts)
 
-Windows PCs for --windows (or --devices) sessions, driven over SSH and VNC.
+Windows PCs for --windows (or --devices) sessions, driven over SSH and Remote
+Desktop (RDP: encrypted, nothing to install). A dedicated PC: an agent's Remote
+Desktop session takes over the screen, signing out whoever is at it.
 Secrets are handled like Macs': ~/.babysit/windows (0700), uploaded only into
 --windows sessions (enabled PCs only; memory-only tmpfs), password typed hidden
-into the form (or piped / --password-env for scripts). User is the local account name (C:\\Users\\<name>);
-for a Microsoft account the password is the account password, not the PIN.
+into the form (or piped / --password-env for scripts). Best: a local admin
+account for agents. A Microsoft account works with its password (not the PIN)
+once "only allow Windows Hello sign-in" is off and it has signed in with the
+password on the PC once.
 
 On the PC, once (PowerShell as Administrator):
   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
   Set-Service sshd -StartupType Automatic; Start-Service sshd
-  Set-NetConnectionProfile -NetworkCategory Private     # LAN = trusted network
-  New-NetFirewallRule -Name babysit-vnc -DisplayName 'VNC (babysit)' -Protocol TCP -LocalPort 5900 -Action Allow -Profile Private
-Then install TightVNC Server (service mode) and set its primary password to the
-first 8 characters of the account password (VNC only uses 8). Sleep off; keep
-it on mains power. For unlock: sign in with the password, not a PIN or Windows
-Hello (Settings > Accounts > Sign-in options; Microsoft accounts: turn off
-"only allow Windows Hello sign-in").
+Then Remote Desktop on: Settings > System > Remote Desktop (Windows Pro or
+better; Home has no RDP server). Sleep off; keep it on mains power.
 
 Examples:
   babysit windows               # the form
   babysit windows add laptop    # change laptop's IP, user or password
-  babysit windows check laptop  # installs the ssh key, tests ssh and VNC
+  babysit windows check laptop  # installs the ssh key, tests ssh and Remote Desktop
   babysit windows list
   babysit windows disable laptop
   babysit windows forget laptop`,

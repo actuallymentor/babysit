@@ -215,9 +215,12 @@ RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignor
 RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore pymobiledevice3 facebook-wda \
     && python3 -c "import pymobiledevice3, wda"
 
-# Remote Mac / Windows control: asyncvnc speaks Apple's Screen Sharing login
-# (username + password) and plain VNC auth for screenshots, mouse and
-# keyboard; Pillow writes the PNGs.
+# Remote Mac control: asyncvnc speaks Apple's Screen Sharing login (username +
+# password) for screenshots, mouse and keyboard; Pillow writes the PNGs.
+# Remote Windows: FreeRDP on a private Xvfb display, xdotool for input
+# (rdp.py); Pillow grabs the display.
+RUN apt-get update && apt-get install -y --no-install-recommends freerdp3-x11 xdotool \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --break-system-packages --no-cache-dir --root-user-action=ignore asyncvnc pillow \
     && python3 -c "import asyncvnc, PIL"
 

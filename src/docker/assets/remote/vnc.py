@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Drive a Mac's Screen Sharing (Apple auth) or a Windows PC's VNC server
-(VNC password auth) from the command line.
+"""Drive a Mac's Screen Sharing (VNC, Apple auth) from the command line.
+Also the shared helpers (registry, scripts, shot scaling) rdp.py builds on.
 
   vnc.py [--kind mac|windows] NAME shot [OUT.png] [--full]   screenshot, long edge <= 1568 px unless --full
   vnc.py NAME click X Y [right|double]  coordinates are pixels of the LAST shot
@@ -37,10 +37,10 @@ KINDS = {
         'registry': 'macs.json', 'key': 'macs',
         'warmup': float(os.environ.get('BABYSIT_MAC_WARMUP') or 2.5),
     },
+    # Registry only: the Windows screen is driven by rdp.py
     'windows': {
         'root': os.environ.get('BABYSIT_WINDOWS_ROOT') or os.path.expanduser('~/.config/babysit-windows'),
         'registry': 'windows.json', 'key': 'machines',
-        'warmup': float(os.environ.get('BABYSIT_WINDOWS_WARMUP') or 0.5),
     },
 }
 KIND = 'mac'  # set by main() from --kind
@@ -285,15 +285,6 @@ async def act(vnc, mac, password, action, args, started):
     elif action == 'password':
         # Typed from the staged file so the agent never sees or handles it
         await write_text(vnc, password)
-    elif action == 'unlock' and KIND == 'windows':
-        await tap(vnc, 'space')  # raise the lock curtain; the password field takes focus
-        await asyncio.sleep(1.5)
-        # The curtain may already be up, so that space landed in the field: clear it
-        await tap(vnc, 'Ctrl', 'a')
-        await tap(vnc, 'BackSpace')
-        await write_text(vnc, password)
-        await tap(vnc, 'Return')
-        await asyncio.sleep(5)
     elif action == 'unlock':
         await tap(vnc, 'Shift')  # wake the login window and focus its field
         await asyncio.sleep(1.5)
@@ -327,10 +318,7 @@ async def run(name, statements):
     import asyncvnc
     mac, password = load(name)
     await reach(mac['host'], mac.get('vnc_port', 5900))
-    # Apple auth takes user + password. Plain VNC auth (Windows) only uses the first 8
-    # characters, and asyncvnc ASCII-encodes before truncating, so cut it here
-    vnc_password = password[:8] if KIND == 'windows' else password
-    async with asyncvnc.connect(mac['host'], port=mac.get('vnc_port', 5900), username=mac['user'], password=vnc_password) as vnc:
+    async with asyncvnc.connect(mac['host'], port=mac.get('vnc_port', 5900), username=mac['user'], password=password) as vnc:
         started = time.monotonic()
         vnc.pump = Pump(vnc)
         try:
