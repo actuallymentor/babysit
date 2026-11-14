@@ -44,8 +44,9 @@ const NAME = /^[a-z0-9][a-z0-9._-]{0,31}$/i
 // Hostnames and IPv4/IPv6 literals; a leading dash would be read as an ssh option
 const HOST = /^[a-z0-9][a-z0-9.:-]{0,252}$/i
 
-// macOS short names and Windows local account names (no spaces: ssh-safe)
-const USER = /^[a-z_][a-z0-9._-]{0,31}$/i
+// macOS short names, Windows local names and Microsoft account emails
+// (no spaces, no leading dash: ssh-safe; ssh splits user@host at the last @)
+const USER = /^[a-z0-9_][a-z0-9._@+-]{0,63}$/i
 
 const registry_path = ( kind, dir ) => join( dir, kind.registry )
 

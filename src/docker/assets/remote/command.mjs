@@ -113,17 +113,17 @@ const ssh_options = ( root, machine ) => [
     `-o`, `ConnectTimeout=10`,
 ]
 
-// UTF-16LE base64: survives cmd.exe and PowerShell (either may be sshd's DefaultShell) unparsed
-export const encode_powershell = script => Buffer.from( script, `utf16le` ).toString( `base64` )
-
-// A fixed launcher that runs whatever script arrives on stdin, with UTF-8 both ways
-const POWERSHELL_STDIN = [ `powershell`, `-NoProfile`, `-NonInteractive`, `-EncodedCommand`, encode_powershell( [
-    // Setting console encodings can throw without a console (no pty), so only try
-    `try { [Console]::OutputEncoding = New-Object Text.UTF8Encoding $false } catch {}`,
-    `$ProgressPreference = 'SilentlyContinue'`,
-    `$reader = New-Object IO.StreamReader ([Console]::OpenStandardInput()), ([Text.Encoding]::UTF8)`,
-    `Invoke-Expression $reader.ReadToEnd()`,
-].join( `; ` ) ) ]
+// A fixed launcher that runs whatever script arrives on stdin, UTF-8 both ways.
+// Plain -Command, not -EncodedCommand: an encoded launch makes PowerShell
+// write errors and progress to stderr as CLIXML, unreadable for agents. The
+// text holds no quotes and none of & | < > ^, so cmd.exe (sshd's default
+// shell) passes it through untouched. $ProgressPreference=0 is SilentlyContinue.
+const POWERSHELL_STDIN = [ `powershell`, `-NoProfile`, `-NonInteractive`, `-Command`, [
+    `try{[Console]::OutputEncoding=[Text.Encoding]::UTF8}catch{}`,
+    `$ProgressPreference=0`,
+    `$r=New-Object IO.StreamReader([Console]::OpenStandardInput(),[Text.Encoding]::UTF8)`,
+    `Invoke-Expression $r.ReadToEnd()`,
+].join( `;` ) ]
 
 // ---------------------------------------------------------------------------
 // Default IO, injectable for tests

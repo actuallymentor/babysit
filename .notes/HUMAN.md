@@ -107,5 +107,5 @@ Blocked: session lacked `--mac` creds + Docker socket. In a `--mac` session, run
 Then push (HTTPS + gh credential helper) → publish workflow; verify per DEPLOYMENTS.md.
 
 ## 2026-11-14 — pending: real-PC test of `--windows`
-Windows PC 192.168.2.85 (5 failed RDP logins on 2026-11-14 — mind the ~10 lockout): RDP (3389) open, SSH (22) closed. Hello-only sign-in now off; still needs one password sign-in at the PC. The .env.local Microsoft account (WIN_USER email + WIN_PASS) gets RDP LOGON_FAILURE in every username form; needs Hello-only sign-in off + one password sign-in, or a local admin account. Then: `babysit windows` (form), and in a --windows session `babysit windows ps laptop hostname`, `babysit windows shot laptop`.
+Windows PC 192.168.2.85: fully set up (RDP + OpenSSH running, verified live 2026-11-14). Remaining: register it on the HOST with babysit 2.6.0 (`babysit windows`, user = WIN_USER email), which needs the unpushed commits released.
 - Resolved: Windows screen moved to RDP (TLS), so the unencrypted-VNC concern now applies to Macs only (Apple Screen Sharing keystrokes).

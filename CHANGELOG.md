@@ -4,6 +4,7 @@
 
 ### Added
 - `--windows`: remote Windows PCs over OpenSSH (key) and Remote Desktop (built-in RDP, encrypted; FreeRDP + xdotool in the image), like `--mac`. `babysit windows add|list|check|enable|disable|forget` on the host (installs the key, admin accounts included); in session `ps` (PowerShell), `ssh`, `scp` (`win:` paths) and the GUI commands. `--devices` includes it. Image update needed.
+- Windows users may be a Microsoft account email; `babysit windows ps` errors and output are plain text (no CLIXML)
 - `babysit mac` / `babysit windows` open a form for name, host, user and password (hidden), with the setup steps shown below it. Re-adding prefills; an empty password keeps the stored one. Flags and pipes remain for scripts.
 
 ### Fixed

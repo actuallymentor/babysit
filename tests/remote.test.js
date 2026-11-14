@@ -63,6 +63,8 @@ describe( `babysit mac`, () => {
             expect( bad( { name: `../x` } ) ).toThrow()
             expect( bad( { host: `-oProxyCommand=x` } ) ).toThrow()
             expect( bad( { user: `a b` } ) ).toThrow()
+            expect( bad( { user: `-oProxyCommand=x` } ) ).toThrow()
+            expect( add_mac( { name: `ms`, host: `h`, user: `someone@outlook.com`, password: `p` }, dir ).user ).toBe( `someone@outlook.com` )
             expect( bad( { password: `a\nb` } ) ).toThrow()
         } )
 
@@ -473,8 +475,10 @@ describe( `babysit windows`, () => {
             const long = `Write-Output '${ `x`.repeat( 9_000 ) }'`
             const { calls } = await run( [ `ps`, `laptop`, long ] )
             const { argv, options } = calls[0]
-            expect( argv.slice( -6, -1 ) ).toEqual( [ `mentor@192.168.2.85`, `powershell`, `-NoProfile`, `-NonInteractive`, `-EncodedCommand` ] )
-            expect( decode( argv.at( -1 ) ) ).toContain( `Invoke-Expression $reader.ReadToEnd()` )
+            expect( argv.slice( -6, -1 ) ).toEqual( [ `mentor@192.168.2.85`, `powershell`, `-NoProfile`, `-NonInteractive`, `-Command` ] )
+            // The launcher passes cmd.exe untouched: no quotes, no cmd metacharacters
+            expect( argv.at( -1 ) ).toContain( `Invoke-Expression $r.ReadToEnd()` )
+            expect( argv.at( -1 ) ).not.toMatch( /["'&|<>^]/ )
             expect( argv.join( ` ` ).length ).toBeLessThan( 2_000 )
             expect( options.input ).toBe( long )
         } )
