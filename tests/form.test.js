@@ -39,6 +39,13 @@ describe( `form_menu`, () => {
         expect( form.rendered() ).toContain( `•••` )
     } )
 
+    it( `a pasted Tab stays inside a secret field`, async () => {
+        const form = open_form( { fields } )
+        form.type( `laptop\r\rab\tcd\r` )
+        expect( ( await form.result ).password ).toBe( `abcd` )
+        expect( form.rendered() ).not.toContain( `cd` )
+    } )
+
     it( `starts on the first empty field and edits prefilled text`, async () => {
         const form = open_form( { fields: [ { key: `name`, label: `Name`, value: `pc` }, { key: `user`, label: `User` } ] } )
         form.type( `me\x1b[A\x7f\x7fbox\r\r` )

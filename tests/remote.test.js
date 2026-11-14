@@ -328,6 +328,14 @@ sys.stderr.write(''.join(map(chr, sent)))` )
                 expect( readFileSync( join( dir, `office`, `password` ), `utf8` ) ).toBe( SECRET )
             } )
 
+            it( `renaming onto another machine never borrows its password`, async () => {
+                add( `office` )
+                add_mac( { name: `home`, host: `10.0.0.9`, user: `mentor`, password: `home-secret` }, dir )
+                await expect( cmd_mac( { remote_verb: `add`, remote_name: `office` }, deps( { form: answering( { name: `home` } ) } ) ) ).rejects.toThrow( `Password:` )
+                expect( readFileSync( join( dir, `home`, `password` ), `utf8` ) ).toBe( `home-secret` )
+                expect( list_macs( dir ).find( machine => machine.name === `home` ).host ).toBe( `10.0.0.9` )
+            } )
+
             it( `refuses bad fields inside the form and saves nothing when cancelled`, async () => {
                 await expect( cmd_mac( { remote_verb: `add` }, deps( { form: answering( { name: `office`, host: `-oProxyCommand=x`, password: `p` } ) } ) ) ).rejects.toThrow( `Host:` )
                 await expect( cmd_mac( { remote_verb: `add` }, deps( { form: answering( { name: `office`, host: `10.0.0.5` } ) } ) ) ).rejects.toThrow( `Password:` )

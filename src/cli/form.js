@@ -86,8 +86,11 @@ export const form_menu = async ( {
                         error = failure.message
                     }
                 } else if( key.name === `up` ) row = ( row + fields.length - 1 ) % fields.length
-                else if( key.name === `down` || key.name === `tab` ) row = ( row + 1 ) % fields.length
-                else {
+                // A pasted Tab must not carry the rest of a secret into a visible field
+                else if( key.name === `down` || key.name === `tab` && !fields[ row ].secret ) row = ( row + 1 ) % fields.length
+                else if( key.name === `tab` ) {
+                    // Ignored inside secret fields
+                } else {
                     const letters = Array.from( values[ field ] )
                     let cursor = cursors[ field ]
                     if( key.name === `left` ) cursor = Math.max( 0, cursor - 1 )

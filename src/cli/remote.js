@@ -165,7 +165,9 @@ const check_remote = async ( kind, dir, machine, print, ports ) => {
 const ask_remote = async ( kind, cmd, dir, form ) => {
 
     const existing = list_remotes( kind, dir ).find( machine => machine.name === cmd.remote_name )
-    const with_stored = values => ( { ...values, password: values.password || read_remote_password( kind, values.name, dir ) || `` } )
+    // Only the entry being edited lends its password: renaming onto another
+    // machine must not pair that machine's password with this host
+    const with_stored = values => ( { ...values, password: values.password || existing && values.name === existing.name && read_remote_password( kind, existing.name, dir ) || `` } )
 
     const answers = await form( {
         title: existing ? `Update ${ kind.label } ${ existing.name }` : `Add a ${ kind.label }`,
