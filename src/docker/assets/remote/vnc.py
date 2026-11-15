@@ -284,6 +284,9 @@ async def act(vnc, mac, password, action, args, started):
     elif action == 'password':
         # Typed from the staged file so the agent never sees or handles it
         await write_text(vnc, password, delay=SECRET_KEY_DELAY)
+    elif action == 'unlock' and os.environ.get('BABYSIT_MAC_UNLOCKED') == '1':
+        # command.mjs saw no lock screen: typing would put the password into the focused app
+        print('already unlocked; nothing typed')
     elif action == 'unlock':
         await tap(vnc, 'Shift')  # wake the login window and focus its field
         await asyncio.sleep(3)  # the field takes a moment to accept keys after the wake

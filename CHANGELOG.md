@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.7.2 — 2026-11-15
+
+### Fixed
+- `babysit mac unlock` on a Mac that is already unlocked types nothing (it used to type the password into the focused app, then press Return).
+- Mac unlock preparation only runs for a real `unlock` step: a `run` script that merely mentions the word (typed text, a file name, a comment) no longer changes the Mac's settings, and scripts piped on stdin now get it too. A failed preparation makes the command fail.
+
 ## 2.7.1 — 2026-11-15
 
 ### Fixed

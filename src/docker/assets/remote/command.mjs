@@ -125,11 +125,40 @@ const POWERSHELL_STDIN = [ `powershell`, `-NoProfile`, `-NonInteractive`, `-Comm
     `Invoke-Expression $r.ReadToEnd()`,
 ].join( `;` ) ]
 
+// Unlock preparation on the Mac: sudo (password on stdin) turns off relock on
+// disconnect, then exit UNLOCKED when the screen is not locked
+const UNLOCKED = 71
+const PREPARE_UNLOCK = [
+    `sudo -S -p '' defaults write /Library/Preferences/com.apple.RemoteManagement RestoreMachineState -bool NO || exit 70`,
+    `ioreg -n Root -d1 -a | grep -A1 CGSSessionScreenIsLocked | grep -q true || exit ${ UNLOCKED }`,
+].join( `; ` )
+
+/**
+ * Action names of a vnc.py run script: statements split on `;` and newlines
+ * outside quotes (as vnc.py does), comments skipped, first word only.
+ * @param {string} script
+ * @returns {string[]}
+ */
+export const script_actions = script => {
+    const statements = [ `` ]
+    let quote = null
+    for( const char of script ) {
+        if( quote ) quote = char === quote ? null : quote
+        else if( char === `"` || char === `'` ) quote = char
+        else if( char === `;` || char === `\n` ) {
+            statements.push( `` )
+            continue
+        }
+        statements[ statements.length - 1 ] += char
+    }
+    return statements.map( statement => statement.trim().split( /\s+/ )[0] ).filter( word => word && !word.startsWith( `#` ) )
+}
+
 // ---------------------------------------------------------------------------
 // Default IO, injectable for tests
 
-export const default_run = ( command, args, { input = null } = {} ) => new Promise( resolve => {
-    const child = spawn( command, args, { stdio: [ input === null ? `inherit` : `pipe`, `inherit`, `inherit` ] } )
+export const default_run = ( command, args, { input = null, env = process.env } = {} ) => new Promise( resolve => {
+    const child = spawn( command, args, { env, stdio: [ input === null ? `inherit` : `pipe`, `inherit`, `inherit` ] } )
     if( input !== null ) child.stdin.end( input )
     child.on( `error`, error => {
         console.error( `babysit: ${ command }: ${ error.message }` )
@@ -217,21 +246,31 @@ export const run_remote = async ( kind, args, io = {} ) => {
         return io.run( `scp`, [ `-r`, ...ssh_options( io.root, machine ), ...rest.map( remote ) ] )
     }
 
-    // macOS relocks the screen when a Screen Sharing session that began at the
-    // lock screen ends, so an unlock would undo itself the moment vnc.py exits.
-    // RestoreMachineState=NO turns that off (verified on Monterey). Idempotent.
-    const unlocks = action === `unlock` || action === `run` && /\bunlock\b/.test( rest.join( ` ` ) )
-    if( kind.name === `mac` && unlocks ) {
-        const password = ( await readFile( `${ io.root }/${ machine.name }/password`, `utf8` ) ).replace( /\n$/, `` )
-        const keep = [ `sudo`, `-S`, `-p`, `''`, `defaults`, `write`, `/Library/Preferences/com.apple.RemoteManagement`, `RestoreMachineState`, `-bool`, `NO` ]
-        const code = await io.run( `ssh`, [ ...ssh_options( io.root, machine ), target, ...keep ], { input: `${ password }\n` } )
-        if( code ) console.error( `babysit: could not keep ${ machine.name } unlocked after disconnect (ssh exit ${ code }); it may lock again when this command ends` )
-    }
-
     // vnc.py serves both kinds' registries, so it needs --kind; rdp.py is Windows-only
     const { helper } = SCREEN[ kind.name ]
     const kind_args = helper === `vnc.py` ? [ `--kind`, kind.name ] : []
-    return io.run( `python3`, [ `${ HELPERS }/${ helper }`, ...kind_args, machine.name, action, ...rest ] )
+    const helper_argv = [ `${ HELPERS }/${ helper }`, ...kind_args, machine.name, action, ...rest ]
+
+    // A run script from stdin is read here, so it can be checked for unlock, then passed on
+    const script = action === `run` ? rest.length ? rest.join( ` ` ) : await io.stdin() : ``
+    const unlocks = action === `unlock` || script_actions( script ).includes( `unlock` )
+    if( kind.name !== `mac` || !unlocks ) return io.run( `python3`, helper_argv, action === `run` && !rest.length ? { input: script } : {} )
+
+    // macOS relocks the screen when a Screen Sharing session that began at the
+    // lock screen ends, so an unlock would undo itself the moment vnc.py exits.
+    // RestoreMachineState=NO turns that off (verified on Monterey). The same
+    // call reports the lock state: an unlocked Mac must not get the password
+    // typed into whatever app has focus.
+    const password = ( await readFile( `${ io.root }/${ machine.name }/password`, `utf8` ) ).replace( /\n$/, `` )
+    const prepare = await io.run( `ssh`, [ ...ssh_options( io.root, machine ), target, PREPARE_UNLOCK ], { input: `${ password }\n` } )
+    if( ![ 0, UNLOCKED ].includes( prepare ) ) console.error( `babysit: could not keep ${ machine.name } unlocked after disconnect (exit ${ prepare }); it may lock again when this command ends` )
+
+    const options = { env: { ...process.env, BABYSIT_MAC_UNLOCKED: prepare === UNLOCKED ? `1` : `` } }
+    if( action === `run` && !rest.length ) options.input = script
+    const code = await io.run( `python3`, helper_argv, options )
+
+    // A failed preparation fails the command, even when the unlock itself went through
+    return code || ( [ 0, UNLOCKED ].includes( prepare ) ? 0 : prepare )
 
 }
 

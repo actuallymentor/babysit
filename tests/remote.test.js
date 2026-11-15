@@ -194,13 +194,40 @@ describe( `babysit mac`, () => {
             for( const args of [ [ `unlock`, `office` ], [ `run`, `office`, `unlock; shot` ] ] ) {
                 const { calls } = await run( args )
                 expect( calls ).toHaveLength( 2 )
-                expect( calls[0].argv.slice( -4 ) ).toEqual( [ `/Library/Preferences/com.apple.RemoteManagement`, `RestoreMachineState`, `-bool`, `NO` ] )
+                expect( calls[0].argv.at( -1 ) ).toContain( `RestoreMachineState -bool NO` )
                 expect( calls[0].options.input ).toBe( `${ SECRET }\n` )
                 expect( JSON.stringify( calls[0].argv ) ).not.toContain( SECRET )
                 expect( calls[1].command ).toBe( `python3` )
+                expect( calls[1].options.env.BABYSIT_MAC_UNLOCKED ).toBe( `` )
             }
-            // Other GUI actions never touch ssh
-            expect( ( await run( [ `run`, `office`, `click 10 20` ] ) ).calls ).toHaveLength( 1 )
+        } )
+
+        it( `only a real unlock statement prepares, stdin scripts included`, async () => {
+            add()
+            const calls_for = async ( args, stdin = `` ) => {
+                const calls = []
+                await run_mac( args, { root: dir, say: () => {}, reachable: async () => true, stdin: async () => stdin,
+                    run: async ( command, argv, options ) => ( calls.push( { command, argv, options } ), 0 ) } )
+                return calls
+            }
+            // Text, file names and comments mentioning unlock never touch sudo
+            expect( await calls_for( [ `run`, `office`, `type "a; unlock"; shot /tmp/unlock.png\n# unlock later` ] ) ).toHaveLength( 1 )
+            // A stdin script is read once and handed to the helper
+            const piped = await calls_for( [ `run`, `office` ], `click 1 2\nunlock; shot` )
+            expect( piped ).toHaveLength( 2 )
+            expect( piped[1].options.input ).toBe( `click 1 2\nunlock; shot` )
+        } )
+
+        it( `an unlocked Mac gets no password typed, and a failed preparation fails the command`, async () => {
+            add()
+            const outcome = async prepare => {
+                const calls = []
+                const code = await run_mac( [ `unlock`, `office` ], { root: dir, say: () => {}, reachable: async () => true,
+                    run: async ( command, argv, options ) => ( calls.push( { command, argv, options } ), command === `ssh` ? prepare : 0 ) } )
+                return { code, env: calls[1].options.env.BABYSIT_MAC_UNLOCKED }
+            }
+            expect( await outcome( 71 ) ).toEqual( { code: 0, env: `1` } )
+            expect( await outcome( 70 ) ).toEqual( { code: 70, env: `` } )
         } )
 
         it( `run chains GUI actions through one vnc invocation`, async () => {
