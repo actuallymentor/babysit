@@ -9,6 +9,7 @@ import { Section, SectionHeading, Surface } from '../atoms/Layout.jsx'
 import { use_poll } from '../../hooks/use_poll.js'
 import { Button } from '../atoms/Button.jsx'
 import { MarkdownMessage } from '../molecules/MarkdownMessage.jsx'
+import { SessionMenu } from '../molecules/SessionMenu.jsx'
 import { Notice } from '../atoms/Notice.jsx'
 import { Status } from '../atoms/Status.jsx'
 
@@ -32,6 +33,7 @@ const Heading = styled.header`
     gap: 0.5rem;
 
     > div:first-child { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; justify-content: space-between; }
+    > div:first-child > div { align-items: center; display: flex; gap: 0.5rem; }
     h1 { font-size: 1.625rem; line-height: 1.25; margin: 0; min-width: 0; overflow-wrap: anywhere; }
 `
 
@@ -171,6 +173,7 @@ export function SessionPage( { role } ) {
     const editor_ref = useRef( null )
     const reply_ref = useRef( null )
     const [ reply_visible, set_reply_visible ] = useState( false )
+    const [ action_notice, set_action_notice ] = useState( null )
     const session = data?.session?.session_id === session_id ? data.session : null
     const byte_count = new TextEncoder().encode( message ).length
     const has_unsupported_characters = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test( message )
@@ -224,7 +227,10 @@ export function SessionPage( { role } ) {
         <Heading>
             <div>
                 <h1>{ session.name }</h1>
-                <Status activity={ error ? `unknown` : session.activity } />
+                <div>
+                    <Status activity={ error ? `unknown` : session.status || session.activity } />
+                    { role === `write` && <SessionMenu refresh={ reload } report={ ( text, { error: failed = false } = {} ) => set_action_notice( { text, error: failed } ) } session={ session } /> }
+                </div>
             </div>
             <Meta>
                 <span><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</span>
@@ -234,6 +240,7 @@ export function SessionPage( { role } ) {
             </Meta>
         </Heading>
         { error && <Notice $error role="alert">{ error.message }. Showing the last received state; sending is paused until the connection recovers.</Notice> }
+        { action_notice && <Notice $error={ action_notice.error } role={ action_notice.error ? `alert` : `status` }>{ action_notice.text }</Notice> }
 
         <Section aria-label="Latest message">
             <SectionHeading><h2>Latest reply</h2></SectionHeading>

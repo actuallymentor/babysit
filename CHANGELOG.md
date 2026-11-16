@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.8.0 — 2026-11-16
+
+### Added
+- Babysit Web matches `babysit watch`: newest opened first, unread dots, an **Idle** list below (idle over a day or moved there), a **Show task titles** toggle, and a **…** menu per session (Open, Mark read, Move to idle list, Freeze/Unfreeze, Restart, asking twice unless idle). Frozen sessions stay listed so they can be unfrozen. New `POST /api/sessions/:id/actions`. Resume sessions to load the updated monitor.
+- `prompts:` in babysit.yaml overrides the texts Babysit types on its own: `loop`, `watchdog`, `check_in`, `recovery`, `account_switch`. The generated yaml links to the defaults in `src/babysit/prompts.js`.
+- Global `~/.babysitrc.yaml`: defaults < `~/.babysitrc.yaml` < `babysit.yaml` (or `--config`) < CLI flags. `config:` and `prompts:` merge key by key; a workspace `babysit:` list replaces the global one; `launch:` stays per workspace. `babysit init --global` writes it, asking Y/n before overwriting. `babysit config` shows it.
+
+### Fixed
+- `babysit init` prints what it wrote (its messages were hidden at the default log level).
+
 ## 2.7.2 — 2026-11-15
 
 ### Fixed

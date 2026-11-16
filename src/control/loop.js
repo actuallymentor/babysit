@@ -16,6 +16,7 @@ import { log } from '../utils/log.js'
  * @param {Function} options.update - Session record writer
  * @param {Function} [options.set_label] - Tmux label writer seam
  * @param {Function} [options.apply] - apply_loop seam
+ * @param {Function} [options.loop_text] - Getter for the fallback loop text; read per toggle so yaml edits apply
  * @returns {{ toggle: Function, enabled: boolean }}
  */
 export const create_loop_controller = ( session, {
@@ -25,6 +26,7 @@ export const create_loop_controller = ( session, {
     update,
     set_label = set_status_label,
     apply = apply_loop,
+    loop_text = () => undefined,
 } ) => {
 
     const modifiers = () => session.modifiers || []
@@ -35,6 +37,7 @@ export const create_loop_controller = ( session, {
         if( enabled() ) apply( rules, workspace, {
             include_global_loop: !modifiers().includes( `ignore-host-agents-md` ),
             config_path: session.config_path || null,
+            loop_text: loop_text(),
         } )
     }
 

@@ -3,6 +3,7 @@ import { closeSync, openSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { log } from '../utils/log.js'
+import { DEFAULT_PROMPTS } from './prompts.js'
 import { run } from '../utils/exec.js'
 import { docker_command_prefix } from '../docker/run.js'
 import { send_escape, send_text } from '../tmux/send.js'
@@ -36,7 +37,8 @@ export const SWITCH_PROBE_MAX_AGE_MS = 60_000
 export const SPENT_NOTICE_GRACE_MS = 10 * 60_000
 
 // Typed after a hot swap, once Escape closed Claude's limit picker
-export const HOT_SWAP_PROMPT = `Your Claude subscription hit its usage limit, so Babysit switched this session to another account. Continue where you left off.`
+// Default text lives in prompts.js (babysit.yaml prompts.account_switch)
+export const HOT_SWAP_PROMPT = DEFAULT_PROMPTS.account_switch
 
 // A recorded switch blocks its source account until that account's limit resets
 const switch_window_open = ( { at, resets_at }, now ) => resets_at
@@ -172,11 +174,12 @@ export const swap_account_token = async ( container_id, account, { run_command =
 /**
  * Close the limit picker and ask Claude to carry on.
  * @param {string} target - tmux pane or session
+ * @param {string} [prompt] - Text to type
  * @returns {Promise<void>}
  */
-const nudge_after_swap = async target => {
+const nudge_after_swap = async ( target, prompt = HOT_SWAP_PROMPT ) => {
     await send_escape( target )
-    await send_text( target, HOT_SWAP_PROMPT )
+    await send_text( target, prompt )
 }
 
 /**
@@ -203,7 +206,8 @@ const session_attached = tmux_session => get_session_attachment( tmux_session )
  * Monitor handler for a Claude limit on screen. Re-entrant calls while one
  * runs are dropped; every outcome is logged.
  * @param {Object} session - Stored session at monitor start
- * @param {Object} [options] - Registry, probe, store, attachment, notify and spawn seams
+ * @param {Object} [options] - Registry, probe, store, attachment, notify and spawn seams;
+ *   `prompt` is the text typed after a swap (babysit.yaml prompts.account_switch)
  * @returns {Function} Async handler; resolves to the plan it acted on
  */
 export const create_account_switcher = ( session, {
@@ -216,6 +220,7 @@ export const create_account_switcher = ( session, {
     restart = spawn_account_restart,
     swap = swap_account_token,
     nudge = nudge_after_swap,
+    prompt = HOT_SWAP_PROMPT,
     now = Date.now,
 } = {} ) => {
 
@@ -309,7 +314,7 @@ export const create_account_switcher = ( session, {
                 update( session.babysit_id, current => ( { claude_account: plan.to, account_switches: [ ...current.account_switches || [], entry ] } ) )
                 // Re-read after the awaits: a freeze or recovery may have taken the pane since
                 const typed = !( latest.tmux_session && await attached( latest.tmux_session ) ) && may_type( load( session.babysit_id ) )
-                if( typed ) await nudge( latest.pane_id || latest.tmux_session )
+                if( typed ) await nudge( latest.pane_id || latest.tmux_session, prompt )
                 const present = !typed
                 log.info( `Claude limit hit on account ${ plan.from }; switched session ${ session.babysit_id } to ${ plan.to } in place (${ plan.headroom }% left)` )
                 await notify( { title: `Babysit`, message: `Claude limit hit on ${ plan.from }; switched ${ label( latest ) } to ${ plan.to } (${ plan.headroom }% left)${ present ? `. Type continue to resume` : `` }.` } )

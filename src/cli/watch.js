@@ -1,5 +1,4 @@
 import { watch } from 'node:fs'
-import { spawn } from 'node:child_process'
 
 import { opencode_model_flag } from '../agents/opencode.js'
 import { DEFAULT_ACCOUNT, collect_account_usage, list_claude_accounts } from './claude_accounts.js'
@@ -13,6 +12,7 @@ import { WATCH_CLOSE_HINT } from './watch_hint.js'
 import { foreground_attach_count, mark_read, shelve_session } from '../tmux/session.js'
 import { SESSIONS_DIR } from '../utils/paths.js'
 import { update_session } from '../sessions/store.js'
+import { run_babysit } from '../utils/run_babysit.js'
 import { disk_warnings, read_disk_health, refresh_disk_health } from '../disk_health.js'
 
 const FRAME_MS = 1_000
@@ -24,7 +24,6 @@ const SIGNALS = [ `SIGINT`, `SIGTERM`, `SIGHUP` ]
 // CSI (ESC [ … final), SS3 (ESC O x) and Alt+key (ESC x) sequences
 const ESCAPE_SEQUENCE = /(\x1b(?:\[[0-?]*[ -/]*[@-~]|O[\s\S]|[ -~]))/
 // Arrow keys, in normal and application cursor mode; every other sequence is dropped
-const ESCAPE_SEQUENCE_ALL = /\x1b\[[\d;]*[A-Za-z]/g
 const ARROWS = { '\x1b[A': `up`, '\x1bOA': `up`, '\x1b[B': `down`, '\x1bOB': `down` }
 export const USAGE_REFRESH_MS = 5 * 60_000
 
@@ -49,30 +48,6 @@ const HELP = [
     `  ?          this help`,
     `  q, ctrl+c  quit`,
 ]
-
-/**
- * Run a babysit command in the background, outliving Ctrl+C in this terminal
- * (a restart takes minutes and must not be cut short). Output stays off the
- * dashboard; its first line is the result (errors lead, stack frames follow).
- * @param {string[]} args - babysit arguments
- * @returns {Promise<{ ok: boolean, out: string }>}
- */
-const run_babysit = args => new Promise( resolve => {
-
-    // Bun-compiled binaries put a synthetic /$bunfs path in argv[1]; node puts the script
-    const script = process.argv[1] || ``
-    const compiled = script.startsWith( `/$bunfs` ) || script === ``
-    const child = spawn( process.execPath, compiled ? args : [ script, ...args ], { detached: true, stdio: [ `ignore`, `pipe`, `pipe` ] } )
-
-    let output = ``
-    const collect = chunk => output += chunk
-    child.stdout.on( `data`, collect )
-    child.stderr.on( `data`, collect )
-    child.on( `error`, error => resolve( { ok: false, out: error.message } ) )
-    child.on( `close`, code => resolve( { ok: code === 0, out: output.replace( ESCAPE_SEQUENCE_ALL, `` ).trim().split( `\n` )[0] || `` } ) )
-    child.unref()
-
-} )
 
 const visible_length = text => text.replace( /\x1b\[[\d;]*m/g, `` ).length
 const pad = ( text, width ) => text + ` `.repeat( Math.max( 0, width - visible_length( text ) ) )

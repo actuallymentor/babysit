@@ -92,6 +92,7 @@ Status: `running` (foreground work), `waiting` (background shells/subagents), `i
 | Command | Effect |
 |---|---|
 | `babysit init [file.yaml]` | Write a default config, then open the launch menu to fill `launch:` |
+| `babysit init --global` | Write `~/.babysitrc.yaml`, the global layer; asks Y/n before overwriting |
 | `babysit --config DIR/ [--yes]` | Start every `DIR/*.yaml` detached; see [Directory launch](#directory-launch) |
 | `babysit audit --config FILE\|DIR/` | Fix yaml for `--config DIR/`; see [Audit](#audit) |
 | `babysit clean --config FILE\|DIR/ [--dry-run]` | Strip comment lines and blanks; see [Clean](#clean) |
@@ -330,6 +331,10 @@ claude / anthropic
 
 `babysit init` writes a commented `babysit.yaml` (or use `--config FILE`). Rules run top-down; first match wins.
 
+**Layers**, last wins: defaults < `~/.babysitrc.yaml` (`babysit init --global`) < `babysit.yaml` / `--config` < CLI flags.
+- `config:` and `prompts:` merge key by key; a workspace `babysit:` list (even `[]`) replaces the global one
+- `launch:` is per workspace only; a broken global file warns and is skipped
+
 ```yaml
 config:
     idle_timeout_s: 300
@@ -343,6 +348,13 @@ babysit:
     #   timeout: 30:00
     # - on: /error/i
     #   do: notify_command
+
+prompts:                    # texts babysit types on its own; defaults: src/babysit/prompts.js
+    # loop: Keep going      # --loop without a LOOP.md
+    # watchdog: ...         # stalled idle agent
+    # check_in: ...         # agent waiting on background work
+    # recovery: ...         # after a crash/reboot resume
+    # account_switch: ...   # after a Claude account hot swap
 ```
 
 | Setting | Values |
@@ -352,7 +364,7 @@ babysit:
 | `timeout` | Idle rules: `SS`, `MM:SS`, `HH:MM:SS` |
 | `run_on_start` | Idle rules: fire on first idle instead of after a full timeout |
 | Markdown steps | Separate with `===`; waits for idle between steps |
-| `--loop` source | `./LOOP.md` → `~/.agents/LOOP.md` → `Keep going` |
+| `--loop` source | `./LOOP.md` → `~/.agents/LOOP.md` → `prompts.loop` (`Keep going`) |
 
 **Stall watchdog** (on by default): nudges agents that silently stopped.
 - **Idle** `watchdog_idle_s`: Haiku reads the last 150 lines; if stalled (not parked on purpose), types a nudge. Skipped when an idle rule or `--loop` exists
@@ -414,6 +426,8 @@ docker compose -f examples/compose.web.yml up -d
 - Login lasts 30 days (`BABYSIT_WEB_SESSION_TTL_MS`); token rotation and logout end sessions
 - After upgrades, exit/resume old sessions to load updated helpers
 
+**Sessions list** mirrors `babysit watch`: newest opened first, unread dot, sessions idle over a day (or moved there) in an **Idle** list below, **Show task titles** toggle. Each row's **…** menu (write keys only) runs the watch shortcuts on the host: Open, Mark read, Move to idle list, Freeze/Unfreeze, Restart (asks twice unless idle). Frozen sessions stay listed so they can be unfrozen.
+
 **JSON API:** cookie, or `Authorization: Bearer <key>` (read-only, GET only). Full reference: **API docs** in the app menu.
 
 ```bash
@@ -426,6 +440,7 @@ curl -H "Authorization: Bearer $BABYSIT_KEY" https://babysit.example.com/api/sta
 | `GET /api/sessions` | `{ sessions[] }` with container stats |
 | `GET /api/sessions/:id` | `{ session, pending }` |
 | `GET /api/me` | `{ role }` |
+| `POST /api/sessions/:id/actions` | `{ action }`: `read`, `shelve`, `freeze`, `unfreeze`, `restart`; cookie with a write key only |
 
 ## Transcript archive
 

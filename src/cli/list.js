@@ -78,7 +78,7 @@ export const clean_pane_title = ( raw, { pwd = ``, tmux_name = ``, host = hostna
  * @param {Object|undefined} stored - Its stored record
  * @returns {{ title: string|null, fresh_title: boolean }} `fresh_title`: the live title differs from the saved one, so it is worth saving
  */
-const session_title = ( tmux, stored ) => {
+export const session_title = ( tmux, stored ) => {
     const context = { pwd: stored?.pwd, tmux_name: tmux.name }
     const live = clean_pane_title( tmux.pane_title, context )
     // A saved title is cleaned again: records written before a placeholder rule existed keep their junk
@@ -94,7 +94,7 @@ const session_title = ( tmux, stored ) => {
  * @param {Object|undefined} stored - Its stored record
  * @returns {string}
  */
-const session_status = ( tmux, stored ) => tmux.exited
+export const session_status = ( tmux, stored ) => tmux.exited
     ? `exited`
     : stored?.frozen_at
         ? `frozen`

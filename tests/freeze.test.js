@@ -255,6 +255,41 @@ describe( `monitor while frozen`, () => {
 
 } )
 
+describe( `monitor web bridge while frozen`, () => {
+
+    it( `keeps the heartbeat and offers only actions, never a pane publish`, async () => {
+        let tick = 0
+        const calls = []
+        await start_monitor( {
+            session_name: `babysit_frozen_web`,
+            config: {},
+            rules: [],
+            agent: { name: `codex` },
+            is_frozen: async () => tick >= 1 ? `mark` : null,
+            has_session_fn: async () => tick < 4,
+            capture_pane_fn: async () => `› screen`,
+            publish_agent_status_fn: async ( { agent_status } ) => agent_status,
+            write_loop_deadline_fn: () => {},
+            web_bridge: {
+                tmux_target: `%1`,
+                publish: async () => calls.push( [ tick, `publish` ] ),
+                heartbeat: async () => calls.push( [ tick, `heartbeat` ] ),
+                process_requests: async ( options = {} ) => ( calls.push( [ tick, options.frozen ? `frozen requests` : `requests` ] ), { sent: false, processed: 0 } ),
+                close: async () => {},
+            },
+            wait_fn: async () => {
+                tick++
+            },
+        } )
+        const frozen = calls.filter( ( [ at ] ) => at >= 1 ).map( ( [ , call ] ) => call )
+        expect( frozen ).not.toContain( `publish` )
+        expect( frozen ).toContain( `heartbeat` )
+        expect( frozen ).toContain( `frozen requests` )
+        expect( frozen ).not.toContain( `requests` )
+    } )
+
+} )
+
 describe( `monitor asked to freeze mid-action`, () => {
 
     it( `acknowledges a fresh freeze that replaced the one it stood down for`, async () => {

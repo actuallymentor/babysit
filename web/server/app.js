@@ -214,6 +214,17 @@ const api_route = async ( request, response, pathname, stores, config ) => {
         return json( response, 202, bridge.send( { session: state, text: body.text } ) )
     }
 
+    const action_match = pathname.match( /^\/api\/sessions\/([A-Za-z0-9-]+)\/actions$/ )
+    if( request.method === `POST` && action_match ) {
+        if( identity.role !== `write` ) return json( response, 403, { error: `This access key is read-only` } )
+
+        const state = bridge.session( action_match[ 1 ] )
+        if( !state ) return json( response, 404, { error: `Session is unavailable or stale` } )
+
+        const body = await request_body( request )
+        return json( response, 202, bridge.act( { session: state, action: body.action } ) )
+    }
+
     return json( response, 404, { error: `Not found` } )
 }
 

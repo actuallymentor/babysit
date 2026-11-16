@@ -18,6 +18,7 @@ export const continuation_awaits_person = session => session?.continuation === `
 /**
  * Submit once per recovery attempt, before monitor rules/web input can run.
  * A crash after the durable sending marker requires manual reconciliation.
+ * `prompt` is the text typed (babysit.yaml prompts.recovery).
  */
 export const continue_recovered_session = async ( session, {
     ready,
@@ -26,6 +27,7 @@ export const continue_recovered_session = async ( session, {
     update = update_session,
     pane = get_session_pane,
     send = send_text,
+    prompt = RECOVERY_PROMPT,
 } ) => {
 
     if( session.continuation !== `pending` ) return session.continuation
@@ -43,7 +45,7 @@ export const continue_recovered_session = async ( session, {
             && latest.monitor_token === session.monitor_token && latest.continuation === `pending`
             ? { continuation: `sending` } : null )
         if( !claimed ) return load( session.babysit_id )?.continuation
-        await send( target.pane_id, RECOVERY_PROMPT )
+        await send( target.pane_id, prompt )
         update( session.babysit_id, { continuation: `sent`, continued_at: new Date().toISOString() } )
         return `sent`
     } catch ( error ) {

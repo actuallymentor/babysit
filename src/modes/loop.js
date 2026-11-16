@@ -2,21 +2,24 @@ import { existsSync } from 'fs'
 import { resolve, join } from 'path'
 import { log } from '../utils/log.js'
 import { AGENTS_DIR } from '../utils/paths.js'
+import { DEFAULT_PROMPTS } from '../babysit/prompts.js'
 
-// Default loop text when no LOOP.md is found
-const DEFAULT_LOOP_TEXT = `Keep going`
+// Default loop text when no LOOP.md is found lives in prompts.js
+export const DEFAULT_LOOP_TEXT = DEFAULT_PROMPTS.loop
 
 /**
  * Apply loop mode — overrides the `on: idle` rule in babysit.yaml
- * Priority: ./LOOP.md > ~/.agents/LOOP.md > "Keep going"
+ * Priority: ./LOOP.md > ~/.agents/LOOP.md > loop_text (default "Keep going")
  * @param {Array} rules - The parsed babysit rules array (mutated in place)
  * @param {string} [workspace=process.cwd()] - Current working directory
  * @param {Object} [options]
  * @param {boolean} [options.include_global_loop=true] - Allow the host ~/.agents fallback
+ * @param {string} [options.loop_text] - Fallback text when no LOOP.md exists (babysit.yaml prompts.loop)
  * @param {string|null} [options.config_path=null] - Explicit --config file; its own idle rule wins over LOOP.md
  */
 export const apply_loop = ( rules, workspace = process.cwd(), {
     include_global_loop = true,
+    loop_text = DEFAULT_LOOP_TEXT,
     config_path = null,
 } = {} ) => {
 
@@ -41,8 +44,8 @@ export const apply_loop = ( rules, workspace = process.cwd(), {
         loop_action = global_loop
         log.info( `Loop mode: using ${ global_loop }` )
     } else {
-        loop_action = DEFAULT_LOOP_TEXT
-        log.info( `Loop mode: no LOOP.md found, using "${ DEFAULT_LOOP_TEXT }"` )
+        loop_action = loop_text
+        log.info( `Loop mode: no LOOP.md found, using "${ loop_text }"` )
     }
 
     // Override the idle rule's action but keep its timeout, or insert one at position 0

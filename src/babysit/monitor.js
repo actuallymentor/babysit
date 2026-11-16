@@ -328,6 +328,15 @@ export const start_monitor = async ( {
                     acked_mark = frozen_mark
                     await on_frozen?.( frozen_mark )
                 }
+                // The web keeps listing a frozen session, so it can be unfrozen from there
+                if( web_bridge ) {
+                    try {
+                        await web_bridge.heartbeat()
+                        await web_bridge.process_requests( { frozen: true } )
+                    } catch ( error ) {
+                        log.debug( `Web bridge heartbeat failed for ${ session_name }: ${ error.message }` )
+                    }
+                }
                 if( await session_gone() ) {
                     log.info( `Session ended while frozen: ${ session_name }` )
                     await finish_action()

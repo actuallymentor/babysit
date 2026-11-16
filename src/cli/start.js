@@ -1385,6 +1385,7 @@ const prepare_container = async launch => {
     if( flags.loop ) apply_loop( rules, workspace, {
         include_global_loop: !mode.ignore_host_agents_md,
         config_path,
+        loop_text: config.prompts.loop,
     } )
 
     // /original remains writable for deliberate merge-back work, so clone

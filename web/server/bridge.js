@@ -14,6 +14,8 @@ const ACCOUNT_USAGE_FILE = `account-usage.json`
 const ACCOUNT_USAGE_STALE_MS = 15 * 60_000
 const ACCOUNT_USAGE_MAX_AGE_MS = 24 * 60 * 60_000
 const USAGE_STATUSES = [ `ok`, `unavailable`, `unauthenticated`, `error` ]
+// `babysit watch` shortcuts the host monitor runs on request: space, e, f, r
+const ACTIONS = [ `read`, `shelve`, `freeze`, `unfreeze`, `restart` ]
 
 const finite = value => typeof value === `number` && Number.isFinite( value ) ? value : null
 const short_text = value => typeof value === `string` ? value.slice( 0, 200 ) : null
@@ -81,6 +83,11 @@ const container_totals = sessions => {
 
 const state_summary = state => ( {
     activity: state.activity,
+    last_opened: state.last_opened,
+    parked: state.parked,
+    status: state.status,
+    title: state.title,
+    unread: state.unread,
     agent: state.agent,
     attachment: state.attachment,
     container: state.container,
@@ -106,6 +113,12 @@ const normalize_state = parsed => {
         workspace: typeof parsed.workspace === `string` ? parsed.workspace : ``,
         epoch: parsed.epoch,
         last_message: typeof parsed.last_message === `string` ? parsed.last_message : ``,
+        // Epoch seconds of the last human attach; null for sessions nobody opened
+        last_opened: finite( parsed.last_opened ),
+        parked: parsed.parked === true,
+        status: [ `frozen`, `stuck` ].includes( parsed.status ) ? parsed.status : null,
+        title: short_text( parsed.title ),
+        unread: parsed.unread === true,
         modifiers: Array.isArray( parsed.modifiers ) ? parsed.modifiers.filter( value => typeof value === `string` ).slice( 0, 12 ) : [],
         name: typeof parsed.name === `string` ? parsed.name : parsed.session_id,
         protocol: 1,
@@ -177,11 +190,9 @@ export class BridgeStore {
                 }
             } )
 
-        return states.sort( ( first, second ) => {
-            const activity_order = { running: 0, waiting: 1, idle: 2, unknown: 3 }
-            if( first.activity !== second.activity ) return activity_order[ first.activity ] - activity_order[ second.activity ]
-            return first.name.localeCompare( second.name )
-        } )
+        // Latest opened first, as `babysit watch` lists them; never-opened ones sink
+        return states.sort( ( first, second ) => ( second.last_opened || 0 ) - ( first.last_opened || 0 )
+            || first.name.localeCompare( second.name ) )
     }
 
     summaries() {
@@ -218,23 +229,37 @@ export class BridgeStore {
     }
 
     send( { session, text } ) {
+        return this.queue( session, { kind: `text`, text: valid_message( text ) } )
+    }
+
+    /**
+     * Ask the host monitor to run one `babysit watch` shortcut.
+     * @param {Object} options
+     * @param {Object} options.session - Normalized session state
+     * @param {string} options.action - One of ACTIONS
+     * @returns {{ request_id: string, status: string }}
+     */
+    act( { session, action } ) {
+        if( !ACTIONS.includes( action ) ) throw Object.assign( new Error( `Unknown action` ), { status_code: 400 } )
+        return this.queue( session, { kind: `action`, action } )
+    }
+
+    queue( session, body ) {
         this.cleanup_pending()
         if( readdirSync( this.request_dir ).length >= MAX_QUEUED_REQUESTS ) {
             throw Object.assign( new Error( `Message queue is full. Try again shortly.` ), { status_code: 429 } )
         }
 
         const request_id = randomUUID()
-        const message = valid_message( text )
         const filename = `${ session.session_id }--${ session.epoch }--${ request_id }.json`
         const request_path = join( this.request_dir, filename )
         const temporary_path = join( this.request_dir, `.babysit-web-${ request_id }.tmp` )
         const payload = {
             epoch: session.epoch,
-            kind: `text`,
             protocol: 1,
             request_id,
             session_id: session.session_id,
-            text: message,
+            ...body,
         }
 
         let descriptor
@@ -322,4 +347,4 @@ export class BridgeStore {
     }
 }
 
-export { MAX_MESSAGE_BYTES }
+export { ACTIONS, MAX_MESSAGE_BYTES }

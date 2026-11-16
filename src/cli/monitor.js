@@ -453,6 +453,7 @@ export const cmd_monitor = async ( cmd ) => {
             apply_loop( rules, workspace, {
                 include_global_loop: !session.modifiers.includes( `ignore-host-agents-md` ),
                 config_path: session.config_path || null,
+                loop_text: config.prompts.loop,
             } )
         }
 
@@ -461,6 +462,7 @@ export const cmd_monitor = async ( cmd ) => {
             continuation = await continue_recovered_session( session, {
                 ready: name => wait_for_initial_prompt_ready( name, agent ),
                 read_identity: () => launch_channel.refresh(),
+                prompt: config.prompts.recovery,
             } )
         }
 
@@ -493,6 +495,8 @@ export const cmd_monitor = async ( cmd ) => {
         const loop_controller = create_loop_controller( session, {
             rules, workspace, update: update_session,
             load_rules: () => load_monitor_config( session ).rules,
+            // Re-read per toggle so a yaml edit to prompts.loop applies
+            loop_text: () => load_monitor_config( session ).config.prompts.loop,
         } )
 
         // `babysit reset`: new conversation, then the configured initial prompt again.
@@ -517,6 +521,7 @@ export const cmd_monitor = async ( cmd ) => {
             session_name: session.tmux_session,
             idle_s: config.watchdog_idle_s,
             waiting_s: config.watchdog_waiting_s,
+            prompts: config.prompts,
             is_stuck: () => stuck_controller.stuck,
             skips_idle: () => rules.some( rule => rule.on.type === `idle` ),
             judge: async ( { status, quiet_minutes } ) => judge_session( {
@@ -558,7 +563,7 @@ export const cmd_monitor = async ( cmd ) => {
             } ),
             // Claude limit hit: move to another registered account with headroom
             on_limit_screen: agent.accounts && config.claude_account_auto_switch !== false
-                ? create_account_switcher( session ) : null,
+                ? create_account_switcher( session, { prompt: config.prompts.account_switch } ) : null,
             approve_dialogs: session.modifiers?.includes( `yolo` ) && config.yolo_approve_dangerous_commands !== false,
             tmux_target,
             agent_exit_sentinel: session.agent_exit_sentinel,

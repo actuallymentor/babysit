@@ -71,22 +71,44 @@ test( `orphan sweep leaves a tracked request whose file mtime predates its track
     }
 } )
 
-test( `waiting sessions stay visible ahead of idle sessions`, () => {
-    const directory = fs.mkdtempSync( join( tmpdir(), `babysit-waiting-state-` ) )
+test( `sessions list latest opened first, never-opened last, like babysit watch`, () => {
+    const directory = fs.mkdtempSync( join( tmpdir(), `babysit-recency-state-` ) )
     const store = new BridgeStore( {
         request_dir: directory, state_dir: directory,
         request_ttl_ms: 20_000, heartbeat_ttl_ms: 15_000,
     } )
 
     try {
-        // Names deliberately disagree with activity ordering.
-        for( const [ name, activity ] of [ [ `a`, `idle` ], [ `b`, `waiting` ], [ `c`, `running` ] ] ) {
+        // Names and activity deliberately disagree with recency
+        for( const [ name, activity, last_opened ] of [ [ `a`, `running`, null ], [ `b`, `idle`, 200 ], [ `c`, `waiting`, 100 ] ] ) {
             fs.writeFileSync( join( directory, `${ name }.json` ), JSON.stringify( {
-                protocol: 1, session_id: name, epoch: `epoch`, name, activity,
+                protocol: 1, session_id: name, epoch: `epoch`, name, activity, last_opened, unread: `yes`, parked: true, status: `deleted`,
             } ) )
         }
 
-        assert.deepEqual( store.summaries().map( session => session.activity ), [ `running`, `waiting`, `idle` ] )
+        const summaries = store.summaries()
+        assert.deepEqual( summaries.map( session => session.name ), [ `b`, `c`, `a` ] )
+        // Only exact values pass normalization
+        assert.deepEqual( summaries.map( ( { unread, parked, status } ) => ( { unread, parked, status } ) )[ 0 ], { unread: false, parked: true, status: null } )
+    } finally {
+        clearInterval( store.cleanup_timer )
+        fs.rmSync( directory, { recursive: true, force: true } )
+    }
+} )
+
+test( `actions queue an allowlisted watch shortcut for the host`, () => {
+    const directory = fs.mkdtempSync( join( tmpdir(), `babysit-action-request-` ) )
+    const store = new BridgeStore( { request_dir: directory, state_dir: directory, request_ttl_ms: 20_000, heartbeat_ttl_ms: 15_000 } )
+    const session = { session_id: `session-1`, epoch: `epoch-1` }
+
+    try {
+        assert.throws( () => store.act( { session, action: `rm -rf` } ), /Unknown action/ )
+
+        const { request_id } = store.act( { session, action: `freeze` } )
+        const [ filename ] = fs.readdirSync( directory )
+        assert.deepEqual( JSON.parse( fs.readFileSync( join( directory, filename ), `utf8` ) ), {
+            action: `freeze`, epoch: `epoch-1`, kind: `action`, protocol: 1, request_id, session_id: `session-1`,
+        } )
     } finally {
         clearInterval( store.cleanup_timer )
         fs.rmSync( directory, { recursive: true, force: true } )

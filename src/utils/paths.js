@@ -29,6 +29,8 @@ export const CREDENTIAL_RECOVERY_DIR = join( BABYSIT_DIR, `credential-recovery` 
 // Durable credential sync state (hashes + copy location), never secrets
 export const CREDENTIAL_STATE_DIR = join( BABYSIT_DIR, `credential-sync` )
 export const AGENTS_DIR = join( home, `.agents` )
+// Global babysit.yaml layer: defaults < ~/.babysitrc.yaml < ./babysit.yaml < CLI flags
+export const GLOBAL_CONFIG_PATH = join( home, `.babysitrc.yaml` )
 export const TMUX_SOCKET = process.env.BABYSIT_TMUX_SOCKET || `babysit`
 
 /**

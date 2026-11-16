@@ -17,7 +17,9 @@ import { stripVTControlCharacters } from 'util'
 
 import { log } from '../utils/log.js'
 import { send_text } from '../tmux/send.js'
-import { get_session_attachment, get_session_pane, mark_read } from '../tmux/session.js'
+import { get_session_attachment, get_session_pane, list_sessions, mark_read, shelve_session } from '../tmux/session.js'
+import { is_idle_session, session_status, session_title } from '../cli/list.js'
+import { run_babysit } from '../utils/run_babysit.js'
 import { WEB_BRIDGE_DIR, WEB_BRIDGE_PROTOCOL, web_bridge_paths } from './paths.js'
 import { create_launch_channel } from '../sessions/launch_channel.js'
 import { write_atomic_json } from './files.js'
@@ -35,6 +37,11 @@ const MAX_FUTURE_SKEW_MS = 30_000
 const MAX_RESULTS = 20
 const CONTAINER_REFRESH_MS = 15_000
 const ACCOUNT_USAGE_CHECK_MS = 60_000
+// One tmux listing per this long feeds the watch-style fields (recency, unread, idle list)
+const LISTING_REFRESH_MS = 2_000
+
+// The `babysit watch` shortcuts a web request may trigger: space, e, f, r
+const ACTIONS = new Set( [ `read`, `shelve`, `freeze`, `unfreeze`, `restart` ] )
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/
 const TOKEN_HASH = /^[a-f0-9]{64}$/
 const UNSAFE_INPUT_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u
@@ -163,7 +170,9 @@ const read_claimed_request = ( path, now_ms ) => {
 
 const validate_request = ( request, expected ) => {
 
-    const required_keys = [ `protocol`, `session_id`, `epoch`, `request_id`, `kind`, `text` ]
+    // A text request carries `text`, an action request names its `action`
+    const payload_key = request?.kind === `action` ? `action` : `text`
+    const required_keys = [ `protocol`, `session_id`, `epoch`, `request_id`, `kind`, payload_key ]
     const allowed_keys = new Set( [ ...required_keys, `created_at` ] )
     const keys = request && typeof request === `object` && !Array.isArray( request )
         ? Object.keys( request )
@@ -177,9 +186,13 @@ const validate_request = ( request, expected ) => {
         throw new RejectedRequest( `Session changed; refresh and try again` )
     }
     if( request.request_id !== expected.request_id ) throw new RejectedRequest( `Request id mismatch` )
-    if( request.kind !== `text` ) throw new RejectedRequest( `Unsupported request kind` )
+    if( ![ `text`, `action` ].includes( request.kind ) ) throw new RejectedRequest( `Unsupported request kind` )
     if( request.created_at !== undefined && typeof request.created_at !== `string` ) {
         throw new RejectedRequest( `Invalid creation time` )
+    }
+    if( request.kind === `action` ) {
+        if( !ACTIONS.has( request.action ) ) throw new RejectedRequest( `Unsupported action` )
+        return request
     }
     if( typeof request.text !== `string` || !request.text.trim() ) throw new RejectedRequest( `Message is empty` )
     if( Buffer.byteLength( request.text, `utf8` ) > MAX_TEXT_BYTES ) throw new RejectedRequest( `Message is too large` )
@@ -209,6 +222,9 @@ const standalone_completion_reader = session => {
  * @param {Function} [options.send_text_fn=send_text] - Input sender seam
  * @param {Function} [options.attachment_fn=get_session_attachment] - Attachment reader seam
  * @param {Function} [options.mark_read_fn=mark_read] - Unread clearing seam
+ * @param {Function} [options.shelve_fn=shelve_session] - Idle-list seam, by tmux name
+ * @param {Function} [options.run_fn=run_babysit] - Background babysit runner (freeze, restart), resolves { ok, out }
+ * @param {Function} [options.list_sessions_fn=list_sessions] - Tmux listing seam for recency, unread and the idle list
  * @param {Function} [options.now_fn=Date.now] - Clock seam
  * @param {Object} [options.completion_reader] - Launch-bound completed reply reader
  * @param {Function} [options.load_session_fn=load_session] - Session record reader for cached container usage
@@ -223,6 +239,9 @@ export const create_web_bridge = ( {
     send_text_fn = send_text,
     attachment_fn = get_session_attachment,
     mark_read_fn = mark_read,
+    shelve_fn = shelve_session,
+    run_fn = run_babysit,
+    list_sessions_fn = list_sessions,
     now_fn = Date.now,
     completion_reader = standalone_completion_reader( session ),
     load_session_fn = load_session,
@@ -248,6 +267,8 @@ export const create_web_bridge = ( {
     let container = null
     let container_read_at = -Infinity
     let usage_checked_at = -Infinity
+    let listing = { last_opened: null, unread: false, parked: false, status: null, title: null }
+    let listing_read_at = -Infinity
 
     // The monitor's sampler caches docker stats on the session record; reuse it.
     const read_container = () => {
@@ -266,6 +287,30 @@ export const create_web_bridge = ( {
             }
         } catch {
             container = null
+        }
+    }
+
+    // The same facts `babysit watch` sorts and splits on, from one tmux listing
+    const read_listing = async () => {
+        if( now_fn() - listing_read_at < LISTING_REFRESH_MS ) return
+        listing_read_at = now_fn()
+
+        try {
+            const tmux = ( await list_sessions_fn() ).find( row => row.name === session.tmux_session )
+            if( !tmux ) return
+            const stored = load_session_fn( session_id ) || session
+            const { title } = session_title( tmux, stored )
+            const status = session_status( tmux, stored )
+            listing = {
+                last_opened: tmux.last_opened,
+                unread: tmux.unread,
+                parked: is_idle_session( tmux, stored, now_fn() ),
+                // Only the states activity cannot express: frozen and stuck
+                status: [ `frozen`, `stuck` ].includes( status ) ? status : null,
+                title: title ? sanitize_display_text( title ) : null,
+            }
+        } catch ( error ) {
+            log.debug( `Web bridge listing failed for ${ session_id }: ${ error.message }` )
         }
     }
 
@@ -293,6 +338,12 @@ export const create_web_bridge = ( {
         // Full paths stay on the host; this only tells equal compact labels apart
         workspace: createHash( `sha256` ).update( String( session.original_pwd || session.pwd || `` ) ).digest( `hex` ).slice( 0, 16 ),
         container,
+        // Watch parity: newest-opened first, unread dots, the idle list below
+        last_opened: listing.last_opened,
+        unread: listing.unread,
+        parked: listing.parked,
+        status: listing.status,
+        title: listing.title,
         last_message,
         raw_screen,
         revision,
@@ -312,10 +363,71 @@ export const create_web_bridge = ( {
         if( results.length > MAX_RESULTS ) results.splice( 0, results.length - MAX_RESULTS )
     }
 
+    /**
+     * Run one `babysit watch` shortcut. Tmux-only ones finish here; freeze and
+     * restart run detached (the monitor must keep ticking to acknowledge a
+     * freeze, and a restart replaces it) and report back when done.
+     * @param {string} request_id - Result key
+     * @param {string} action - One of ACTIONS
+     * @param {boolean} frozen - The monitor stood down for `babysit freeze`
+     * @returns {Promise<void>}
+     */
+    const run_action = async ( request_id, action, frozen ) => {
+
+        if( action === `read` ) {
+            await mark_read_fn( session.tmux_session )
+            listing = { ...listing, unread: false }
+            return add_result( request_id, `accepted`, `Marked read` )
+        }
+
+        if( action === `shelve` ) {
+            await shelve_fn( session.tmux_session )
+            listing = { ...listing, unread: false }
+            listing_read_at = -Infinity
+            return add_result( request_id, `accepted`, `Moved to the idle list` )
+        }
+
+        if( action === `freeze` && frozen ) throw new RejectedRequest( `Session is already frozen` )
+        if( action === `unfreeze` && !frozen ) throw new RejectedRequest( `Session is not frozen` )
+
+        // Mid-turn work is cut off by a restart: the web asked twice, like rr in watch
+        const args = action === `restart`
+            ? [ `restart`, session_id, `--detach`, ...current_activity === `idle` && !frozen ? [] : [ `--force` ] ]
+            : [ action, session_id ]
+        const doing = { freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting` }[ action ]
+        add_result( request_id, `accepted`, `${ doing }…` )
+
+        run_fn( args ).then( ( { ok, out } ) => {
+            add_result( request_id, ok ? `accepted` : `failed`, ok ? `${ doing } done` : out || `${ doing } failed` )
+            listing_read_at = -Infinity
+            try {
+                write_state()
+            } catch {
+                log.debug( `Could not publish web action result for ${ session_id }` )
+            }
+        } )
+
+    }
+
     return {
         epoch,
         session_id,
         tmux_target,
+
+        /**
+         * Keep the session listed while the monitor stands down (frozen): no
+         * pane capture, only the heartbeat and the watch-style fields.
+         * @returns {Promise<void>}
+         */
+        async heartbeat() {
+            await read_listing()
+            try {
+                attachment = await attachment_fn( session.tmux_session )
+            } catch {
+                attachment = `unknown`
+            }
+            write_state()
+        },
 
         /**
          * Publish the latest allowlisted pane state and heartbeat.
@@ -340,6 +452,7 @@ export const create_web_bridge = ( {
             }
             current_activity = [ `idle`, `waiting` ].includes( activity ) ? activity : `running`
             read_container()
+            await read_listing()
             offer_account_usage()
 
             try {
@@ -353,9 +466,11 @@ export const create_web_bridge = ( {
 
         /**
          * Claim and handle a bounded request batch before monitor rules run.
+         * @param {Object} [options]
+         * @param {boolean} [options.frozen=false] - Monitor stood down: actions only, no typing into the paused pane
          * @returns {Promise<{ sent: boolean, processed: number }>} Batch outcome
          */
-        async process_requests() {
+        async process_requests( { frozen = false } = {} ) {
 
             // Preserve the cursor across bounded scans. Restarting at entry one
             // lets requests for other sessions starve this monitor indefinitely.
@@ -403,12 +518,20 @@ export const create_web_bridge = ( {
                 }
 
                 processed += 1
+                let action = null
 
                 try {
                     const request = validate_request(
                         read_claimed_request( claimed_path, now_fn() ),
                         { session_id, epoch, request_id }
                     )
+
+                    if( request.kind === `action` ) {
+                        ( { action } = request )
+                        await run_action( request_id, request.action, frozen )
+                        continue
+                    }
+                    if( frozen ) throw new RejectedRequest( `Session is frozen; unfreeze it first` )
 
                     await send_text_fn( tmux_target, request.text, { redact: true } )
                     add_result( request_id, `accepted`, `Message sent` )
@@ -421,7 +544,7 @@ export const create_web_bridge = ( {
                     add_result(
                         request_id,
                         rejected ? `rejected` : `failed`,
-                        rejected ? error.message : `Could not send message`
+                        rejected ? error.message : action ? `Could not ${ action } the session` : `Could not send message`
                     )
                 } finally {
                     rmSync( claimed_path, { recursive: true, force: true } )

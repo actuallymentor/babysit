@@ -2,7 +2,7 @@ import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
-import { BABYSIT_DIR, SESSIONS_DIR, CLONES_DIR, AGENTS_DIR, TMUX_SOCKET } from '../utils/paths.js'
+import { BABYSIT_DIR, SESSIONS_DIR, CLONES_DIR, AGENTS_DIR, GLOBAL_CONFIG_PATH, TMUX_SOCKET } from '../utils/paths.js'
 import { get_image_name } from '../docker/update.js'
 import { read_launch_defaults } from '../babysit/launch_defaults.js'
 import { web_bridge_paths } from '../web_bridge/paths.js'
@@ -115,6 +115,7 @@ export const cmd_config = async ( cmd, {
         [ `Host rc`, process.env.BABYSIT_HOST_BABYSITRC
             ? `${ process.env.BABYSIT_HOST_BABYSITRC } (inherited)`
             : file_status( join( homedir(), `.babysitrc` ) ) ],
+        [ `Global config`, file_status( GLOBAL_CONFIG_PATH ) ],
         [ `Workspace config`, file_status( join( process.cwd(), `babysit.yaml` ) ) ],
         [ `Transcript archive`, current_config.transcript_archive || `off (babysit config --transcripts PATH)` ],
         [ `Tmux socket`, TMUX_SOCKET ],

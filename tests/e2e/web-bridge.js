@@ -129,6 +129,20 @@ process.stdin.on('data', data => {
         ),
     } )
 
+    // Watch shortcuts: an HTTP action reaches the real tmux session through the monitor
+    const shelved = await request( `sessions/${ session.babysit_id }/actions`, { action: `shelve` } )
+    assert.equal( shelved.status, 202 )
+    const { request_id: shelve_id } = await shelved.json()
+    await until( `shelve stamps tmux`, async () =>
+        /^\d+$/.test( ( await tmux( [ `show-options`, `-v`, `-t`, session.tmux_session, `@babysit_shelved_since` ] ).catch( () => ( { stdout: `` } ) ) ).stdout.trim() )
+    )
+    await until( `shelve acknowledged`, async () => {
+        const detail = await ( await request( `sessions/${ session.babysit_id }` ) ).json()
+        return detail.pending.some( item => item.request_id === shelve_id && item.message === `Moved to the idle list` )
+    } )
+    const [ listed ] = ( await ( await request( `status` ) ).json() ).sessions
+    assert.deepEqual( Object.keys( listed ).filter( key => [ `last_opened`, `unread`, `parked`, `status`, `title` ].includes( key ) ).sort(), [ `last_opened`, `parked`, `status`, `title`, `unread` ] )
+
     busy = true
     assert.equal( ( await request( `sessions/${ session.babysit_id }/messages`, { text: `while rules are held` } ) ).status, 202 )
     await until( `held session still receives a person's message`, () =>
@@ -141,7 +155,7 @@ process.stdin.on('data', data => {
     await monitor
     monitor = null
     assert.deepEqual( ( await ( await request( `sessions` ) ).json() ).sessions, [] )
-    console.log( `PASS: CLI web init/list, late discovery, HTTP/browser→tmux single/multiline delivery, acknowledgements, delivery while rules are held, heartbeat, exit cleanup` )
+    console.log( `PASS: CLI web init/list, late discovery, HTTP/browser→tmux single/multiline delivery, acknowledgements, HTTP action→tmux shelve, delivery while rules are held, heartbeat, exit cleanup` )
 } finally {
     await tmux( [ `kill-server` ] ).catch( () => null )
     if( monitor ) await monitor

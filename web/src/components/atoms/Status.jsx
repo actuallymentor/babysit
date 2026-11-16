@@ -1,4 +1,4 @@
-import { Activity, CircleHelp, Hourglass, Moon } from 'lucide-react'
+import { Activity, CircleAlert, CircleHelp, Hourglass, Moon, Snowflake } from 'lucide-react'
 import styled, { css } from 'styled-components'
 
 const VISUALLY_HIDDEN = `clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px;`
@@ -41,6 +41,9 @@ const ACTIVITY = {
     idle: { icon: Moon, label: `Idle`, text: `var(--muted)`, tone: `var(--muted)` },
     running: { icon: Activity, label: `Running`, text: `var(--primary)`, tone: `var(--accent)` },
     waiting: { icon: Hourglass, label: `Waiting`, text: `var(--warning-text)`, tone: `var(--warning)` },
+    // Host states that outrank activity, as `babysit watch` shows them
+    frozen: { icon: Snowflake, label: `Frozen`, text: `var(--muted)`, tone: `var(--accent)` },
+    stuck: { icon: CircleAlert, label: `Stuck`, text: `var(--danger)`, tone: `var(--danger)` },
     unknown: { icon: CircleHelp, label: `Activity unknown`, text: `var(--muted)`, tone: `var(--muted)` },
 }
 
@@ -52,6 +55,6 @@ export function Status( { activity, compact } ) {
     const { icon: Icon, label, text, tone } = ACTIVITY[ activity ] || ACTIVITY.unknown
 
     return <Pills>
-        <Pill $iconic={ compact && activity !== `running` } $text={ text } $tone={ tone }><Icon aria-hidden="true" strokeWidth={ 1.5 } /><span>{ label }</span></Pill>
+        <Pill $iconic={ compact && ![ `running`, `stuck` ].includes( activity ) } $text={ text } $tone={ tone }><Icon aria-hidden="true" strokeWidth={ 1.5 } /><span>{ label }</span></Pill>
     </Pills>
 }

@@ -155,10 +155,118 @@ describe( `per-session web bridge`, () => {
             mark_read_fn: async name => read.push( name ),
             load_session_fn: () => null,
             refresh_usage_fn: async () => false,
+            list_sessions_fn: async () => [],
             ...options,
         } )
         return { bridge, directory, sent, read }
     }
+
+    const read_state = ( directory, bridge ) => JSON.parse( readFileSync( join( directory, `state`, `${ bridge.session_id }.json` ), `utf8` ) )
+
+    it( `publishes the watch listing: recency, unread, idle list, frozen and title`, async () => {
+        const now = Date.parse( `2026-10-13T12:00:00Z` )
+        const tmux = {
+            name: make_session().tmux_session, agent_status: `idle`, unread: true,
+            last_opened: now / 1_000 - 60, idle_since: now / 1_000 - 2 * 86_400, shelved_since: null, pane_title: `✳ Fix the parser`,
+        }
+        const { bridge, directory } = setup( {
+            now_fn: () => now,
+            list_sessions_fn: async () => [ { ...tmux, name: `babysit_other` }, tmux ],
+            load_session_fn: () => ( { ...make_session(), frozen_at: null } ),
+        } )
+
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+
+        expect( read_state( directory, bridge ) ).toMatchObject( {
+            last_opened: tmux.last_opened,
+            unread: true,
+            // Idle over a day: the condensed list, exactly as watch decides it
+            parked: true,
+            status: null,
+            title: `Fix the parser`,
+        } )
+    } )
+
+    it( `marks a frozen session and parks a shelved idle one`, async () => {
+        const now = Date.parse( `2026-10-13T12:00:00Z` )
+        let stored = { ...make_session(), frozen_at: null }
+        let clock = now
+        const tmux = { name: make_session().tmux_session, agent_status: `idle`, unread: false, last_opened: null, idle_since: now / 1_000 - 60, shelved_since: now / 1_000 }
+        const { bridge, directory } = setup( {
+            now_fn: () => clock,
+            list_sessions_fn: async () => [ tmux ],
+            load_session_fn: () => stored,
+        } )
+
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+        expect( read_state( directory, bridge ) ).toMatchObject( { parked: true, status: null } )
+
+        stored = { ...stored, frozen_at: `2026-10-13T12:00:01Z` }
+        clock += 5_000
+        await bridge.heartbeat()
+        expect( read_state( directory, bridge ) ).toMatchObject( { parked: false, status: `frozen` } )
+    } )
+
+    it( `runs watch shortcuts as action requests`, async () => {
+        const shelved = []
+        const runs = []
+        let finish = null
+        const { bridge, directory, read, sent } = setup( {
+            shelve_fn: async name => shelved.push( name ),
+            run_fn: args => {
+                runs.push( args )
+                return new Promise( resolve => finish = resolve )
+            },
+        } )
+        await bridge.publish( { output: `working`, activity: `running` } )
+
+        const action = ( name, index ) => make_request( { kind: `action`, action: name, text: undefined, request_id: `${ index }23e4567-e89b-12d3-a456-426614174000` } )
+        const queue = request => {
+            delete request.text
+            write_request( directory, request )
+            return bridge.process_requests()
+        }
+
+        expect( await queue( action( `read`, 1 ) ) ).toEqual( { sent: false, processed: 1 } )
+        await queue( action( `shelve`, 2 ) )
+        await queue( action( `restart`, 3 ) )
+
+        expect( read ).toEqual( [ make_session().tmux_session ] )
+        expect( shelved ).toEqual( [ make_session().tmux_session ] )
+        expect( sent ).toEqual( [] )
+        // Running: the web already confirmed, so the restart is forced
+        expect( runs ).toEqual( [ [ `restart`, make_session().babysit_id, `--detach`, `--force` ] ] )
+        expect( read_state( directory, bridge ).results.at( -1 ) ).toMatchObject( { status: `accepted`, message: `Restarting…` } )
+
+        finish( { ok: false, out: `Session is locked` } )
+        await new Promise( resolve => setTimeout( resolve, 0 ) )
+        expect( read_state( directory, bridge ).results.at( -1 ) ).toMatchObject( { status: `failed`, message: `Session is locked` } )
+    } )
+
+    it( `accepts only actions while frozen`, async () => {
+        const runs = []
+        const { bridge, directory, sent } = setup( { run_fn: async args => ( runs.push( args ), { ok: true, out: `` } ) } )
+        await bridge.heartbeat()
+
+        write_request( directory, make_request() )
+        await bridge.process_requests( { frozen: true } )
+        const unfreeze = make_request( { kind: `action`, action: `unfreeze`, request_id: `923e4567-e89b-12d3-a456-426614174000` } )
+        delete unfreeze.text
+        write_request( directory, unfreeze )
+        await bridge.process_requests( { frozen: true } )
+
+        expect( sent ).toEqual( [] )
+        expect( runs ).toEqual( [ [ `unfreeze`, make_session().babysit_id ] ] )
+        expect( read_state( directory, bridge ).results.map( result => result.message ) ).toContain( `Session is frozen; unfreeze it first` )
+    } )
+
+    it( `rejects unknown actions and text on action requests`, async () => {
+        const { bridge, directory } = setup()
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+        write_request( directory, make_request( { kind: `action`, action: `delete` } ) )
+        await bridge.process_requests()
+        expect( read_state( directory, bridge ).results.at( -1 ) ).toMatchObject( { status: `rejected` } )
+    } )
 
     it( `publishes only the allowlisted state without treating an idle screen as a message`, async () => {
         const { bridge, directory } = setup()
@@ -172,6 +280,7 @@ describe( `per-session web bridge`, () => {
         expect( Object.keys( state ).sort() ).toEqual( [
             `activity`, `agent`, `attachment`, `container`, `directory`, `epoch`, `last_message`, `workspace`,
             `modifiers`, `name`, `protocol`, `raw_screen`, `results`, `revision`, `session_id`, `updated_at`,
+            `last_opened`, `unread`, `parked`, `status`, `title`,
         ].sort() )
         expect( state ).toMatchObject( {
             protocol: 1,

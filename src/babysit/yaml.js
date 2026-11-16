@@ -3,6 +3,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'path'
 import { parse } from 'yaml'
 import { log } from '../utils/log.js'
 import { parse_timeout } from './timeout.js'
+import { DEFAULT_PROMPTS, resolve_prompts } from './prompts.js'
+import { GLOBAL_CONFIG_PATH } from '../utils/paths.js'
 import { build_system_prompt } from '../modes/prompt.js'
 import { build_launch_yaml, default_launch } from './launch_config.js'
 
@@ -12,13 +14,26 @@ const comment_block = ( text, indent = `        ` ) => String( text ).split( `\n
     .map( line => `#${ indent }${ line }` )
     .join( `\n` )
 
-const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ), launch = default_launch() } = {} ) => `# babysit.yaml
+const LOCAL_HEADER = `# babysit.yaml
 #
 # Babysit configuration. Only launch.agent and the launch keys you changed are
 # live; every other value shown is a default. Uncomment a line to change it. Delete this file to go
 # back to the defaults entirely.
+#
+# Layers, last wins: defaults < ~/.babysitrc.yaml < this file < command line flags.`
 
-${ build_launch_yaml( launch ) }
+const GLOBAL_HEADER = `# ~/.babysitrc.yaml
+#
+# Global Babysit configuration for every workspace. Every value shown is a default;
+# uncomment a line to change it everywhere.
+#
+# Layers, last wins: defaults < this file < a workspace's babysit.yaml < command line flags.
+# config: and prompts: merge key by key; a workspace babysit: list replaces this one.
+# launch: is per workspace and stays in babysit.yaml.`
+
+const build_default_yaml = ( { initial_prompt = build_system_prompt( {} ), launch = default_launch(), global = false } = {} ) => `${ global ? GLOBAL_HEADER : LOCAL_HEADER }
+
+${ global ? `` : build_launch_yaml( launch ) }
 # config:
 #     # Prompt typed into the agent once it is ready. null or "" sends nothing.
 #     initial_prompt: |-
@@ -74,7 +89,17 @@ ${ comment_block( initial_prompt ) }
 #   run_on_start: true               idle rules only; fire on the first idle (30s quiet),
 #                                    then every timeout
 #
-# --loop replaces the idle rule's action with ./LOOP.md, ~/.agents/LOOP.md, or "Keep going".
+# --loop replaces the idle rule's action with ./LOOP.md, ~/.agents/LOOP.md, or the loop prompt below.
+
+# Texts Babysit types into the agent on its own, each followed by Enter. Uncomment a key
+# to replace its text. Defaults: https://github.com/actuallymentor/babysit/blob/main/src/babysit/prompts.js
+#
+# prompts:
+#     loop: ...            --loop with no LOOP.md to type at idle
+#     watchdog: ...        idle agent that looks stalled mid-task
+#     check_in: ...        agent waiting on background work, asked to audit it
+#     recovery: ...        first message after a crashed or rebooted session resumes
+#     account_switch: ...  after a Claude limit hit moved the session to another account
 
 # babysit:
 #     - on: idle
@@ -97,6 +122,7 @@ export const DEFAULT_CONFIG = {
     claude_account_auto_switch: true,
     commands: {},
     isolate_dependencies: true,
+    prompts: DEFAULT_PROMPTS,
 }
 
 /**
@@ -122,18 +148,22 @@ const string_list = ( value, fallback ) => Array.isArray( value )
  * @param {string} [dir=process.cwd()] - Source workspace
  * @param {Object} [options]
  * @param {string|null} [options.config_path] - Explicit --config file
+ * @param {string|null} [options.global_path] - Global yaml layered underneath
  * @returns {{ mode: string, carry: string[], changes: boolean, depth: number|null, exclude: string[] }}
  */
-export const load_clone_config = ( dir = process.cwd(), { config_path = null } = {} ) => {
+export const load_clone_config = ( dir = process.cwd(), { config_path = null, global_path = GLOBAL_CONFIG_PATH } = {} ) => {
 
     const path = config_path || resolve( dir, `babysit.yaml` )
-    let raw = {}
+    let local = {}
 
     try {
-        raw = parse( readFileSync( path, `utf-8` ) )?.config?.clone || {}
+        local = parse( readFileSync( path, `utf-8` ) )?.config?.clone || {}
     } catch {
         // Missing or unreadable yaml means defaults; load_config reports syntax later.
     }
+
+    // The workspace file wins over the global one, key by key
+    const raw = merge_layers( read_global_config( global_path )?.config?.clone || {}, local )
 
     if( raw.mode !== undefined && ![ `git`, `copy` ].includes( raw.mode ) ) log.warn( `config.clone.mode "${ raw.mode }" is not git or copy; using git` )
     if( raw.depth !== undefined && raw.depth !== null && !( Number.isInteger( raw.depth ) && raw.depth > 0 ) ) log.warn( `config.clone.depth must be a positive integer; keeping full history` )
@@ -175,6 +205,53 @@ export const write_default_config = ( dir = process.cwd(), { initial_prompt = bu
 }
 
 /**
+ * Write the commented global ~/.babysitrc.yaml (`babysit init --global`).
+ * Overwrites: the caller asks first.
+ * @param {Object} [options]
+ * @param {string} [options.path=GLOBAL_CONFIG_PATH] - Target file
+ * @param {string} [options.initial_prompt] - Prompt to embed
+ * @returns {string} Path written
+ */
+export const write_global_config = ( { path = GLOBAL_CONFIG_PATH, initial_prompt = build_system_prompt( {} ) } = {} ) => {
+    writeFileSync( path, build_default_yaml( { initial_prompt, global: true } ), `utf-8` )
+    return path
+}
+
+const is_mapping = value => Boolean( value ) && typeof value === `object` && !Array.isArray( value )
+
+/**
+ * Layer one yaml mapping over another: mappings merge key by key, anything
+ * else (lists, text, null) from `over` replaces `base`. Pure.
+ * @param {*} base - Lower layer
+ * @param {*} over - Higher layer
+ * @returns {*} Merged value
+ */
+export const merge_layers = ( base, over ) => {
+    if( over === undefined ) return base
+    if( !is_mapping( base ) || !is_mapping( over ) ) return over
+    const merged = { ...base }
+    for( const [ key, value ] of Object.entries( over ) ) merged[ key ] = merge_layers( base[ key ], value )
+    return merged
+}
+
+/**
+ * The parsed global layer. Missing means empty; a broken one warns and is
+ * skipped, so one typo cannot stop every launch on the machine.
+ * @param {string} [path=GLOBAL_CONFIG_PATH] - Global yaml
+ * @returns {Object} Parsed mapping, {} when absent or unreadable
+ */
+export const read_global_config = ( path = GLOBAL_CONFIG_PATH ) => {
+    if( !path || !existsSync( path ) ) return {}
+    try {
+        const parsed = parse( readFileSync( path, `utf-8` ) )
+        return is_mapping( parsed ) ? parsed : {}
+    } catch ( error ) {
+        log.warn( `Ignoring ${ path }: ${ error.message }` )
+        return {}
+    }
+}
+
+/**
  * Load the workspace config. A missing babysit.yaml means the defaults and
  * nothing is written (`babysit init` creates it); an explicit --config file
  * must exist.
@@ -183,23 +260,29 @@ export const write_default_config = ( dir = process.cwd(), { initial_prompt = bu
  * @param {string} [options.default_initial_prompt] - Prompt used when the file omits initial_prompt
  * @param {string|null} [options.config_path] - Explicit --config file
  * @param {string|null} [options.source_dir] - Clone source; a config inside it anchors its markdown to `dir` instead
+ * @param {string|null} [options.global_path] - Global ~/.babysitrc.yaml, layered under the workspace file
  * @returns {{ config: Object, rules: Array }} Parsed config and rules
  */
 export const load_config = ( dir = process.cwd(), {
     default_initial_prompt = build_system_prompt( {} ),
     config_path = null,
     source_dir = null,
+    global_path = GLOBAL_CONFIG_PATH,
 } = {} ) => {
 
     if( config_path && !existsSync( config_path ) ) throw new Error( `Config file not found: ${ config_path }` )
     const path = config_path || resolve( dir, `babysit.yaml` )
     const parsed = ( existsSync( path ) ? parse( readFileSync( path, `utf-8` ) ) : null ) || {}
+    const global = read_global_config( global_path )
 
-    // Merge with defaults. Older babysit.yaml files may predate
-    // config.initial_prompt; treat absence as "use the generated default",
-    // while preserving explicit null / "" as opt-outs.
-    const raw_config = parsed.config || {}
+    // Layers, last wins: defaults < ~/.babysitrc.yaml < workspace file. Older
+    // files may predate config.initial_prompt; absence in both layers means
+    // "use the generated default", while explicit null / "" opt out.
+    const raw_config = merge_layers( global.config || {}, parsed.config || {} )
     const config = { ...DEFAULT_CONFIG, ...raw_config }
+
+    // Top-level `prompts:` overrides the texts babysit types to nudge agents
+    config.prompts = resolve_prompts( merge_layers( global.prompts, parsed.prompts ) )
     if( !Object.hasOwn( raw_config, `initial_prompt` ) ) {
         config.initial_prompt = default_initial_prompt
     }
@@ -219,8 +302,12 @@ export const load_config = ( dir = process.cwd(), {
     // Markdown actions live next to the file that names them, so `./FILE.md`
     // in a --config file outside the workspace still resolves. A clone keeps
     // reading the source's config file but must run the clone's own markdown.
-    const config_dir = rebase_dir( dirname( path ), source_dir, dir )
-    const raw_rules = Array.isArray( parsed.babysit ) ? parsed.babysit : []
+    // A workspace `babysit:` list replaces the global one; global rules
+    // resolve their markdown beside ~/.babysitrc.yaml.
+    const local_rules = Object.hasOwn( parsed, `babysit` )
+    const config_dir = local_rules ? rebase_dir( dirname( path ), source_dir, dir ) : dirname( global_path || path )
+    const rule_source = local_rules ? parsed.babysit : global.babysit
+    const raw_rules = Array.isArray( rule_source ) ? rule_source : []
     const rules = raw_rules.map( raw_rule => parse_rule( raw_rule, config_dir, config.commands ) )
 
     return { config, rules }

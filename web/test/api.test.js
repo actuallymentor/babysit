@@ -479,3 +479,48 @@ test( `status aggregates containers and account usage`, async () => {
         rmSync( fixture, { force: true, recursive: true } )
     }
 } )
+
+test( `session actions queue watch shortcuts for write keys only`, async () => {
+    const fixture = mkdtempSync( join( tmpdir(), `babysit-web-actions-` ) )
+    const state_dir = join( fixture, `state` )
+    const request_dir = join( fixture, `requests` )
+    const access_file = join( fixture, `access.json` )
+    mkdirSync( state_dir )
+    mkdirSync( request_dir )
+    writeFileSync( access_file, access_document( `writer` ) )
+    writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document() ) )
+
+    const server = create_app( {
+        access_file, allow_insecure_http: true, heartbeat_ttl_ms: 5_000, login_limit: 5, login_window_ms: 60_000,
+        public_origin: null, request_dir, request_ttl_ms: 20_000, session_ttl_ms: 60_000, state_dir,
+        static_dir: join( fixture, `static` ), trust_proxy: false,
+    } )
+    await new Promise( resolve => server.listen( 0, `127.0.0.1`, resolve ) )
+    const origin = `http://127.0.0.1:${ server.address().port }`
+
+    try {
+        const { cookie } = await api_request( origin, `/api/login`, { body: { token: `writer` }, method: `POST` } )
+
+        const unknown = await api_request( origin, `/api/sessions/session-1/actions`, { body: { action: `delete` }, cookie, method: `POST` } )
+        assert.equal( unknown.status, 400 )
+
+        const queued = await api_request( origin, `/api/sessions/session-1/actions`, { body: { action: `restart` }, cookie, method: `POST` } )
+        assert.equal( queued.status, 202 )
+        const [ file ] = readdirSync( request_dir )
+        assert.deepEqual( JSON.parse( readFileSync( join( request_dir, file ), `utf8` ) ), {
+            action: `restart`, epoch: `epoch-1`, kind: `action`, protocol: 1, request_id: queued.body.request_id, session_id: `session-1`,
+        } )
+
+        const stale = await api_request( origin, `/api/sessions/nope/actions`, { body: { action: `read` }, cookie, method: `POST` } )
+        assert.equal( stale.status, 404 )
+
+        // A read-only key sees sessions but cannot act on them
+        writeFileSync( access_file, access_document( `reader`, `read` ) )
+        const { cookie: read_cookie } = await api_request( origin, `/api/login`, { body: { token: `reader` }, method: `POST` } )
+        const refused = await api_request( origin, `/api/sessions/session-1/actions`, { body: { action: `read` }, cookie: read_cookie, method: `POST` } )
+        assert.equal( refused.status, 403 )
+    } finally {
+        server.close()
+        rmSync( fixture, { recursive: true, force: true } )
+    }
+} )

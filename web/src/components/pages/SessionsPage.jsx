@@ -1,10 +1,13 @@
-import { Bot, ChevronRight, Cpu, Folder, Inbox } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Bot, Cpu, Folder, Inbox, Text } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import styled, { keyframes } from 'styled-components'
 import { Status } from '../atoms/Status.jsx'
 import { Notice } from '../atoms/Notice.jsx'
-import { PageHeading, Surface } from '../atoms/Layout.jsx'
+import { Button } from '../atoms/Button.jsx'
+import { PageHeading, Section, SectionHeading, Surface } from '../atoms/Layout.jsx'
 import { Overview } from '../molecules/Overview.jsx'
+import { SessionMenu } from '../molecules/SessionMenu.jsx'
 import { api } from '../../modules/api.js'
 import { age_label } from '../../modules/freshness.js'
 import { use_poll } from '../../hooks/use_poll.js'
@@ -12,7 +15,9 @@ import { container_label } from '../../modules/usage.js'
 
 const WIDE = `@media (min-width: 48rem)`
 
-const COLUMNS = `minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) 13.5rem 1rem`
+const COLUMNS = `minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 1fr) 13.5rem`
+const TITLES_KEY = `babysit-show-titles`
+const NOTICE_MS = 6_000
 
 const Repositories = styled.div`
     display: grid;
@@ -20,9 +25,15 @@ const Repositories = styled.div`
     grid-template-columns: minmax(0, 1fr);
 `
 
+// Visible overflow lets a row's … menu float over the cards below; the banner
+// and last row round their own corners instead of a clipping card
 const List = styled( Surface ).attrs( { as: `section` } )`
-    overflow: hidden;
     padding: 0;
+
+    > h2 { border-radius: calc(0.75rem - 1px) calc(0.75rem - 1px) 0 0; }
+    li:last-child { border-radius: 0 0 calc(0.75rem - 1px) calc(0.75rem - 1px); }
+    li:only-child { border-radius: calc(0.75rem - 1px); }
+    h2 + ul > li:only-child { border-radius: 0 0 calc(0.75rem - 1px) calc(0.75rem - 1px); }
 `
 
 // Repository banner, the web twin of a `babysit list` trunk
@@ -53,6 +64,18 @@ const Sessions = styled.ul`
     > li { border-top: 1px solid var(--line); }
 `
 
+// The row link fills the line; its … menu sits beside it, never inside the link
+const Line = styled.li`
+    align-items: center;
+    display: flex;
+    padding-right: 0.5rem;
+    transition: background 160ms ease;
+
+    &:hover { background: var(--hover); }
+
+    ${ WIDE } { padding-right: 0.75rem; }
+`
+
 // Desktop column labels for the row grid below; rows carry their own text
 const Columns = styled.div`
     display: none;
@@ -63,7 +86,7 @@ const Columns = styled.div`
         font-size: 0.8125rem;
         gap: 1rem;
         grid-template-columns: ${ COLUMNS };
-        padding: 0 1rem 0.5rem;
+        padding: 0 3.75rem 0.5rem 1rem;
     }
 `
 
@@ -72,20 +95,20 @@ const Row = styled( Link )`
     align-items: center;
     color: inherit;
     display: grid;
+    flex: 1;
     gap: 0.5rem;
-    grid-template-areas: 'name status chevron';
-    grid-template-columns: minmax(0, 1fr) auto 1rem;
+    grid-template-areas: 'name status';
+    grid-template-columns: minmax(0, 1fr) auto;
     min-height: 2.75rem;
+    min-width: 0;
     padding: 0.25rem 0.75rem;
     text-decoration: none;
-    transition: background 160ms ease;
 
-    &:hover { background: var(--hover); }
-    &:focus-visible { box-shadow: inset 0 0 0 3px var(--halo); }
+    &:focus-visible { box-shadow: inset 0 0 0 3px var(--halo); outline: none; }
 
     ${ WIDE } {
         gap: 1rem;
-        grid-template-areas: 'name agent resources status chevron';
+        grid-template-areas: 'name agent resources status';
         grid-template-columns: ${ COLUMNS };
         padding: 0.625rem 1rem;
     }
@@ -94,9 +117,12 @@ const Row = styled( Link )`
 const Name = styled.div`
     align-items: baseline;
     display: flex;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0 0.5rem;
     grid-area: name;
     min-width: 0;
+
+    small { color: var(--muted); flex-basis: 100%; font-size: 0.8125rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     strong { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     span { color: var(--muted); flex-shrink: 0; font-size: 0.8125rem; }
@@ -137,12 +163,44 @@ const State = styled.div`
     ${ WIDE } { flex-direction: column; gap: 0.25rem; }
 `
 
-const Chevron = styled( ChevronRight )`
+// Unread: a finished turn nobody looked at yet, the blue dot of `babysit watch`
+const Dot = styled.i`
     align-self: center;
-    color: var(--muted);
-    grid-area: chevron;
-    height: 1rem;
-    width: 1rem;
+    background: ${ ( { $on } ) => $on ? `var(--primary)` : `transparent` };
+    border-radius: 999px;
+    flex-shrink: 0;
+    height: 0.5rem;
+    width: 0.5rem;
+`
+
+const VISUALLY_HIDDEN = `clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px;`
+const Hidden = styled.span`${ VISUALLY_HIDDEN }`
+
+// Condensed idle row: dot, name, workspace and last opened on one line
+const IdleRow = styled( Row )`
+    grid-template-areas: 'name status';
+
+    ${ WIDE } {
+        grid-template-areas: 'name agent status';
+        grid-template-columns: minmax(0, 2.2fr) minmax(0, 2fr) auto;
+    }
+`
+
+const Toolbar = styled.div`
+    align-items: flex-start;
+    display: flex;
+    gap: 0.5rem 1rem;
+    justify-content: space-between;
+
+    > header { margin-bottom: 0; }
+`
+
+const Stack = styled.div`
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.5rem;
+
+    &:first-child { margin-top: 0; }
 `
 
 const Empty = styled( Surface )`
@@ -180,30 +238,58 @@ const Skeleton = styled.li`
     span:last-child { width: 70%; }
 `
 
-/** One session as a list row linking to its page. */
-function SessionRow( { session, offline } ) {
+// Frozen and stuck outrank observed activity, as in `babysit watch`
+const shown_status = ( session, offline ) => offline ? `unknown` : session.status || session.activity
+
+// "opened 3h ago", from epoch seconds; never-opened sessions say so
+const opened_label = last_opened => last_opened ? `opened ${ age_label( new Date( last_opened * 1_000 ).toISOString() ) }` : `never opened`
+
+/** One session as a list row linking to its page, with its action menu. */
+function SessionRow( { session, offline, show_titles, menu } ) {
     const seen = age_label( session.updated_at )
 
-    return <li>
+    return <Line>
         <Row to={ `/sessions/${ session.session_id }` }>
             <Name>
+                <Dot $on={ session.unread } aria-hidden="true" />
                 <strong>{ session.name }</strong>
                 <span>{ session.agent }</span>
+                { session.unread && <Hidden>, unread</Hidden> }
+                { show_titles && session.title && <small>{ session.title }</small> }
             </Name>
             <Agent><Bot aria-hidden="true" strokeWidth={ 1.5 } />{ [ session.agent, ...session.modifiers ].join( ` · ` ) }</Agent>
             <Resources><Cpu aria-hidden="true" strokeWidth={ 1.5 } />{ container_label( session.container ) }</Resources>
             <State>
-                <Status activity={ offline ? `unknown` : session.activity } compact />
+                <Status activity={ shown_status( session, offline ) } compact />
                 <Detail>{ session.attachment } · { seen || `no heartbeat` }</Detail>
             </State>
-            <Chevron aria-hidden="true" strokeWidth={ 1.5 } />
         </Row>
-    </li>
+        { menu( session ) }
+    </Line>
+}
+
+/** An idle-list session: one condensed line, still openable and actionable. */
+function IdleSessionRow( { session, offline, show_titles, menu } ) {
+    return <Line>
+        <IdleRow to={ `/sessions/${ session.session_id }` }>
+            <Name>
+                <Dot $on={ session.unread } aria-hidden="true" />
+                <strong>{ session.name }</strong>
+                <span>{ opened_label( session.last_opened ) }</span>
+                { session.unread && <Hidden>, unread</Hidden> }
+                { show_titles && session.title && <small>{ session.title }</small> }
+            </Name>
+            <Agent><Folder aria-hidden="true" strokeWidth={ 1.5 } />{ session.directory } · { opened_label( session.last_opened ) }</Agent>
+            <State><Status activity={ shown_status( session, offline ) } compact /></State>
+        </IdleRow>
+        { menu( session ) }
+    </Line>
 }
 
 /**
- * Group sessions per workspace, alphabetically so banners hold still between
- * polls while activity reorders the rows inside them.
+ * Group sessions per workspace. The server sends them newest-opened first, so
+ * first-seen order ranks each workspace by its newest-opened session and keeps
+ * that recency inside it, the way `babysit watch` orders its tree.
  */
 const by_repository = sessions => {
     const groups = new Map()
@@ -212,21 +298,72 @@ const by_repository = sessions => {
         const { members = [] } = groups.get( key ) || {}
         groups.set( key, { key, directory: session.directory || `Directory unavailable`, members: [ ...members, session ] } )
     } )
-    return [ ...groups.values() ].sort( ( first, second ) => first.directory.localeCompare( second.directory ) )
+    return [ ...groups.values() ]
 }
 
-/** Active bridge sessions first, then host and account overview, from one status poll. */
-export function SessionsPage() {
-    const { data, error, is_loading } = use_poll( () => api( `/api/status` ) )
+// Watch's `i`: a view preference, kept per browser
+const use_titles = () => {
+    const [ show_titles, set_show_titles ] = useState( () => {
+        try {
+            return localStorage.getItem( TITLES_KEY ) === `1`
+        } catch {
+            return false
+        }
+    } )
+
+    const toggle = () => set_show_titles( shown => {
+        try {
+            localStorage.setItem( TITLES_KEY, shown ? `0` : `1` )
+        } catch {
+            // Private mode: the toggle still works for this visit
+        }
+        return !shown
+    } )
+
+    return [ show_titles, toggle ]
+}
+
+/**
+ * Active sessions newest-opened first, the idle list below (idle over a day or
+ * moved there by hand), then host and account overview, from one status poll.
+ */
+export function SessionsPage( { role } ) {
+    const { data, error, is_loading, reload } = use_poll( () => api( `/api/status` ) )
     const sessions = data?.sessions || []
+    const active = sessions.filter( session => !session.parked )
+    const idle = sessions.filter( session => session.parked )
+    const [ show_titles, toggle_titles ] = use_titles()
+    const [ notice, set_notice ] = useState( null )
+    const notice_timer = useRef( null )
+
+    useEffect( () => () => clearTimeout( notice_timer.current ), [] )
+
+    // Action progress lingers briefly; failures stay until the next result
+    const tell = ( text, { error: failed = false } = {} ) => {
+        clearTimeout( notice_timer.current )
+        set_notice( { text, error: failed } )
+        if( !failed ) notice_timer.current = setTimeout( () => set_notice( null ), NOTICE_MS )
+    }
+
+    // Read-only keys see no menu: every entry but Open changes the host
+    const menu = session => role === `write` && <SessionMenu refresh={ reload } report={ tell } session={ session } />
+    const row_props = { menu, offline: Boolean( error ), show_titles }
 
     return <>
-        <PageHeading>
-            <h1>Sessions</h1>
-            <p>{ is_loading ? `Connecting…` : error ? `Connection interrupted — showing last received sessions` : `${ sessions.length } live ${ sessions.length === 1 ? `session` : `sessions` }` }</p>
-        </PageHeading>
+        <Toolbar>
+            <PageHeading>
+                <h1>Sessions</h1>
+                <p>{ is_loading ? `Connecting…` : error ? `Connection interrupted — showing last received sessions` : `${ sessions.length } live ${ sessions.length === 1 ? `session` : `sessions` }` }</p>
+            </PageHeading>
+            { sessions.length > 0 && <Button $quiet aria-pressed={ show_titles } onClick={ toggle_titles } type="button">
+                <Text aria-hidden="true" strokeWidth={ 1.5 } />{ show_titles ? `Hide task titles` : `Show task titles` }
+            </Button> }
+        </Toolbar>
 
-        { error && <Notice $error role="alert">{ error.message }. Reconnecting…</Notice> }
+        { ( error || notice ) && <Stack>
+            { error && <Notice $error role="alert">{ error.message }. Reconnecting…</Notice> }
+            { notice && <Notice $error={ notice.error } role={ notice.error ? `alert` : `status` }>{ notice.text }</Notice> }
+        </Stack> }
 
         { is_loading && <List aria-busy="true" aria-label="Loading sessions">
             <Sessions>{ [ 0, 1, 2 ].map( index => <Skeleton key={ index }><span /><span /><span /></Skeleton> ) }</Sessions>
@@ -238,17 +375,29 @@ export function SessionsPage() {
             <p>Start one on the host, for example <code>babysit claude</code>.</p>
         </Empty> }
 
-        { sessions.length > 0 && <>
+        { active.length > 0 && <Stack>
             <Columns aria-hidden="true"><span>Session</span><span>Agent</span><span>Container</span><span>Status</span></Columns>
             <Repositories>
-                { by_repository( sessions ).map( ( { key, directory, members } ) => <List aria-label={ directory } key={ key }>
+                { by_repository( active ).map( ( { key, directory, members } ) => <List aria-label={ directory } key={ key }>
                     <Banner><Folder aria-hidden="true" strokeWidth={ 1.5 } /><span>{ directory }</span><small>{ members.length }</small></Banner>
                     <Sessions>
-                        { members.map( session => <SessionRow key={ session.session_id } offline={ Boolean( error ) } session={ session } /> ) }
+                        { members.map( session => <SessionRow key={ session.session_id } session={ session } { ...row_props } /> ) }
                     </Sessions>
                 </List> ) }
             </Repositories>
-        </> }
+        </Stack> }
+
+        { idle.length > 0 && <Section aria-labelledby="idle-heading">
+            <SectionHeading>
+                <h2 id="idle-heading">Idle</h2>
+                <span>Idle over a day, or moved here; back on the next finished turn</span>
+            </SectionHeading>
+            <List aria-label="Idle sessions">
+                <Sessions>
+                    { idle.map( session => <IdleSessionRow key={ session.session_id } session={ session } { ...row_props } /> ) }
+                </Sessions>
+            </List>
+        </Section> }
 
         { data && <Overview status={ data } /> }
     </>

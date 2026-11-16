@@ -1,32 +1,10 @@
 import { last_client_activity } from '../control/stuck.js'
 import { log } from '../utils/log.js'
+import { DEFAULT_PROMPTS } from './prompts.js'
 
-// Audit prefix and suffix
-const AUDIT_PREFIX = `Evaluate your state and course correct if needed:\n\n`
-const AUDIT_SUFFIX = `\nDo work that needs doing without asking for my confirmation, if all is justifiably idle, reply "idle" and nothing else.`
-
-// Make sure that a stalled agent did not exit without cause
-const FOCUS_AUDIT = `\n- Have you done all the work requested of you?`
-    + `\n- If you finished work since our last check-in, check if you follow all the checklists/workflows specified in AGENTS.md`
-    + `\n- Are you working as efficiently and parallelised as you safely could?`
-
-// Asks for action, not a summary: a stalled agent collects finished work and
-// resumes, one that is fine answers with a single word.
-export const WATCHDOG_NUDGE = AUDIT_PREFIX
-    + `- You look stalled. Check for background agents/shells that already finished: collect their results and clean up. `
-    + FOCUS_AUDIT
-    + AUDIT_SUFFIX
-
-// Waiting agents get no verdict, only a periodic look at their background work:
-// the screen cannot tell a healthy wait from a hung poll, the agent can.
-// Enumerate, don't recall: agents grep for the job they remember and miss the rest.
-export const CHECK_IN_NUDGE = AUDIT_PREFIX
-    + `- Audit your background work without filtering by name: list the full process tree under your own process `
-    + `(e.g. ps -eo pid,ppid,etime,args), any subagents you started, and the output or log files they write to. `
-    + `For each one still alive, say what it's waiting for and whether that can still happen; kill it if not. `
-    + `Collect the results of anything that finished and carry on.\n`
-    + FOCUS_AUDIT
-    + AUDIT_SUFFIX
+// Default texts live in prompts.js; re-exported for existing importers
+export const WATCHDOG_NUDGE = DEFAULT_PROMPTS.watchdog
+export const CHECK_IN_NUDGE = DEFAULT_PROMPTS.check_in
 
 // A check-in answered with a bare "idle" back-off: each one adds another waiting_s
 // to the next, up to this many extra (15 → 30 → 45 → 60 min at the default 15)
@@ -62,6 +40,7 @@ export const replied_idle = screen => {
  * @param {Function} [options.skips_idle] - True while an idle rule already nudges
  * @param {Function} [options.typed_at] - Last user keypress in epoch ms, or null
  * @param {Function} [options.now] - Millisecond clock
+ * @param {Object} [options.prompts] - Nudge texts keyed `watchdog` and `check_in`; defaults to DEFAULT_PROMPTS
  * @returns {{ observe: Function, take: Function }}
  */
 export const create_watchdog = ( {
@@ -73,13 +52,14 @@ export const create_watchdog = ( {
     skips_idle = () => false,
     typed_at = () => last_client_activity( session_name ),
     now = Date.now,
+    prompts = DEFAULT_PROMPTS,
 } ) => {
 
     let stretch = 0
     let quiet_since = null
     let judged = false
     let checking = false
-    let nudge = null
+    let nudge = null // Kind of the queued nudge: `watchdog` or `check_in`
     let judged_at = null
 
     // Consecutive check-ins answered "idle"; a delivered check-in awaits its reply
@@ -129,7 +109,7 @@ export const create_watchdog = ( {
             const { nudge: stalled, reason, judge: judged_by } = verdict
             judged = true
             judged_at = now()
-            nudge = stalled ? status === `waiting` ? CHECK_IN_NUDGE : WATCHDOG_NUDGE : null
+            nudge = stalled ? status === `waiting` ? `check_in` : `watchdog` : null
             log.info( `Watchdog ${ stalled ? `nudging` : `leaving` } ${ status } ${ session_name } after ${ quiet_minutes }m (${ judged_by }): ${ reason }` )
 
         } catch ( error ) {
@@ -191,16 +171,16 @@ export const create_watchdog = ( {
         async take( status ) {
 
             if( !nudge ) return null
-            const text = nudge
+            const kind = nudge
             nudge = null
 
             // Check-ins repeat every threshold for as long as the agent keeps waiting
-            if( text === CHECK_IN_NUDGE ) {
+            if( kind === `check_in` ) {
                 judged = false
                 quiet_since = now()
             }
 
-            if( excluded( status ) || text === CHECK_IN_NUDGE && status !== `waiting` ) return null
+            if( excluded( status ) || kind === `check_in` && status !== `waiting` ) return null
 
             // Delivery can wait behind other input owners; a draft started since stays untouched
             const typed = await typed_at()
@@ -210,12 +190,12 @@ export const create_watchdog = ( {
                 return null
             }
 
-            if( text === CHECK_IN_NUDGE ) {
+            if( kind === `check_in` ) {
                 awaiting_reply = true
                 reply_started = false
             }
 
-            return text
+            return prompts[ kind ]
 
         },
 

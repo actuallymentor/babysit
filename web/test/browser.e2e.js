@@ -189,6 +189,69 @@ try {
     assert.ok( await page.$eval( `a[href="/sessions/mobile-session"]`, element => element.offsetHeight ) <= 48, `Phone rows stay condensed` )
     assert.equal( await page.$eval( `a[href="/sessions/mobile-session"]`, element => element.innerText.includes( `CPU` ) || element.innerText.includes( `pending` ) ), false )
 
+    // Watch parity: newest opened first, an idle list below, task titles, a … menu per row
+    const extra_state = ( session_id, fields ) => {
+        const path = join( state_dir, `${ session_id }.json` )
+        writeFileSync( path, JSON.stringify( { ...JSON.parse( readFileSync( state_file, `utf8` ) ), session_id, epoch: `${ session_id }-epoch`, ...fields } ) )
+        return path
+    }
+    const now_s = Math.floor( Date.now() / 1_000 )
+    const newer_path = extra_state( `newer-session`, { name: `Newer work`, activity: `running`, last_opened: now_s - 60, title: `Fix the parser` } )
+    const parked_path = extra_state( `parked-session`, { name: `Parked work`, activity: `idle`, last_opened: now_s - 7_200, parked: true, unread: true } )
+    await page.waitForSelector( `a[href="/sessions/parked-session"]` )
+
+    const links = await page.$$eval( `main a[href^="/sessions/"]`, elements => elements.map( element => element.getAttribute( `href` ) ) )
+    assert.deepEqual( links, [ `/sessions/newer-session`, `/sessions/mobile-session`, `/sessions/parked-session` ], `Newest opened first, idle list last` )
+    assert.equal( await page.$eval( `#idle-heading`, element => element.textContent ), `Idle` )
+    assert.match( await page.$eval( `a[href="/sessions/parked-session"]`, element => element.textContent ), /unread/ )
+
+    assert.equal( ( await page.$eval( `main`, element => element.textContent ) ).includes( `Fix the parser` ), false )
+    await page.click( `button[aria-pressed]` )
+    await page.waitForFunction( () => document.querySelector( `main` ).textContent.includes( `Fix the parser` ) )
+    await page.click( `button[aria-pressed]` )
+
+    // Running: restart asks twice, then queues a host request; the host's answer surfaces
+    await page.click( `[aria-label="Actions for Newer work"]` )
+    await page.waitForSelector( `[role="menu"]` )
+    const entries = await page.$$eval( `[role="menuitem"]`, elements => elements.map( element => element.textContent ) )
+    assert.deepEqual( entries, [ `Open`, `Freeze`, `Restart` ] )
+    await page.keyboard.press( `ArrowDown` )
+    await page.keyboard.press( `ArrowDown` )
+    await page.keyboard.press( `Enter` )
+    await page.waitForFunction( () => document.querySelector( `[role="menu"]` )?.textContent.includes( `Restart anyway` ) )
+    assert.equal( readdirSync( request_dir ).length, 0, `First press only arms the restart` )
+    await page.keyboard.press( `Enter` )
+    await page.waitForFunction( () => document.querySelector( `main` ).textContent.includes( `Restarting Newer work` ) )
+    await page.waitForFunction( () => !document.querySelector( `[role="menu"]` ) )
+    const [ restart_file ] = readdirSync( request_dir )
+    const restart = JSON.parse( readFileSync( join( request_dir, restart_file ), `utf8` ) )
+    assert.deepEqual( [ restart.kind, restart.action, restart.session_id ], [ `action`, `restart`, `newer-session` ] )
+    unlinkSync( join( request_dir, restart_file ) )
+    const newer = JSON.parse( readFileSync( newer_path, `utf8` ) )
+    writeFileSync( newer_path, JSON.stringify( { ...newer, results: [ { request_id: restart.request_id, status: `failed`, message: `Session is locked`, completed_at: new Date().toISOString() } ] } ) )
+    await page.waitForFunction( () => document.querySelector( `[role="alert"]` )?.textContent.includes( `Newer work: Session is locked` ) )
+
+    // Idle-list rows keep their menu: mark read is offered only while unread
+    await page.click( `[aria-label="Actions for Parked work"]` )
+    const parked_entries = await page.$$eval( `[role="menuitem"]`, elements => elements.map( element => element.textContent ) )
+    assert.deepEqual( parked_entries, [ `Open`, `Mark read`, `Freeze`, `Restart` ] )
+    await page.keyboard.press( `Escape` )
+    await page.waitForFunction( () => !document.querySelector( `[role="menu"]` ) )
+    assert.equal( await page.evaluate( () => document.activeElement.getAttribute( `aria-label` ) ), `Actions for Parked work`, `Escape returns focus` )
+
+    // A frozen session offers unfreeze and says so in its pill
+    writeFileSync( parked_path, JSON.stringify( { ...JSON.parse( readFileSync( parked_path, `utf8` ) ), status: `frozen` } ) )
+    await page.waitForFunction( () => document.querySelector( `a[href="/sessions/parked-session"]` ).textContent.includes( `Frozen` ) )
+    await page.click( `[aria-label="Actions for Parked work"]` )
+    assert.ok( ( await page.$$eval( `[role="menuitem"]`, elements => elements.map( element => element.textContent ) ) ).includes( `Unfreeze` ) )
+    await page.keyboard.press( `Escape` )
+    if( process.env.AUDIT_SCREENSHOTS ) await page.screenshot( { path: `/tmp/babysit-ui-watch-parity.png`, fullPage: true } )
+
+    unlinkSync( newer_path )
+    unlinkSync( parked_path )
+    readdirSync( request_dir ).forEach( file => unlinkSync( join( request_dir, file ) ) )
+    await page.waitForFunction( () => !document.querySelector( `a[href="/sessions/parked-session"]` ) )
+
     await Promise.all( [ page.waitForSelector( `[data-testid="markdown-message"]` ), page.click( `a[href="/sessions/mobile-session"]` ) ] )
     assert.match( await page.$eval( `main`, element => element.textContent ), /Container usage pending/ )
     assert.equal( await page.$eval( `[data-testid="markdown-message"] h2`, element => element.textContent ), `Ready` )

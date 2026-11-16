@@ -133,6 +133,7 @@ export const FLAGS = [
     { name: `usage`, type: `boolean`, scope: `local`, commands: [ `watch` ], gated: true },
     { name: `interactive`, type: `boolean`, scope: `local`, commands: [ `watch` ], gated: true },
     { name: `auto`, type: `boolean`, scope: `local`, commands: [ `update` ], gated: true },
+    { name: `global`, type: `boolean`, scope: `local`, commands: [ `init` ], gated: true },
 
     // In-session helpers parse their own argv
     { name: `status`, type: `value`, scope: `container`, commands: [ `effort`, `model`, `exit`, `stuck`, `reset`, `loop` ] },
@@ -151,7 +152,12 @@ export const COMMANDS = [
         [ `babysit <agent> [flags]`, `Start a new session` ],
         [ `babysit <agent> resume <id|number>`, `Resume a previous session` ],
     ] },
-    { name: `init`, usage: [ [ `babysit init [file.yaml]`, `Write a default config; asks for the file name and launch settings` ] ] },
+    { name: `init`, usage: [
+        [ `babysit init [file.yaml]`, `Write a default config; asks for the file name and launch settings` ],
+        [ `babysit init --global`, `Write ~/.babysitrc.yaml, the global layer under every babysit.yaml; asks before overwriting` ],
+    ], options: [
+        [ `--global`, `Write ~/.babysitrc.yaml instead: defaults < it < babysit.yaml < flags` ],
+    ] },
     { name: `launch_dir`, deps: true, usage: [ [ `babysit --config DIR/ [--yes]`, `Start one detached session per DIR/*.yaml, skipping running ones` ] ] },
     { name: `audit`, usage: [ [ `babysit audit --config FILE|DIR/`, `Fix yaml files so babysit --config DIR/ accepts them; --yes, comments kept` ] ], options: [
         [ `--yes`, `Apply every fix without asking, add nothing.\nA missing agent still needs a terminal.` ],

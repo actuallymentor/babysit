@@ -93,6 +93,7 @@ Examples:
   babysit fork abc-123 --no-history --name "fresh eyes"`,
 
     init: () => `Usage: babysit init [file.yaml]
+       babysit init --global
 
 Writes a default config. Without a file name it asks for one (default
 babysit.yaml), then opens the launch menu: its choice becomes the live launch:
@@ -103,6 +104,11 @@ launch: drives \`babysit --config DIR/\`, which starts one detached session per
 DIR/*.yaml (only agent required, other keys default; name defaults to the file name),
 shows an overview, asks y/N (--yes skips), and skips files whose session is
 still running. \`babysit --config FILE\` opens the menu with its values.
+
+--global writes ~/.babysitrc.yaml, asking Y/n before replacing one. Layers,
+last wins: defaults < ~/.babysitrc.yaml < babysit.yaml (or --config) < flags.
+config: and prompts: merge key by key; a workspace babysit: list replaces the
+global one. launch: stays per workspace.
 
 Rules run top-down; the first match wins:
   on:      idle | literal text | /regex/flags (matched against the last 10 pane lines)

@@ -5,9 +5,11 @@ import { hostname } from 'os'
 import { run } from '../utils/exec.js'
 import { docker_command_prefix } from '../docker/run.js'
 import { cached_docker_id } from '../docker/facts.js'
+import { DEFAULT_PROMPTS } from '../babysit/prompts.js'
 import { load_session, list_stored_sessions, session_workspace } from './store.js'
 
-export const RECOVERY_PROMPT = `You were interrupted. Check the current state, then continue unfinished work.`
+// Default text lives in prompts.js (babysit.yaml prompts.recovery)
+export const RECOVERY_PROMPT = DEFAULT_PROMPTS.recovery
 
 // Pasted into live sessions before a clean shutdown. It promises nothing about
 // resumption: sandboxes and blocked launches get it too and are not recovered.
