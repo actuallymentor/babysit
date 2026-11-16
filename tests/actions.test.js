@@ -16,6 +16,22 @@ describe( `special babysit actions`, () => {
 
     } )
 
+    it( `types a configured prompt literally, even one shaped like an action`, async () => {
+
+        const sent = []
+        const seams = {
+            send_enter_fn: session => sent.push( [ `enter`, session ] ),
+            send_text_fn: ( session, text ) => sent.push( [ `text`, text ] ),
+        }
+
+        await execute_action( `session`, { text: `enter` }, { commands: { deploy: `false` } }, seams )
+        await execute_action( `session`, { text: `Read AGENTS.md` }, {}, seams )
+        await execute_action( `session`, { text: `deploy` }, { commands: { deploy: `false` } }, seams )
+
+        expect( sent ).toEqual( [ [ `text`, `enter` ], [ `text`, `Read AGENTS.md` ], [ `text`, `deploy` ] ] )
+
+    } )
+
 } )
 
 // A channel stand-in whose turn advances as the test scripts it

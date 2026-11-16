@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.8.1 — 2026-11-16
+
+### Fixed
+- Web restart only forces (`--force`) after the second confirmation; a plain restart can no longer cut off a turn that started after the click.
+- `prompts:` texts are typed as written: a prompt like `enter`, `Read AGENTS.md` or a command name is no longer read as an action.
+- A session frozen before web access was enabled (or whose monitor started frozen) now appears on the web and can be unfrozen there.
+- A finished web restart no longer brings a closed session back to the web list.
+- An invalid `babysit:` rule in `~/.babysitrc.yaml` warns and is skipped instead of failing every launch.
+- The web image builds its static app natively; the arm64 build crashed under QEMU, so 2.8.0 shipped no web image.
+
 ## 2.8.0 — 2026-11-16
 
 ### Added

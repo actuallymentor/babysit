@@ -18,13 +18,23 @@ const SEGMENT_POLL_INTERVAL_MS = 2_000
  * @param {Object} config - The babysit config section
  * @param {Object} [options] - Seams and the launch channel
  * @param {Function} [options.send_enter_fn] - Enter key sender
+ * @param {Function} [options.send_text_fn] - Text sender, for configured prompts
  * @param {Object|null} [options.launch_channel] - Live turn events; segment waits end at turn_completed
  * @returns {Promise<void>}
  */
 export const execute_action = async ( session_name, action, config, {
     send_enter_fn = send_enter,
+    send_text_fn = send_text,
     launch_channel = null,
 } = {} ) => {
+
+    // Configured prompts (babysit.yaml prompts:) arrive as { text }: typed as
+    // written, never read as enter, a command name or a markdown path
+    if( typeof action?.text === `string` ) {
+        log.info( `Action: sending prompt "${ action.text.slice( 0, 60 ) }"` )
+        await send_text_fn( session_name, action.text )
+        return
+    }
 
     const action_str = String( action ).trim()
 

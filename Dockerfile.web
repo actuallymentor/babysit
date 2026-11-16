@@ -1,4 +1,6 @@
-FROM node:24-alpine AS build
+# The static app is platform independent: build it once, natively, instead of
+# under QEMU for every target (arm64 emulation dies with SIGILL in the build tools)
+FROM --platform=$BUILDPLATFORM node:24-alpine AS build
 
 WORKDIR /app
 

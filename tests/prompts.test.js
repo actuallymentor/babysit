@@ -83,7 +83,7 @@ describe( `prompts`, () => {
     it( `apply_loop uses loop_text when no LOOP.md exists`, () => {
         const rules = []
         apply_loop( rules, dir, { include_global_loop: false, loop_text: `Onward` } )
-        expect( rules[ 0 ].do ).toBe( `Onward` )
+        expect( rules[ 0 ].do ).toEqual( { text: `Onward` } )
     } )
 
     it( `loop controller reads loop_text fresh on each toggle`, async () => {

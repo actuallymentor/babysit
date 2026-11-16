@@ -44,7 +44,8 @@ export const apply_loop = ( rules, workspace = process.cwd(), {
         loop_action = global_loop
         log.info( `Loop mode: using ${ global_loop }` )
     } else {
-        loop_action = loop_text
+        // A prompt is typed literally, unlike a LOOP.md path
+        loop_action = { text: loop_text }
         log.info( `Loop mode: no LOOP.md found, using "${ loop_text }"` )
     }
 

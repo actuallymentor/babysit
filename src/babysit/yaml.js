@@ -308,7 +308,16 @@ export const load_config = ( dir = process.cwd(), {
     const config_dir = local_rules ? rebase_dir( dirname( path ), source_dir, dir ) : dirname( global_path || path )
     const rule_source = local_rules ? parsed.babysit : global.babysit
     const raw_rules = Array.isArray( rule_source ) ? rule_source : []
-    const rules = raw_rules.map( raw_rule => parse_rule( raw_rule, config_dir, config.commands ) )
+    const parse_rules = () => raw_rules.map( raw_rule => parse_rule( raw_rule, config_dir, config.commands ) )
+
+    // Like a broken global file, a broken global rule warns instead of stopping every launch
+    let rules = []
+    try {
+        rules = parse_rules()
+    } catch ( error ) {
+        if( local_rules ) throw error
+        log.warn( `Ignoring the babysit: rules in ${ global_path }: ${ error.message }` )
+    }
 
     return { config, rules }
 

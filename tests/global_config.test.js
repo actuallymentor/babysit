@@ -79,6 +79,15 @@ describe( `global ~/.babysitrc.yaml layer`, () => {
         expect( load_config( inherited.workspace, { global_path: inherited.global_path } ).rules.map( rule => rule.do ) ).toEqual( [ `global` ] )
     } )
 
+    it( `skips broken global rules, but a broken workspace rule still fails`, () => {
+        const broken = `babysit:\n  - on: /[/i\n    do: nudge\n`
+        const inherited = layers( broken, `config:\n  idle_timeout_s: 30\n` )
+        expect( load_config( inherited.workspace, { global_path: inherited.global_path } ).rules ).toEqual( [] )
+
+        const local = layers( `config: {}\n`, broken )
+        expect( () => load_config( local.workspace, { global_path: local.global_path } ) ).toThrow()
+    } )
+
     it( `skips a broken global file instead of failing every launch`, () => {
         const { workspace, global_path } = layers( `config: [unclosed\n`, `config:\n  idle_timeout_s: 30\n` )
         expect( load_config( workspace, { global_path } ).config.idle_timeout_s ).toBe( 30 )

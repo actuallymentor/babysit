@@ -40,7 +40,7 @@ describe( `apply_loop`, () => {
         try {
             const rules = make_rules()
             apply_loop( rules, workspace, { include_global_loop: false } )
-            expect( rules[0].do ).toBe( `Keep going` )
+            expect( rules[0].do ).toEqual( { text: `Keep going` } )
         } finally {
             rmSync( workspace, { recursive: true, force: true } )
         }
@@ -69,7 +69,7 @@ describe( `apply_loop`, () => {
         try {
             const rules = []
             apply_loop( rules, workspace, { include_global_loop: false, config_path: join( workspace, `errors.yaml` ) } )
-            expect( rules[0].do ).toBe( `Keep going` )
+            expect( rules[0].do ).toEqual( { text: `Keep going` } )
         } finally {
             rmSync( workspace, { recursive: true, force: true } )
         }

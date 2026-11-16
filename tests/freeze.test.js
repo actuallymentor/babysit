@@ -290,6 +290,32 @@ describe( `monitor web bridge while frozen`, () => {
 
 } )
 
+describe( `monitor that starts frozen`, () => {
+
+    it( `still opens the web bridge, so the web can unfreeze it`, async () => {
+        let tick = 0
+        let opened = 0
+        await start_monitor( {
+            session_name: `babysit_born_frozen`,
+            config: {},
+            rules: [],
+            agent: { name: `codex` },
+            is_frozen: async () => `mark`,
+            has_session_fn: async () => tick < 3,
+            write_loop_deadline_fn: () => {},
+            open_web_bridge_fn: async () => {
+                opened++
+                return { tmux_target: `%1`, heartbeat: async () => {}, process_requests: async () => ( { sent: false, processed: 0 } ), close: async () => {} }
+            },
+            wait_fn: async () => {
+                tick++
+            },
+        } )
+        expect( opened ).toBe( 1 )
+    } )
+
+} )
+
 describe( `monitor asked to freeze mid-action`, () => {
 
     it( `acknowledges a fresh freeze that replaced the one it stood down for`, async () => {

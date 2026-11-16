@@ -367,7 +367,7 @@ describe( `monitor watchdog wiring`, () => {
         } )
 
         expect( observed ).toHaveLength( 4 )
-        expect( sent ).toEqual( [ [ 1, WATCHDOG_NUDGE ] ] )
+        expect( sent ).toEqual( [ [ 1, { text: WATCHDOG_NUDGE } ] ] )
     } )
 
 } )

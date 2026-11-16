@@ -14,8 +14,8 @@ const ACCOUNT_USAGE_FILE = `account-usage.json`
 const ACCOUNT_USAGE_STALE_MS = 15 * 60_000
 const ACCOUNT_USAGE_MAX_AGE_MS = 24 * 60 * 60_000
 const USAGE_STATUSES = [ `ok`, `unavailable`, `unauthenticated`, `error` ]
-// `babysit watch` shortcuts the host monitor runs on request: space, e, f, r
-const ACTIONS = [ `read`, `shelve`, `freeze`, `unfreeze`, `restart` ]
+// `babysit watch` shortcuts the host monitor runs on request: space, e, f, r, rr
+const ACTIONS = [ `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart` ]
 
 const finite = value => typeof value === `number` && Number.isFinite( value ) ? value : null
 const short_text = value => typeof value === `string` ? value.slice( 0, 200 ) : null

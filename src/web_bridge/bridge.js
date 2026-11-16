@@ -40,8 +40,8 @@ const ACCOUNT_USAGE_CHECK_MS = 60_000
 // One tmux listing per this long feeds the watch-style fields (recency, unread, idle list)
 const LISTING_REFRESH_MS = 2_000
 
-// The `babysit watch` shortcuts a web request may trigger: space, e, f, r
-const ACTIONS = new Set( [ `read`, `shelve`, `freeze`, `unfreeze`, `restart` ] )
+// The `babysit watch` shortcuts a web request may trigger: space, e, f, r and rr
+const ACTIONS = new Set( [ `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart` ] )
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/
 const TOKEN_HASH = /^[a-f0-9]{64}$/
 const UNSAFE_INPUT_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u
@@ -351,7 +351,9 @@ export const create_web_bridge = ( {
         results: [ ...results ],
     } )
 
-    const write_state = () => write_atomic_json( state_path, state_value() )
+    // A detached child finishing after close() must not resurrect the state file
+    let closed = false
+    const write_state = () => closed || write_atomic_json( state_path, state_value() )
 
     const add_result = ( request_id, status, message ) => {
         results.push( {
@@ -390,11 +392,13 @@ export const create_web_bridge = ( {
         if( action === `freeze` && frozen ) throw new RejectedRequest( `Session is already frozen` )
         if( action === `unfreeze` && !frozen ) throw new RejectedRequest( `Session is not frozen` )
 
-        // Mid-turn work is cut off by a restart: the web asked twice, like rr in watch
-        const args = action === `restart`
-            ? [ `restart`, session_id, `--detach`, ...current_activity === `idle` && !frozen ? [] : [ `--force` ] ]
-            : [ action, session_id ]
-        const doing = { freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting` }[ action ]
+        // Only an explicit force_restart (the web asked twice, like rr in watch) may
+        // cut off a turn; a plain restart keeps the CLI's busy-session guard
+        const args = {
+            restart: [ `restart`, session_id, `--detach` ],
+            force_restart: [ `restart`, session_id, `--detach`, `--force` ],
+        }[ action ] || [ action, session_id ]
+        const doing = { freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting`, force_restart: `Restarting` }[ action ]
         add_result( request_id, `accepted`, `${ doing }…` )
 
         run_fn( args ).then( ( { ok, out } ) => {
@@ -567,6 +571,7 @@ export const create_web_bridge = ( {
 
         /** Remove this monitor's published state when its session ends. */
         close() {
+            closed = true
             completion_reader.close()
             request_directory?.closeSync()
             request_directory = null

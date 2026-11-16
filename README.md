@@ -440,7 +440,7 @@ curl -H "Authorization: Bearer $BABYSIT_KEY" https://babysit.example.com/api/sta
 | `GET /api/sessions` | `{ sessions[] }` with container stats |
 | `GET /api/sessions/:id` | `{ session, pending }` |
 | `GET /api/me` | `{ role }` |
-| `POST /api/sessions/:id/actions` | `{ action }`: `read`, `shelve`, `freeze`, `unfreeze`, `restart`; cookie with a write key only |
+| `POST /api/sessions/:id/actions` | `{ action }`: `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart`; cookie with a write key only |
 
 ## Transcript archive
 

@@ -225,7 +225,7 @@ try {
     await page.waitForFunction( () => !document.querySelector( `[role="menu"]` ) )
     const [ restart_file ] = readdirSync( request_dir )
     const restart = JSON.parse( readFileSync( join( request_dir, restart_file ), `utf8` ) )
-    assert.deepEqual( [ restart.kind, restart.action, restart.session_id ], [ `action`, `restart`, `newer-session` ] )
+    assert.deepEqual( [ restart.kind, restart.action, restart.session_id ], [ `action`, `force_restart`, `newer-session` ], `Confirmed restart may cut off the turn` )
     unlinkSync( join( request_dir, restart_file ) )
     const newer = JSON.parse( readFileSync( newer_path, `utf8` ) )
     writeFileSync( newer_path, JSON.stringify( { ...newer, results: [ { request_id: restart.request_id, status: `failed`, message: `Session is locked`, completed_at: new Date().toISOString() } ] } ) )

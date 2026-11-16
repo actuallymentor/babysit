@@ -71,7 +71,7 @@ export const menu_items = session => {
     ].filter( Boolean )
 }
 
-const DOING = { read: `Marking read`, shelve: `Moving to the idle list`, freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting` }
+const DOING = { read: `Marking read`, shelve: `Moving to the idle list`, freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting`, force_restart: `Restarting` }
 
 /**
  * Per-session `…` menu. Actions travel to the host monitor as bridge requests;
@@ -135,7 +135,7 @@ export function SessionMenu( { session, report, refresh } ) {
                 if( result?.status === `timed_out` ) report( `${ session.name }: the host did not pick the request up`, { error: true } )
                 if( settled ) return refresh?.()
             } catch ( error ) {
-                if( error.status_code === 404 && action === `restart` ) return report( `${ session.name } is restarting; it reappears once it is back` )
+                if( error.status_code === 404 && action.endsWith( `restart` ) ) return report( `${ session.name } is restarting; it reappears once it is back` )
             }
             if( Date.now() - started < FOLLOW_MS ) follow_result( request_id, action, started )
         }, FOLLOW_EVERY_MS )
@@ -147,15 +147,17 @@ export function SessionMenu( { session, report, refresh } ) {
         // Mid-turn work is cut off by a restart: ask twice, like rr in watch
         if( item.confirm && !armed ) return set_armed( true )
 
+        // A confirmed restart may cut off a turn; a plain one lets the host refuse a busy session
+        const action = item.confirm ? `force_restart` : item.action
         close()
-        report( `${ DOING[ item.action ] } ${ session.name }…` )
+        report( `${ DOING[ action ] } ${ session.name }…` )
         try {
             const { request_id } = await api( `/api/sessions/${ session.session_id }/actions`, {
-                body: JSON.stringify( { action: item.action } ),
+                body: JSON.stringify( { action } ),
                 method: `POST`,
             } )
             clearTimeout( follow.current )
-            follow_result( request_id, item.action )
+            follow_result( request_id, action )
             refresh?.()
         } catch ( error ) {
             report( `${ session.name }: ${ error.message }`, { error: true } )

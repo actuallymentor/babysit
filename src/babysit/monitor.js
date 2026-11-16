@@ -307,6 +307,14 @@ export const start_monitor = async ( {
 
         while( true ) {
 
+            // Web access may be initialized after this session starts. Retry on
+            // each tick so running sessions appear without restarting the agent,
+            // frozen ones included: the web is where they can be unfrozen.
+            if( !web_bridge && open_web_bridge_fn ) {
+                web_bridge = await open_web_bridge_fn()
+                agent_target = web_bridge?.tmux_target || tmux_target
+            }
+
             // Frozen (`babysit freeze`): anything typed into the paused pane would
             // replay on thaw, and docker exec fails against a paused container.
             // A babysit action still typing finishes first and nothing new starts;
@@ -376,13 +384,6 @@ export const start_monitor = async ( {
                 await finish_action()
                 if( on_exit ) await on_exit( { exit_status: null } )
                 break
-            }
-
-            // Web access may be initialized after this session starts. Retry on
-            // each tick so running sessions appear without restarting the agent.
-            if( !web_bridge && open_web_bridge_fn ) {
-                web_bridge = await open_web_bridge_fn()
-                agent_target = web_bridge?.tmux_target || tmux_target
             }
 
             // Capture pane output
@@ -553,7 +554,7 @@ export const start_monitor = async ( {
             // A stalled verdict outranks rules: the stretch it judged is still quiet
             const watchdog_text = await watchdog?.take( agent_status )
             if( watchdog_text ) {
-                watchdog_rule.do = watchdog_text
+                watchdog_rule.do = { text: watchdog_text }
                 begin_action( watchdog_rule, now )
                 await wait_fn( POLL_INTERVAL_MS )
                 continue

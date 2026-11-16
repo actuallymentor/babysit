@@ -230,17 +230,38 @@ describe( `per-session web bridge`, () => {
         expect( await queue( action( `read`, 1 ) ) ).toEqual( { sent: false, processed: 1 } )
         await queue( action( `shelve`, 2 ) )
         await queue( action( `restart`, 3 ) )
+        await queue( action( `force_restart`, 4 ) )
 
         expect( read ).toEqual( [ make_session().tmux_session ] )
         expect( shelved ).toEqual( [ make_session().tmux_session ] )
         expect( sent ).toEqual( [] )
-        // Running: the web already confirmed, so the restart is forced
-        expect( runs ).toEqual( [ [ `restart`, make_session().babysit_id, `--detach`, `--force` ] ] )
+        // A plain restart keeps the CLI's busy guard even though the agent runs; only the
+        // confirmed one (rr) forces, so work that started after the click is never cut off
+        expect( runs ).toEqual( [
+            [ `restart`, make_session().babysit_id, `--detach` ],
+            [ `restart`, make_session().babysit_id, `--detach`, `--force` ],
+        ] )
         expect( read_state( directory, bridge ).results.at( -1 ) ).toMatchObject( { status: `accepted`, message: `Restarting…` } )
 
         finish( { ok: false, out: `Session is locked` } )
         await new Promise( resolve => setTimeout( resolve, 0 ) )
         expect( read_state( directory, bridge ).results.at( -1 ) ).toMatchObject( { status: `failed`, message: `Session is locked` } )
+    } )
+
+    it( `never resurrects its state when a detached action finishes after close`, async () => {
+        let finish = null
+        const { bridge, directory } = setup( { run_fn: () => new Promise( resolve => finish = resolve ) } )
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+        const restart = make_request( { kind: `action`, action: `restart` } )
+        delete restart.text
+        write_request( directory, restart )
+        await bridge.process_requests()
+
+        bridge.close()
+        finish( { ok: true, out: `` } )
+        await new Promise( resolve => setTimeout( resolve, 0 ) )
+
+        expect( readdirSync( join( directory, `state` ) ) ).toEqual( [] )
     } )
 
     it( `accepts only actions while frozen`, async () => {
