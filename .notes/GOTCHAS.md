@@ -305,3 +305,7 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - **Session list cards must not `overflow: hidden`.** The per-row … menu is an absolutely positioned popover; a clipping card hides it and scrolls internally. Corners are rounded on banner/last row instead.
 - **`log.info` is invisible without BABYSIT_DEBUG.** User-facing command output must use console.log (init did not, and printed nothing for years).
 - **load_config reads ~/.babysitrc.yaml by default.** Tests that must ignore a developer's global file pass `global_path`.
+- **Configured prompts must reach execute_action as `{ text }`.** A plain string is parsed (`enter`, command names, `*.md`, `===`), so a prompt like "Read AGENTS.md" was silently treated as a file. Loop fallback and watchdog use `{ text }`.
+- **Web restart: `restart` never forces; `force_restart` (UI's second confirm) does.** Forcing on the host from observed activity races with work starting after the click.
+- **Web image build stage runs on `$BUILDPLATFORM`.** arm64 under QEMU died with SIGILL in the vite/icon build (2.8.0 shipped no web image). This container has no binfmt, so arm64 builds fail locally with exec format error; only CI can verify arm64.
+- **Codex CLI reviews from a background shell need `< /dev/null`**, or they hang on "Reading additional input from stdin".
