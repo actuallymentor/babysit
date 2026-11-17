@@ -61,7 +61,8 @@ const Item = styled.button`
 /**
  * The menu entries a session offers, mirroring the `babysit watch` shortcuts:
  * enter open, space mark read, e idle list, f freeze, r restart. Only actions
- * the session's monitor publishes are offered: older monitors take none.
+ * the session's monitor publishes are offered (a confirmed restart sends
+ * force_restart, so that is what it needs): older monitors take none.
  * @param {Object} session - Session summary
  * @returns {Array<{ action: string, label: string, icon: Function }>}
  */
@@ -77,7 +78,7 @@ export const menu_items = session => {
             ? { action: `unfreeze`, label: `Unfreeze`, icon: Sun }
             : { action: `freeze`, label: `Freeze`, icon: Snowflake },
         { action: `restart`, label: `Restart`, icon: RotateCcw, confirm: !idle },
-    ].filter( item => item && ( item.action === `open` || session.actions?.includes( item.action ) ) )
+    ].filter( item => item && ( item.action === `open` || session.actions?.includes( item.confirm ? `force_restart` : item.action ) ) )
 }
 
 const DOING = { read: `Marking read`, shelve: `Moving to the idle list`, freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting`, force_restart: `Restarting` }
