@@ -99,10 +99,12 @@ test( `sessions list latest opened first, never-opened last, like babysit watch`
 test( `actions queue an allowlisted watch shortcut for the host`, () => {
     const directory = fs.mkdtempSync( join( tmpdir(), `babysit-action-request-` ) )
     const store = new BridgeStore( { request_dir: directory, state_dir: directory, request_ttl_ms: 20_000, heartbeat_ttl_ms: 15_000 } )
-    const session = { session_id: `session-1`, epoch: `epoch-1` }
+    const session = { session_id: `session-1`, epoch: `epoch-1`, actions: [ `freeze` ] }
 
     try {
         assert.throws( () => store.act( { session, action: `rm -rf` } ), /Unknown action/ )
+        assert.throws( () => store.act( { session, action: `shelve` } ), error => error.status_code === 409 )
+        assert.equal( fs.readdirSync( directory ).length, 0 )
 
         const { request_id } = store.act( { session, action: `freeze` } )
         const [ filename ] = fs.readdirSync( directory )

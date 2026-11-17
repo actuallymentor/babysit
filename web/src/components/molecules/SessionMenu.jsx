@@ -28,6 +28,14 @@ const Menu = styled.div`
     z-index: 10;
 `
 
+const Note = styled.p`
+    color: var(--muted);
+    font-size: 0.8125rem;
+    margin: 0;
+    max-width: 15rem;
+    padding: 0.5rem 0.75rem;
+`
+
 // Whole-row targets, 44px tall for touch
 const Item = styled.button`
     align-items: center;
@@ -52,7 +60,8 @@ const Item = styled.button`
 
 /**
  * The menu entries a session offers, mirroring the `babysit watch` shortcuts:
- * enter open, space mark read, e idle list, f freeze, r restart.
+ * enter open, space mark read, e idle list, f freeze, r restart. Only actions
+ * the session's monitor publishes are offered: older monitors take none.
  * @param {Object} session - Session summary
  * @returns {Array<{ action: string, label: string, icon: Function }>}
  */
@@ -68,7 +77,7 @@ export const menu_items = session => {
             ? { action: `unfreeze`, label: `Unfreeze`, icon: Sun }
             : { action: `freeze`, label: `Freeze`, icon: Snowflake },
         { action: `restart`, label: `Restart`, icon: RotateCcw, confirm: !idle },
-    ].filter( Boolean )
+    ].filter( item => item && ( item.action === `open` || session.actions?.includes( item.action ) ) )
 }
 
 const DOING = { read: `Marking read`, shelve: `Moving to the idle list`, freeze: `Freezing`, unfreeze: `Unfreezing`, restart: `Restarting`, force_restart: `Restarting` }
@@ -190,6 +199,7 @@ export function SessionMenu( { session, report, refresh } ) {
                     </span>
                 </Item>
             } ) }
+            { !session.actions?.length && <Note>This session runs an older babysit. Restart it on the host for web actions.</Note> }
         </Menu> }
     </Anchor>
 }

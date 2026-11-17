@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.8.2 — 2026-11-17
+
+### Fixed
+- Babysit Web **Move to idle list** (and every other … menu action) failed with "Invalid request schema" on sessions whose monitor started before 2.8.0. Monitors now publish the actions they run; for older ones the menu shows only Open with a note, and the API answers 409 instead of queueing a request the monitor rejects. Restart those sessions on the host to enable web actions.
 ## 2.8.1 — 2026-11-16
 
 ### Fixed

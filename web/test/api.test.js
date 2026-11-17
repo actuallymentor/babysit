@@ -13,6 +13,7 @@ const access_document = ( token, role=`write` ) => JSON.stringify( {
 } )
 
 const session_document = ( overrides={} ) => ( {
+    actions: [ `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart` ],
     activity: `idle`,
     agent: `codex`,
     attachment: `detached`,
@@ -510,6 +511,14 @@ test( `session actions queue watch shortcuts for write keys only`, async () => {
         assert.deepEqual( JSON.parse( readFileSync( join( request_dir, file ), `utf8` ) ), {
             action: `restart`, epoch: `epoch-1`, kind: `action`, protocol: 1, request_id: queued.body.request_id, session_id: `session-1`,
         } )
+
+        // A monitor from before web actions would reject the request as a schema error
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document( { actions: undefined } ) ) )
+        const outdated = await api_request( origin, `/api/sessions/session-1/actions`, { body: { action: `shelve` }, cookie, method: `POST` } )
+        assert.equal( outdated.status, 409 )
+        assert.match( outdated.body.error, /older babysit/ )
+        assert.equal( readdirSync( request_dir ).length, 1, `Nothing queued for an outdated monitor` )
+        writeFileSync( join( state_dir, `session-1.json` ), JSON.stringify( session_document() ) )
 
         const stale = await api_request( origin, `/api/sessions/nope/actions`, { body: { action: `read` }, cookie, method: `POST` } )
         assert.equal( stale.status, 404 )

@@ -16,6 +16,7 @@ const ACCOUNT_USAGE_MAX_AGE_MS = 24 * 60 * 60_000
 const USAGE_STATUSES = [ `ok`, `unavailable`, `unauthenticated`, `error` ]
 // `babysit watch` shortcuts the host monitor runs on request: space, e, f, r, rr
 const ACTIONS = [ `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart` ]
+const OUTDATED_MONITOR = `This session runs an older babysit that cannot take web actions. Restart it on the host to enable them.`
 
 const finite = value => typeof value === `number` && Number.isFinite( value ) ? value : null
 const short_text = value => typeof value === `string` ? value.slice( 0, 200 ) : null
@@ -83,6 +84,7 @@ const container_totals = sessions => {
 
 const state_summary = state => ( {
     activity: state.activity,
+    actions: state.actions,
     last_opened: state.last_opened,
     parked: state.parked,
     status: state.status,
@@ -106,6 +108,8 @@ const normalize_state = parsed => {
 
     return {
         activity: [ `idle`, `running`, `waiting` ].includes( parsed.activity ) ? parsed.activity : `unknown`,
+        // Monitors before 2.8.0 publish no list: they know no actions
+        actions: Array.isArray( parsed.actions ) ? ACTIONS.filter( action => parsed.actions.includes( action ) ) : [],
         agent: typeof parsed.agent === `string` ? parsed.agent : `agent`,
         attachment: [ `attached`, `detached`, `unknown` ].includes( parsed.attachment ) ? parsed.attachment : `unknown`,
         container: normalize_container( parsed.container ),
@@ -241,6 +245,7 @@ export class BridgeStore {
      */
     act( { session, action } ) {
         if( !ACTIONS.includes( action ) ) throw Object.assign( new Error( `Unknown action` ), { status_code: 400 } )
+        if( !session.actions.includes( action ) ) throw Object.assign( new Error( OUTDATED_MONITOR ), { status_code: 409 } )
         return this.queue( session, { kind: `action`, action } )
     }
 

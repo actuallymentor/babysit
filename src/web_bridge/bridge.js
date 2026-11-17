@@ -349,6 +349,9 @@ export const create_web_bridge = ( {
         revision,
         updated_at: new Date( now_fn() ).toISOString(),
         results: [ ...results ],
+        // Actions this monitor runs. Monitors from before 2.8.0 omit it and reject
+        // action requests as schema errors, so the web offers them nothing.
+        actions: [ ...ACTIONS ],
     } )
 
     // A detached child finishing after close() must not resurrect the state file

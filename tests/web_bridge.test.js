@@ -19,6 +19,7 @@ import { join } from 'path'
 import { create_web_bridge, open_web_bridge, web_bridge_initialized } from '../src/web_bridge/bridge.js'
 import { add_api_key, list_api_keys, remove_api_key } from '../src/web_bridge/api_keys.js'
 import { initialize_web_bridge } from '../src/web_bridge/init.js'
+import { BridgeStore } from '../web/server/bridge.js'
 
 const temporary_directories = []
 
@@ -248,6 +249,50 @@ describe( `per-session web bridge`, () => {
         expect( read_state( directory, bridge ).results.at( -1 ) ).toMatchObject( { status: `failed`, message: `Session is locked` } )
     } )
 
+    // Contract: whatever the web server writes, the host accepts. No hand-built
+    // requests on either side, so a schema drift between the two fails here.
+    it( `accepts every action the web server queues from its published state`, async () => {
+        const shelved = []
+        const { bridge, directory, read } = setup( {
+            shelve_fn: async name => shelved.push( name ),
+            run_fn: async () => ( { ok: true, out: `` } ),
+        } )
+        await bridge.publish( { output: `ready`, activity: `idle` } )
+
+        const paths = { state_dir: join( directory, `state` ), request_dir: join( directory, `requests` ) }
+        const store = new BridgeStore( { ...paths, request_ttl_ms: 20_000, heartbeat_ttl_ms: 15_000 } )
+
+        try {
+            const state = store.session( bridge.session_id )
+            expect( state.actions ).toEqual( [ `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart` ] )
+
+            // Every request passes validation; unfreeze is then refused on merit
+            const verdicts = {}
+            for( const action of state.actions ) {
+                const { request_id } = store.act( { session: state, action } )
+                await bridge.process_requests()
+                const { status, message } = read_state( directory, bridge ).results.find( entry => entry.request_id === request_id )
+                verdicts[ action ] = status === `accepted` ? status : message
+            }
+            expect( verdicts ).toEqual( {
+                read: `accepted`, shelve: `accepted`, freeze: `accepted`,
+                unfreeze: `Session is not frozen`, restart: `accepted`, force_restart: `accepted`,
+            } )
+            expect( shelved ).toEqual( [ make_session().tmux_session ] )
+            expect( read ).toEqual( [ make_session().tmux_session ] )
+
+            // A monitor from before web actions publishes no list; the server refuses
+            // up front instead of queueing a request that monitor rejects as a schema error
+            const state_path = join( paths.state_dir, `${ bridge.session_id }.json` )
+            const legacy = read_state( directory, bridge )
+            delete legacy.actions
+            writeFileSync( state_path, JSON.stringify( legacy ) )
+            expect( () => store.act( { session: store.session( bridge.session_id ), action: `shelve` } ) ).toThrow( /older babysit/ )
+        } finally {
+            clearInterval( store.cleanup_timer )
+        }
+    } )
+
     it( `never resurrects its state when a detached action finishes after close`, async () => {
         let finish = null
         const { bridge, directory } = setup( { run_fn: () => new Promise( resolve => finish = resolve ) } )
@@ -299,7 +344,7 @@ describe( `per-session web bridge`, () => {
         const state = JSON.parse( readFileSync( state_path, `utf8` ) )
 
         expect( Object.keys( state ).sort() ).toEqual( [
-            `activity`, `agent`, `attachment`, `container`, `directory`, `epoch`, `last_message`, `workspace`,
+            `actions`, `activity`, `agent`, `attachment`, `container`, `directory`, `epoch`, `last_message`, `workspace`,
             `modifiers`, `name`, `protocol`, `raw_screen`, `results`, `revision`, `session_id`, `updated_at`,
             `last_opened`, `unread`, `parked`, `status`, `title`,
         ].sort() )

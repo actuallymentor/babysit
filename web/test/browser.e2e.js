@@ -30,6 +30,7 @@ writeFileSync( access_file, JSON.stringify( {
     token_sha256: createHash( `sha256` ).update( `mobile-secret` ).digest( `hex` ),
 } ) )
 writeFileSync( state_file, JSON.stringify( {
+    actions: [ `read`, `shelve`, `freeze`, `unfreeze`, `restart`, `force_restart` ],
     activity: `idle`,
     agent: `codex`,
     attachment: `detached`,
@@ -238,6 +239,29 @@ try {
     await page.keyboard.press( `Escape` )
     await page.waitForFunction( () => !document.querySelector( `[role="menu"]` ) )
     assert.equal( await page.evaluate( () => document.activeElement.getAttribute( `aria-label` ) ), `Actions for Parked work`, `Escape returns focus` )
+
+    // Idle and listed: move to the idle list queues the exact request the host validates
+    await page.click( `[aria-label="Actions for Mobile release"]` )
+    await page.waitForSelector( `[role="menu"]` )
+    assert.deepEqual( await page.$$eval( `[role="menuitem"]`, elements => elements.map( element => element.textContent ) ), [ `Open`, `Move to idle list`, `Freeze`, `Restart` ] )
+    await page.$$eval( `[role="menuitem"]`, elements => elements.find( element => element.textContent === `Move to idle list` ).click() )
+    await page.waitForFunction( () => document.querySelector( `main` ).textContent.includes( `Moving to the idle list Mobile release` ) )
+    const [ shelve_file ] = readdirSync( request_dir )
+    const shelve = JSON.parse( readFileSync( join( request_dir, shelve_file ), `utf8` ) )
+    assert.deepEqual( Object.keys( shelve ).sort(), [ `action`, `epoch`, `kind`, `protocol`, `request_id`, `session_id` ] )
+    assert.deepEqual( [ shelve.kind, shelve.action, shelve.session_id ], [ `action`, `shelve`, `mobile-session` ] )
+    unlinkSync( join( request_dir, shelve_file ) )
+
+    // A monitor from before web actions publishes no list: only Open, and why
+    const legacy_path = extra_state( `legacy-session`, { name: `Legacy work`, actions: undefined, last_opened: now_s - 30 } )
+    await page.waitForSelector( `a[href="/sessions/legacy-session"]` )
+    await page.click( `[aria-label="Actions for Legacy work"]` )
+    await page.waitForSelector( `[role="menu"]` )
+    assert.deepEqual( await page.$$eval( `[role="menuitem"]`, elements => elements.map( element => element.textContent ) ), [ `Open` ] )
+    assert.match( await page.$eval( `[role="menu"]`, element => element.textContent ), /older babysit/ )
+    await page.keyboard.press( `Escape` )
+    unlinkSync( legacy_path )
+    await page.waitForFunction( () => !document.querySelector( `a[href="/sessions/legacy-session"]` ) )
 
     // A frozen session offers unfreeze and says so in its pill
     writeFileSync( parked_path, JSON.stringify( { ...JSON.parse( readFileSync( parked_path, `utf8` ) ), status: `frozen` } ) )
