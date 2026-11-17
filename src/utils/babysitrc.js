@@ -132,3 +132,34 @@ export const normalise_env_exclude = value => {
     return [ ...new Set( names ) ]
 
 }
+
+/**
+ * The rc text with excluded assignments blanked out, so their values never
+ * enter the container. A quoted value spanning lines is blanked to its
+ * closing quote. Everything else is kept byte for byte.
+ * @param {string} text - ~/.babysitrc contents
+ * @param {string[]} exclude - Variable names to drop
+ * @returns {string} Filtered rc
+ */
+export const filter_babysitrc = ( text, exclude ) => {
+
+    let open_quote = null
+
+    return text.split( `\n` ).map( line => {
+
+        // Continuation of an excluded multi-line value
+        if( open_quote ) {
+            if( line.includes( open_quote ) ) open_quote = null
+            return `#`
+        }
+
+        const key = line.match( ASSIGNMENT )?.[ 1 ]
+        if( !exclude.includes( key ) ) return line
+
+        const [ , quote, rest ] = line.match( /=(["'])(.*)$/ ) || []
+        if( quote && !rest.includes( quote ) ) open_quote = quote
+        return `# ${ key } excluded by babysit`
+
+    } ).join( `\n` )
+
+}

@@ -148,7 +148,7 @@ const main = async () => {
     // `--config DIR/` starts every yaml in DIR; launch flags live in the files.
     // `babysit audit --config DIR/` reads the same files without starting anything.
     if( cmd.verb !== `audit` && cmd.verb !== `clean` && cmd.flags.config && is_directory( cmd.flags.config ) ) {
-        if( cmd.verb !== `launch` || cmd.flags.name || cmd.flags.ports?.length || typeof cmd.flags.log === `string` ) {
+        if( cmd.verb !== `launch` || cmd.flags.name || cmd.flags.ports?.length || typeof cmd.flags.log === `string` || cmd.flags.env_exclude ) {
             throw new Error( `babysit --config DIR/ takes no agent, name, or flags besides --yes; declare them in each yaml's launch: section` )
         }
         cmd = { ...cmd, verb: `launch_dir` }

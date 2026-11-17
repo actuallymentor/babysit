@@ -570,6 +570,7 @@ export const cmd_fork = async ( cmd, {
         claude_account: agent.accounts && has_accounts( parent.agent ) ? parent.claude_account || null : null,
         // --env-exclude wins in start; otherwise the fork keeps the parent's ~/.babysitrc picks
         env_exclude: Array.isArray( parent.env_exclude ) ? parent.env_exclude : null,
+        env_known: parent.env_known || null,
         // A writable share of a clone joins its family so prune keeps it
         join_clone_id: joins_clone ? parent_clone_id : null,
         clone_options: filesystem === `clone` ? { snapshot: true, tree: parent_clone } : null,

@@ -427,11 +427,25 @@ describe( `environment section`, () => {
         typed.input.write( `\r` )
         expect( ( await typed.result ).flags.env_exclude ).toEqual( [ `LOOSE` ] )
 
-        save_launch_defaults( parse_args( [ `claude`, `--env-exclude=GH_TOKEN` ] ), { ...options, groups: () => groups } )
-        expect( read_launch_defaults( options ).env ).toEqual( { GH_TOKEN: false, GIT_AUTHOR_EMAIL: true, APPLE_ID: true, LOOSE: true } )
+        const picks = { GH_TOKEN: false, GIT_AUTHOR_EMAIL: true, APPLE_ID: true, LOOSE: true }
+        save_launch_defaults( { ...parse_args( [ `claude` ] ), env_picks: picks }, options )
+        expect( read_launch_defaults( options ).env ).toEqual( picks )
         const saved = await open_menu( with_groups )
         saved.input.write( `\r` )
-        expect( ( await saved.result ).flags.env_exclude ).toEqual( [ `GH_TOKEN` ] )
+        const chosen = await saved.result
+        expect( chosen.flags.env_exclude ).toEqual( [ `GH_TOKEN` ] )
+        expect( chosen.env_picks ).toEqual( picks )
+    } )
+
+    it( `never carries one workspace's picks into a new one`, () => {
+        save_launch_defaults( { ...parse_args( [ `claude` ] ), env_picks: { APPLE_ID: true } }, options )
+        expect( read_launch_defaults( { ...options, cwd: root } ).env ).toEqual( {} )
+    } )
+
+    it( `keeps an exclusion the rc no longer lists`, async () => {
+        const menu = await open_menu( { ...with_groups, initial: { env_exclude: [ `SHELL_ONLY` ] } } )
+        menu.input.write( `\r` )
+        expect( ( await menu.result ).flags.env_exclude ).toEqual( [ `SHELL_ONLY` ] )
     } )
 
     it( `hides the section when host context is ignored, sending no list`, async () => {

@@ -80,6 +80,8 @@ export const launch_menu = async ( {
         Array.isArray( initial.env_exclude ) ? !initial.env_exclude.includes( key ) : state.env?.[ key ] ?? group.default,
     ] ) ) )
     const env_keys = Object.keys( passed )
+    // Exclusions the menu cannot show (a shell-only GH_TOKEN, a variable since removed) are kept
+    const unseen = ( initial.env_exclude || [] ).filter( key => !env_keys.includes( key ) )
     const expanded = new Set()
 
     // Sourcing the rc is part of host context, which Ignore host AGENTS.md drops whole
@@ -196,10 +198,11 @@ export const launch_menu = async ( {
         if( text.log.trim() ) argv.push( text.log.trim() === `on` ? `--log=` : `--log=${ text.log.trim() }` )
         if( has_accounts( state.agent ) && state.account ) argv.push( `--account=${ state.account }` )
         // Always explicit when shown: an empty list means every variable was picked
-        if( env_shown() ) argv.push( `--env-exclude=${ env_keys.filter( key => !passed[ key ] ).join( `,` ) }` )
+        if( env_shown() ) argv.push( `--env-exclude=${ [ ...env_keys.filter( key => !passed[ key ] ), ...unseen ].join( `,` ) }` )
 
         // Agent arguments skip Babysit's parser so they can never be read as Babysit flags
-        return { ...parse_args( argv ), passthrough: submit === `fork` ? [] : words( text.args ) }
+        // env_picks is exactly what the menu showed, for the workspace's launch defaults
+        return { ...parse_args( argv ), passthrough: submit === `fork` ? [] : words( text.args ), ...env_shown() && { env_picks: { ...passed } } }
     }
 
     emitKeypressEvents( input )
@@ -549,6 +552,6 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
 
     // The menu's choice is the whole launch; the account is per launch, not a config key
     const cmd = launch_to_command( command_to_launch( chosen ), { config_path: config || null } )
-    return { ...cmd, flags: { ...cmd.flags, account: chosen.flags.account, env_exclude: chosen.flags.env_exclude } }
+    return { ...cmd, flags: { ...cmd.flags, account: chosen.flags.account, env_exclude: chosen.flags.env_exclude }, env_picks: chosen.env_picks }
 
 }

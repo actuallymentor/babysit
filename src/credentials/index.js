@@ -252,6 +252,7 @@ export const credential_state_tmpfiles = ( states = {} ) => Object.fromEntries(
  * @param {Object} [options.existing_states] - agent name → state path to reattach (monitor case)
  * @param {string} [options.state_dir=CREDENTIAL_STATE_DIR] - Where fresh captures keep state
  * @param {'darwin'|'linux'} [options.platform] - Host platform seam
+ * @param {Object} [options.env] - Environment holding API keys, minus excluded ~/.babysitrc variables
  * @returns {Promise<{ mounts: Array, sync: Object|null, states: Object, tmpfiles: Object }>}
  */
 export const setup_credentials = async ( agent, options = {} ) => {
@@ -292,6 +293,7 @@ export const setup_credentials = async ( agent, options = {} ) => {
             existing_tmpfile: existing_state?.tmpfile || null,
             sync_baseline: existing_state?.credential_source ? { credential_source: existing_state.credential_source } : null,
             ...options.read_keychain && { read_keychain: options.read_keychain },
+            ...options.env && { env: options.env },
         } )
 
         mounts.push( ...result.mounts )

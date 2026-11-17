@@ -202,10 +202,12 @@ run_agent() {
             set +a
             # Variables this session keeps out (launch menu / --env-exclude).
             # Unset before the account file, so only rc values are dropped.
-            for excluded in ${BABYSIT_RC_EXCLUDE//,/ }; do
-                unset "$excluded"
+            # The rc may leave set -u or a custom IFS behind; neither applies here.
+            IFS=, read -ra babysit_rc_excluded <<< "${BABYSIT_RC_EXCLUDE:-}"
+            for babysit_rc_name in "${babysit_rc_excluded[@]}"; do
+                unset "$babysit_rc_name"
             done
-            unset excluded
+            unset babysit_rc_excluded babysit_rc_name
         fi
         # The Claude account chosen for this session wins over the rc.
         # Literal KEY=value lines, never evaluated as shell.

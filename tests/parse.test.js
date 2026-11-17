@@ -539,3 +539,12 @@ describe( `numbered resume passthrough`, () => {
     }
 
 } )
+
+describe( `--env-exclude`, () => {
+
+    it( `reads an empty value as "pass everything" without taking the next word`, () => {
+        expect( parse_args( [ `--env-exclude=`, `codex` ] ) ).toMatchObject( { agent: `codex`, flags: { env_exclude: [] } } )
+        expect( parse_args( [ `codex`, `--env-exclude=`, `fix tests` ] ).flags.env_exclude ).toEqual( [] )
+    } )
+
+} )

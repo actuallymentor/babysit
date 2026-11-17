@@ -7,7 +7,7 @@
 - `--env-exclude KEYS` (comma list; empty passes all) for scripted launches. Without it, plain `babysit <agent>` honours `# default: false` groups.
 
 ### Changed
-- Unpicking `GH_TOKEN` skips GitHub credentials entirely; unpicked `GIT_*` identity vars are no longer forwarded. Needs the 2.9.0 image (the entrypoint does the unsetting).
+- Excluded variables never reach the container: it gets a filtered rc copy, and credential discovery (Claude accounts, API keys, Git identity) skips them. Unpicking `GH_TOKEN` skips GitHub credentials entirely.
 
 ## 2.8.2 — 2026-11-17
 

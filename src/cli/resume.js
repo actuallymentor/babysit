@@ -310,6 +310,11 @@ export const cmd_resume = async ( cmd, options = {} ) => {
                 )
             }
 
+            // The running container already sourced its ~/.babysitrc
+            if( flags.env_exclude ) {
+                throw new Error( `--env-exclude cannot be applied to an already-running session; use babysit restart ${ session.babysit_id } to pick variables.` )
+            }
+
             if( was_clone && !monitor_is_alive( session.monitor_pid, session.monitor_token ) ) {
                 log.warn( `Session monitor is not running; restarting it before attach.` )
                 const monitor_pid = await spawn_monitor(

@@ -474,7 +474,7 @@ APPLE_ID=…
 APPLE_ID_PASSWORD=…
 ```
 
-Excluded variables are unset after the rc is sourced. Unpicking `GH_TOKEN` drops the GitHub login entirely (no host `gh` fallback); excluded `GIT_*` identity vars stay out too.
+Excluded variables never enter the container: it gets a filtered copy of the rc, and Babysit's own credential discovery (Claude accounts, API keys, Git identity) ignores them. Unpicking `GH_TOKEN` drops the GitHub login entirely (no host `gh` fallback). Picks are not carried to new workspaces. A running session cannot change its picks; `babysit restart` can.
 
 - `BABYSIT_HOME` must be absolute; set it on the host, export matching values for Compose, rerun `recover init` after changing
 - Image ships agent CLIs, Chrome/Puppeteer, adb/fastboot, uiautomator2, pymobiledevice3; `babysit update` refreshes it and reports the version

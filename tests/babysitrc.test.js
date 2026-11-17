@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { BABYSITRC_LOADED_ENV, default_env_exclude, load_babysitrc, normalise_env_exclude, read_babysitrc_groups } from '../src/utils/babysitrc.js'
+import { BABYSITRC_LOADED_ENV, default_env_exclude, filter_babysitrc, load_babysitrc, normalise_env_exclude, read_babysitrc_groups } from '../src/utils/babysitrc.js'
 
 const with_rc = ( contents, run ) => {
     const directory = mkdtempSync( join( tmpdir(), `babysit-rc-` ) )
@@ -110,19 +110,53 @@ describe( `normalise_env_exclude`, () => {
 
 describe( `resolve_env_exclude`, () => {
 
-    const groups = () => [ { title: `Apple`, default: false, keys: [ `APPLE_ID` ] } ]
+    const groups = [ { title: `Apple`, default: false, keys: [ `APPLE_ID` ] }, { title: `Deploy`, default: false, keys: [ `DEPLOY_KEY` ] } ]
 
-    it( `takes the flag, then the resumed session, then the fork parent, then rc defaults`, async () => {
+    it( `takes the flag, then the earlier session, then the fork parent, then rc defaults`, async () => {
         const { resolve_env_exclude } = await import( '../src/cli/start.js' )
-        const stored = { env_exclude: [ `STORED` ] }
-        const fork = { env_exclude: [ `PARENT` ] }
+        const known = [ `APPLE_ID`, `DEPLOY_KEY` ]
+        const stored = { env_exclude: [ `STORED` ], env_known: known }
+        const fork = { env_exclude: [ `PARENT` ], env_known: known }
 
         expect( resolve_env_exclude( { env_exclude: [] }, { stored, fork, groups } ) ).toEqual( [] )
         expect( resolve_env_exclude( { env_exclude: null }, { stored, fork, groups } ) ).toEqual( [ `STORED` ] )
         expect( resolve_env_exclude( {}, { stored: {}, fork, groups } ) ).toEqual( [ `PARENT` ] )
-        expect( resolve_env_exclude( {}, { groups } ) ).toEqual( [ `APPLE_ID` ] )
-        // Without host context the rc is never mounted
-        expect( resolve_env_exclude( { env_exclude: [ `X` ] }, { mode: { ignore_host_agents_md: true }, groups } ) ).toEqual( [] )
+        expect( resolve_env_exclude( {}, { groups } ) ).toEqual( [ `APPLE_ID`, `DEPLOY_KEY` ] )
+    } )
+
+    it( `keeps a default-off variable added since the earlier launch out`, async () => {
+        const { resolve_env_exclude } = await import( '../src/cli/start.js' )
+        // APPLE_ID was on offer and picked; DEPLOY_KEY is new
+        expect( resolve_env_exclude( {}, { stored: { env_exclude: [], env_known: [ `APPLE_ID` ] }, groups } ) ).toEqual( [ `DEPLOY_KEY` ] )
+    } )
+
+    it( `uploads a filtered rc only when something is excluded`, async () => {
+        const { babysitrc_copy_mounts } = await import( '../src/cli/start.js' )
+        const dir = mkdtempSync( join( tmpdir(), `babysit-rc-copy-` ) )
+        try {
+            const path = join( dir, `.babysitrc` )
+            writeFileSync( path, `GH_TOKEN=secret\nKEEP=1\n` )
+            expect( babysitrc_copy_mounts( [], { path } ) ).toEqual( [] )
+            const [ mount ] = babysitrc_copy_mounts( [ `GH_TOKEN` ], { path } )
+            expect( mount ).toMatchObject( { type: `copy`, target: `/home/node/.babysitrc` } )
+            const copied = readFileSync( mount.source, `utf8` )
+            expect( copied ).not.toContain( `secret` )
+            expect( copied ).toContain( `KEEP=1` )
+            rmSync( mount.cleanup, { recursive: true, force: true } )
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+    } )
+
+} )
+
+describe( `filter_babysitrc`, () => {
+
+    it( `blanks excluded assignments, multi-line values included, and keeps the rest`, () => {
+        const text = [ `# Github`, `export GH_TOKEN=abc`, `KEY="line one`, `line two"`, `KEEP=$HOME/x`, `GH_TOKEN_EXTRA=1` ].join( `\n` )
+        expect( filter_babysitrc( text, [ `GH_TOKEN`, `KEY` ] ).split( `\n` ) ).toEqual( [
+            `# Github`, `# GH_TOKEN excluded by babysit`, `# KEY excluded by babysit`, `#`, `KEEP=$HOME/x`, `GH_TOKEN_EXTRA=1`,
+        ] )
     } )
 
 } )

@@ -55,6 +55,8 @@ export const parse_args = ( argv ) => {
         const name = arg.replace( /^-+/, `` )
         const boolean = booleans.includes( name ) || arg === `-h` || arg === `-v`
         const explicit_value = [ `true`, `false` ].includes( prepared[ index + 1 ] )
+        // `--env-exclude=` (pass everything) would otherwise take the next word as its value
+        if( arg === `--env-exclude=` ) return `--env-exclude=,`
         return arg.startsWith( `-` ) && boolean && !explicit_value ? `${ arg }=true` : arg
     } )
     const parse = tokens => mri( tokens, {

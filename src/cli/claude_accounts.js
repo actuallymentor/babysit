@@ -333,21 +333,23 @@ export const cached_account_readings = async ( accounts, { cache_path = ACCOUNT_
  * @param {string|false} [options.requested] - `--account` value
  * @param {string|null} [options.stored] - Resumed session's claude_account
  * @param {boolean} [options.probe_quota=true] - Probe quota (Claude launches); false reads the cache only
+ * @param {Object} [options.env=process.env] - Environment without the session's excluded ~/.babysitrc variables
  * @param {Object} [seams] - list/probe/route/cached seams
  * @returns {Promise<{ account: Object|null, route: string|null, reason: string, mounts: Object[] }>}
  */
-export const resolve_claude_login = async ( { requested = false, stored = null, probe_quota = true } = {}, {
+export const resolve_claude_login = async ( { requested = false, stored = null, probe_quota = true, env = process.env } = {}, {
     list = list_claude_accounts,
     probe = probe_accounts,
     route = claude_api_route,
     cached = cached_account_readings,
 } = {} ) => {
 
-    const api_route = route()
+    // An excluded ~/.babysitrc token or API key is no login for this session
+    const api_route = route( { env } )
     if( api_route && !requested ) return { account: null, route: api_route, reason: `${ api_route } route`, mounts: [] }
 
     const { account, reason } = await resolve_launch_account( { requested, stored }, {
-        list,
+        list: () => list( { env } ),
         probe: probe_quota ? probe : accounts => cached( accounts ),
     } )
     return { account, route: api_route, reason, mounts: account_credential_mounts( account ) }

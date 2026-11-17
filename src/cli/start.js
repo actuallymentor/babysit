@@ -27,6 +27,8 @@ import { REMOTE_KINDS, setup_remote_credentials } from '../remote/store.js'
 import { resolve_claude_login } from './claude_accounts.js'
 import { private_credential_tmpdir, build_private_tmpfile } from '../utils/tmpfile.js'
 import {
+    BABYSIT_RC_CONTAINER_PATH,
+    DEFAULT_BABYSIT_RC_PATH,
     DEFAULT_DOCKER_SOCKET,
     docker_daemon_status,
     resolve_docker_socket_path,
@@ -72,7 +74,7 @@ import { cmd_monitor, refresh_session_auth_cache } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { format_session_status_label } from './list.js'
 import { modifiers_from_flags } from './registry.js'
-import { default_env_exclude, read_babysitrc_groups } from '../utils/babysitrc.js'
+import { default_env_exclude, filter_babysitrc, read_babysitrc_groups } from '../utils/babysitrc.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
 import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
 import { create_launch_channel } from '../sessions/launch_channel.js'
@@ -409,15 +411,40 @@ export const resolve_session_display_name = ( flags = {}, stored_resume_session 
 /**
  * ~/.babysitrc variables to keep out of a session: --env-exclude (the menu
  * always sends it), else the resumed session's or fork parent's picks, else
- * the rc's `# default: false` groups. Without host context the rc is not
- * mounted, so there is nothing to filter.
+ * the rc's `# default: false` groups. Variables added to a `default: false`
+ * group since the earlier launch stay out too: nobody picked them.
  * @param {Object} flags - Parsed command flags
- * @param {Object} options - Launch mode, stored resume session, fork context and rc seam
+ * @param {Object} options - Earlier session record, fork context, and current rc groups
  * @returns {string[]} Variable names
  */
-export const resolve_env_exclude = ( flags = {}, { mode = {}, stored = null, fork = null, groups = read_babysitrc_groups } = {} ) => {
-    if( mode.ignore_host_agents_md ) return []
-    return flags.env_exclude ?? stored?.env_exclude ?? fork?.env_exclude ?? default_env_exclude( groups() )
+export const resolve_env_exclude = ( flags = {}, { stored = null, fork = null, groups = [] } = {} ) => {
+
+    if( flags.env_exclude ) return flags.env_exclude
+
+    const fresh = default_env_exclude( groups )
+    const prior = [ stored, fork ].find( record => Array.isArray( record?.env_exclude ) )
+    if( !prior ) return fresh
+
+    const known = prior.env_known || []
+    return [ ...new Set( [ ...prior.env_exclude, ...fresh.filter( key => !known.includes( key ) ) ] ) ]
+
+}
+
+/**
+ * A filtered ~/.babysitrc for the container when anything is excluded, so
+ * excluded values are neither in the agent's environment nor on its disk.
+ * @param {string[]} env_exclude - Excluded variable names
+ * @param {Object} [options] - rc path seam
+ * @returns {Object[]} One private `copy` mount, or none (the rc is then bind-mounted)
+ */
+export const babysitrc_copy_mounts = ( env_exclude, { path = DEFAULT_BABYSIT_RC_PATH } = {} ) => {
+
+    if( !env_exclude.length || !existsSync( path ) ) return []
+
+    // Root-owned in the container, so it must be world-readable there; the 0700 parent guards it here
+    const copy = build_private_tmpfile( `rc`, `babysitrc`, filter_babysitrc( readFileSync( path, `utf8` ), env_exclude ), { file_mode: 0o644 } )
+    return copy ? [ { type: `copy`, source: copy.file, target: BABYSIT_RC_CONTAINER_PATH, cleanup: copy.directory } ] : []
+
 }
 
 /**
@@ -1016,7 +1043,11 @@ async function resolve_launch( cmd ) {
         clone: Boolean( flags.clone || stored_is_clone ),
         ignore_host_agents_md: should_ignore_host_agent_context( flags, sticky_session ),
     }
-    mode.env_exclude = resolve_env_exclude( flags, { mode, stored: stored_resume_session, fork: cmd.fork } )
+    // Only names are read here; the rc's values stay out of every decision
+    const rc_groups = read_babysitrc_groups()
+    mode.env_exclude = resolve_env_exclude( flags, { stored: stored_resume_session, fork: cmd.fork, groups: rc_groups } )
+    // Host-side discovery (credentials, Claude login) never sees excluded variables
+    const launch_env = Object.fromEntries( Object.entries( process.env ).filter( ( [ key ] ) => !mode.env_exclude.includes( key ) ) )
 
     if( mode.clone && cmd.verb === `resume` && !stored_resume_session ) {
         log.error( `--clone resume requires a Babysit session ID so the existing clone can be restored.` )
@@ -1073,6 +1104,7 @@ async function resolve_launch( cmd ) {
         // A fork keeps its parent's subscription
         stored: stored_resume_session?.claude_account || cmd.fork?.claude_account || null,
         probe_quota: has_accounts( agent ),
+        env: launch_env,
     } ) )
     const launch_account = claude_login.account
     if( launch_account ) log[ claude_login.reason === `single account` ? `debug` : `info` ]( `Claude account: ${ launch_account.name } (${ claude_login.reason })` )
@@ -1276,8 +1308,10 @@ async function resolve_launch( cmd ) {
         ...launch_account && { claude_account: launch_account.name },
         ...claude_hot_swap && { claude_hot_swap: true },
         ...stored_resume_session?.account_switches?.length && { account_switches: stored_resume_session.account_switches },
-        // Resume, restart, recovery and forks rebuild the same ~/.babysitrc filter
+        // Resume, restart, recovery and forks rebuild the same ~/.babysitrc filter;
+        // env_known tells a later launch which variables were on offer this time
         env_exclude: mode.env_exclude,
+        env_known: rc_groups.flatMap( ( { keys } ) => keys ),
         // forked_from, fork_base, fork_filesystem, fork_history, fork_handoff
         ...cmd.fork?.record,
     }
@@ -1292,7 +1326,7 @@ async function resolve_launch( cmd ) {
         stored_resume_session, session_display_name,
         docker_socket_path, watchtower_check, claude_login,
         workspace, original_workspace, original_mount, config_path,
-        fork_launch, modifiers,
+        fork_launch, modifiers, launch_env,
         babysit_id, session_name, container_name, monitor_token,
         base_session_data,
         // The record exists from here on: every later failure goes through it
@@ -1335,7 +1369,7 @@ export const acquire_credentials = async ( launch, {
         // The real session still receives credentials for every supported
         // agent so nested coding-agent calls remain authenticated.
         startup_status?.set( `loading credentials` )
-        const credentials = await time_phase( `credential discovery`, () => setup( agent ) )
+        const credentials = await time_phase( `credential discovery`, () => setup( agent, { env: launch.launch_env } ) )
         transaction.creds_sync = credentials.sync
         // The Claude account rides along as a staged file that outranks the rc token
         credentials.mounts.push( ...launch.claude_login.mounts )
@@ -1456,12 +1490,15 @@ const prepare_container = async launch => {
     // acknowledges it, before tmux starts the container.
     // Unpicking GH_TOKEN means no GitHub login at all, not a fallback to the host gh
     const github_cli_mounts = mode.env_exclude.includes( `GH_TOKEN` ) ? [] : setup_github_cli_credentials( {
+        env: launch.launch_env,
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
+    // With anything excluded the container gets a filtered rc instead of the host file
+    const rc_mounts = mode.ignore_host_agents_md ? [] : babysitrc_copy_mounts( mode.env_exclude )
     // Fork handoff files ride the same pre-start upload as credentials
     // Remote machine secrets exist only for --mac / --windows / --devices sessions
     const remote_mounts = Object.values( REMOTE_KINDS ).filter( kind => mode[ kind.name ] ).flatMap( kind => setup_remote_credentials( kind ) )
-    const all_creds_mounts = [ ...github_cli_mounts, ...remote_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
+    const all_creds_mounts = [ ...github_cli_mounts, ...rc_mounts, ...remote_mounts, ...launch.credentials.mounts, ...fork_launch?.mounts || [] ]
 
     launch.startup_status?.set( `preparing container` )
     const prepared_launch = await time_phase( `main container preparation`, () => prepare_docker_launch( {
@@ -1477,6 +1514,7 @@ const prepare_container = async launch => {
         exit_sentinel: agent_exit_sentinel,
         completion_capture,
         deferred_upload: true,
+        include_babysit_rc: !rc_mounts.length,
     } ) )
     transaction.prepared_launch = prepared_launch
     launch.prepared_launch = prepared_launch

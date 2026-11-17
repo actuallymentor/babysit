@@ -817,7 +817,7 @@ describe( `build_docker_command`, () => {
 
         const entrypoint = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
         const sourced = entrypoint.indexOf( `source /home/node/.babysitrc` )
-        const unset = entrypoint.indexOf( `for excluded in \${BABYSIT_RC_EXCLUDE//,/ }` )
+        const unset = entrypoint.indexOf( `IFS=, read -ra babysit_rc_excluded <<< "\${BABYSIT_RC_EXCLUDE:-}"` )
 
         expect( sourced ).toBeGreaterThan( -1 )
         expect( unset ).toBeGreaterThan( sourced )

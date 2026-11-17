@@ -5,7 +5,6 @@ import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { MENU_TOGGLES } from '../cli/registry.js'
 import { all_devices } from '../devices/kinds.js'
-import { read_babysitrc_groups } from '../utils/babysitrc.js'
 
 const DEFAULTS_PATH = join( BABYSIT_DIR, `launch-defaults.json` )
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -58,16 +57,13 @@ export const read_launch_defaults = ( { cwd = process.cwd(), defaults_path = DEF
  * @param {Object} cmd - Parsed start command
  * @param {Object} [options] - Workspace and optional state-file override
  */
-export const save_launch_defaults = ( cmd, { cwd = process.cwd(), defaults_path = DEFAULTS_PATH, groups = read_babysitrc_groups } = {} ) => {
+export const save_launch_defaults = ( cmd, { cwd = process.cwd(), defaults_path = DEFAULTS_PATH } = {} ) => {
 
     const store = read_store( defaults_path )
     const previous = normalise( store.projects?.[ project_key( cwd ) ] ?? store.global )
 
-    // Every rc key the menu showed is a pick; an unset list keeps the old picks
-    const excluded = cmd.flags.env_exclude
-    const env = Array.isArray( excluded )
-        ? Object.fromEntries( groups().flatMap( ( { keys } ) => keys ).map( key => [ key, !excluded.includes( key ) ] ) )
-        : previous.env
+    // The ~/.babysitrc picks the menu showed; a launch without the section keeps the old ones
+    const env = cmd.env_picks || previous.env
 
     const selection = normalise( {
         agent: cmd.agent,
@@ -76,11 +72,13 @@ export const save_launch_defaults = ( cmd, { cwd = process.cwd(), defaults_path 
         env,
     } )
     const projects = { ...store.projects, [ project_key( cwd ) ]: selection }
+    // rc picks stay per workspace: an opt-in here must not preselect a secret in a new project
+    const global = { ...selection, env: normalise( store.global ).env }
 
     mkdirSync( dirname( defaults_path ), { recursive: true } )
     // Atomic replacement keeps interrupted writes from corrupting saved defaults.
     const temporary_path = `${ defaults_path }.${ process.pid }.tmp`
-    writeFileSync( temporary_path, `${ JSON.stringify( { global: selection, projects }, null, 2 ) }\n`, { mode: 0o600 } )
+    writeFileSync( temporary_path, `${ JSON.stringify( { global, projects }, null, 2 ) }\n`, { mode: 0o600 } )
     renameSync( temporary_path, defaults_path )
 
 }

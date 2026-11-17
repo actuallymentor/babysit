@@ -596,9 +596,11 @@ export const build_docker_command_args = ( options ) => {
         const mount_source = resolve_workspace_mount_source( babysit_rc_source )
         flags.push( `-v`, `${ mount_source }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
         flags.push( `-e`, `${ BABYSIT_HOST_RC_ENV }=${ mount_source }` )
-        // Names only: the entrypoint unsets them right after sourcing the rc
-        if( env_exclude.length ) flags.push( `-e`, `${ BABYSIT_RC_EXCLUDE_ENV }=${ env_exclude.join( `,` ) }` )
     }
+
+    // Names only: the entrypoint unsets them right after sourcing the rc. The
+    // launch also uploads a filtered rc copy, so this covers a hand-edited rc.
+    if( env_exclude.length ) flags.push( `-e`, `${ BABYSIT_RC_EXCLUDE_ENV }=${ env_exclude.join( `,` ) }` )
 
     // Dependency volume isolation (unless disabled in config)
     if( mount_workspace && config.isolate_dependencies !== false && !mode.sandbox ) {
