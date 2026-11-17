@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.9.0 — 2026-11-17
+
+### Added
+- Launch menu **Environment ▸** section: choose which `~/.babysitrc` variables each session gets. Variables are grouped by the comment above them (→/← expand, Space toggles a variable or a whole group); a `# default: false` line keeps a group out unless picked. Picks are remembered per workspace and kept through resume, restart and forks.
+- `--env-exclude KEYS` (comma list; empty passes all) for scripted launches. Without it, plain `babysit <agent>` honours `# default: false` groups.
+
+### Changed
+- Unpicking `GH_TOKEN` skips GitHub credentials entirely; unpicked `GIT_*` identity vars are no longer forwarded. Needs the 2.9.0 image (the entrypoint does the unsetting).
+
 ## 2.8.2 — 2026-11-17
 
 ### Fixed

@@ -11,7 +11,8 @@ rc="${BABYSIT_CLAUDE_RC:-/home/node/.babysitrc}"
 account_env="${BABYSIT_CLAUDE_ACCOUNT_ENV:-/home/node/.babysit-claude-account.env}"
 
 # The rc is shell, so read only the one variable from a subshell, never its other effects
-if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -f "$rc" ]; then
+# A session that keeps the rc token out (BABYSIT_RC_EXCLUDE) never reloads it.
+if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -f "$rc" ] && [[ ",${BABYSIT_RC_EXCLUDE:-}," != *,CLAUDE_CODE_OAUTH_TOKEN,* ]]; then
     rc_token="$(set -a; source "$rc" > /dev/null 2>&1; printf '%s' "${CLAUDE_CODE_OAUTH_TOKEN:-}")"
     [ -n "$rc_token" ] && export CLAUDE_CODE_OAUTH_TOKEN="$rc_token"
 fi

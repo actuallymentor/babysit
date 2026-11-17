@@ -18,6 +18,8 @@ export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
 export const BABYSIT_RC_CONTAINER_PATH = `/home/node/.babysitrc`
 export const BABYSIT_HOST_RC_ENV = `BABYSIT_HOST_BABYSITRC`
+// ~/.babysitrc variables the session keeps out (comma list)
+export const BABYSIT_RC_EXCLUDE_ENV = `BABYSIT_RC_EXCLUDE`
 
 // One volume for every --adb session: devices authorise this key pair once.
 export const ADB_KEYS_VOLUME = `babysit-adb`
@@ -480,6 +482,10 @@ export const build_docker_command_args = ( options ) => {
         agent_context = {},
         chrome_seccomp_profile_path = null,
     } = options
+
+    // ~/.babysitrc variables this session keeps out; auth probes carry none
+    const env_exclude = mode.env_exclude || []
+
     if( !chrome_seccomp_profile_path ) {
         throw new Error( `Docker argv requires a materialized Chrome seccomp profile` )
     }
@@ -590,6 +596,8 @@ export const build_docker_command_args = ( options ) => {
         const mount_source = resolve_workspace_mount_source( babysit_rc_source )
         flags.push( `-v`, `${ mount_source }:${ BABYSIT_RC_CONTAINER_PATH }:ro` )
         flags.push( `-e`, `${ BABYSIT_HOST_RC_ENV }=${ mount_source }` )
+        // Names only: the entrypoint unsets them right after sourcing the rc
+        if( env_exclude.length ) flags.push( `-e`, `${ BABYSIT_RC_EXCLUDE_ENV }=${ env_exclude.join( `,` ) }` )
     }
 
     // Dependency volume isolation (unless disabled in config)
@@ -696,7 +704,7 @@ export const build_docker_command_args = ( options ) => {
 
     // Git identity from host (override defaults in Dockerfile)
     const git_vars = [ `GIT_AUTHOR_NAME`, `GIT_COMMITTER_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_EMAIL` ]
-    for( const key of git_vars ) {
+    for( const key of git_vars.filter( key => !env_exclude.includes( key ) ) ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )
     }
 

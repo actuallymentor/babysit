@@ -72,6 +72,7 @@ import { cmd_monitor, refresh_session_auth_cache } from './monitor.js'
 import { is_monitor_alive } from './monitor_process.js'
 import { format_session_status_label } from './list.js'
 import { modifiers_from_flags } from './registry.js'
+import { default_env_exclude, read_babysitrc_groups } from '../utils/babysitrc.js'
 import { acquire_session_lock, get_boot_id, get_process_identity } from '../sessions/lock.js'
 import { session_lock_key, recovery_arguments, workspace_config_hash, docker_identity, container_image } from '../sessions/recovery.js'
 import { create_launch_channel } from '../sessions/launch_channel.js'
@@ -404,6 +405,20 @@ export const resolve_stored_agent_resume_session = ( cmd = {}, agent = {}, sessi
  */
 export const resolve_session_display_name = ( flags = {}, stored_resume_session = null ) =>
     flags.name || stored_resume_session?.name || null
+
+/**
+ * ~/.babysitrc variables to keep out of a session: --env-exclude (the menu
+ * always sends it), else the resumed session's or fork parent's picks, else
+ * the rc's `# default: false` groups. Without host context the rc is not
+ * mounted, so there is nothing to filter.
+ * @param {Object} flags - Parsed command flags
+ * @param {Object} options - Launch mode, stored resume session, fork context and rc seam
+ * @returns {string[]} Variable names
+ */
+export const resolve_env_exclude = ( flags = {}, { mode = {}, stored = null, fork = null, groups = read_babysitrc_groups } = {} ) => {
+    if( mode.ignore_host_agents_md ) return []
+    return flags.env_exclude ?? stored?.env_exclude ?? fork?.env_exclude ?? default_env_exclude( groups() )
+}
 
 /**
  * Keep host-profile isolation sticky when an explicit-agent resume resolves
@@ -1001,6 +1016,7 @@ async function resolve_launch( cmd ) {
         clone: Boolean( flags.clone || stored_is_clone ),
         ignore_host_agents_md: should_ignore_host_agent_context( flags, sticky_session ),
     }
+    mode.env_exclude = resolve_env_exclude( flags, { mode, stored: stored_resume_session, fork: cmd.fork } )
 
     if( mode.clone && cmd.verb === `resume` && !stored_resume_session ) {
         log.error( `--clone resume requires a Babysit session ID so the existing clone can be restored.` )
@@ -1260,6 +1276,8 @@ async function resolve_launch( cmd ) {
         ...launch_account && { claude_account: launch_account.name },
         ...claude_hot_swap && { claude_hot_swap: true },
         ...stored_resume_session?.account_switches?.length && { account_switches: stored_resume_session.account_switches },
+        // Resume, restart, recovery and forks rebuild the same ~/.babysitrc filter
+        env_exclude: mode.env_exclude,
         // forked_from, fork_base, fork_filesystem, fork_history, fork_handoff
         ...cmd.fork?.record,
     }
@@ -1436,7 +1454,8 @@ const prepare_container = async launch => {
     // GitHub's isolated credential profile is uploaded through Docker's API to
     // a stopped container. The host file is removed only after `docker cp`
     // acknowledges it, before tmux starts the container.
-    const github_cli_mounts = setup_github_cli_credentials( {
+    // Unpicking GH_TOKEN means no GitHub login at all, not a fallback to the host gh
+    const github_cli_mounts = mode.env_exclude.includes( `GH_TOKEN` ) ? [] : setup_github_cli_credentials( {
         include_host_preferences: !mode.ignore_host_agents_md,
     } )
     // Fork handoff files ride the same pre-start upload as credentials

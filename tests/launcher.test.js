@@ -21,7 +21,7 @@ beforeEach( () => {
     const cwd = join( root, `project` )
     mkdirSync( cwd )
     // No real subscriptions or quota probes leak into menu tests
-    options = { cwd, defaults_path: join( root, `defaults.json` ), list_accounts: () => [], cached_usage: () => ( {} ), probe_usage: async () => [] }
+    options = { cwd, defaults_path: join( root, `defaults.json` ), list_accounts: () => [], cached_usage: () => ( {} ), probe_usage: async () => [], read_groups: () => [] }
 
 } )
 
@@ -384,6 +384,61 @@ describe( `interactive launch menu`, () => {
         menu.input.write( `${ down }\x7f\x7f\x7frelease\r` )
         expect( await menu.result ).toMatchObject( { flags: { name: `release` } } )
 
+    } )
+
+} )
+
+describe( `environment section`, () => {
+
+    const groups = [
+        { title: `Github`, default: true, keys: [ `GH_TOKEN`, `GIT_AUTHOR_EMAIL` ] },
+        { title: `Apple`, default: false, keys: [ `APPLE_ID` ] },
+        { title: null, default: true, keys: [ `LOOSE` ] },
+    ]
+    const with_groups = { read_groups: () => groups }
+
+    it( `sends the rc defaults as --env-exclude without opening the section`, async () => {
+        const menu = await open_menu( with_groups )
+        expect( menu.rendered() ).toContain( `Environment ▸  3/4 ~/.babysitrc variables passed` )
+        menu.input.write( `\r` )
+        expect( ( await menu.result ).flags.env_exclude ).toEqual( [ `APPLE_ID` ] )
+    } )
+
+    it( `expands a group with → and toggles one variable with Space`, async () => {
+        const menu = await open_menu( with_groups )
+        // ↑ wraps to the Environment row, → opens it, ↓ Github, → expands it, ↓ GH_TOKEN
+        menu.input.write( `${ up }${ right }${ down }${ right }${ down } ` )
+        await new Promise( resolve => setImmediate( resolve ) )
+        expect( menu.rendered() ).toContain( `[-] ▾ Github` )
+        expect( menu.rendered() ).toContain( `    [ ] GH_TOKEN` )
+        expect( menu.rendered() ).toContain( `  [x] LOOSE` )
+        menu.input.write( `\r` )
+        expect( ( await menu.result ).flags.env_exclude ).toEqual( [ `GH_TOKEN`, `APPLE_ID` ] )
+    } )
+
+    it( `picks or clears a whole group with Space`, async () => {
+        const menu = await open_menu( with_groups )
+        menu.input.write( `${ up }${ right }${ down } ${ down } \r` )
+        expect( ( await menu.result ).flags.env_exclude ).toEqual( [ `GH_TOKEN`, `GIT_AUTHOR_EMAIL` ] )
+    } )
+
+    it( `prefers flags, then this workspace's picks, over group defaults`, async () => {
+        const typed = await open_menu( { ...with_groups, initial: { env_exclude: [ `LOOSE` ] } } )
+        typed.input.write( `\r` )
+        expect( ( await typed.result ).flags.env_exclude ).toEqual( [ `LOOSE` ] )
+
+        save_launch_defaults( parse_args( [ `claude`, `--env-exclude=GH_TOKEN` ] ), { ...options, groups: () => groups } )
+        expect( read_launch_defaults( options ).env ).toEqual( { GH_TOKEN: false, GIT_AUTHOR_EMAIL: true, APPLE_ID: true, LOOSE: true } )
+        const saved = await open_menu( with_groups )
+        saved.input.write( `\r` )
+        expect( ( await saved.result ).flags.env_exclude ).toEqual( [ `GH_TOKEN` ] )
+    } )
+
+    it( `hides the section when host context is ignored, sending no list`, async () => {
+        const menu = await open_menu( { ...with_groups, initial: { ignore_host_agents_md: true } } )
+        expect( menu.rendered() ).not.toContain( `Environment` )
+        menu.input.write( `\r` )
+        expect( ( await menu.result ).flags.env_exclude ).toBeNull()
     } )
 
 } )

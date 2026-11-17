@@ -286,3 +286,8 @@ Fake Anthropic server + real CLIs in a private tmux socket (scratch: SSE text/to
 - 2026-12-10: v1 `/api/data/v1/*` → 410; `performance`/`series`/`measurements` → null (use `*_v3`); `prompt_type` ignored. We use v2 `/language/models/free`, none of those fields → unaffected.
 - Separate: AA stopped publishing coding/agentic indexes; `artificial_analysis_coding_index`/`_agentic_index` always null (live probe: 0/200). Intelligence index now v5.
 - Alternatives (2026-11-10): Epoch AI `https://epoch.ai/data/benchmark_data.zip` (free, CC-BY, no auth). `epoch_capabilities_index/eci_scores.csv` = per-model ECI, current (Fable 5.2 dated 2026-11-09), no effort variants, no $/task. Per-benchmark CSVs (swe_bench_verified stale @ opus-4-7; terminalbench_external = agent+model pairs). llm-stats `api.llm-stats.com/leaderboard/benchmarks` free JSON, ToS unchecked. OpenRouter `/api/v1/models` = token prices only. AA free endpoint works with key (a subagent's 410 claim was wrong).
+
+## ~/.babysitrc flow (2026-11-17)
+- 3 consumers, all `set -a; source`: host `utils/babysitrc.js` (into process.env at boot), entrypoint `run_agent`, `claude-shim.sh` (token only). `export` keyword is therefore redundant for babysit.
+- Host process.env carries rc vars → re-forwarded by credential paths (github.js GH_TOKEN, claude default account, opencode keys). Any per-session rc filtering must cover these too, not just the mount.
+- `save_claude_token` MANAGED_EXPORT regex requires `export ` prefix.

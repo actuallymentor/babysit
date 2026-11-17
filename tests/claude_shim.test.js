@@ -24,7 +24,7 @@ afterEach( () => rmSync( root, { recursive: true, force: true } ) )
 
 const run = ( { env = {}, account = null, rc = null, args = [ `-p`, `hi` ] } = {} ) => {
 
-    const { CLAUDE_CODE_OAUTH_TOKEN: _ambient, ...clean } = process.env
+    const { CLAUDE_CODE_OAUTH_TOKEN: _ambient, BABYSIT_RC_EXCLUDE: _excluded, ...clean } = process.env
     if( account !== null ) writeFileSync( join( root, `account.env` ), account )
     if( rc !== null ) writeFileSync( join( root, `rc` ), rc )
 
@@ -57,6 +57,11 @@ describe( `claude shim`, () => {
         expect( run( { rc: `export CLAUDE_CODE_OAUTH_TOKEN=rc-token\nexport OTHER=leaked\n` } ).out ).toBe( `token=rc-token args=-p hi` )
         // An existing token is left alone, and the rc is not even read
         expect( run( { env: { CLAUDE_CODE_OAUTH_TOKEN: `kept` }, rc: `exit 3\n` } ).out ).toBe( `token=kept args=-p hi` )
+    } )
+
+    it( `never reloads an rc token the session keeps out`, () => {
+        const { out } = run( { env: { BABYSIT_RC_EXCLUDE: `GH_TOKEN,CLAUDE_CODE_OAUTH_TOKEN` }, rc: `export CLAUDE_CODE_OAUTH_TOKEN=rc-token\n` } )
+        expect( out ).toBe( `token=none args=-p hi` )
     } )
 
     it( `reads the account file as data, never as shell`, () => {

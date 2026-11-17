@@ -62,6 +62,7 @@ Mode: Regular → Sandbox → Mudbox (Clone forces Regular). Agent, mode and swi
 | `--port H:C` | Publish host port H to container port C |
 | `--log[=PATH]` | Append raw tmux output to PATH (default `.YYYY_MM_DD_HH_MM.babysit.log`) |
 | `--account NAME` | Claude: run on this subscription (babysit auth accounts); default picks most headroom |
+| `--env-exclude KEYS` | Keep these `~/.babysitrc` variables out of the session (comma list, empty passes all); default: groups marked `default: false` |
 
 Flags combine. `--clone` excludes `--sandbox`/`--mudbox`. `--docker` weakens isolation (host daemon control, even in sandbox).
 
@@ -463,6 +464,17 @@ babysit config --transcripts PATH|off|default
 | Docker volumes | Persistent agent state; isolated `node_modules` / `.venv` |
 | `config.isolate_dependencies: false` | Disable dependency volumes |
 | `~/.babysitrc` | Shell setup sourced by host `babysit` commands and before agent launch (skipped by `--ignore-host-agents-md`) |
+
+**Per-session `~/.babysitrc` variables.** Launch menu → `Environment ▸` lists every variable, grouped by the comment above it (`→`/`←` expand/collapse, `Space` toggles a variable or a whole group). Picks are remembered per workspace and kept through resume, restart and forks. A group's `# default: false` line keeps it out unless picked; plain `babysit <agent>` launches honour that too.
+
+```sh
+# Apple id
+# default: false
+APPLE_ID=…
+APPLE_ID_PASSWORD=…
+```
+
+Excluded variables are unset after the rc is sourced. Unpicking `GH_TOKEN` drops the GitHub login entirely (no host `gh` fallback); excluded `GIT_*` identity vars stay out too.
 
 - `BABYSIT_HOME` must be absolute; set it on the host, export matching values for Compose, rerun `recover init` after changing
 - Image ships agent CLIs, Chrome/Puppeteer, adb/fastboot, uiautomator2, pymobiledevice3; `babysit update` refreshes it and reports the version

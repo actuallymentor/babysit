@@ -29,6 +29,7 @@ const CASES = [
     [ `--clone`, `--yes` ],
     [ `--devices` ],
     [ `--account`, `work` ],
+    [ `claude`, `--env-exclude`, `GH_TOKEN,APPLE_ID` ],
     [ `123` ],
 
     // Agent start: own flags consumed after the agent word

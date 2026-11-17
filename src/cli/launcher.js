@@ -13,6 +13,7 @@ import { all_devices, DEVICE_NAMES } from '../devices/kinds.js'
 import { FORK_NEGATABLE_FLAGS, MENU_ADVANCED_TOGGLES as ADVANCED_TOGGLES, MENU_LABELS as LABELS, MENU_TOGGLES as TOGGLES, flags_from_modifiers } from './registry.js'
 import { cached_account_usage, list_claude_accounts, probe_accounts } from './claude_accounts.js'
 import { fork_tree_prefixes, order_active_sessions, stored_by_tmux } from './list.js'
+import { read_babysitrc_groups } from '../utils/babysitrc.js'
 import { default_fork_filesystem, merge_fork_flags } from './fork.js'
 
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -48,11 +49,13 @@ const as_text = {
  * @param {Function} [options.list_accounts] - Claude account seam (names only are kept)
  * @param {Function} [options.cached_usage] - Cached per-account readings, free
  * @param {Function} [options.probe_usage] - Quota probe, reused for 5 min by the launch itself
+ * @param {Function} [options.read_groups] - ~/.babysitrc variable groups (names only)
  * @returns {Promise<Object|null>} Parsed launch, `{ verb: 'fork_menu' }`, or null when cancelled
  */
 export const launch_menu = async ( {
     name = ``, initial = {}, submit = `launch`, fork_key = false, validate = () => {}, fixed = [], input = process.stdin, output = process.stdout,
     list_accounts = list_claude_accounts, cached_usage = cached_account_usage, probe_usage = probe_accounts,
+    read_groups = read_babysitrc_groups,
     ...defaults_options
 } = {} ) => {
 
@@ -66,7 +69,21 @@ export const launch_menu = async ( {
     // Text rows keep their own value and cursor; Advanced starts open only when it was prefilled
     const text = { name, ports: as_text.ports( initial.ports ), log: as_text.log( initial.log ), args: as_text.args( initial.args ) }
     const cursors = Object.fromEntries( Object.entries( text ).map( ( [ key, value ] ) => [ key, Array.from( value ).length ] ) )
-    let open = [ ...ADVANCED_TOGGLES, ...ADVANCED_TEXT, `account` ].some( key => initial[ key ] )
+    // Collapsible sections, keyed like their expand rows
+    const open = { advanced: [ ...ADVANCED_TOGGLES, ...ADVANCED_TEXT, `account` ].some( key => initial[ key ] ), env: false }
+
+    // ~/.babysitrc variables: picked per session, prefilled from flags, then
+    // this workspace's last picks, then each group's `# default:`. A saved
+    // config has no env key, so `init` gets no section.
+    const groups = submit === `save` ? [] : read_groups()
+    const passed = Object.fromEntries( groups.flatMap( group => group.keys.map( key => [ key,
+        Array.isArray( initial.env_exclude ) ? !initial.env_exclude.includes( key ) : state.env?.[ key ] ?? group.default,
+    ] ) ) )
+    const env_keys = Object.keys( passed )
+    const expanded = new Set()
+
+    // Sourcing the rc is part of host context, which Ignore host AGENTS.md drops whole
+    const env_shown = () => env_keys.length > 0 && !state.ignore_host_agents_md
     let row = 0
     let error = ``
     const was_raw = Boolean( input.isRaw )
@@ -117,17 +134,26 @@ export const launch_menu = async ( {
         { type: `text`, key: `name` },
         ...TOGGLES.map( key => ( { type: `toggle`, key } ) ),
         { type: `cycle`, key: `mode` },
-        { type: `expand` },
-        ...open ? [
+        { type: `expand`, key: `advanced` },
+        ...open.advanced ? [
             ...ADVANCED_TOGGLES.map( key => ( { type: `toggle`, key } ) ),
             ...advanced_text.map( key => ( { type: `text`, key } ) ),
             ...has_accounts( state.agent ) && account_names.length ? [ { type: `cycle`, key: `account` } ] : [],
         ] : [],
+        ...env_shown() ? [ { type: `expand`, key: `env` } ] : [],
+        ...env_shown() && open.env ? groups.flatMap( ( group, index ) => group.title
+            ? [ { type: `env_group`, group: index }, ...expanded.has( index ) ? group.keys.map( name => ( { type: `env_key`, name, depth: 2 } ) ) : [] ]
+            // Variables above the first comment have no group row
+            : group.keys.map( name => ( { type: `env_key`, name, depth: 1 } ) ) ) : [],
     ]
+
+    const box = keys => keys.every( key => passed[ key ] ) ? `x` : keys.some( key => passed[ key ] ) ? `-` : ` `
 
     const render = () => {
 
-        const rows = visible_rows().map( ( { type, key }, index ) => {
+        // Collapsing a section can leave the cursor past the last row
+        row = Math.min( row, visible_rows().length - 1 )
+        const rows = visible_rows().map( ( { type, key, group, name, depth }, index ) => {
             if( key === `account` ) {
                 if( readings === `cached` ) refresh_usage()
                 return `  Account ${ account_label() }`
@@ -135,8 +161,14 @@ export const launch_menu = async ( {
             // Fixed rows drop their ‹ › and say why they do not move
             const note = fixed.includes( key ) ? `  (fixed)` : ``
             if( type === `cycle` ) return `${ key === `agent` ? `Model` : `Mode ` }   ${ note ? state[ key ] : `‹ ${ state[ key ] } ›` }${ note }`
-            if( type === `expand` ) return `Advanced ${ open ? `▾` : `▸` }`
-            if( type === `toggle` ) return `${ open && ADVANCED_TOGGLES.includes( key ) ? `  ` : `` }[${ state[ key ] ? `x` : ` ` }] ${ LABELS[ key ] || key[0].toUpperCase() + key.slice( 1 ) }${ note }`
+            if( type === `expand` && key === `env` ) {
+                const count = env_keys.filter( name => passed[ name ] ).length
+                return `Environment ${ open.env ? `▾` : `▸` }  ${ count }/${ env_keys.length } ~/.babysitrc variables passed`
+            }
+            if( type === `expand` ) return `Advanced ${ open.advanced ? `▾` : `▸` }`
+            if( type === `env_group` ) return `  [${ box( groups[ group ].keys ) }] ${ expanded.has( group ) ? `▾` : `▸` } ${ groups[ group ].title }`
+            if( type === `env_key` ) return `${ `  `.repeat( depth ) }[${ box( [ name ] ) }] ${ name }`
+            if( type === `toggle` ) return `${ open.advanced && ADVANCED_TOGGLES.includes( key ) ? `  ` : `` }[${ state[ key ] ? `x` : ` ` }] ${ LABELS[ key ] || key[0].toUpperCase() + key.slice( 1 ) }${ note }`
             const letters = Array.from( text[ key ] )
             const value = index === row
                 ? [ ...letters.slice( 0, cursors[ key ] ), `│`, ...letters.slice( cursors[ key ] ) ].join( `` )
@@ -163,6 +195,8 @@ export const launch_menu = async ( {
         for( const port of text.ports.split( /[,\s]+/ ).filter( Boolean ) ) argv.push( `--port=${ port }` )
         if( text.log.trim() ) argv.push( text.log.trim() === `on` ? `--log=` : `--log=${ text.log.trim() }` )
         if( has_accounts( state.agent ) && state.account ) argv.push( `--account=${ state.account }` )
+        // Always explicit when shown: an empty list means every variable was picked
+        if( env_shown() ) argv.push( `--env-exclude=${ env_keys.filter( key => !passed[ key ] ).join( `,` ) }` )
 
         // Agent arguments skip Babysit's parser so they can never be read as Babysit flags
         return { ...parse_args( argv ), passthrough: submit === `fork` ? [] : words( text.args ) }
@@ -229,7 +263,17 @@ export const launch_menu = async ( {
                     state[ current.key ] = cycle( choices, state[ current.key ], key.name === `right` ? 1 : -1 )
                     if( state.mode !== `regular` && !fixed.includes( `clone` ) ) state.clone = false
                 } else if( current.type === `expand` && [ `space`, `left`, `right` ].includes( key.name ) ) {
-                    open = key.name === `left` ? false : key.name === `right` ? true : !open
+                    open[ current.key ] = key.name === `left` ? false : key.name === `right` ? true : !open[ current.key ]
+                } else if( current.type === `env_group` && [ `left`, `right` ].includes( key.name ) ) {
+                    if( key.name === `right` ) expanded.add( current.group )
+                    else expanded.delete( current.group )
+                } else if( current.type === `env_group` && key.name === `space` ) {
+                    // A fully picked group clears; anything less picks it whole
+                    const { keys } = groups[ current.group ]
+                    const pick = box( keys ) !== `x`
+                    keys.forEach( name => passed[ name ] = pick )
+                } else if( current.type === `env_key` && key.name === `space` ) {
+                    passed[ current.name ] = !passed[ current.name ]
                 } else if( current.type === `toggle` && key.name === `space` ) {
                     state[ current.key ] = !state[ current.key ]
                     if( current.key === `clone` && state.clone ) state.mode = `regular`
@@ -400,6 +444,7 @@ export const fork_from_menu = async ( {
             clone: filesystem === `clone`,
             // Shown as the parent's subscription rather than auto, which a fork would not do
             account: has_accounts( parent.agent ) && parent.claude_account || false,
+            ...Array.isArray( parent.env_exclude ) && { env_exclude: parent.env_exclude },
         },
         submit: `fork`,
     } )
@@ -409,9 +454,9 @@ export const fork_from_menu = async ( {
 
 }
 
-// Flags a restart takes from the menu: switches, name, ports, log. The rest
+// Flags a restart takes from the menu: switches, name, ports, log, rc picks. The rest
 // (account, continue prompt, detach) stay the restart's own.
-const RESTART_KEYS = [ ...Object.keys( flags_from_modifiers() ), `devices`, `name`, `ports`, `log` ]
+const RESTART_KEYS = [ ...Object.keys( flags_from_modifiers() ), `devices`, `name`, `ports`, `log`, `env_exclude` ]
 
 /**
  * Launch menu for `babysit restart`, prefilled with the session as it runs.
@@ -439,6 +484,7 @@ export const restart_from_menu = async ( session, { account = false, menu = laun
             // An empty log path means the default path, which the menu writes as `on`
             log: session.launch_spec?.log === `` ? true : session.launch_spec?.log,
             account,
+            ...Array.isArray( session.env_exclude ) && { env_exclude: session.env_exclude },
         },
         submit: `restart`,
         fixed: [ `agent`, `clone` ],
@@ -493,6 +539,7 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
         ...flags.ports?.length ? { ports: flags.ports } : {},
         ...typeof flags.log === `string` ? { log: flags.log || true } : {},
         ...flags.account ? { account: flags.account } : {},
+        ...flags.env_exclude ? { env_exclude: flags.env_exclude } : {},
     }
 
     const keys = [ `agent`, `mode`, ...TOGGLES, ...ADVANCED_TOGGLES, ...ADVANCED_TEXT ]
@@ -502,6 +549,6 @@ export const launch_from_menu = async ( { name = ``, config = false, flags = {},
 
     // The menu's choice is the whole launch; the account is per launch, not a config key
     const cmd = launch_to_command( command_to_launch( chosen ), { config_path: config || null } )
-    return { ...cmd, flags: { ...cmd.flags, account: chosen.flags.account } }
+    return { ...cmd, flags: { ...cmd.flags, account: chosen.flags.account, env_exclude: chosen.flags.env_exclude } }
 
 }

@@ -3,6 +3,7 @@ import mri from 'mri'
 import { assert_account_support, is_agent, retired_agent_message } from '../agents/index.js'
 import { normalise_port_mappings } from '../docker/ports.js'
 import { SHELLS } from './shell_init.js'
+import { normalise_env_exclude } from '../utils/babysitrc.js'
 
 import { BOOLEAN_FLAGS, FLAGS, FORK_NEGATABLE_FLAGS, KNOWN_FLAGS, OPTIONAL_FLAGS, VALUE_FLAGS, command_named, flag_key, local_flags, option_tokens } from './registry.js'
 
@@ -94,6 +95,8 @@ export const parse_args = ( argv ) => {
         transcripts: typeof args.transcripts === `string` ? args.transcripts : false,
         // Claude subscription for this launch (babysit auth accounts); false picks by headroom
         account: normalise_account( args.account ),
+        // ~/.babysitrc variables kept out of the session; null leaves the choice to the rc and resume
+        env_exclude: normalise_env_exclude( args[ `env-exclude` ] ),
         // Lingering is on by default; --no-linger opts out.
         linger: verb === `auth` && args.linger !== false,
         // Unset: offer the token when missing. --claude-token re-mints, --no-claude-token skips.

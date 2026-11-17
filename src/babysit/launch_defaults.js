@@ -5,6 +5,7 @@ import { SUPPORTED_AGENTS } from '../agents/index.js'
 import { BABYSIT_DIR } from '../utils/paths.js'
 import { MENU_TOGGLES } from '../cli/registry.js'
 import { all_devices } from '../devices/kinds.js'
+import { read_babysitrc_groups } from '../utils/babysitrc.js'
 
 const DEFAULTS_PATH = join( BABYSIT_DIR, `launch-defaults.json` )
 const MODES = [ `regular`, `sandbox`, `mudbox` ]
@@ -36,6 +37,8 @@ const normalise = ( value = {} ) => {
         devices: value?.devices === true || all_devices( value ),
         clone: mode === `regular` && value?.clone === true,
         mode,
+        // ~/.babysitrc picks, KEY -> passed; keys never picked follow their group default
+        env: Object.fromEntries( Object.entries( value?.env || {} ).filter( ( [ , passed ] ) => typeof passed === `boolean` ) ),
     }
 
 }
@@ -55,13 +58,22 @@ export const read_launch_defaults = ( { cwd = process.cwd(), defaults_path = DEF
  * @param {Object} cmd - Parsed start command
  * @param {Object} [options] - Workspace and optional state-file override
  */
-export const save_launch_defaults = ( cmd, { cwd = process.cwd(), defaults_path = DEFAULTS_PATH } = {} ) => {
+export const save_launch_defaults = ( cmd, { cwd = process.cwd(), defaults_path = DEFAULTS_PATH, groups = read_babysitrc_groups } = {} ) => {
 
     const store = read_store( defaults_path )
+    const previous = normalise( store.projects?.[ project_key( cwd ) ] ?? store.global )
+
+    // Every rc key the menu showed is a pick; an unset list keeps the old picks
+    const excluded = cmd.flags.env_exclude
+    const env = Array.isArray( excluded )
+        ? Object.fromEntries( groups().flatMap( ( { keys } ) => keys ).map( key => [ key, !excluded.includes( key ) ] ) )
+        : previous.env
+
     const selection = normalise( {
         agent: cmd.agent,
         ...cmd.flags,
         mode: cmd.flags.sandbox ? `sandbox` : cmd.flags.mudbox ? `mudbox` : `regular`,
+        env,
     } )
     const projects = { ...store.projects, [ project_key( cwd ) ]: selection }
 

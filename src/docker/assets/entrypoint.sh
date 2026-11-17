@@ -200,6 +200,12 @@ run_agent() {
             # shellcheck source=/dev/null
             source /home/node/.babysitrc || exit $?
             set +a
+            # Variables this session keeps out (launch menu / --env-exclude).
+            # Unset before the account file, so only rc values are dropped.
+            for excluded in ${BABYSIT_RC_EXCLUDE//,/ }; do
+                unset "$excluded"
+            done
+            unset excluded
         fi
         # The Claude account chosen for this session wins over the rc.
         # Literal KEY=value lines, never evaluated as shell.

@@ -13,6 +13,7 @@ import {
 } from '../src/docker/chrome-seccomp.js'
 import {
     BABYSIT_HOST_RC_ENV,
+    BABYSIT_RC_EXCLUDE_ENV,
     BABYSIT_RC_CONTAINER_PATH,
     WATCHTOWER_DISABLE_LABEL,
     build_agent_state_volume_name,
@@ -780,6 +781,47 @@ describe( `build_docker_command`, () => {
         } finally {
             rmSync( dir, { recursive: true, force: true } )
         }
+
+    } )
+
+    it( `names excluded rc variables for the entrypoint and keeps excluded git identity out`, async () => {
+
+        const dir = mkdtempSync( join( tmpdir(), `babysit-rc-exclude-` ) )
+        const babysit_rc_path = join( dir, `.babysitrc` )
+
+        try {
+            writeFileSync( babysit_rc_path, `GH_TOKEN=secret\nGIT_AUTHOR_EMAIL=me@example.com\n` )
+
+            await with_env( { [ BABYSIT_HOST_RC_ENV ]: undefined, GIT_AUTHOR_EMAIL: `me@example.com`, GIT_AUTHOR_NAME: `Me` }, () => {
+
+                const args = build_docker_command_args( make_options( {
+                    babysit_rc_path,
+                    mode: { yolo: true, env_exclude: [ `GH_TOKEN`, `GIT_AUTHOR_EMAIL` ] },
+                } ) )
+
+                expect( args ).toContain( `${ BABYSIT_RC_EXCLUDE_ENV }=GH_TOKEN,GIT_AUTHOR_EMAIL` )
+                expect( args ).toContain( `GIT_AUTHOR_NAME=Me` )
+                expect( args.some( arg => arg.startsWith( `GIT_AUTHOR_EMAIL=` ) ) ).toBe( false )
+                // Values never reach the command line
+                expect( args.join( ` ` ) ).not.toContain( `secret` )
+
+            } )
+
+        } finally {
+            rmSync( dir, { recursive: true, force: true } )
+        }
+
+    } )
+
+    it( `unsets excluded rc variables after sourcing, before the account file`, () => {
+
+        const entrypoint = readFileSync( new URL( `../src/docker/assets/entrypoint.sh`, import.meta.url ), `utf8` )
+        const sourced = entrypoint.indexOf( `source /home/node/.babysitrc` )
+        const unset = entrypoint.indexOf( `for excluded in \${BABYSIT_RC_EXCLUDE//,/ }` )
+
+        expect( sourced ).toBeGreaterThan( -1 )
+        expect( unset ).toBeGreaterThan( sourced )
+        expect( unset ).toBeLessThan( entrypoint.indexOf( `.babysit-claude-account.env ]` ) )
 
     } )
 
