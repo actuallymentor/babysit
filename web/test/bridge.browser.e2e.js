@@ -58,7 +58,10 @@ export async function drive_bridge_menu( { origin, token, name } ) {
         await page.waitForSelector( trigger )
         await page.click( trigger )
         await page.waitForSelector( `[role="menu"]` )
-        await page.$$eval( `[role="menuitem"]`, elements => elements.find( element => element.textContent === `Move to idle list` ).click() )
+
+        // The item needs an idle session and monitor-published actions, both of which can land after the menu opens
+        const move = await page.waitForFunction( () => [ ...document.querySelectorAll( `[role="menuitem"]` ) ].find( element => element.textContent === `Move to idle list` ) )
+        await move.click()
 
         // The host's own answer, relayed from the monitor's result
         await page.waitForFunction( expected => document.querySelector( `main` ).textContent.includes( expected ), { timeout: 20_000 }, `${ name }: Moved to the idle list` )
