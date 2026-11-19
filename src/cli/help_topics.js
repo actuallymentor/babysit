@@ -400,10 +400,10 @@ default restores ~/.babysit/transcripts. Saved in ~/.babysit/config.json
 
 Remote archive (off by default): --transcripts-remote binds a mounted share.
 Babysit writes PATH/.babysit-archive (an id) or adopts one already there, and
-refuses a PATH that is missing or on the local archive's disk. Every 10 minutes
+refuses a PATH that is missing or on / or the local archive's disk. Every 10 minutes
 the local archive ships to PATH/<hostname>/, only while that file is present with
 the bound id: an unmounted share never receives local writes. Sandbox copies idle
-7 days and verified on the share leave the local archive.
+7 days and byte-identical on the share leave the local archive.
 
 Examples:
   babysit config

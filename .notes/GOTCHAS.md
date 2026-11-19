@@ -320,3 +320,4 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - Ship is unawaited and throttled host-wide via `<hot>/.ship.json` (10 min): a session's final changes ship on the next pass of any monitor, not at close.
 - Tests need a second filesystem (`/dev/shm`); shipping tests skip without one. `mtimeMs` can exceed `Date.now()` by <1 ms: add margin in time-threshold tests.
 - `tests/config.test.js` "prints effective CLI paths" spawns the CLI twice against bun's 5 s timeout: flaky under load, also on a clean tree.
+- Remote "is it mounted" = device differs from both `/` and the hot archive; checked at bind, at each ship, and per file (guard dir `<share>/<host>`). Prune requires byte-equality and a complete walk.

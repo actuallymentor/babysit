@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.10.1 — 2026-11-19
+
+### Fixed
+- Remote transcript archive hardening:
+  - Binding refuses a bare mountpoint on `/`, even when the local archive has its own disk.
+  - Shipping re-checks the share's device per file, so an unmount mid-ship stops instead of writing locally.
+  - Pruning compares bytes; a partial walk, symlink or temp file keeps the sandbox.
+  - Credential files and anything outside `volumes/`, `sandbox/`, `sessions/` never ship.
+  - A timed-out ship keeps its lock until stale.
+  - Rebinding starts a fresh status.
+
 ## 2.10.0 — 2026-11-19
 
 ### Added

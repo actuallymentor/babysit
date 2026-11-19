@@ -71,7 +71,7 @@ export const format_remote_archive = ( { transcript_archive, transcript_remote }
 
     if( !transcript_remote ) return `off (babysit config --transcripts-remote PATH)`
 
-    const status = read_ship_status( transcript_archive )
+    const status = read_ship_status( transcript_archive, transcript_remote.id )
     const ago = at => `${ relative_time( now, at ).replace( /^in /, `` ) } ago`.replace( /^now ago$/, `just now` )
     const shipped = status?.shipped_at ? `last shipped ${ ago( status.shipped_at ) }` : `never shipped`
     return status?.error

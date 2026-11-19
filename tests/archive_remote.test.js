@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, uti
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-import { PRUNE_AFTER_MS, SENTINEL, SHIP_INTERVAL_MS, init_remote_archive, read_ship_status, remote_problem, ship_archive } from '../src/sessions/archive_remote.js'
+import { PRUNE_AFTER_MS, SENTINEL, SHIP_INTERVAL_MS, copy_tree, init_remote_archive, read_ship_status, remote_problem, ship_archive } from '../src/sessions/archive_remote.js'
 import { normalise_transcript_remote } from '../src/babysit/config.js'
 import { format_remote_archive } from '../src/cli/config.js'
 
@@ -36,8 +36,15 @@ describe( `remote archive binding`, () => {
     it( `refuses a directory on the local archive's disk (an unmounted share)`, () => {
         const hot = temp()
         const unmounted = temp()
-        expect( () => init_remote_archive( unmounted, { hot } ) ).toThrow( /same disk/ )
+        expect( () => init_remote_archive( unmounted, { hot } ) ).toThrow( /local disk/ )
         expect( existsSync( join( unmounted, SENTINEL ) ) ).toBe( false )
+    } )
+
+    // The bare mountpoint lives on / while the local archive has its own disk
+    it.skipIf( !has_second_fs || statSync( tmpdir() ).dev !== statSync( `/` ).dev )( `refuses a bare mountpoint on the root disk`, () => {
+        const hot = temp( SHARE_PARENT )
+        const unmounted = temp()
+        expect( () => init_remote_archive( unmounted, { hot } ) ).toThrow( /local disk/ )
     } )
 
     it( `adopts an existing identity, even from another host`, () => {
@@ -138,6 +145,47 @@ describe.skipIf( !has_second_fs )( `shipping`, () => {
         expect( existsSync( join( hot, `sandbox/old` ) ) ).toBe( false )
         expect( readFileSync( join( share, `box/sandbox/old/state/a.jsonl` ), `utf8` ) ).toBe( `y` )
         expect( existsSync( join( hot, `sandbox/new` ) ) ).toBe( true )
+    } )
+
+    it( `ships only archive trees, never credentials or stray files`, async () => {
+        const { hot, share, remote } = setup()
+        write( hot, `sandbox/b1/state/auth.json`, `secret` )
+        write( hot, `sandbox/b1/state/log.jsonl` )
+        write( hot, `unrelated/backup.tar` )
+        await ship_archive( { hot, remote, host: `box`, now: 1e12 } )
+        expect( existsSync( join( share, `box/sandbox/b1/state/log.jsonl` ) ) ).toBe( true )
+        expect( existsSync( join( share, `box/sandbox/b1/state/auth.json` ) ) ).toBe( false )
+        expect( existsSync( join( share, `box/unrelated` ) ) ).toBe( false )
+    } )
+
+    it( `keeps a sandbox whose bytes differ on the share despite matching size and mtime`, async () => {
+        const { hot, share, remote } = setup()
+        write( hot, `sandbox/old/a.jsonl`, `aaaa` )
+        write( hot, `sessions/old.json`, `{}` )
+        await ship_archive( { hot, remote, host: `box`, now: 1e12 } )
+        const shipped = join( share, `box/sandbox/old/a.jsonl` )
+        const { mtime } = statSync( shipped )
+        writeFileSync( shipped, `bbbb` )
+        utimesSync( shipped, mtime, mtime )
+        const status = await ship_archive( { hot, remote, host: `box`, now: Date.now() + PRUNE_AFTER_MS + 1000 } )
+        expect( status.pruned ).toBe( 0 )
+        expect( existsSync( join( hot, `sandbox/old/a.jsonl` ) ) ).toBe( true )
+    } )
+
+    it( `forgets the status of a previous share on rebinding`, async () => {
+        const { hot, remote } = setup()
+        await ship_archive( { hot, remote, host: `box`, now: 1e12 } )
+        expect( read_ship_status( hot, remote.id ) ).toMatchObject( { shipped_at: 1e12 } )
+        expect( read_ship_status( hot, `other` ) ).toBe( null )
+    } )
+
+    it( `stops when the share leaves mid-ship instead of recreating it locally`, async () => {
+        const hot = temp()
+        const local = temp()
+        write( hot, `a.jsonl` )
+        const gone = { root: join( local, `box` ), dev: -1 }
+        await expect( copy_tree( hot, join( local, `box/volumes` ), gone ) ).rejects.toThrow( /left mid-ship/ )
+        expect( existsSync( join( local, `box` ) ) ).toBe( false )
     } )
 
     it( `lets one monitor ship at a time`, async () => {

@@ -463,10 +463,11 @@ Sessions only ever write the local archive; it ships to a mounted share every 10
 babysit config --transcripts-remote /mnt/nas/babysit   # PATH|off
 ```
 
-- Binding writes `.babysit-archive` (an id) on the share, or adopts an existing one (multi-host). Refused unless PATH exists and sits on another filesystem than the local archive
-- Ships only while that file is there with the bound id: an unmounted share is an empty local dir, so nothing lands on local disk
+- Binding writes `.babysit-archive` (an id) on the share, or adopts an existing one (multi-host). Refused unless PATH exists on a filesystem other than `/` and the local archive's
+- Ships only while that file is there with the bound id, re-checking the share's device per file: an unmounted share is an empty local dir, so nothing lands on local disk
+- Ships `volumes/`, `sandbox/`, `sessions/` only; credential-named files never
 - Layout `<share>/<hostname>/…`, incremental (size + mtime), temp file + rename
-- Sandbox copies idle 7 days and verified on the share leave the local archive; volume mirrors stay
+- Sandbox copies idle 7 days and byte-identical on the share leave the local archive; volume mirrors stay
 - `babysit config` shows the last ship and any failure; failures also hit the monitor log
 - Host side: mount with `nofail,_netdev,x-systemd.automount`; optionally `chattr +i` the empty mountpoint
 

@@ -6,7 +6,8 @@ import { get_agent } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { get_image_name } from '../docker/update.js'
 import { read_babysit_config } from '../babysit/config.js'
-import { ship_archive } from './archive_remote.js'
+// Credential-looking state (OpenCode auth.json, OAuth caches) never leaves its volume
+import { SECRET_FILE, ship_archive } from './archive_remote.js'
 import { write_atomic_json } from '../web_bridge/files.js'
 import { log } from '../utils/log.js'
 import { run } from '../utils/exec.js'
@@ -33,8 +34,6 @@ export const ARCHIVE_INTERVAL_MS = 10 * 60_000
 // A full first pass over a large shared Claude volume can take a while
 const ARCHIVE_TIMEOUT_MS = 10 * 60_000
 
-// Credential-looking state (OpenCode auth.json, OAuth caches) never leaves its volume
-const SECRET_FILE = /(auth|cred|token|secret|key)[^/]*\.json$/i
 
 /*
  * Incremental mirror, run inside the session image: argv is the destination
