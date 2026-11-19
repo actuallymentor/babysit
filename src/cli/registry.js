@@ -87,6 +87,7 @@ export const FLAGS = [
 
     // `babysit config` settings; consumed anywhere like launch flags
     { name: `transcripts`, type: `value`, scope: `global`, commands: [ `config` ] },
+    { name: `transcripts-remote`, type: `value`, scope: `global`, commands: [ `config` ] },
     { name: `auth-check-agents`, type: `value`, scope: `global`, commands: [ `config` ] },
 
     // Command flags
@@ -222,6 +223,7 @@ export const COMMANDS = [
     { name: `config`, usage: [
         [ `babysit config`, `Show settings and setup status` ],
         [ `babysit config --transcripts PATH`, `Archive agent transcripts in PATH (off disables; default ~/.babysit/transcripts)` ],
+        [ `babysit config --transcripts-remote PATH`, `Also ship the archive to a mounted share at PATH (off unbinds)` ],
     ] },
     { name: `mode`, quiet: true, usage: [ [ `babysit mode`, `Print container inside a babysit agent container, else host` ] ] },
     { name: `web`, usage: [

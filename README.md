@@ -455,6 +455,21 @@ babysit config --transcripts PATH|off|default
 - Credential-looking files skipped; tool output may still hold secrets (archive `0700`, files `0600`)
 - Best effort: failed passes retry; sandboxes are removed even if the final copy fails
 
+### Remote archive (NAS / Samba)
+
+Sessions only ever write the local archive; it ships to a mounted share every 10 min.
+
+```bash
+babysit config --transcripts-remote /mnt/nas/babysit   # PATH|off
+```
+
+- Binding writes `.babysit-archive` (an id) on the share, or adopts an existing one (multi-host). Refused unless PATH exists and sits on another filesystem than the local archive
+- Ships only while that file is there with the bound id: an unmounted share is an empty local dir, so nothing lands on local disk
+- Layout `<share>/<hostname>/…`, incremental (size + mtime), temp file + rename
+- Sandbox copies idle 7 days and verified on the share leave the local archive; volume mirrors stay
+- `babysit config` shows the last ship and any failure; failures also hit the monitor log
+- Host side: mount with `nofail,_netdev,x-systemd.automount`; optionally `chattr +i` the empty mountpoint
+
 ## Configuration & storage
 
 | Location / setting | Contents / effect |

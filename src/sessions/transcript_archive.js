@@ -6,6 +6,7 @@ import { get_agent } from '../agents/index.js'
 import { docker_command_prefix, get_agent_state_mounts } from '../docker/run.js'
 import { get_image_name } from '../docker/update.js'
 import { read_babysit_config } from '../babysit/config.js'
+import { ship_archive } from './archive_remote.js'
 import { write_atomic_json } from '../web_bridge/files.js'
 import { log } from '../utils/log.js'
 import { run } from '../utils/exec.js'
@@ -188,6 +189,7 @@ export const archive_session_transcripts = async ( session, {
     root = transcript_archive_root(),
     run_command = run,
     copy_out = copy_out_of_container,
+    ship = hot => ship_archive( { hot, remote: read_babysit_config().transcript_remote } ),
 } = {} ) => {
 
     if( !root ) return false
@@ -237,6 +239,7 @@ export const archive_session_transcripts = async ( session, {
 
         mkdirSync( join( root, `sessions` ), { recursive: true, mode: 0o700 } )
         write_atomic_json( join( root, `sessions`, `${ session.babysit_id }.json` ), archive_index_entry( session, mounts ) )
+        ship( root ).catch( error => log.debug( `Transcript ship failed: ${ error.message }` ) )
         return true
 
     } catch ( error ) {

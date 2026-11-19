@@ -61,21 +61,34 @@ export const normalise_transcript_archive = value => {
 }
 
 /**
+ * Normalise the remote archive binding: { path, id } from `babysit config
+ * --transcripts-remote`, or false. Anything else is false: a half binding
+ * must never ship.
+ * @param {*} value - Stored value
+ * @returns {{ path: string, id: string }|false}
+ */
+export const normalise_transcript_remote = value =>
+    typeof value?.path === `string` && isAbsolute( value.path ) && typeof value.id === `string` && value.id
+        ? { path: value.path, id: value.id }
+        : false
+
+/**
  * Build the default host-level Babysit config.
- * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean, transcript_archive: string|false }} Default config
+ * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean, transcript_archive: string|false, transcript_remote: { path: string, id: string }|false }} Default config
  */
 export const default_babysit_config = () => ( {
     version: 1,
     auth_check_agents: [ ...DEFAULT_AUTH_CHECK_AGENTS ],
     auto_update: false,
     transcript_archive: DEFAULT_TRANSCRIPT_ARCHIVE,
+    transcript_remote: false,
 } )
 
 /**
  * Read host-level Babysit config from the selected storage root.
  * @param {Object} [options]
  * @param {string} [options.config_path] - Config file path
- * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean, transcript_archive: string|false }} Parsed config
+ * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean, transcript_archive: string|false, transcript_remote: { path: string, id: string }|false }} Parsed config
  */
 export const read_babysit_config = ( {
     config_path = BABYSIT_CONFIG_PATH,
@@ -94,6 +107,7 @@ export const read_babysit_config = ( {
             auth_check_agents: normalise_auth_check_agents( auth_check_agents ),
             auto_update: parsed?.auto_update === true,
             transcript_archive: normalise_transcript_archive( parsed?.transcript_archive ),
+            transcript_remote: normalise_transcript_remote( parsed?.transcript_remote ),
         }
     } catch {
         return default_babysit_config()
@@ -106,7 +120,7 @@ export const read_babysit_config = ( {
  * @param {Object} config - Partial config values
  * @param {Object} [options]
  * @param {string} [options.config_path] - Config file path
- * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean, transcript_archive: string|false }} Saved config
+ * @returns {{ version: number, auth_check_agents: string[], auto_update: boolean, transcript_archive: string|false, transcript_remote: { path: string, id: string }|false }} Saved config
  */
 export const write_babysit_config = ( config = {}, {
     config_path = BABYSIT_CONFIG_PATH,
@@ -119,6 +133,7 @@ export const write_babysit_config = ( config = {}, {
         auth_check_agents: normalise_auth_check_agents( merged.auth_check_agents ),
         auto_update: merged.auto_update === true,
         transcript_archive: normalise_transcript_archive( merged.transcript_archive ),
+        transcript_remote: normalise_transcript_remote( merged.transcript_remote ),
     }
 
     // The default stays implicit, so it follows BABYSIT_HOME instead of pinning today's path

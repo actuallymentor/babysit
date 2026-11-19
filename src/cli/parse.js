@@ -95,6 +95,8 @@ export const parse_args = ( argv ) => {
         auth_check_agents: typeof args[ `auth-check-agents` ] === `string` ? args[ `auth-check-agents` ] : false,
         // `babysit config --transcripts PATH|off`: where native transcripts are archived
         transcripts: typeof args.transcripts === `string` ? args.transcripts : false,
+        // `babysit config --transcripts-remote PATH|off`: mounted share the archive ships to
+        transcripts_remote: typeof args[ `transcripts-remote` ] === `string` ? args[ `transcripts-remote` ] : false,
         // Claude subscription for this launch (babysit auth accounts); false picks by headroom
         account: normalise_account( args.account ),
         // ~/.babysitrc variables kept out of the session; null leaves the choice to the rc and resume

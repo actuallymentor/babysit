@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.10.0 — 2026-11-19
+
+### Added
+- Remote transcript archive: `babysit config --transcripts-remote PATH` binds a mounted share (Samba/NFS). Sessions keep writing the local archive; every 10 min it ships to `PATH/<hostname>/`. Binding writes (or adopts) a `.babysit-archive` identity on the share, and shipping only runs while it is there, so an unmounted share never fills the local disk. Shipped sandbox copies idle for 7 days leave the local archive. `babysit config` shows the last ship or the failure.
+
 ## 2.9.0 — 2026-11-17
 
 ### Added

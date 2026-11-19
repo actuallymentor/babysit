@@ -314,3 +314,9 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - **`sed -i` on a bind-mounted file is invisible to running containers** (new inode). A live session keeps the old `~/.babysitrc` until relaunch.
 
 - Web bridge e2e (`test:bridge`) flaked on CI 2026-11-18: menu read before the session went idle. Wait for menu items, never read the menu once.
+
+## Remote transcript archive (2.10.0)
+- Never `mkdir` the remote root or write there without `remote_problem()` passing: an unmounted share is a plain local dir. The identity file `.babysit-archive` + config id is the only proof the share is mounted.
+- Ship is unawaited and throttled host-wide via `<hot>/.ship.json` (10 min): a session's final changes ship on the next pass of any monitor, not at close.
+- Tests need a second filesystem (`/dev/shm`); shipping tests skip without one. `mtimeMs` can exceed `Date.now()` by <1 ms: add margin in time-threshold tests.
+- `tests/config.test.js` "prints effective CLI paths" spawns the CLI twice against bun's 5 s timeout: flaky under load, also on a clean tree.

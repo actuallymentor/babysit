@@ -8,6 +8,8 @@ import { read_launch_defaults } from '../babysit/launch_defaults.js'
 import { web_bridge_paths } from '../web_bridge/paths.js'
 import { read_recovery_status } from './config_status.js'
 import { resolve_checker_scheduler } from './auth.js'
+import { relative_time } from '../docker/assets/usage/format.mjs'
+import { init_remote_archive, read_ship_status } from '../sessions/archive_remote.js'
 import {
     BABYSIT_CONFIG_PATH,
     DEFAULT_AUTH_CHECK_AGENTS,
@@ -60,6 +62,25 @@ export const parse_auth_check_agent_selection = ( input, {
 }
 
 /**
+ * Remote archive overview: where, and how the last ship went.
+ * @param {Object} config - Host config
+ * @param {number} [now] - Epoch ms
+ * @returns {string}
+ */
+export const format_remote_archive = ( { transcript_archive, transcript_remote }, now = Date.now() ) => {
+
+    if( !transcript_remote ) return `off (babysit config --transcripts-remote PATH)`
+
+    const status = read_ship_status( transcript_archive )
+    const ago = at => `${ relative_time( now, at ).replace( /^in /, `` ) } ago`.replace( /^now ago$/, `just now` )
+    const shipped = status?.shipped_at ? `last shipped ${ ago( status.shipped_at ) }` : `never shipped`
+    return status?.error
+        ? `${ transcript_remote.path } (${ shipped }; failing: ${ status.error })`
+        : `${ transcript_remote.path } (${ shipped })`
+
+}
+
+/**
  * `babysit config` — inspect effective settings without creating configuration.
  * @param {Object} cmd - Parsed command
  * @param {Object} [io]
@@ -100,6 +121,23 @@ export const cmd_config = async ( cmd, {
         return
     }
 
+    // Binding a share: babysit writes (or adopts) its identity file, config keeps the id
+    if( typeof cmd.flags.transcripts_remote === `string` ) {
+        const raw = cmd.flags.transcripts_remote.trim()
+        if( !raw ) throw new Error( `--transcripts-remote takes a mounted directory, or off` )
+        if( /^(off|false|none|disabled?)$/i.test( raw ) ) {
+            write_babysit_config( { transcript_remote: false }, { config_path } )
+            output.write( `Remote transcript archive: off (the share keeps what was shipped)\n` )
+            return
+        }
+        if( !current_config.transcript_archive ) throw new Error( `The local transcript archive is off; turn it on first (babysit config --transcripts default)` )
+        const { path, id, adopted } = init_remote_archive( normalise_transcript_archive( raw ), { hot: current_config.transcript_archive } )
+        write_babysit_config( { transcript_remote: { path, id } }, { config_path } )
+        output.write( `Remote transcript archive: ${ path } (${ adopted ? `existing archive` : `new archive` } ${ id })\n` )
+        output.write( `Ships every 10 minutes while sessions run, and only while ${ path }/.babysit-archive is present.\n` )
+        return
+    }
+
     const recovery = await recovery_status()
     const auth_scheduler = checker_scheduler()
     const defaults = read_launch_defaults()
@@ -118,6 +156,7 @@ export const cmd_config = async ( cmd, {
         [ `Global config`, file_status( GLOBAL_CONFIG_PATH ) ],
         [ `Workspace config`, file_status( join( process.cwd(), `babysit.yaml` ) ) ],
         [ `Transcript archive`, current_config.transcript_archive || `off (babysit config --transcripts PATH)` ],
+        [ `Remote archive`, format_remote_archive( current_config ) ],
         [ `Tmux socket`, TMUX_SOCKET ],
         [ `Docker image`, get_image_name() ],
         [ `Web bridge directory`, web.root ],
