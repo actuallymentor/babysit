@@ -321,3 +321,4 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - Tests need a second filesystem (`/dev/shm`); shipping tests skip without one. `mtimeMs` can exceed `Date.now()` by <1 ms: add margin in time-threshold tests.
 - `tests/config.test.js` "prints effective CLI paths" spawns the CLI twice against bun's 5 s timeout: flaky under load, also on a clean tree.
 - Remote "is it mounted" = device differs from both `/` and the hot archive; checked at bind, at each ship, and per file (guard dir `<share>/<host>`). Prune requires byte-equality and a complete walk.
+- Never `process.env = {...}` in tests: Bun's os.tmpdir() keeps reading the detached native env, so later TMPDIR changes in other files are ignored (CI file order is not alphabetical; broke remote.test.js in 2.10.1 CI). Restore in place.

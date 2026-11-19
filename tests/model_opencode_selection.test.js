@@ -4,11 +4,18 @@ import { randomUUID } from 'node:crypto'
 import { opencode_catalog } from '../src/docker/assets/effort/catalog.mjs'
 import { effort } from '../src/docker/assets/effort/opencode.mjs'
 
+// Restore in place: replacing process.env detaches it from the real environment
+// (Bun's os.tmpdir() then ignores later TMPDIR changes in other test files)
+const restore_env = snapshot => {
+    for( const key of Object.keys( process.env ) ) if( !( key in snapshot ) ) delete process.env[ key ]
+    Object.assign( process.env, snapshot )
+}
+
 const original_env = { ...process.env }
 const original_fetch = globalThis.fetch
 const roots = []
 afterEach( () => {
-    process.env = { ...original_env }
+    restore_env( original_env )
     globalThis.fetch = original_fetch
     for( const root of roots.splice( 0 ) ) rmSync( root, { recursive: true, force: true } )
 } )

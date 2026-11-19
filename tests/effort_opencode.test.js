@@ -3,6 +3,13 @@ import { createServer } from 'node:http'
 import { effort } from '../src/docker/assets/effort/opencode.mjs'
 import { babysit_effort_plugin } from '../src/docker/assets/effort/opencode-plugin.mjs'
 
+// Restore in place: replacing process.env detaches it from the real environment
+// (Bun's os.tmpdir() then ignores later TMPDIR changes in other test files)
+const restore_env = snapshot => {
+    for( const key of Object.keys( process.env ) ) if( !( key in snapshot ) ) delete process.env[ key ]
+    Object.assign( process.env, snapshot )
+}
+
 const session_id = `ses_babysit_test`
 const other_id = `ses_other_test`
 const model = { providerID: `openai`, id: `gpt-test`, variants: { low: { reasoningEffort: `low` }, high: { reasoningEffort: `high` } } }
@@ -39,7 +46,7 @@ beforeEach( async () => {
 } )
 
 afterEach( async () => {
-    process.env = previous_env
+    restore_env( previous_env )
     await new Promise( resolve => server.close( resolve ) )
 } )
 
