@@ -61,7 +61,7 @@ ${ comment_block( initial_prompt ) }
 #     # container's Linux binaries never land in the host checkout.
 #     isolate_dependencies: true
 #
-#     # Pass the host GPU (/dev/kfd, /dev/dri: AMD and Intel) into the container when present.
+#     # Pass the host GPU/NPU (/dev/kfd, /dev/dri, /dev/accel: AMD and Intel) into the container when present.
 #     gpu: true
 #
 #     # --clone workspace creation.

@@ -322,13 +322,14 @@ const remote_flags = kind => flags => {
 export const daemon_shares_devices = ( endpoint = docker_endpoint_key() ) => endpoint === `context:default`
     || endpoint.startsWith( `host:unix://` ) && !endpoint.includes( `/.docker/desktop/` )
 
-// The DRM nodes Mesa and ROCm open (by-path/ and other entries are not devices)
-const DRM_NODE = /^(card|renderD)\d+$/
+// The nodes Mesa, ROCm and XRT open (by-path/ and other entries are not devices)
+const GPU_NODES = { '/dev/dri': /^(card|renderD)\d+$/, '/dev/accel': /^accel\d+$/ }
 
 /**
- * Host GPU device nodes to pass through: AMD's compute node (ROCm/HIP) and
- * each DRM node (Vulkan/VA-API on AMD and Intel). NVIDIA needs the container
- * toolkit's `--gpus` instead, so it is not covered here.
+ * Host GPU device nodes to pass through: AMD's compute node (ROCm/HIP), each
+ * DRM node (Vulkan/VA-API on AMD and Intel) and each accel node (NPUs, e.g.
+ * AMD XDNA). NVIDIA needs the container toolkit's `--gpus` instead, so it is
+ * not covered here.
  * @param {Object} [options]
  * @param {Function} [options.exists=existsSync] - Test seam for file existence
  * @param {Function} [options.list=readdirSync] - Test seam for directory listing
@@ -341,17 +342,20 @@ export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, sta
     const none = { devices: [], gids: [] }
     if( process.platform !== `linux` || !daemon_shares_devices( endpoint ) ) return none
 
-    // Unreadable or missing /dev/dri reads as no DRM nodes, never a failed launch
-    const dri_nodes = ( () => {
+    // An unreadable or missing directory reads as no nodes, never a failed launch
+    const nodes_in = ( dir, pattern ) => {
         try {
-            return list( `/dev/dri` ).filter( name => DRM_NODE.test( name ) ).map( name => `/dev/dri/${ name }` )
+            return list( dir ).filter( name => pattern.test( name ) ).map( name => `${ dir }/${ name }` )
         } catch {
             return []
         }
-    } )()
+    }
 
     // Each node individually: a directory would hand over whatever the daemon finds in it
-    const devices = [ ...exists( `/dev/kfd` ) ? [ `/dev/kfd` ] : [], ...dri_nodes ]
+    const devices = [
+        ...exists( `/dev/kfd` ) ? [ `/dev/kfd` ] : [],
+        ...Object.entries( GPU_NODES ).flatMap( ( [ dir, pattern ] ) => nodes_in( dir, pattern ) ),
+    ]
 
     // The nodes' groups (render, video) differ per host, so pass numeric gids
     const gids = devices.flatMap( path => {
@@ -382,6 +386,11 @@ const add_gpu_flags = ( flags, options ) => {
     for( const device of devices ) flags.push( `--device`, device )
     for( const gid of gids ) flags.push( `--group-add`, String( gid ) )
     flags.push( `-e`, `BABYSIT_GPU=1` )
+
+    // NPU runtimes (XRT) pin their buffers; pinned pages still count against --memory
+    if( devices.some( device => device.startsWith( `/dev/accel/` ) ) ) {
+        flags.push( `--ulimit`, `memlock=-1:-1`, `-e`, `BABYSIT_NPU=1` )
+    }
 
 }
 

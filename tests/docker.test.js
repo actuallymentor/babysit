@@ -53,7 +53,7 @@ const make_options = ( overrides = {} ) => ( {
 const amd_host = {
     endpoint: `context:default`,
     exists: path => path === `/dev/kfd`,
-    list: () => [ `by-path`, `card0`, `renderD128` ],
+    list: dir => dir === `/dev/dri` ? [ `by-path`, `card0`, `renderD128` ] : [ `accel0` ],
     stat: path => ( { gid: path === `/dev/dri/card0` ? 44 : 993 } ),
 }
 
@@ -528,7 +528,9 @@ describe( `build_docker_command`, () => {
         const pairs = flag => args.flatMap( ( arg, index ) => arg === flag ? [ args[ index + 1 ] ] : [] )
 
         if( process.platform !== `linux` ) return expect( args ).not.toContain( `BABYSIT_GPU=1` )
-        expect( pairs( `--device` ) ).toEqual( [ `/dev/kfd`, `/dev/dri/card0`, `/dev/dri/renderD128` ] )
+        expect( pairs( `--device` ) ).toEqual( [ `/dev/kfd`, `/dev/dri/card0`, `/dev/dri/renderD128`, `/dev/accel/accel0` ] )
+        expect( pairs( `--ulimit` ) ).toEqual( [ `memlock=-1:-1` ] )
+        expect( args ).toContain( `BABYSIT_NPU=1` )
         expect( pairs( `--group-add` ) ).toEqual( expect.arrayContaining( [ `993`, `44` ] ) )
         expect( args ).toContain( `BABYSIT_GPU=1` )
     } )
