@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.11.0 — 2026-11-20
+
+### Added
+- Host GPU passthrough: Linux hosts with `/dev/kfd` or `/dev/dri` (AMD, Intel) pass them into every session with their device groups; `BABYSIT_GPU=1` marks it. Image ships Mesa Vulkan drivers + `vulkaninfo` (RADV verified on Strix Halo, gfx1151). `config.gpu: false` opts out. NVIDIA not covered.
+
+### Fixed
+- `--group-add` groups (Docker socket, `~/.agents`, GPU) now reach the agent user; `gosu` used to drop them, so `--docker` needed `sudo docker`.
+
 ## 2.10.1 — 2026-11-19
 
 ### Fixed

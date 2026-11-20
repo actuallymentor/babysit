@@ -479,6 +479,7 @@ babysit config --transcripts-remote /mnt/nas/babysit   # PATH|off
 | `BABYSIT_WEB_BRIDGE_DIR` | Override bridge path; match Compose |
 | Docker volumes | Persistent agent state; isolated `node_modules` / `.venv` |
 | `config.isolate_dependencies: false` | Disable dependency volumes |
+| `config.gpu: false` | Stop passing the host GPU (`/dev/kfd`, `/dev/dri`, auto when present; AMD/Intel, not NVIDIA) |
 | `~/.babysitrc` | Shell setup sourced by host `babysit` commands and before agent launch (skipped by `--ignore-host-agents-md`) |
 
 **Per-session `~/.babysitrc` variables.** Launch menu → `Environment ▸` lists every variable, grouped by the comment above it (`→`/`←` expand/collapse, `Space` toggles a variable or a whole group). Picks are remembered per workspace and kept through resume, restart and forks. A group's `# default: false` line keeps it out unless picked; plain `babysit <agent>` launches honour that too.

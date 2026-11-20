@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'crypto'
 import { spawnSync } from 'child_process'
-import { chmodSync, existsSync, mkdirSync, statSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'fs'
 import { homedir, totalmem } from 'os'
 import { dirname, join } from 'path'
 import { log } from '../utils/log.js'
@@ -311,6 +311,56 @@ const remote_flags = kind => flags => {
 
 }
 
+/**
+ * Host GPU device nodes to pass through: AMD's compute node (ROCm/HIP) and
+ * every DRM node (Vulkan/VA-API on AMD and Intel). NVIDIA needs the container
+ * toolkit's `--gpus` instead, so it is not covered here.
+ * @param {Object} [options]
+ * @param {Function} [options.exists=existsSync] - Test seam for file existence
+ * @param {Function} [options.list=readdirSync] - Test seam for directory listing
+ * @param {Function} [options.stat=statSync] - Test seam for device ownership
+ * @returns {{ devices: string[], gids: number[] }} Nodes to pass, and the groups that may open them
+ */
+export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, stat = statSync } = {} ) => {
+
+    if( process.platform !== `linux` ) return { devices: [], gids: [] }
+
+    const kfd = exists( `/dev/kfd` ) ? [ `/dev/kfd` ] : []
+    const dri = exists( `/dev/dri` ) ? [ `/dev/dri` ] : []
+
+    // The nodes' groups (render, video) differ per host, so pass numeric gids
+    const dri_nodes = dri.length ? list( `/dev/dri` ).map( name => `/dev/dri/${ name }` ) : []
+    const gids = [ ...kfd, ...dri_nodes ].flatMap( path => {
+        try {
+            return [ stat( path ).gid ]
+        } catch ( e ) {
+            log.debug( `Could not stat ${ path } for group-add: ${ e.message }` )
+            return []
+        }
+    } )
+
+    // root's group would grant nothing a device node needs
+    return { devices: [ ...kfd, ...dri ], gids: [ ...new Set( gids ) ].filter( gid => gid !== 0 ) }
+
+}
+
+/**
+ * Give the container the host GPU: device nodes plus their owning groups, so
+ * the `node` user can open them without host group names existing in the image.
+ * @param {string[]} flags - Docker command argument list to mutate
+ * @param {Object} [options] - host_gpu_devices test seams
+ */
+const add_gpu_flags = ( flags, options ) => {
+
+    const { devices, gids } = host_gpu_devices( options )
+    if( !devices.length ) return
+
+    for( const device of devices ) flags.push( `--device`, device )
+    for( const gid of gids ) flags.push( `--group-add`, String( gid ) )
+    flags.push( `-e`, `BABYSIT_GPU=1` )
+
+}
+
 // Docker flags per device kind (names match DEVICE_KINDS)
 const DEVICE_DOCKER_FLAGS = {
     adb: add_adb_flags,
@@ -448,6 +498,7 @@ export const prepare_nested_file_mountpoint = ( extra_mounts = [], target_path )
  * @param {string[]|null} [options.agent_command=null] - Full command to run inside the image
  * @param {Object} [options.agent_context={}] - Injectable host context for dynamic agent defaults
  * @param {string} [options.chrome_seccomp_profile_path] - Materialized Chrome seccomp profile
+ * @param {Object} [options.gpu_probe] - host_gpu_devices test seams
  * @returns {string[]} Docker argv
  */
 export const build_docker_command_args = ( options ) => {
@@ -481,6 +532,7 @@ export const build_docker_command_args = ( options ) => {
         agent_command = null,
         agent_context = {},
         chrome_seccomp_profile_path = null,
+        gpu_probe,
     } = options
 
     // ~/.babysitrc variables this session keeps out; auth probes carry none
@@ -627,6 +679,9 @@ export const build_docker_command_args = ( options ) => {
 
     if( mode.docker ) add_docker_socket_flags( flags, { socket_path: docker_socket_path, workspace_source } )
     DEVICE_KINDS.filter( kind => mode[ kind.name ] ).forEach( kind => DEVICE_DOCKER_FLAGS[ kind.name ]( flags ) )
+
+    // Host GPU, whenever there is one; auth probes have no use for it
+    if( config.gpu !== false && !auth_probe ) add_gpu_flags( flags, gpu_probe )
 
     for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )

@@ -45,8 +45,16 @@ const make_options = ( overrides = {} ) => ( {
     extra_env: {},
     modifiers: [ `yolo` ],
     chrome_seccomp_profile_path,
+    gpu_probe: { exists: () => false },
     ...overrides,
 } )
+
+// A Strix Halo-like host: compute node plus card + render nodes in render/video
+const amd_host = {
+    exists: path => [ `/dev/kfd`, `/dev/dri` ].includes( path ),
+    list: () => [ `card0`, `renderD128` ],
+    stat: path => ( { gid: path === `/dev/dri/card0` ? 44 : 993 } ),
+}
 
 const with_env = async ( values, fn ) => {
 
@@ -513,6 +521,24 @@ describe( `agent home env vars`, () => {
 } )
 
 describe( `build_docker_command`, () => {
+
+    it( `passes the host GPU through with its device groups`, () => {
+        const args = build_docker_command_args( make_options( { gpu_probe: amd_host } ) )
+        const pairs = flag => args.flatMap( ( arg, index ) => arg === flag ? [ args[ index + 1 ] ] : [] )
+
+        if( process.platform !== `linux` ) return expect( args ).not.toContain( `BABYSIT_GPU=1` )
+        expect( pairs( `--device` ) ).toEqual( [ `/dev/kfd`, `/dev/dri` ] )
+        expect( pairs( `--group-add` ) ).toEqual( expect.arrayContaining( [ `993`, `44` ] ) )
+        expect( args ).toContain( `BABYSIT_GPU=1` )
+    } )
+
+    it( `skips the GPU when absent, opted out or probing auth`, () => {
+        for( const options of [ {}, { gpu_probe: amd_host, config: { gpu: false } }, { gpu_probe: amd_host, auth_probe: true } ] ) {
+            const args = build_docker_command_args( make_options( options ) )
+            expect( args ).not.toContain( `--device` )
+            expect( args ).not.toContain( `BABYSIT_GPU=1` )
+        }
+    } )
 
     it( `disables copy-up for caches shared by concurrent auth probes`, () => {
         const args = build_docker_command_args( make_options( { auth_probe: true } ) )

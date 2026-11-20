@@ -53,6 +53,17 @@ if [ "$HOST_UID" != "$CURRENT_UID" ] || [ "$HOST_GID" != "$CURRENT_GID" ]; then
         | xargs -0 -r chown -h "$HOST_UID:$HOST_GID" 2>/dev/null || true
 fi
 
+# Docker's --group-add (GPU nodes, Docker socket, ~/.agents) reaches only this
+# root process: gosu rebuilds node's groups from /etc/group and drops them. So
+# write each one into /etc/group, naming gids the image does not know.
+for gid in $(id -G); do
+    [ "$gid" = "0" ] && continue
+    group=$(getent group "$gid" | cut -d: -f1)
+    [ -n "$group" ] || { group="babysit-$gid"; groupadd -o -g "$gid" "$group" 2>/dev/null || true; }
+    usermod -aG "$group" node 2>/dev/null || true
+done
+unset gid group
+
 # Fresh nocopy volumes are root-owned even when no UID remap was needed.
 # Initialize only root-owned roots: a UID-1000 auth probe must not take
 # ownership back from an existing session remapped to the host's UID.

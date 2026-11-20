@@ -41,6 +41,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # demand for native builds, repository work, and runtime diagnostics.
     pkgconf psmisc socat acl inotify-tools entr \
     shfmt git-filter-repo universal-ctags \
+    # GPU userland for host passthrough (/dev/dri, /dev/kfd): Mesa's Vulkan
+    # drivers (RADV covers AMD incl. Strix Halo) + vulkaninfo to check them.
+    # ROCm itself is GBs; ROCm wheels (torch) bundle their own runtime.
+    mesa-vulkan-drivers libvulkan1 vulkan-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI — agents working in repos need `gh` for PR/issue/auth flows.

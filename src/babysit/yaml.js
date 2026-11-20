@@ -61,6 +61,9 @@ ${ comment_block( initial_prompt ) }
 #     # container's Linux binaries never land in the host checkout.
 #     isolate_dependencies: true
 #
+#     # Pass the host GPU (/dev/kfd, /dev/dri: AMD and Intel) into the container when present.
+#     gpu: true
+#
 #     # --clone workspace creation.
 #     clone:
 #         mode: git                   # git: clone the committed state (fast); copy: copy the working tree
@@ -122,6 +125,7 @@ export const DEFAULT_CONFIG = {
     claude_account_auto_switch: true,
     commands: {},
     isolate_dependencies: true,
+    gpu: true,
     prompts: DEFAULT_PROMPTS,
 }
 

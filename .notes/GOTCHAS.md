@@ -322,3 +322,5 @@ Keep only pitfalls that remain relevant to the current implementation. Numbers a
 - `tests/config.test.js` "prints effective CLI paths" spawns the CLI twice against bun's 5 s timeout: flaky under load, also on a clean tree.
 - Remote "is it mounted" = device differs from both `/` and the hot archive; checked at bind, at each ship, and per file (guard dir `<share>/<host>`). Prune requires byte-equality and a complete walk.
 - Never `process.env = {...}` in tests: Bun's os.tmpdir() keeps reading the detached native env, so later TMPDIR changes in other files are ignored (CI file order is not alphabetical; broke remote.test.js in 2.10.1 CI). Restore in place.
+- **gosu drops `--group-add`** — it rebuilds supplementary groups from /etc/group. Any gid Babysit adds must be written into /etc/group for `node` (entrypoint loop does this). Test group access as `gosu node`, not `su` (also drops) or `--user`.
+- **docker build context is client-side** — from a `--docker` session use the container path (`src/docker/assets`), not `$BABYSIT_HOST_WORKSPACE`.
