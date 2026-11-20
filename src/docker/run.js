@@ -13,6 +13,7 @@ import { COMPLETION_HELPER_PATH } from '../agents/completion_capture.js'
 import { normalise_port_mappings } from './ports.js'
 import { DEVICE_KINDS } from '../devices/kinds.js'
 import { REMOTE_KINDS } from '../remote/store.js'
+import { docker_endpoint_key } from './facts.js'
 
 export const DEFAULT_DOCKER_SOCKET = `/var/run/docker.sock`
 export const DEFAULT_BABYSIT_RC_PATH = join( homedir(), `.babysitrc` )
@@ -312,25 +313,48 @@ const remote_flags = kind => flags => {
 }
 
 /**
+ * Whether the daemon shares this machine's /dev: the default context, or a
+ * plain local socket. Docker Desktop's VM and remote hosts have their own
+ * devices, and a `--device` path they lack fails the whole launch.
+ * @param {string} [endpoint=docker_endpoint_key()] - Active daemon endpoint
+ * @returns {boolean}
+ */
+export const daemon_shares_devices = ( endpoint = docker_endpoint_key() ) => endpoint === `context:default`
+    || endpoint.startsWith( `host:unix://` ) && !endpoint.includes( `/.docker/desktop/` )
+
+// The DRM nodes Mesa and ROCm open (by-path/ and other entries are not devices)
+const DRM_NODE = /^(card|renderD)\d+$/
+
+/**
  * Host GPU device nodes to pass through: AMD's compute node (ROCm/HIP) and
- * every DRM node (Vulkan/VA-API on AMD and Intel). NVIDIA needs the container
+ * each DRM node (Vulkan/VA-API on AMD and Intel). NVIDIA needs the container
  * toolkit's `--gpus` instead, so it is not covered here.
  * @param {Object} [options]
  * @param {Function} [options.exists=existsSync] - Test seam for file existence
  * @param {Function} [options.list=readdirSync] - Test seam for directory listing
  * @param {Function} [options.stat=statSync] - Test seam for device ownership
+ * @param {string} [options.endpoint] - Test seam for the daemon endpoint
  * @returns {{ devices: string[], gids: number[] }} Nodes to pass, and the groups that may open them
  */
-export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, stat = statSync } = {} ) => {
+export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, stat = statSync, endpoint } = {} ) => {
 
-    if( process.platform !== `linux` ) return { devices: [], gids: [] }
+    const none = { devices: [], gids: [] }
+    if( process.platform !== `linux` || !daemon_shares_devices( endpoint ) ) return none
 
-    const kfd = exists( `/dev/kfd` ) ? [ `/dev/kfd` ] : []
-    const dri = exists( `/dev/dri` ) ? [ `/dev/dri` ] : []
+    // Unreadable or missing /dev/dri reads as no DRM nodes, never a failed launch
+    const dri_nodes = ( () => {
+        try {
+            return list( `/dev/dri` ).filter( name => DRM_NODE.test( name ) ).map( name => `/dev/dri/${ name }` )
+        } catch {
+            return []
+        }
+    } )()
+
+    // Each node individually: a directory would hand over whatever the daemon finds in it
+    const devices = [ ...exists( `/dev/kfd` ) ? [ `/dev/kfd` ] : [], ...dri_nodes ]
 
     // The nodes' groups (render, video) differ per host, so pass numeric gids
-    const dri_nodes = dri.length ? list( `/dev/dri` ).map( name => `/dev/dri/${ name }` ) : []
-    const gids = [ ...kfd, ...dri_nodes ].flatMap( path => {
+    const gids = devices.flatMap( path => {
         try {
             return [ stat( path ).gid ]
         } catch ( e ) {
@@ -340,7 +364,7 @@ export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, sta
     } )
 
     // root's group would grant nothing a device node needs
-    return { devices: [ ...kfd, ...dri ], gids: [ ...new Set( gids ) ].filter( gid => gid !== 0 ) }
+    return { devices, gids: [ ...new Set( gids ) ].filter( gid => gid !== 0 ) }
 
 }
 

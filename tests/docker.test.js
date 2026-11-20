@@ -45,14 +45,15 @@ const make_options = ( overrides = {} ) => ( {
     extra_env: {},
     modifiers: [ `yolo` ],
     chrome_seccomp_profile_path,
-    gpu_probe: { exists: () => false },
+    gpu_probe: { endpoint: `context:default`, exists: () => false, list: () => [] },
     ...overrides,
 } )
 
 // A Strix Halo-like host: compute node plus card + render nodes in render/video
 const amd_host = {
-    exists: path => [ `/dev/kfd`, `/dev/dri` ].includes( path ),
-    list: () => [ `card0`, `renderD128` ],
+    endpoint: `context:default`,
+    exists: path => path === `/dev/kfd`,
+    list: () => [ `by-path`, `card0`, `renderD128` ],
     stat: path => ( { gid: path === `/dev/dri/card0` ? 44 : 993 } ),
 }
 
@@ -527,13 +528,23 @@ describe( `build_docker_command`, () => {
         const pairs = flag => args.flatMap( ( arg, index ) => arg === flag ? [ args[ index + 1 ] ] : [] )
 
         if( process.platform !== `linux` ) return expect( args ).not.toContain( `BABYSIT_GPU=1` )
-        expect( pairs( `--device` ) ).toEqual( [ `/dev/kfd`, `/dev/dri` ] )
+        expect( pairs( `--device` ) ).toEqual( [ `/dev/kfd`, `/dev/dri/card0`, `/dev/dri/renderD128` ] )
         expect( pairs( `--group-add` ) ).toEqual( expect.arrayContaining( [ `993`, `44` ] ) )
         expect( args ).toContain( `BABYSIT_GPU=1` )
     } )
 
-    it( `skips the GPU when absent, opted out or probing auth`, () => {
-        for( const options of [ {}, { gpu_probe: amd_host, config: { gpu: false } }, { gpu_probe: amd_host, auth_probe: true } ] ) {
+    it( `skips the GPU when absent, unreadable, opted out, probing auth or on another daemon`, () => {
+        const unreadable = { ...amd_host, exists: () => false, list: () => { throw new Error( `EACCES` ) } }
+        const cases = [
+            {},
+            { gpu_probe: unreadable },
+            { gpu_probe: amd_host, config: { gpu: false } },
+            { gpu_probe: amd_host, auth_probe: true },
+            { gpu_probe: { ...amd_host, endpoint: `context:/home/u/.docker:desktop-linux` } },
+            { gpu_probe: { ...amd_host, endpoint: `host:ssh://gpu-box` } },
+            { gpu_probe: { ...amd_host, endpoint: `host:unix:///home/u/.docker/desktop/docker.sock` } },
+        ]
+        for( const options of cases ) {
             const args = build_docker_command_args( make_options( options ) )
             expect( args ).not.toContain( `--device` )
             expect( args ).not.toContain( `BABYSIT_GPU=1` )
