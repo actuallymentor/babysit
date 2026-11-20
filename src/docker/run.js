@@ -352,23 +352,25 @@ export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, sta
     }
 
     // Each node individually: a directory would hand over whatever the daemon finds in it
-    const devices = [
-        ...exists( `/dev/kfd` ) ? [ `/dev/kfd` ] : [],
+    const candidates = [
+        `/dev/kfd`,
         ...Object.entries( GPU_NODES ).flatMap( ( [ dir, pattern ] ) => nodes_in( dir, pattern ) ),
     ]
 
-    // The nodes' groups (render, video) differ per host, so pass numeric gids
-    const gids = devices.flatMap( path => {
+    // A node that cannot be stat'ed is gone, and Docker would refuse the launch over it.
+    // The groups (render, video) differ per host, so they travel as numeric gids.
+    const nodes = candidates.flatMap( path => {
         try {
-            return [ stat( path ).gid ]
+            return [ { path, gid: stat( path ).gid } ]
         } catch ( e ) {
-            log.debug( `Could not stat ${ path } for group-add: ${ e.message }` )
+            if( exists( path ) ) log.debug( `Could not stat ${ path }: ${ e.message }` )
             return []
         }
     } )
 
     // root's group would grant nothing a device node needs
-    return { devices, gids: [ ...new Set( gids ) ].filter( gid => gid !== 0 ) }
+    const gids = [ ...new Set( nodes.map( node => node.gid ) ) ].filter( gid => gid !== 0 )
+    return { devices: nodes.map( node => node.path ), gids }
 
 }
 
@@ -376,21 +378,25 @@ export const host_gpu_devices = ( { exists = existsSync, list = readdirSync, sta
  * Give the container the host GPU: device nodes plus their owning groups, so
  * the `node` user can open them without host group names existing in the image.
  * @param {string[]} flags - Docker command argument list to mutate
- * @param {Object} [options] - host_gpu_devices test seams
+ * @param {Object} [options]
+ * @param {boolean} [options.npu_memlock=false] - Lift the memlock limit for NPU runtimes
+ * @param {Object} [options.probe] - host_gpu_devices test seams
  */
-const add_gpu_flags = ( flags, options ) => {
+const add_gpu_flags = ( flags, { npu_memlock = false, probe } = {} ) => {
 
-    const { devices, gids } = host_gpu_devices( options )
+    const { devices, gids } = host_gpu_devices( probe )
     if( !devices.length ) return
 
     for( const device of devices ) flags.push( `--device`, device )
     for( const gid of gids ) flags.push( `--group-add`, String( gid ) )
     flags.push( `-e`, `BABYSIT_GPU=1` )
 
-    // NPU runtimes (XRT) pin their buffers; pinned pages still count against --memory
-    if( devices.some( device => device.startsWith( `/dev/accel/` ) ) ) {
-        flags.push( `--ulimit`, `memlock=-1:-1`, `-e`, `BABYSIT_NPU=1` )
-    }
+    if( !devices.some( device => device.startsWith( `/dev/accel/` ) ) ) return
+    flags.push( `-e`, `BABYSIT_NPU=1` )
+
+    // NPU runtimes (XRT) pin their buffers. Opt-in: rootless Docker cannot
+    // raise the limit and would refuse every launch, NPU work or not.
+    if( npu_memlock ) flags.push( `--ulimit`, `memlock=-1:-1` )
 
 }
 
@@ -714,7 +720,7 @@ export const build_docker_command_args = ( options ) => {
     DEVICE_KINDS.filter( kind => mode[ kind.name ] ).forEach( kind => DEVICE_DOCKER_FLAGS[ kind.name ]( flags ) )
 
     // Host GPU, whenever there is one; auth probes have no use for it
-    if( config.gpu !== false && !auth_probe ) add_gpu_flags( flags, gpu_probe )
+    if( config.gpu !== false && !auth_probe ) add_gpu_flags( flags, { npu_memlock: config.npu_memlock, probe: gpu_probe } )
 
     for( const key of [ `BABYSIT_E2E_RUN_ID`, `BABYSIT_E2E_SIBLING_IMAGE`, `BABYSIT_DOCKER_IMAGE` ] ) {
         if( process.env[ key ] ) flags.push( `-e`, `${ key }=${ process.env[ key ] }` )

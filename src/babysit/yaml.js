@@ -63,6 +63,8 @@ ${ comment_block( initial_prompt ) }
 #
 #     # Pass the host GPU/NPU (/dev/kfd, /dev/dri, /dev/accel: AMD and Intel) into the container when present.
 #     gpu: true
+#     # Lift the container's memlock limit for NPU runtimes (XRT). Rootless Docker refuses it.
+#     npu_memlock: false
 #
 #     # --clone workspace creation.
 #     clone:
@@ -126,6 +128,7 @@ export const DEFAULT_CONFIG = {
     commands: {},
     isolate_dependencies: true,
     gpu: true,
+    npu_memlock: false,
     prompts: DEFAULT_PROMPTS,
 }
 

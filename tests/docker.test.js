@@ -45,16 +45,20 @@ const make_options = ( overrides = {} ) => ( {
     extra_env: {},
     modifiers: [ `yolo` ],
     chrome_seccomp_profile_path,
-    gpu_probe: { endpoint: `context:default`, exists: () => false, list: () => [] },
+    gpu_probe: { endpoint: `context:default`, exists: () => false, list: () => [], stat: () => { throw new Error( `ENOENT` ) } },
     ...overrides,
 } )
 
 // A Strix Halo-like host: compute node plus card + render nodes in render/video
+const AMD_NODES = { '/dev/kfd': 993, '/dev/dri/card0': 44, '/dev/dri/renderD128': 993, '/dev/accel/accel0': 993 }
 const amd_host = {
     endpoint: `context:default`,
-    exists: path => path === `/dev/kfd`,
+    exists: path => path in AMD_NODES,
     list: dir => dir === `/dev/dri` ? [ `by-path`, `card0`, `renderD128` ] : [ `accel0` ],
-    stat: path => ( { gid: path === `/dev/dri/card0` ? 44 : 993 } ),
+    stat: path => {
+        if( !( path in AMD_NODES ) ) throw new Error( `ENOENT` )
+        return { gid: AMD_NODES[ path ] }
+    },
 }
 
 const with_env = async ( values, fn ) => {
@@ -529,14 +533,34 @@ describe( `build_docker_command`, () => {
 
         if( process.platform !== `linux` ) return expect( args ).not.toContain( `BABYSIT_GPU=1` )
         expect( pairs( `--device` ) ).toEqual( [ `/dev/kfd`, `/dev/dri/card0`, `/dev/dri/renderD128`, `/dev/accel/accel0` ] )
-        expect( pairs( `--ulimit` ) ).toEqual( [ `memlock=-1:-1` ] )
+        expect( pairs( `--ulimit` ) ).toEqual( [] )
         expect( args ).toContain( `BABYSIT_NPU=1` )
         expect( pairs( `--group-add` ) ).toEqual( expect.arrayContaining( [ `993`, `44` ] ) )
         expect( args ).toContain( `BABYSIT_GPU=1` )
     } )
 
+    it( `lifts memlock for the NPU only on request`, () => {
+        const args = build_docker_command_args( make_options( { gpu_probe: amd_host, config: { npu_memlock: true } } ) )
+        if( process.platform !== `linux` ) return
+        expect( args ).toContain( `memlock=-1:-1` )
+
+        const gpu_only = { ...amd_host, list: dir => dir === `/dev/dri` ? [ `renderD128` ] : [] }
+        const gpu_args = build_docker_command_args( make_options( { gpu_probe: gpu_only, config: { npu_memlock: true } } ) )
+        expect( gpu_args ).not.toContain( `memlock=-1:-1` )
+        expect( gpu_args ).not.toContain( `BABYSIT_NPU=1` )
+    } )
+
+    it( `drops device nodes that vanish before launch`, () => {
+        const vanished = { ...amd_host, stat: path => {
+            if( path.startsWith( `/dev/accel/` ) ) throw new Error( `ENOENT` )
+            return amd_host.stat( path )
+        } }
+        const args = build_docker_command_args( make_options( { gpu_probe: vanished } ) )
+        expect( args ).not.toContain( `/dev/accel/accel0` )
+    } )
+
     it( `skips the GPU when absent, unreadable, opted out, probing auth or on another daemon`, () => {
-        const unreadable = { ...amd_host, exists: () => false, list: () => { throw new Error( `EACCES` ) } }
+        const unreadable = { ...amd_host, list: () => { throw new Error( `EACCES` ) }, stat: () => { throw new Error( `ENOENT` ) } }
         const cases = [
             {},
             { gpu_probe: unreadable },

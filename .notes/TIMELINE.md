@@ -274,3 +274,4 @@
 - 2026-11-19: 2.10.1 hardening after 3 Codex reviews (bare mountpoint on /, mid-ship unmount, byte-verified prune, secrets, lock on timeout). Skipped: stale-lock double reclaim, fd-relative/dedicated shipper redesign.
 - 2026-11-20: 2.11.0 host GPU passthrough (/dev/kfd + /dev/dri + numeric gids). Verified on chonki (Strix Halo): real image + entrypoint, agent user sees RADV GFX1151. Found gosu dropped all `--group-add` gids; entrypoint now writes them into /etc/group.
 - 2026-11-20: 2.12.0 NPU passthrough (/dev/accel/accel*, memlock unlimited). XDNA (amdxdna, gid 991) openable as node on chonki. XRT userland deliberately not in image (not in trixie, heavy); add when NPU workloads are real.
+- 2026-11-20: NPU memlock made opt-in (config.npu_memlock) after Codex review: rootless Docker + any /dev/accel host (incl. Intel intel_vpu) would refuse every launch.

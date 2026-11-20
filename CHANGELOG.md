@@ -3,7 +3,7 @@
 ## 2.12.0 — 2026-11-20
 
 ### Added
-- NPU passthrough: `/dev/accel/accel*` nodes (e.g. AMD XDNA on Strix Halo) join the GPU passthrough, with `--ulimit memlock=-1` for XRT's pinned buffers; `BABYSIT_NPU=1` marks it. XRT userland is not in the image.
+- NPU passthrough: `/dev/accel/accel*` nodes (e.g. AMD XDNA on Strix Halo) join the GPU passthrough; `BABYSIT_NPU=1` marks it. `config.npu_memlock: true` lifts memlock for XRT's pinned buffers (opt-in: rootless Docker refuses it). XRT userland is not in the image.
 
 ## 2.11.0 — 2026-11-20
 
